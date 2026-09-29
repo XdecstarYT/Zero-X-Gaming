@@ -1,25 +1,40 @@
 "use client";
 
 import { useLibrary } from "@/store/library";
+import { useAuth } from "@/store/auth";
 import { toast } from "@/store/toast";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { setFavoriteRemote } from "@/lib/favorites-sync";
 import { cn } from "@/lib/cn";
 
 export function FavoriteButton({ slug, title, className }: { slug: string; title: string; className?: string }) {
   const isFav = useLibrary((s) => s.favorites.includes(slug));
   const toggle = useLibrary((s) => s.toggleFavorite);
 
+  async function onClick() {
+    // Optimistic: update locally, then persist to the account (if signed in) and roll back on failure.
+    toggle(slug);
+    toast(isFav ? `Removed ${title} from favorites` : `Added ${title} to favorites`, {
+      tone: isFav ? "info" : "success",
+      durationMs: 2500,
+    });
+    const { userId } = useAuth.getState();
+    const supabase = getSupabaseBrowser();
+    if (!userId || !supabase) return;
+    try {
+      await setFavoriteRemote(supabase, userId, slug, !isFav);
+    } catch {
+      toggle(slug);
+      toast("Couldn't save favorite", { tone: "error", description: "Check your connection and try again." });
+    }
+  }
+
   return (
     <button
       type="button"
       aria-pressed={isFav}
       aria-label={isFav ? `Remove ${title} from favorites` : `Add ${title} to favorites`}
-      onClick={() => {
-        toggle(slug);
-        toast(isFav ? `Removed ${title} from favorites` : `Added ${title} to favorites`, {
-          tone: isFav ? "info" : "success",
-          durationMs: 2500,
-        });
-      }}
+      onClick={onClick}
       className={cn(
         "grid h-9 w-9 place-items-center rounded-full border backdrop-blur transition-colors",
         isFav

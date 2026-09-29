@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 import { useSettings } from "@/store/settings";
 import { useLibrary } from "@/store/library";
+import { AuthProvider } from "./AuthProvider";
 
 /**
  * Rehydrates persisted stores after mount (so SSR markup matches the first
@@ -20,5 +21,10 @@ export function Providers({ children }: { children: ReactNode }) {
     document.documentElement.dataset.reduceMotion = String(reduceMotion);
   }, [reduceMotion]);
 
-  return children;
+  return (
+    <>
+      <AuthProvider />
+      {children}
+    </>
+  );
 }

@@ -2,43 +2,99 @@ import type { Metadata } from "next";
 import { XPBar } from "@/components/ui/XPBar";
 import { AchievementBadge } from "@/components/ui/Badge";
 import { SignInButton } from "@/components/layout/SignInButton";
+import { Avatar } from "@/components/layout/AccountControl";
+import { UsernameForm } from "@/components/layout/UsernameForm";
 import { FavoritesList } from "@/components/game/FavoritesList";
 import { BADGES, MOCK_PLAYER } from "@/lib/mock-data";
 import { formatNumber } from "@/lib/format";
 import { levelFromXp } from "@/lib/xp";
+import { getSupabaseServer } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Profile" };
 
-export default function ProfilePage() {
-  const p = MOCK_PLAYER;
+interface ProfileData {
+  userId: string | null;
+  username: string;
+  avatarUrl: string | null;
+  xp: number;
+  streak: number;
+  longestStreak: number;
+  gamesPlayed: number;
+  totalScore: number;
+  earned: Set<string>;
+}
+
+async function loadProfile(): Promise<ProfileData | null> {
+  const supabase = await getSupabaseServer();
+  if (!supabase) return null;
+  const { data: auth } = await supabase.auth.getClaims();
+  const uid = auth?.claims.sub;
+  if (!uid) return null;
+
+  const [profile, streak, achievements, scores] = await Promise.all([
+    supabase.from("profiles").select("username, avatar_url, xp").eq("id", uid).maybeSingle(),
+    supabase.from("daily_streaks").select("current_streak, longest_streak").eq("user_id", uid).maybeSingle(),
+    supabase.from("player_achievements").select("achievement_id").eq("user_id", uid),
+    supabase.from("scores").select("score", { count: "exact" }).eq("user_id", uid).limit(1000),
+  ]);
+  if (!profile.data) return null;
+
+  return {
+    userId: uid,
+    username: profile.data.username,
+    avatarUrl: profile.data.avatar_url,
+    xp: profile.data.xp,
+    streak: streak.data?.current_streak ?? 0,
+    longestStreak: streak.data?.longest_streak ?? 0,
+    gamesPlayed: scores.count ?? 0,
+    totalScore: (scores.data ?? []).reduce((n, r) => n + r.score, 0),
+    earned: new Set((achievements.data ?? []).map((a) => a.achievement_id)),
+  };
+}
+
+export default async function ProfilePage() {
+  const account = await loadProfile();
+  const p: ProfileData = account ?? {
+    userId: null,
+    username: MOCK_PLAYER.username,
+    avatarUrl: null,
+    xp: 0,
+    streak: 0,
+    longestStreak: 0,
+    gamesPlayed: 0,
+    totalScore: 0,
+    earned: new Set(),
+  };
+  const isGuest = !account;
   const { level } = levelFromXp(p.xp);
   const stats = [
     { k: "Level", v: String(level) },
     { k: "Games played", v: formatNumber(p.gamesPlayed) },
     { k: "Total score", v: formatNumber(p.totalScore) },
-    { k: "Day streak", v: String(p.streakDays) },
+    { k: "Day streak", v: isGuest ? "0" : `${p.streak} (best ${p.longestStreak})` },
   ];
 
   return (
     <div className="mx-auto max-w-5xl space-y-10 px-4 py-10 sm:px-6">
       <section aria-labelledby="profile-name" className="rounded-xl border border-border bg-surface p-6 sm:p-8">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-          <div
-            className="grid h-20 w-20 shrink-0 place-items-center rounded-full bg-gradient-to-br from-cyan to-magenta font-display text-3xl font-black text-bg"
-            aria-hidden
-          >
-            {p.username.charAt(0)}
-          </div>
+          <Avatar name={p.username} url={p.avatarUrl} className="h-20 w-20 shrink-0 text-3xl" />
           <div className="flex-1">
             <h1 id="profile-name" className="font-display text-2xl font-black uppercase tracking-wide">
               {p.username}
             </h1>
-            <p className="text-sm text-muted">Playing as a guest. Progress is saved on this device only.</p>
+            <p className="text-sm text-muted">
+              {isGuest
+                ? "Playing as a guest. Progress is saved on this device only."
+                : "Your progress is saved to your account."}
+            </p>
             <XPBar xp={p.xp} className="mt-4 max-w-md" />
           </div>
-          <SignInButton variant="accent" className="self-start sm:self-center">
-            Create account
-          </SignInButton>
+          {isGuest && (
+            <SignInButton variant="accent" className="self-start sm:self-center" initialMode="sign_up">
+              Create account
+            </SignInButton>
+          )}
         </div>
         <dl className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
           {stats.map((s) => (
@@ -50,6 +106,15 @@ export default function ProfilePage() {
         </dl>
       </section>
 
+      {!isGuest && p.userId && (
+        <section aria-labelledby="account-title" className="rounded-xl border border-border bg-surface p-6">
+          <h2 id="account-title" className="mb-4 font-display text-xl font-bold uppercase">
+            Account
+          </h2>
+          <UsernameForm userId={p.userId} current={p.username} />
+        </section>
+      )}
+
       <section aria-labelledby="badges-title">
         <h2 id="badges-title" className="mb-4 font-display text-xl font-bold uppercase">
           Badges
@@ -57,7 +122,7 @@ export default function ProfilePage() {
         <ul className="flex flex-wrap gap-4">
           {BADGES.map((b) => (
             <li key={b.id}>
-              <AchievementBadge badge={b} locked={!p.badges.some((x) => x.id === b.id)} />
+              <AchievementBadge badge={b} locked={!p.earned.has(b.id)} />
             </li>
           ))}
         </ul>
@@ -75,7 +140,7 @@ export default function ProfilePage() {
           Game history
         </h2>
         <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted">
-          Your scored runs will appear here once you&apos;ve played a game.
+          Your scored runs will appear here once games launch.
         </p>
       </section>
     </div>

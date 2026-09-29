@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 import { Logo } from "./Logo";
-import { SignInButton } from "./SignInButton";
+import { AccountControl } from "./AccountControl";
 
 export const NAV_LINKS = [
   { href: "/", label: "Home" },
@@ -94,9 +94,9 @@ export function Navbar() {
               <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
             </svg>
           </Link>
-          <SignInButton size="sm" className="hidden sm:inline-flex">
-            Sign in
-          </SignInButton>
+          <div className="hidden sm:block">
+            <AccountControl />
+          </div>
           <button
             type="button"
             className="grid h-10 w-10 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text md:hidden"
@@ -132,7 +132,7 @@ export function Navbar() {
             );
           })}
           <li className="px-3 py-3">
-            <SignInButton className="w-full">Sign in</SignInButton>
+            <AccountControl variant="menu" />
           </li>
         </ul>
       </div>

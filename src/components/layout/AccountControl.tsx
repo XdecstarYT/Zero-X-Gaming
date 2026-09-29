@@ -1,0 +1,74 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/store/auth";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { toast } from "@/store/toast";
+import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { cn } from "@/lib/cn";
+import { levelFromXp } from "@/lib/xp";
+import { SignInButton } from "./SignInButton";
+
+export function Avatar({ name, url, className }: { name: string; url?: string | null; className?: string }) {
+  return url ? (
+    // eslint-disable-next-line @next/next/no-img-element -- remote OAuth avatars, tiny
+    <img src={url} alt="" className={cn("rounded-full object-cover", className)} referrerPolicy="no-referrer" />
+  ) : (
+    <span
+      aria-hidden
+      className={cn(
+        "grid place-items-center rounded-full bg-gradient-to-br from-cyan to-magenta font-display font-black text-bg",
+        className,
+      )}
+    >
+      {name.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
+export function useSignOut() {
+  const router = useRouter();
+  return async () => {
+    await getSupabaseBrowser()?.auth.signOut();
+    toast("Signed out");
+    router.refresh();
+  };
+}
+
+/** Navbar account area: skeleton → sign-in button (guest) → user chip (signed in). */
+export function AccountControl({ variant = "bar" }: { variant?: "bar" | "menu" }) {
+  const { status, profile } = useAuth();
+  const signOut = useSignOut();
+
+  if (status === "loading") return <Skeleton className={variant === "bar" ? "h-8 w-24" : "h-10 w-full"} />;
+
+  if (status !== "signed_in") {
+    return (
+      <SignInButton size={variant === "bar" ? "sm" : "md"} className={variant === "menu" ? "w-full" : undefined}>
+        Sign in
+      </SignInButton>
+    );
+  }
+
+  const name = profile?.username ?? "Player";
+  const { level } = levelFromXp(profile?.xp ?? 0);
+
+  return (
+    <div className={cn("flex items-center gap-2", variant === "menu" && "w-full justify-between")}>
+      <Link
+        href="/profile"
+        className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 hover:border-cyan"
+        aria-label={`Your profile: ${name}, level ${level}`}
+      >
+        <Avatar name={name} url={profile?.avatar_url} className="h-7 w-7 text-xs" />
+        <span className="max-w-28 truncate text-sm font-semibold">{name}</span>
+        <span className="font-display text-[10px] font-bold text-cyan">L{level}</span>
+      </Link>
+      <Button variant="ghost" size="sm" onClick={signOut}>
+        Sign out
+      </Button>
+    </div>
+  );
+}

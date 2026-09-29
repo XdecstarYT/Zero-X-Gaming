@@ -47,14 +47,35 @@ test("unknown game shows 404", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Game over" })).toBeVisible();
 });
 
-test("sign-in modal opens and closes with Escape", async ({ page, isMobile }) => {
+test("sign-in modal opens, validates, switches mode and closes with Escape", async ({ page, isMobile }) => {
   await page.goto("/");
   if (isMobile) await page.getByRole("button", { name: "Open menu" }).click();
   await page.getByRole("button", { name: "Sign in" }).first().click();
-  const dialog = page.getByRole("dialog", { name: "Join Zero X" });
+  const dialog = page.getByRole("dialog", { name: "Sign in" });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
+
+  await dialog.getByLabel("Email").fill("not-an-email");
+  await dialog.getByLabel("Password").fill("12345678");
+  await dialog.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("Enter a valid email address.");
+
+  await dialog.getByRole("button", { name: "Create an account" }).click();
+  const signUp = page.getByRole("dialog", { name: "Join Zero X" });
+  await expect(signUp.getByLabel(/Username/)).toBeVisible();
+  await signUp.getByLabel("Email").fill("player@zerox.gg");
+  await signUp.getByLabel(/Username/).fill("no spaces");
+  await signUp.getByRole("button", { name: "Create account" }).click();
+  await expect(signUp.getByRole("alert")).toHaveText("Use only letters, numbers, and underscores.");
+
   await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
+  await expect(signUp).toBeHidden();
+});
+
+test("auth callback without a code lands on a friendly error page", async ({ page }) => {
+  await page.goto("/auth/callback?next=//evil.com");
+  await expect(page).toHaveURL(/\/auth\/error\?reason=missing/);
+  await expect(page.getByRole("heading", { name: "Couldn't sign you in" })).toBeVisible();
 });
 
 test("reduce motion setting persists and applies to <html>", async ({ page }) => {

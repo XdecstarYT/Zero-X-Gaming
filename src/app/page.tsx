@@ -1,7 +1,7 @@
 import { LinkButton } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Rating } from "@/components/ui/Rating";
-import { XPBar } from "@/components/ui/XPBar";
+import { YourProgress } from "@/components/layout/YourProgress";
 import { LeaderboardTable } from "@/components/ui/LeaderboardTable";
 import { GameArt } from "@/components/game/GameArt";
 import { GameCard } from "@/components/game/GameCard";
@@ -127,10 +127,7 @@ export default function HomePage() {
                 to keep your progress.
               </p>
             </div>
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-wider text-muted">Your progress (guest)</p>
-              <XPBar xp={0} />
-            </div>
+            <YourProgress />
           </div>
           <LeaderboardTable entries={mockLeaderboard("global-weekly", 5)} caption="Top players this week" />
         </div>
