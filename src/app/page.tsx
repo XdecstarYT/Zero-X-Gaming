@@ -2,12 +2,12 @@ import { LinkButton } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Rating } from "@/components/ui/Rating";
 import { YourProgress } from "@/components/layout/YourProgress";
-import { LeaderboardTable } from "@/components/ui/LeaderboardTable";
+import { LiveLeaderboard } from "@/components/game/LeaderboardTabs";
 import { GameArt } from "@/components/game/GameArt";
 import { GameCard } from "@/components/game/GameCard";
 import { ContinuePlaying } from "@/components/game/ContinuePlaying";
 import { CardRow, CardRowItem, Section } from "@/components/layout/Section";
-import { FEATURED_SLUG, GAMES, getGame, mockLeaderboard } from "@/lib/mock-data";
+import { FEATURED_SLUG, GAMES, getGame } from "@/lib/catalog";
 import { queryGames } from "@/lib/game-query";
 import { formatCompact } from "@/lib/format";
 
@@ -129,7 +129,10 @@ export default function HomePage() {
             </div>
             <YourProgress />
           </div>
-          <LeaderboardTable entries={mockLeaderboard("global-weekly", 5)} caption="Top players this week" />
+          <div>
+            <p className="mb-2 text-xs uppercase tracking-wider text-muted">Top players this week (XP)</p>
+            <LiveLeaderboard game={null} period="weekly" limit={5} caption="Top players this week" />
+          </div>
         </div>
       </Section>
     </div>

@@ -2,7 +2,7 @@
 
 import type { BrowserSupabase } from "@/lib/supabase/client";
 import { mergeFavorites } from "@/lib/auth";
-import { GAMES } from "@/lib/mock-data";
+import { GAMES } from "@/lib/catalog";
 import { useLibrary } from "@/store/library";
 
 const KNOWN = new Set(GAMES.map((g) => g.slug));

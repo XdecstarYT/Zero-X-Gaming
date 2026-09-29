@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { GAMES, getGame } from "@/lib/mock-data";
+import { GAMES, getGame } from "@/lib/catalog";
 import { formatCompact } from "@/lib/format";
 import { Badge } from "@/components/ui/Badge";
 import { Rating } from "@/components/ui/Rating";

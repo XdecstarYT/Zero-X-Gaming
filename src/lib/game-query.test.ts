@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isGameSort, isNewRelease, queryGames } from "./game-query";
-import { GAMES } from "./mock-data";
+import { GAMES } from "./catalog";
 
 const slugs = (gs: { slug: string }[]) => gs.map((g) => g.slug);
 

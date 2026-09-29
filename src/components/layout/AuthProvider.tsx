@@ -6,13 +6,22 @@ import { syncFavoritesOnSignIn } from "@/lib/favorites-sync";
 import { useAuth } from "@/store/auth";
 import { useLibrary } from "@/store/library";
 import { toast } from "@/store/toast";
+import { applyProgress } from "@/lib/progress";
 
 async function loadAccount(supabase: BrowserSupabase, userId: string) {
-  const [{ data: profile }, streakRes] = await Promise.all([
-    supabase.from("profiles").select("id, username, avatar_url, xp").eq("id", userId).maybeSingle(),
-    supabase.rpc("touch_daily_streak"),
-  ]);
-  useAuth.getState().set({ profile: profile ?? null, streak: streakRes.data?.[0]?.current_streak ?? 0 });
+  // Streak first: the first visit of the day grants XP, so the profile read below sees it.
+  const { data: streakRows } = await supabase.rpc("touch_daily_streak");
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, username, avatar_url, xp")
+    .eq("id", userId)
+    .maybeSingle();
+  const streak = streakRows?.[0];
+  useAuth.getState().set({ profile: profile ?? null, streak: streak?.current_streak ?? 0 });
+  if (streak && streak.xp_gained > 0) {
+    toast(`Day ${streak.current_streak} streak · +${streak.xp_gained} XP`, { tone: "success" });
+    applyProgress(profile?.xp ?? 0, streak.new_achievements ?? []);
+  }
 }
 
 /** Subscribes to Supabase auth and mirrors it into the auth store. Renders nothing. */

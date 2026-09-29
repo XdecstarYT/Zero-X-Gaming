@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+const BOARD = [
+  { rank: 1, user_id: "u1", username: "NeonVandal", avatar_url: null, xp: 5000, score: 4200 },
+  { rank: 2, user_id: "u2", username: "PixelHex", avatar_url: null, xp: 900, score: 3100 },
+];
+
 test("home renders hero, featured game and sections", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Play. Compete.");
@@ -119,4 +124,30 @@ test("no horizontal overflow", async ({ page }) => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, path).toBeLessThanOrEqual(0);
   }
+});
+
+test("leaderboards render live data from the API", async ({ page }) => {
+  await page.route("**/rest/v1/rpc/get_leaderboard*", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(BOARD) }),
+  );
+  await page.goto("/leaderboards");
+  const global = page.getByRole("region", { name: "Global (XP)" });
+  await expect(global.getByRole("cell", { name: /NeonVandal/ })).toBeVisible();
+  await expect(global.getByRole("columnheader", { name: "XP" })).toBeVisible();
+  await expect(global.getByText("4,200")).toBeVisible();
+});
+
+test("leaderboards show an error with retry when the API fails, and empty states", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/rest/v1/rpc/get_leaderboard*", (route) => {
+    calls += 1;
+    return calls === 1
+      ? route.fulfill({ status: 500, body: "{}" })
+      : route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+  });
+  await page.goto("/games/zero-dash");
+  const aside = page.getByRole("complementary");
+  await expect(aside.getByText("Couldn't load the leaderboard.")).toBeVisible();
+  await aside.getByRole("button", { name: "Retry" }).click();
+  await expect(aside.getByText("Be the first to put a score on the board.")).toBeVisible();
 });

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { GameLibrary, type LibraryFilters } from "@/components/game/GameLibrary";
-import { CATEGORIES } from "@/lib/mock-data";
+import { CATEGORIES } from "@/lib/catalog";
 import { isGameSort } from "@/lib/game-query";
 
 export const metadata: Metadata = { title: "Games" };

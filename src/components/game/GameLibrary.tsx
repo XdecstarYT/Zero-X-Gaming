@@ -2,7 +2,7 @@
 
 import { useDeferredValue, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { CATEGORIES, GAMES } from "@/lib/mock-data";
+import { CATEGORIES, GAMES } from "@/lib/catalog";
 import { queryGames, SORT_OPTIONS, type GameSort } from "@/lib/game-query";
 import type { GameCategory } from "@/lib/types";
 import { cn } from "@/lib/cn";

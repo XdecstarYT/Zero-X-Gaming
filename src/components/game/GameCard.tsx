@@ -3,7 +3,7 @@ import type { Game } from "@/lib/types";
 import { formatCompact } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { isNewRelease } from "@/lib/game-query";
-import { GAMES } from "@/lib/mock-data";
+import { GAMES } from "@/lib/catalog";
 import { Badge } from "@/components/ui/Badge";
 import { Rating } from "@/components/ui/Rating";
 import { GameArt } from "./GameArt";

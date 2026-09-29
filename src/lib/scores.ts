@@ -4,6 +4,11 @@ import type { BrowserSupabase } from "@/lib/supabase/client";
 
 export interface SubmitResult {
   personalBest: number;
+  isPersonalBest: boolean;
+  xpGained: number;
+  totalXp: number;
+  dailyRank: number;
+  newAchievements: string[];
 }
 
 const MESSAGES: Record<string, string> = {
@@ -41,5 +46,13 @@ export async function submitScore(
       ended_at: new Date().toISOString(),
     })
     .then(() => {});
-  return { personalBest: row?.personal_best ?? score };
+  if (!row) throw new Error(scoreErrorMessage(undefined));
+  return {
+    personalBest: row.personal_best,
+    isPersonalBest: row.is_personal_best,
+    xpGained: row.xp_gained,
+    totalXp: row.total_xp,
+    dailyRank: row.daily_rank,
+    newAchievements: row.new_achievements ?? [],
+  };
 }

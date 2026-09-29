@@ -8,7 +8,8 @@ import { useLibrary } from "@/store/library";
 import { useSettings } from "@/store/settings";
 import { useAuth } from "@/store/auth";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
-import { submitScore } from "@/lib/scores";
+import { submitScore, type SubmitResult } from "@/lib/scores";
+import { applyProgress } from "@/lib/progress";
 import { formatNumber } from "@/lib/format";
 import { formatKeyCode } from "@/lib/keys";
 import { Button } from "@/components/ui/Button";
@@ -17,7 +18,10 @@ import { GameArt } from "./GameArt";
 
 type Phase = "idle" | "loading" | "playing" | "paused" | "over" | "error";
 type Submit =
-  { state: "idle" } | { state: "saving" } | { state: "saved"; best: number } | { state: "failed"; message: string };
+  | { state: "idle" }
+  | { state: "saving" }
+  | { state: "saved"; result: SubmitResult }
+  | { state: "failed"; message: string };
 
 /**
  * Hosts a GameModule: lazy-loads it, owns the lifecycle (start / pause /
@@ -50,7 +54,8 @@ export function GameStage({ game }: { game: Game }) {
       setSubmit({ state: "saving" });
       try {
         const res = await submitScore(supabase, game.slug, finalScore, durationMs);
-        setSubmit({ state: "saved", best: res.personalBest });
+        setSubmit({ state: "saved", result: res });
+        applyProgress(res.totalXp, res.newAchievements);
       } catch (e) {
         setSubmit({ state: "failed", message: (e as Error).message });
       }
@@ -262,13 +267,20 @@ function SubmitStatus({
 }) {
   const cls = "mt-2 text-sm";
   if (submit.state === "saving") return <p className={`${cls} text-muted`}>Saving score…</p>;
-  if (submit.state === "saved")
+  if (submit.state === "saved") {
+    const r = submit.result;
     return (
-      <p className={`${cls} text-success`} role="status">
-        Score saved · Best {formatNumber(submit.best)}
-        {score >= submit.best && score > 0 ? " · New personal best!" : ""}
-      </p>
+      <div role="status" className="mt-2 space-y-1 text-sm">
+        <p className="text-success">
+          {r.isPersonalBest ? "New personal best!" : `Score saved · Best ${formatNumber(r.personalBest)}`}
+        </p>
+        <p className="text-muted">
+          <span className="font-display font-bold text-cyan">+{formatNumber(r.xpGained)} XP</span>
+          {" · "}#{r.dailyRank} today
+        </p>
+      </div>
     );
+  }
   if (submit.state === "failed")
     return (
       <p className={`${cls} text-danger`} role="alert">

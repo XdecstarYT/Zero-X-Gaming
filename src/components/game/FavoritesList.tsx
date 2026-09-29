@@ -1,7 +1,7 @@
 "use client";
 
 import { useLibrary } from "@/store/library";
-import { GAMES } from "@/lib/mock-data";
+import { GAMES } from "@/lib/catalog";
 import { GameCard } from "./GameCard";
 import { GameCardSkeleton } from "@/components/ui/Skeleton";
 import { CardRow, CardRowItem } from "@/components/layout/Section";

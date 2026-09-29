@@ -73,3 +73,27 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     retry at once.
 28. **The music toggle is stored but no game plays music yet.** Sound effects are synthesized with WebAudio, so
     there are no audio assets.
+
+## Phase 4
+
+29. **An XP ledger (`xp_events`) was added beyond the prompt's eight tables.** Daily and weekly global boards need
+    XP earned *within* a window, which a single `profiles.xp` total can't answer. It's append-only, owner-readable,
+    and written only by server functions.
+30. **XP rules (server-side only):**
+    - A run earns `10 + min(floor(score / games.xp_divisor), 190)`.
+    - The first visit each UTC day earns `10 × streak` (capped at 70).
+    - Each badge adds its `xp_reward`.
+
+    `award_xp()` and `grant_achievement()` are internal: execute is revoked from every client role.
+31. **Achievements are awarded inside the same transaction as the triggering score or login**, so a badge can't
+    be granted without the event that earned it:
+    - First Run: any saved run.
+    - Top Ten: top 10 on that game's daily board.
+    - All-Rounder: a score in all four launch games.
+    - On Fire: a 7-day streak.
+32. **`submit_score` returns everything the game-over screen needs in one round trip:** PB flag, XP gained, new
+    total, today's rank, and newly unlocked badges.
+33. **Leaderboards are live everywhere (mock boards removed), each with its own empty, loading, error, and offline
+    states.** The E2E suite stubs the RPC to stay deterministic.
+34. **`mock-data.ts` was renamed `catalog.ts`.** Game copy and controls stay in code, while `games` and
+    `achievements` in Supabase are the authoritative rows the server enforces.

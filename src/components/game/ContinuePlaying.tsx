@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { useLibrary } from "@/store/library";
-import { GAMES } from "@/lib/mock-data";
+import { GAMES } from "@/lib/catalog";
 import { timeAgo } from "@/lib/format";
 import { GameCard } from "./GameCard";
 import { GameCardSkeleton } from "@/components/ui/Skeleton";

@@ -12,16 +12,20 @@ export function LeaderboardTable({
   entries,
   caption,
   className,
+  valueLabel = "Score",
+  emptyMessage = "Be the first to put a score on the board.",
 }: {
   entries: LeaderboardEntry[];
   caption: string;
   className?: string;
+  valueLabel?: string;
+  emptyMessage?: string;
 }) {
   if (entries.length === 0) {
     return (
       <div className={cn("rounded-lg border border-dashed border-border p-8 text-center", className)}>
         <p className="font-display text-sm font-bold uppercase tracking-wider">No scores yet</p>
-        <p className="mt-1 text-sm text-muted">Be the first to put a score on the board.</p>
+        <p className="mt-1 text-sm text-muted">{emptyMessage}</p>
       </div>
     );
   }
@@ -39,7 +43,7 @@ export function LeaderboardTable({
               Player
             </th>
             <th scope="col" className="px-4 py-2.5 text-right font-semibold">
-              Score
+              {valueLabel}
             </th>
           </tr>
         </thead>
@@ -53,6 +57,7 @@ export function LeaderboardTable({
               <td className={cn("px-4 py-2.5 font-display font-bold", medal[e.rank] ?? "text-subtle")}>{e.rank}</td>
               <td className="px-2 py-2.5">
                 <span className="font-semibold">{e.username}</span>
+                {e.isCurrentUser && <span className="ml-1.5 text-xs font-semibold text-cyan">(you)</span>}
                 <span className="ml-2 text-xs text-muted">Lvl {e.level}</span>
               </td>
               <td className="px-4 py-2.5 text-right font-mono tabular-nums">{formatNumber(e.score)}</td>
@@ -60,6 +65,21 @@ export function LeaderboardTable({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+export function LeaderboardSkeleton({ rows = 5, className }: { rows?: number; className?: string }) {
+  return (
+    <div className={cn("overflow-hidden rounded-lg border border-border bg-surface", className)} aria-hidden>
+      <div className="h-9 bg-surface-2" />
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center gap-4 border-t border-border px-4 py-3">
+          <div className="zx-skeleton h-3 w-4 rounded" />
+          <div className="zx-skeleton h-3 flex-1 rounded" />
+          <div className="zx-skeleton h-3 w-14 rounded" />
+        </div>
+      ))}
     </div>
   );
 }

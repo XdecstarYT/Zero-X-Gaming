@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LeaderboardTabs } from "@/components/game/LeaderboardTabs";
-import { GAMES } from "@/lib/mock-data";
+import { GAMES } from "@/lib/catalog";
 
 export const metadata: Metadata = { title: "Leaderboards" };
 

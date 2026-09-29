@@ -1,8 +1,10 @@
 /**
- * Phase 1 mock data. Replaced by Supabase queries in Phase 2+.
- * Keep shapes identical to src/lib/types.ts so swapping the source is mechanical.
+ * Static catalog: game copy, controls, categories and badge definitions.
+ * Rich presentation data lives in code; the authoritative rows the server
+ * enforces against live in Supabase (`games`, `achievements`). Keep slugs
+ * and ids in sync with supabase/migrations.
  */
-import type { BadgeDef, Game, GameCategory, LeaderboardEntry, PlayerSummary } from "./types";
+import type { BadgeDef, Game, GameCategory, PlayerSummary } from "./types";
 
 export const CATEGORIES: { id: GameCategory; label: string }[] = [
   { id: "runner", label: "Runner" },
@@ -100,32 +102,6 @@ export const FEATURED_SLUG = "zero-dash";
 
 export function getGame(slug: string): Game | undefined {
   return GAMES.find((g) => g.slug === slug);
-}
-
-const NAMES = [
-  "NeonVandal",
-  "PixelHex",
-  "ByteRunner",
-  "GlitchQueen",
-  "VoidSkater",
-  "StaticNova",
-  "CircuitFox",
-  "LumenRex",
-  "HyperMoth",
-  "QuantaKid",
-];
-
-/** Deterministic mock leaderboard so SSR and client render the same numbers. */
-export function mockLeaderboard(seed: string, size = 10): LeaderboardEntry[] {
-  let h = 0;
-  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  const top = 40_000 + (h % 30_000);
-  return Array.from({ length: size }, (_, i) => ({
-    rank: i + 1,
-    username: NAMES[(i + h) % NAMES.length],
-    level: 42 - i * 3 - ((h >> i) % 3),
-    score: Math.round(top * Math.pow(0.88, i)),
-  }));
 }
 
 export const BADGES: BadgeDef[] = [

@@ -5,8 +5,9 @@ import { SignInButton } from "@/components/layout/SignInButton";
 import { Avatar } from "@/components/layout/AccountControl";
 import { UsernameForm } from "@/components/layout/UsernameForm";
 import { FavoritesList } from "@/components/game/FavoritesList";
-import { BADGES, MOCK_PLAYER } from "@/lib/mock-data";
-import { formatNumber } from "@/lib/format";
+import Link from "next/link";
+import { BADGES, MOCK_PLAYER, getGame } from "@/lib/catalog";
+import { formatNumber, timeAgo } from "@/lib/format";
 import { levelFromXp } from "@/lib/xp";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
@@ -22,6 +23,7 @@ interface ProfileData {
   gamesPlayed: number;
   totalScore: number;
   earned: Set<string>;
+  history: { game_slug: string; score: number; created_at: string }[];
 }
 
 async function loadProfile(): Promise<ProfileData | null> {
@@ -31,11 +33,17 @@ async function loadProfile(): Promise<ProfileData | null> {
   const uid = auth?.claims.sub;
   if (!uid) return null;
 
-  const [profile, streak, achievements, scores] = await Promise.all([
+  const [profile, streak, achievements, scores, history] = await Promise.all([
     supabase.from("profiles").select("username, avatar_url, xp").eq("id", uid).maybeSingle(),
     supabase.from("daily_streaks").select("current_streak, longest_streak").eq("user_id", uid).maybeSingle(),
     supabase.from("player_achievements").select("achievement_id").eq("user_id", uid),
     supabase.from("scores").select("score", { count: "exact" }).eq("user_id", uid).limit(1000),
+    supabase
+      .from("scores")
+      .select("game_slug, score, created_at")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
   if (!profile.data) return null;
 
@@ -49,6 +57,7 @@ async function loadProfile(): Promise<ProfileData | null> {
     gamesPlayed: scores.count ?? 0,
     totalScore: (scores.data ?? []).reduce((n, r) => n + r.score, 0),
     earned: new Set((achievements.data ?? []).map((a) => a.achievement_id)),
+    history: history.data ?? [],
   };
 }
 
@@ -64,6 +73,7 @@ export default async function ProfilePage() {
     gamesPlayed: 0,
     totalScore: 0,
     earned: new Set(),
+    history: [],
   };
   const isGuest = !account;
   const { level } = levelFromXp(p.xp);
@@ -139,9 +149,45 @@ export default async function ProfilePage() {
         <h2 id="history-title" className="mb-4 font-display text-xl font-bold uppercase">
           Game history
         </h2>
-        <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted">
-          Your scored runs will appear here once games launch.
-        </p>
+        {p.history.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted">
+            {isGuest
+              ? "Sign in to keep a history of your runs."
+              : "No saved runs yet. Play a game and your scores will show up here."}
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-border bg-surface">
+            <table className="w-full text-sm">
+              <caption className="sr-only">Your 10 most recent runs</caption>
+              <thead className="bg-surface-2 text-left text-[11px] uppercase tracking-wider text-muted">
+                <tr>
+                  <th scope="col" className="px-4 py-2.5 font-semibold">
+                    Game
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 text-right font-semibold">
+                    Score
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 text-right font-semibold">
+                    When
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.history.map((h, i) => (
+                  <tr key={`${h.created_at}-${i}`} className="border-t border-border">
+                    <td className="px-4 py-2.5">
+                      <Link href={`/games/${h.game_slug}`} className="font-semibold hover:text-cyan">
+                        {getGame(h.game_slug)?.title ?? h.game_slug}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular-nums">{formatNumber(h.score)}</td>
+                    <td className="px-4 py-2.5 text-right text-muted">{timeAgo(h.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );

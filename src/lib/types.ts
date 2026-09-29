@@ -31,6 +31,7 @@ export interface LeaderboardEntry {
   username: string;
   level: number;
   score: number;
+  userId?: string;
   isCurrentUser?: boolean;
 }
 
