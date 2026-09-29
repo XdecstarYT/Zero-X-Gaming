@@ -24,3 +24,34 @@ Deviations from, or interpretations of, the master prompt. Newest last.
    Chromium build preinstalled in the dev container.
 10. **The sign-in modal is a placeholder**: disabled provider buttons plus a "Play as guest" action. The real flow
     lands in Phase 2.
+
+## Phase 2
+
+11. **Games put on hold (user request).** Phase 3 and 5 are deferred. The four games are registered in the `games`
+    table as `coming_soon`, so `submit_score()` refuses scores for them until one ships.
+12. **Supabase project `zero-x-gaming` in Sydney (`ap-southeast-2`)**, a new free-tier project, so the account's
+    other apps are left untouched.
+13. **Publishable key, no service-role key in the app.** All privileged writes (scores, streaks, XP, badges) go
+    through `SECURITY DEFINER` Postgres functions that check `auth.uid()`. That leaves no server secret to leak and
+    means no Edge Function to deploy.
+14. **Score validation is a Postgres function (`submit_score`), not an Edge Function.** It lives next to the data,
+    is atomic with the insert, and rate limits use the `scores` table itself. Per-game limits (`max_score`,
+    `max_score_per_second`) are placeholder values, to be tuned when each game ships.
+15. **Leaderboards are exposed as a read-only function (`get_leaderboard`) instead of SQL views.** A view would
+    either run as its owner and bypass RLS (flagged by Supabase's linter), or need `scores` to be publicly readable.
+    The function returns only rank, username, avatar, XP, and best score, never raw rows. Supabase's advisor lists
+    it (and the other two RPCs) as intentionally callable `SECURITY DEFINER` functions.
+16. **Profiles are public; everything else personal is owner-only.** Username, avatar, and XP must appear on
+    leaderboards. Column-level grants stop players from editing their own `xp`. Earned badges are public so they
+    can show on profiles.
+17. **Usernames are auto-generated on signup** from the provider name or email prefix, sanitised to
+    `[A-Za-z0-9_]{3,20}`, and made unique case-insensitively. Players can rename themselves from the profile page.
+18. **Email + password, not magic links.** Players expect it and it works with password managers. OAuth covers
+    Google and Discord.
+19. **Guest favorites merge into the account on sign-in, and sign-out clears them from the device.** "Recently
+    played" stays device-local until games exist; `play_sessions` will record real runs.
+20. **Leaderboards UI still uses mock data.** No games exist to produce scores, so wiring
+    `get_leaderboard()` into the UI waits for Phase 4 (the function is built and tested).
+21. **The session is refreshed in `src/proxy.ts`** (Next 16's rename of middleware) with `auth.getClaims()`. The
+    home, game, leaderboard, and settings pages stay static; `/games` (search params), `/profile` and `/auth/*` are
+    dynamic.
