@@ -173,3 +173,231 @@ html[data-reduce-motion="true"] *::after {
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }
+
+/* ------------------------------------------------------------------------- */
+/* Intro splash                                                              */
+/* ------------------------------------------------------------------------- */
+
+html[data-intro="done"] #zx-intro {
+  display: none;
+}
+
+.zx-intro {
+  animation: zx-intro-in 300ms ease-out both;
+}
+.zx-intro-exit {
+  animation: zx-intro-out 450ms var(--zx-ease-out) forwards;
+}
+@keyframes zx-intro-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes zx-intro-out {
+  to {
+    opacity: 0;
+    transform: scale(1.06);
+    filter: blur(6px);
+  }
+}
+
+.zx-intro-floor {
+  background-image:
+    linear-gradient(rgb(34 229 255 / 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(34 229 255 / 0.35) 1px, transparent 1px);
+  background-size: 60px 60px;
+  transform: perspective(400px) rotateX(62deg);
+  transform-origin: center top;
+  mask-image: linear-gradient(to bottom, transparent, black 40%);
+  animation: zx-intro-floor 1.2s linear infinite;
+}
+@keyframes zx-intro-floor {
+  to {
+    background-position: 0 60px;
+  }
+}
+
+.zx-intro-glow {
+  background:
+    radial-gradient(600px 300px at 50% 45%, rgb(255 43 214 / 0.25), transparent 70%),
+    radial-gradient(800px 400px at 50% 60%, rgb(34 229 255 / 0.15), transparent 70%);
+  animation: zx-pulse-glow 2.4s ease-in-out infinite;
+}
+
+.zx-intro-scanlines {
+  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 0.03) 0 1px, transparent 1px 3px);
+  mix-blend-mode: overlay;
+}
+
+.zx-intro-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: zx-intro-draw 0.55s var(--zx-ease-out) forwards;
+  filter: drop-shadow(0 0 6px currentColor);
+}
+.zx-intro-draw-1 {
+  animation-delay: 0.2s;
+  color: var(--zx-cyan);
+}
+.zx-intro-draw-2 {
+  animation-delay: 0.45s;
+  color: var(--zx-magenta);
+}
+.zx-intro-draw-3 {
+  animation-delay: 0.75s;
+  animation-duration: 0.8s;
+  color: var(--zx-magenta);
+}
+@keyframes zx-intro-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.zx-intro-mark {
+  animation: zx-intro-slam 0.5s 1.3s var(--zx-ease-out) both;
+}
+@keyframes zx-intro-slam {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.12);
+    filter: drop-shadow(0 0 30px var(--zx-cyan));
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.zx-intro-title {
+  position: relative;
+  opacity: 0;
+  animation:
+    zx-intro-fade 0.01s 1.3s forwards,
+    zx-intro-glitch 0.6s 1.3s steps(2) 2;
+  text-shadow:
+    2px 0 rgb(255 43 214 / 0.8),
+    -2px 0 rgb(34 229 255 / 0.8);
+}
+@keyframes zx-intro-glitch {
+  0% {
+    transform: translate(0);
+    clip-path: inset(0 0 0 0);
+  }
+  20% {
+    transform: translate(-6px, 2px);
+    clip-path: inset(20% 0 50% 0);
+  }
+  40% {
+    transform: translate(5px, -2px);
+    clip-path: inset(60% 0 10% 0);
+  }
+  60% {
+    transform: translate(-3px, 1px);
+    clip-path: inset(10% 0 70% 0);
+  }
+  80% {
+    transform: translate(2px, 0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    transform: translate(0);
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes zx-intro-fade {
+  to {
+    opacity: 1;
+  }
+}
+
+.zx-intro-sub {
+  opacity: 0;
+  animation: zx-intro-rise 0.6s 1.6s var(--zx-ease-out) forwards;
+}
+.zx-intro-word {
+  display: inline-block;
+  opacity: 0;
+  animation: zx-intro-rise 0.45s var(--zx-ease-out) forwards;
+}
+.zx-intro-word-1 {
+  animation-delay: 1.9s;
+}
+.zx-intro-word-2 {
+  animation-delay: 2.2s;
+}
+.zx-intro-word-3 {
+  animation-delay: 2.5s;
+  text-shadow: 0 0 18px var(--zx-cyan);
+}
+@keyframes zx-intro-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    letter-spacing: 0.6em;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.zx-intro-reel {
+  position: relative;
+  width: 100%;
+}
+.zx-intro-reel-item {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: zx-intro-flash 0.45s steps(3) both;
+}
+.zx-intro-reel-item:last-child {
+  animation-fill-mode: backwards;
+  animation-name: zx-intro-flash-stay;
+}
+@keyframes zx-intro-flash {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  30%,
+  70% {
+    opacity: 1;
+    color: var(--zx-cyan);
+  }
+}
+@keyframes zx-intro-flash-stay {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+    color: var(--zx-text);
+  }
+}
+
+.zx-intro-progress {
+  transform-origin: left;
+  animation: zx-intro-progress 5.2s linear forwards;
+}
+@keyframes zx-intro-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Reduced motion: show the intro's final frame immediately (no staggered delays). */
+@media (prefers-reduced-motion: reduce) {
+  .zx-intro *,
+  .zx-intro {
+    animation-delay: 0s !important;
+  }
+}
+html[data-reduce-motion="true"] .zx-intro *,
+html[data-reduce-motion="true"] .zx-intro {
+  animation-delay: 0s !important;
+}

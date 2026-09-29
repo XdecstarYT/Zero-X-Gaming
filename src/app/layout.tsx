@@ -4,6 +4,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Providers } from "@/components/layout/Providers";
 import { Toaster } from "@/components/ui/Toaster";
+import { IntroSplash, introGateScript } from "@/components/layout/IntroSplash";
 import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
@@ -26,8 +27,13 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${orbitron.variable} ${grotesk.variable} h-full antialiased`}>
+    <html lang="en" className={`${orbitron.variable} ${grotesk.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        {/* Hides the intro before first paint for visitors who've already seen it this session. */}
+        <script dangerouslySetInnerHTML={{ __html: introGateScript }} />
+      </head>
       <body className="flex min-h-full flex-col font-sans">
+        <IntroSplash />
         <Providers>
           <Navbar />
           <main id="main" tabIndex={-1} className="flex-1 focus:outline-none">

@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 const PAGES = ["/", "/games", "/games/zero-dash", "/games/blitz-trivia", "/leaderboards", "/profile", "/settings"];
 

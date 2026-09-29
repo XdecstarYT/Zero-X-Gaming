@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 const BOARD = [
   { rank: 1, user_id: "u1", username: "NeonVandal", avatar_url: null, xp: 5000, score: 4200 },
