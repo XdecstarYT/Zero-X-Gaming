@@ -65,10 +65,44 @@ test("Zero Dash: play, pause, resume, game over, then shows in continue playing"
   await expect(recent.getByRole("heading", { name: "Zero Dash" })).toBeVisible();
 });
 
-test("unreleased games show coming soon instead of a play button", async ({ page }) => {
+test("Grid Lock: board renders, keyboard slides work, pause and resume", async ({ page }) => {
   await page.goto("/games/grid-lock");
-  await expect(page.getByTestId("game-stage").getByText("Coming soon")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Play", exact: true })).toHaveCount(0);
+  const stage = page.getByTestId("game-stage");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(stage).toHaveAttribute("data-phase", "playing");
+  await expect(stage.locator("canvas")).toBeVisible();
+  for (const key of ["Shift+ArrowRight", "ArrowDown", "Shift+ArrowUp", "Shift+ArrowLeft"]) await page.keyboard.press(key);
+  await page.keyboard.press("KeyP");
+  await expect(stage).toHaveAttribute("data-phase", "paused");
+  await page.keyboard.press("KeyP");
+  await expect(stage).toHaveAttribute("data-phase", "playing");
+});
+
+test("Orbit: starts, steers and pauses when the tab is hidden", async ({ page }) => {
+  await page.goto("/games/orbit");
+  const stage = page.getByTestId("game-stage");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(stage).toHaveAttribute("data-phase", /playing|over/);
+  await page.keyboard.down("ArrowLeft");
+  await page.waitForTimeout(300);
+  await page.keyboard.up("ArrowLeft");
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(stage).toHaveAttribute("data-phase", /paused|over/);
+});
+
+test("Blitz Trivia: pick a category, answer with the keyboard, see feedback", async ({ page }) => {
+  await page.goto("/games/blitz-trivia");
+  const stage = page.getByTestId("game-stage");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(stage.getByText("Pick a category")).toBeVisible();
+  await stage.getByRole("button", { name: /Math/ }).click();
+  await expect(stage.getByRole("button", { name: /^1: / })).toBeVisible();
+  await page.keyboard.press("1");
+  await expect(stage.getByText(/Correct! \+100|Wrong: it was/)).toBeVisible();
+  await expect(stage.getByRole("button", { name: /^2: / })).toBeEnabled();
 });
 
 test("unknown game shows 404", async ({ page }) => {

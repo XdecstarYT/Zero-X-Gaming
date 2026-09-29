@@ -97,3 +97,19 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     states.** The E2E suite stubs the RPC to stay deterministic.
 34. **`mock-data.ts` was renamed `catalog.ts`.** Game copy and controls stay in code, while `games` and
     `achievements` in Supabase are the authoritative rows the server enforces.
+
+## Phase 5
+
+35. **Grid Lock:** a 6×6 board of 5 tile types, each with its own colour *and* shape so colour-blind players can
+    play. Players slide a whole row or column one step (wrapping). Lines of 3+ clear and cascades multiply points.
+    A 90-second circuit timer runs, and misses cost 3 s. Its plausibility ceiling is 800 pts/s, because a
+    superhuman greedy bot peaks near 520.
+36. **Orbit:** steer a thrusting probe through planetary gravity wells, chain energy shards within 3 s for up to
+    x4, and dodge debris that ramps up over time. A 2 s spawn shield (bounce plus no debris) stops instant deaths.
+    Touch steering turns toward your finger, and a second finger boosts.
+37. **Blitz Trivia renders real DOM instead of canvas**: buttons, focus management, and an `aria-live` prompt, so
+    it works with screen readers. It has an original 90-question bank across 6 categories plus "Mixed". The clock
+    pauses during the brief answer feedback.
+38. **The game stage is 4:3 on phones and 16:9 from `sm` up.** Canvas games letterbox into the extra height,
+    which leaves room for the on-screen pause button.
+39. **Play stays disabled until hydration**, so a click during page load is never silently dropped.

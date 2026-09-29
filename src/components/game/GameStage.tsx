@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Game } from "@/lib/types";
 import type { GameModule } from "@/games/types";
 import { GAME_LOADERS } from "@/games/registry";
@@ -15,6 +15,8 @@ import { formatKeyCode } from "@/lib/keys";
 import { Button } from "@/components/ui/Button";
 import { SignInButton } from "@/components/layout/SignInButton";
 import { GameArt } from "./GameArt";
+
+const noopSubscribe = () => () => {};
 
 type Phase = "idle" | "loading" | "playing" | "paused" | "over" | "error";
 type Submit =
@@ -40,6 +42,12 @@ export function GameStage({ game }: { game: Game }) {
   const authStatus = useAuth((s) => s.status);
   const pauseKey = useSettings((s) => s.keybindings.pause);
   const playable = game.status === "live" && game.slug in GAME_LOADERS;
+  // Keep Play disabled until hydrated, so an early click is never silently lost.
+  const hydrated = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
 
   const handleFinal = useCallback(
     async (finalScore: number, durationMs: number) => {
@@ -145,7 +153,7 @@ export function GameStage({ game }: { game: Game }) {
         tabIndex={-1}
         data-testid="game-stage"
         data-phase={phase}
-        className="relative aspect-video w-full overflow-hidden rounded-xl border border-border-strong bg-bg shadow-card focus:outline-none"
+        className="relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-border-strong bg-bg shadow-card focus:outline-none sm:aspect-video"
       >
         <div ref={hostRef} className="absolute inset-0" />
         {showArt && <GameArt game={game} className="absolute inset-0 opacity-40" />}
@@ -161,7 +169,7 @@ export function GameStage({ game }: { game: Game }) {
           <Overlay>
             <p className="font-display text-xl font-black uppercase tracking-wider sm:text-3xl">{game.title}</p>
             <p className="mt-1 text-sm text-muted">{game.tagline}</p>
-            <Button size="lg" className="mt-5" onClick={launch} disabled={phase === "loading"} autoFocus>
+            <Button size="lg" className="mt-5" onClick={launch} disabled={phase === "loading" || !hydrated} autoFocus>
               {phase === "loading" ? "Loading…" : "Play"}
             </Button>
             {localBest > 0 && <p className="mt-3 text-xs text-subtle">Your best: {formatNumber(localBest)}</p>}

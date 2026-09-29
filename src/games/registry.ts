@@ -6,6 +6,9 @@ import type { GameFactory } from "./types";
  */
 export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }>> = {
   "zero-dash": () => import("./zero-dash"),
+  "grid-lock": () => import("./grid-lock"),
+  orbit: () => import("./orbit"),
+  "blitz-trivia": () => import("./blitz-trivia"),
 };
 
 export function hasGame(slug: string) {

@@ -6,7 +6,7 @@ export default function Loading() {
       <Skeleton className="mb-4 h-4 w-40" />
       <div className="grid gap-8 lg:grid-cols-[1fr_22rem]">
         <div>
-          <Skeleton className="aspect-video w-full rounded-xl" />
+          <Skeleton className="aspect-[4/3] w-full rounded-xl sm:aspect-video" />
           <Skeleton className="mt-6 h-9 w-64" />
           <Skeleton className="mt-3 h-4 w-96 max-w-full" />
         </div>
