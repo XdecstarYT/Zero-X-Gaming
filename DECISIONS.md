@@ -142,6 +142,7 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     - The page behind is `inert` while it plays.
 
     E2E specs use a fixture that marks the intro as seen, and `intro.spec.ts` covers the intro itself.
+
 46. **Neon Siege (FPS)** is a raycast ("2.5D") shooter on Canvas 2D, not WebGL. It reuses the shared engine, stays
     tiny, runs on low-end phones, and keeps the code consistent with the other games. The rules
     (`map/path/world/bots/solo.ts`) are pure and seeded, and unit tested with simulations.
@@ -154,3 +155,17 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     `games.category` check gains `shooter`.
 49. **Games can ask the platform to pause** (`requestPause`), because Esc releases pointer lock without delivering
     a keydown. A final score can be flagged `ranked: false` so it's never submitted.
+50. **Online multiplayer is peer-to-peer over Supabase Realtime** (broadcast plus presence), not a game server. It
+    needs zero infrastructure and works for guests on the free tier. The trade-off is trust: clients decide their
+    own hits (the receiving owner caps damage per hit), so online matches are **unranked** and never call
+    `submit_score`. A dedicated authoritative server (e.g. a Supabase Edge Function or a small WebSocket service)
+    would be needed to rank them.
+51. **The host is the oldest peer by presence join time**, so every client agrees without extra messages. Bots
+    live on the host. On host migration, the next-oldest peer adopts the bots from its last snapshot and keeps
+    their IDs, so kill feeds and scoreboards stay consistent.
+52. **A BroadcastChannel transport for same-browser rooms.** It makes multiplayer testable in E2E (two real tabs),
+    lets you try multiplayer without Supabase, and runs the exact netcode path the Supabase transport does. An
+    in-memory hub drives the unit tests (sync, hit ownership, kill credit, bots across the network, host migration,
+    match end, damage clamping).
+53. **Neon Siege mirrors its canvas HUD into a visually hidden status region**: score, room, player count, health,
+    ammo, and fighters. Screen reader users can follow the match, and tests can assert on it.

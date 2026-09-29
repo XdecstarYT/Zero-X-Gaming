@@ -41,6 +41,9 @@ export class NeonSiege implements GameModule {
   private sound!: Sound;
   private menu!: HTMLDivElement;
   private touchLayer: HTMLDivElement | null = null;
+  /** Screen-reader mirror of the canvas HUD (also handy for tests). */
+  private srHud!: HTMLDivElement;
+  private srHudAcc = 0;
   private mode: ModeController | null = null;
   private difficulty: Difficulty = "normal";
   private ended = false;
@@ -85,9 +88,15 @@ export class NeonSiege implements GameModule {
     );
     this.menu = el(
       "div",
-      "absolute inset-0 flex flex-col items-center justify-center gap-4 overflow-auto bg-bg/90 p-4 pb-14 text-center",
+      // Scrollable; the inner wrapper's auto margins centre it when it fits (justify-center would clip the top).
+      "absolute inset-0 flex overflow-auto bg-bg/90 p-3 pb-14 text-center",
     );
     opts.root.appendChild(this.menu);
+    this.srHud = el("div", "sr-only");
+    this.srHud.dataset.testid = "siege-hud";
+    this.srHud.setAttribute("role", "status");
+    this.srHud.setAttribute("aria-live", "off");
+    opts.root.appendChild(this.srHud);
 
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
@@ -141,6 +150,7 @@ export class NeonSiege implements GameModule {
     document.removeEventListener("pointerlockchange", this.onLockChange);
     if (document.pointerLockElement === this.surface.canvas) document.exitPointerLock();
     this.menu.remove();
+    this.srHud.remove();
     this.touchLayer?.remove();
     this.surface.destroy();
     this.sound.destroy();
@@ -194,17 +204,21 @@ export class NeonSiege implements GameModule {
       : "WASD move · Mouse look (click to lock) · Click fire · R reload · ←/→ turn, Space fire (keyboard only)";
 
     this.menu.replaceChildren(
-      el("p", "font-display text-2xl font-black uppercase tracking-[0.2em] text-magenta sm:text-4xl", "Neon Siege"),
       el(
-        "section",
-        "flex w-full max-w-md flex-col items-center gap-2 rounded-lg border border-border bg-surface/80 p-3",
-        el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-cyan", "Solo · Siege mode"),
-        el("p", "text-xs text-muted", "Survive waves of AI drones. Ranked on the leaderboard."),
-        el("div", "flex gap-2", ...diffButtons),
-        deploy,
+        "div",
+        "m-auto flex w-full flex-col items-center gap-3",
+        el("p", "font-display text-2xl font-black uppercase tracking-[0.2em] text-magenta sm:text-4xl", "Neon Siege"),
+        el(
+          "section",
+          "flex w-full max-w-md flex-col items-center gap-2 rounded-lg border border-border bg-surface/80 p-3",
+          el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-cyan", "Solo · Siege mode"),
+          el("p", "text-xs text-muted", "Survive waves of AI drones. Ranked on the leaderboard."),
+          el("div", "flex gap-2", ...diffButtons),
+          deploy,
+        ),
+        online,
+        el("p", "max-w-md text-[11px] text-subtle", controls),
       ),
-      online,
-      el("p", "max-w-md text-[11px] text-subtle", controls),
     );
     deploy.focus({ preventScroll: true });
   }
@@ -415,6 +429,13 @@ export class NeonSiege implements GameModule {
       } else if (ev.type === "wave" && ev.cleared) this.sound.play("bonus");
     }
     this.hud.pings = this.hud.pings.filter((p) => t - p.at < 1.2);
+    this.srHudAcc += dt;
+    if (this.srHudAcc >= 0.5) {
+      this.srHudAcc = 0;
+      const banner = mode.banner();
+      const fighters = [...mode.world.entities.values()].map((e) => e.name).join(", ");
+      this.srHud.textContent = `${mode.topLeft().join(". ")}. ${banner ? `${banner.text}. ` : ""}${Math.ceil(me.hp)} health, ${me.ammo} ammo. Fighters: ${fighters}.`;
+    }
     this.emitter.progress(mode.score(), performance.now());
 
     if (mode.isOver() && !this.ended) {
