@@ -1,4 +1,4 @@
-export type GameCategory = "arcade" | "puzzle" | "runner" | "trivia";
+export type GameCategory = "arcade" | "puzzle" | "runner" | "trivia" | "shooter";
 
 export type GameStatus = "live" | "coming_soon";
 

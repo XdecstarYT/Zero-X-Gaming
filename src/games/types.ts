@@ -29,13 +29,20 @@ export interface GameSettings {
 export interface GameInitOptions {
   root: HTMLElement;
   settings: GameSettings;
+  /** Ask the platform to pause (e.g. pointer lock was released). Optional for games. */
+  requestPause?: () => void;
+  /** Display name for online play (username when signed in, "Guest-1234" otherwise). */
+  playerName?: string;
 }
 
 export type ScoreEvent =
   /** Live score while playing (throttled by the game). */
   | { kind: "progress"; score: number }
-  /** The run is over. `durationMs` excludes paused time. */
-  | { kind: "final"; score: number; durationMs: number };
+  /**
+   * The run is over. `durationMs` excludes paused time. `ranked: false` (e.g. an
+   * online match whose score can't be verified server-side) skips submission.
+   */
+  | { kind: "final"; score: number; durationMs: number; ranked?: boolean };
 
 export type ScoreListener = (event: ScoreEvent) => void;
 

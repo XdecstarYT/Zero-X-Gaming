@@ -11,6 +11,7 @@ export const CATEGORIES: { id: GameCategory; label: string }[] = [
   { id: "puzzle", label: "Puzzle" },
   { id: "arcade", label: "Arcade" },
   { id: "trivia", label: "Trivia" },
+  { id: "shooter", label: "Shooter" },
 ];
 
 export const GAMES: Game[] = [
@@ -96,6 +97,32 @@ export const GAMES: Game[] = [
       { keys: ["P", "Esc"], action: "Pause" },
     ],
     touchControls: "Tap an answer.",
+  },
+  {
+    slug: "neon-siege",
+    title: "Neon Siege",
+    tagline: "Hold the grid. Outgun the drones.",
+    description:
+      "A retro-futuristic arena shooter. Survive escalating waves of AI drones that patrol, flank, take cover and hunt you down, or jump into an online room and battle other players, with bots filling any empty slots.",
+    category: "shooter",
+    tags: ["fps", "multiplayer", "bots", "arena"],
+    status: "live",
+    palette: ["#ff2bd6", "#22e5ff"],
+    rating: 0,
+    ratingCount: 0,
+    plays: 0,
+    releasedAt: "2026-09-29",
+    controls: [
+      { keys: ["W", "A", "S", "D"], action: "Move / strafe" },
+      { keys: ["Mouse"], action: "Look (click the arena to lock the pointer)" },
+      { keys: ["Click", "Space"], action: "Fire" },
+      { keys: ["R"], action: "Reload" },
+      { keys: ["←", "→", "Q", "E"], action: "Turn (keyboard only)" },
+      { keys: ["Tab"], action: "Scoreboard (online)" },
+      { keys: ["Esc", "P"], action: "Pause" },
+    ],
+    touchControls:
+      "Left thumb drags a virtual stick to move, right thumb drags to look. Hold FIRE to shoot, R to reload.",
   },
 ];
 

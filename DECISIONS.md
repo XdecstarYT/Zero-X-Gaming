@@ -129,3 +129,28 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     just checked once by hand.
 44. **Lighthouse was measured in the dev container, where Supabase is unreachable.** The resulting console errors
     cost Best Practices a few points (96). They don't occur when Supabase is reachable.
+
+## Post-launch additions
+
+45. **Intro splash ("induction ad")** is a full-screen, CSS- and SVG-only brand sequence shown once per browser
+    session:
+    - The X mark draws itself, then come a glitch-in logo, the tagline, a game-title reel, and a neon grid floor.
+    - It's server-rendered, so first-time visitors see no flash of the page.
+    - A tiny inline `<head>` script hides it before paint for returning visitors.
+    - Skip it with the button, Esc, Enter, Space, any key, or a tap. It auto-dismisses after about 5 s (1.6 s static
+      with reduced motion).
+    - The page behind is `inert` while it plays.
+
+    E2E specs use a fixture that marks the intro as seen, and `intro.spec.ts` covers the intro itself.
+46. **Neon Siege (FPS)** is a raycast ("2.5D") shooter on Canvas 2D, not WebGL. It reuses the shared engine, stays
+    tiny, runs on low-end phones, and keeps the code consistent with the other games. The rules
+    (`map/path/world/bots/solo.ts`) are pure and seeded, and unit tested with simulations.
+47. **Bot AI plays fair.** Bots use a vision cone plus line of sight, hearing up close, and noticing who shot them.
+    Their state machine runs patrol → hunt → engage → retreat to cover, with A* navigation. Difficulty only changes
+    reaction time, aim error, turn speed, burst discipline, and a weaker, less accurate bot rifle. In solo waves,
+    drones also get a noisy "signal pulse" of the player's area every 4 s, so they converge instead of wandering.
+    That tuning came from simulation: without it, first contact took 13–105 s and the player died in 0.4 s.
+48. **Only solo Siege mode is ranked.** Its ceiling is 1,500 pts/s, which an aimbot simulation stays under. The
+    `games.category` check gains `shooter`.
+49. **Games can ask the platform to pause** (`requestPause`), because Esc releases pointer lock without delivering
+    a keydown. A final score can be flagged `ranked: false` so it's never submitted.

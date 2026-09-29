@@ -5,13 +5,13 @@ import { test as base, expect } from "@playwright/test";
  * page itself. Use `introTest` to exercise the intro.
  */
 export const test = base.extend({
-  page: async ({ page }, use) => {
+  page: async ({ page }, run) => {
     await page.addInitScript(() => {
       try {
         sessionStorage.setItem("zx-intro-seen", "1");
       } catch {}
     });
-    await use(page);
+    await run(page);
   },
 });
 

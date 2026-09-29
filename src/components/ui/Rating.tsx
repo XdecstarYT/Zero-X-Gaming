@@ -1,6 +1,7 @@
 import { formatCompact } from "@/lib/format";
 
 export function Rating({ value, count }: { value: number; count?: number }) {
+  if (value <= 0) return <span className="text-xs text-muted">No ratings yet</span>;
   return (
     <span className="inline-flex items-center gap-1 text-xs text-muted">
       <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-warning" fill="currentColor" aria-hidden>

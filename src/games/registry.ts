@@ -9,6 +9,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   "grid-lock": () => import("./grid-lock"),
   orbit: () => import("./orbit"),
   "blitz-trivia": () => import("./blitz-trivia"),
+  "neon-siege": () => import("./neon-siege/entry"),
 };
 
 export function hasGame(slug: string) {

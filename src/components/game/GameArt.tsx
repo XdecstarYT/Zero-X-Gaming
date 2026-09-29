@@ -130,6 +130,39 @@ function Motif({ category, id, a, b }: { category: Game["category"]; id: string;
           ))}
         </g>
       );
+    case "shooter":
+      return (
+        <g>
+          {/* corridor in perspective */}
+          <path
+            d="M0 0 L120 70 L200 70 L320 0 M0 200 L120 130 L200 130 L320 200"
+            stroke={a}
+            strokeOpacity="0.5"
+            fill="none"
+          />
+          <rect x="120" y="70" width="80" height="60" fill="none" stroke={b} strokeOpacity="0.6" />
+          {[30, 60, 90].map((d) => (
+            <g key={d} stroke={a} strokeOpacity="0.25">
+              <line x1={d * 1.33} y1={d * 0.78} x2={d * 1.33} y2={200 - d * 0.78} />
+              <line x1={320 - d * 1.33} y1={d * 0.78} x2={320 - d * 1.33} y2={200 - d * 0.78} />
+            </g>
+          ))}
+          {/* drone */}
+          <circle cx="178" cy="98" r="9" fill={a} />
+          <rect x="170" y="106" width="16" height="16" fill={a} fillOpacity="0.6" />
+          {/* crosshair */}
+          <g stroke={b} strokeWidth="3" filter={`url(#${id}-blur)`}>
+            <circle cx="160" cy="100" r="22" fill="none" />
+          </g>
+          <g stroke={b} strokeWidth="2.5">
+            <circle cx="160" cy="100" r="22" fill="none" />
+            <line x1="160" y1="70" x2="160" y2="86" />
+            <line x1="160" y1="114" x2="160" y2="130" />
+            <line x1="130" y1="100" x2="146" y2="100" />
+            <line x1="174" y1="100" x2="190" y2="100" />
+          </g>
+        </g>
+      );
     case "trivia":
       return (
         <g>

@@ -18,12 +18,29 @@ import { GameArt } from "./GameArt";
 
 const noopSubscribe = () => () => {};
 
+/** Name shown to other players online: username if signed in, else a per-session guest tag. */
+function displayName() {
+  const username = useAuth.getState().profile?.username;
+  if (username) return username;
+  try {
+    let tag = sessionStorage.getItem("zx-guest-name");
+    if (!tag) {
+      tag = `Guest-${Math.floor(1000 + Math.random() * 9000)}`;
+      sessionStorage.setItem("zx-guest-name", tag);
+    }
+    return tag;
+  } catch {
+    return "Guest";
+  }
+}
+
 type Phase = "idle" | "loading" | "playing" | "paused" | "over" | "error";
 type Submit =
   | { state: "idle" }
   | { state: "saving" }
   | { state: "saved"; result: SubmitResult }
-  | { state: "failed"; message: string };
+  | { state: "failed"; message: string }
+  | { state: "unranked" };
 
 /**
  * Hosts a GameModule: lazy-loads it, owns the lifecycle (start / pause /
@@ -50,11 +67,15 @@ export function GameStage({ game }: { game: Game }) {
   );
 
   const handleFinal = useCallback(
-    async (finalScore: number, durationMs: number) => {
+    async (finalScore: number, durationMs: number, ranked = true) => {
       setScore(finalScore);
       setPhase("over");
       recordPlay(game.slug, finalScore);
       const supabase = getSupabaseBrowser();
+      if (!ranked) {
+        setSubmit({ state: "unranked" });
+        return;
+      }
       if (useAuth.getState().status !== "signed_in" || !supabase || finalScore <= 0) {
         setSubmit({ state: "idle" });
         return;
@@ -71,6 +92,11 @@ export function GameStage({ game }: { game: Game }) {
     [game.slug, recordPlay],
   );
 
+  const pause = useCallback(() => {
+    moduleRef.current?.pause();
+    setPhase((p) => (p === "playing" ? "paused" : p));
+  }, []);
+
   const launch = useCallback(async () => {
     const host = hostRef.current;
     if (!host || !playable) return;
@@ -83,25 +109,26 @@ export function GameStage({ game }: { game: Game }) {
         const mod = factory();
         const { sound, volume, reduceMotion, keybindings } = useSettings.getState();
         const osReduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        mod.init({ root: host, settings: { sound, volume, reduceMotion: reduceMotion || osReduce, keybindings } });
+        mod.init({
+          root: host,
+          settings: { sound, volume, reduceMotion: reduceMotion || osReduce, keybindings },
+          requestPause: pause,
+          playerName: displayName(),
+        });
         mod.onScore((e) => {
           if (e.kind === "progress") setScore(e.score);
-          else void handleFinal(e.score, e.durationMs);
+          else void handleFinal(e.score, e.durationMs, e.ranked ?? true);
         });
         moduleRef.current = mod;
       }
       moduleRef.current.start();
       setPhase("playing");
-      frameRef.current?.focus({ preventScroll: true });
+      // Games with their own menus focus a control inside the frame; don't steal it.
+      if (!frameRef.current?.contains(document.activeElement)) frameRef.current?.focus({ preventScroll: true });
     } catch {
       setPhase("error");
     }
-  }, [game.slug, playable, handleFinal]);
-
-  const pause = useCallback(() => {
-    moduleRef.current?.pause();
-    setPhase("paused");
-  }, []);
+  }, [game.slug, playable, handleFinal, pause]);
 
   const resume = useCallback(() => {
     moduleRef.current?.resume();
@@ -289,6 +316,8 @@ function SubmitStatus({
       </div>
     );
   }
+  if (submit.state === "unranked")
+    return <p className={`${cls} text-muted`}>Online match · unranked (not saved to leaderboards)</p>;
   if (submit.state === "failed")
     return (
       <p className={`${cls} text-danger`} role="alert">
