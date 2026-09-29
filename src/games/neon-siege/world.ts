@@ -70,6 +70,11 @@ export interface World {
   entities: Map<string, Entity>;
   time: number;
   events: WorldEvent[];
+  /**
+   * Online play: route a hit to the victim's owner. Return true if handled
+   * elsewhere (damage is then NOT applied locally).
+   */
+  onHit?: (shooter: Entity, target: Entity, amount: number) => boolean;
 }
 
 export function createWorld(map = parseMap()): World {
@@ -169,8 +174,10 @@ export function fire(world: World, shooter: Entity, rng: Rng) {
     toX: shooter.x + dx * dist,
     toY: shooter.y + dy * dist,
   });
-  if (best)
-    damage(world, best.target, shooter, best.dist > FALLOFF_DIST ? shooter.weapon.farDamage : shooter.weapon.damage);
+  if (best) {
+    const amount = best.dist > FALLOFF_DIST ? shooter.weapon.farDamage : shooter.weapon.damage;
+    if (!world.onHit?.(shooter, best.target, amount)) damage(world, best.target, shooter, amount);
+  }
   if (shooter.ammo === 0) startReload(world, shooter);
   return { hit: best?.target ?? null, dist };
 }
