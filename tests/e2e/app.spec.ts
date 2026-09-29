@@ -24,21 +24,46 @@ test("library filters by search and category and syncs the URL", async ({ page }
   await expect(page.getByText("No games match")).toBeVisible();
 });
 
-test("opening a game adds it to continue playing, favorites persist", async ({ page }) => {
+test("favorites persist across pages", async ({ page }) => {
   await page.goto("/games/orbit");
   await expect(page.getByRole("heading", { level: 1, name: "Orbit" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Weekly" })).toHaveAttribute("aria-selected", "true");
   await page.getByRole("button", { name: "Add Orbit to favorites" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Added Orbit to favorites" })).toBeVisible();
 
-  await page.goto("/");
-  const recent = page.getByRole("list", { name: "Recently played games" });
-  await expect(recent.getByRole("heading", { name: "Orbit" })).toBeVisible();
-
   await page.goto("/profile");
   await expect(
     page.getByRole("list", { name: "Favorite games" }).getByRole("heading", { name: "Orbit" }),
   ).toBeVisible();
+});
+
+test("Zero Dash: play, pause, resume, game over, then shows in continue playing", async ({ page }) => {
+  await page.goto("/games/zero-dash");
+  const stage = page.getByTestId("game-stage");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(stage).toHaveAttribute("data-phase", "playing");
+  await expect(stage.locator("canvas")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(stage).toHaveAttribute("data-phase", "paused");
+  await expect(stage.getByText("Paused")).toBeVisible();
+  await stage.getByRole("button", { name: "Resume" }).click();
+  await expect(stage).toHaveAttribute("data-phase", "playing");
+
+  // Never jumping: the first obstacle ends the run.
+  await expect(stage).toHaveAttribute("data-phase", "over", { timeout: 20_000 });
+  await expect(stage.getByText("Game over")).toBeVisible();
+  await expect(stage.getByRole("button", { name: "Play again" })).toBeVisible();
+
+  await page.goto("/");
+  const recent = page.getByRole("list", { name: "Recently played games" });
+  await expect(recent.getByRole("heading", { name: "Zero Dash" })).toBeVisible();
+});
+
+test("unreleased games show coming soon instead of a play button", async ({ page }) => {
+  await page.goto("/games/grid-lock");
+  await expect(page.getByTestId("game-stage").getByText("Coming soon")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toHaveCount(0);
 });
 
 test("unknown game shows 404", async ({ page }) => {

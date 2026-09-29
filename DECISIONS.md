@@ -55,3 +55,21 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 21. **The session is refreshed in `src/proxy.ts`** (Next 16's rename of middleware) with `auth.getClaims()`. The
     home, game, leaderboard, and settings pages stay static; `/games` (search params), `/profile` and `/auth/*` are
     dynamic.
+
+## Phase 3
+
+22. **Games resumed (user request: "do all phases").**
+23. **Plain Canvas 2D instead of Phaser 3.** Phaser adds roughly 1 MB (≈300 KB gzipped) per game page. These games
+    need a loop, rectangles, and text, so a ~200-line shared engine (`src/games/engine/`: fixed-timestep loop,
+    DPR-aware letterboxed canvas, WebAudio SFX, seeded RNG) keeps each game chunk small. The `GameModule`
+    interface is engine-agnostic, so a Phaser game could still plug in later.
+24. **Game rules are pure, seeded modules (`logic.ts`) separate from rendering (`index.ts`).** They're unit tested,
+    including a bot simulation that checks real score rates stay under the server's `max_score_per_second`.
+25. **The platform owns pause.** Esc or the pause key, the on-screen pause button, and tab-hidden all pause the
+    game. Games only handle their own gameplay input while running.
+26. **"Recently played" now means a finished run** (it used to mean opening the page), and it keeps the device
+    best score.
+27. **The per-game submission cooldown dropped from 5 s to 2 s**, because a runner can die quickly and players
+    retry at once.
+28. **The music toggle is stored but no game plays music yet.** Sound effects are synthesized with WebAudio, so
+    there are no audio assets.

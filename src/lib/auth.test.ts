@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { friendlyAuthError, mergeFavorites, safeNextPath, validateEmail, validatePassword, validateUsername } from "./auth";
+import {
+  friendlyAuthError,
+  mergeFavorites,
+  safeNextPath,
+  validateEmail,
+  validatePassword,
+  validateUsername,
+} from "./auth";
 
 describe("validateUsername", () => {
   it.each([

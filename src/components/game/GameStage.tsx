@@ -1,25 +1,124 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Game } from "@/lib/types";
+import type { GameModule } from "@/games/types";
+import { GAME_LOADERS } from "@/games/registry";
 import { useLibrary } from "@/store/library";
+import { useSettings } from "@/store/settings";
+import { useAuth } from "@/store/auth";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { submitScore } from "@/lib/scores";
+import { formatNumber } from "@/lib/format";
+import { formatKeyCode } from "@/lib/keys";
 import { Button } from "@/components/ui/Button";
+import { SignInButton } from "@/components/layout/SignInButton";
 import { GameArt } from "./GameArt";
 
+type Phase = "idle" | "loading" | "playing" | "paused" | "over" | "error";
+type Submit =
+  { state: "idle" } | { state: "saving" } | { state: "saved"; best: number } | { state: "failed"; message: string };
+
 /**
- * The player frame. In Phase 1 it shows a "coming soon" state; Phase 3
- * mounts the lazy-loaded GameModule into the canvas host here.
+ * Hosts a GameModule: lazy-loads it, owns the lifecycle (start / pause /
+ * resume / destroy), the overlays, and score submission.
  */
 export function GameStage({ game }: { game: Game }) {
   const frameRef = useRef<HTMLDivElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const moduleRef = useRef<GameModule | null>(null);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [score, setScore] = useState(0);
+  const [submit, setSubmit] = useState<Submit>({ state: "idle" });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const recordPlay = useLibrary((s) => s.recordPlay);
-  const hydrated = useLibrary((s) => s.hydrated);
+  const localBest = useLibrary((s) => s.recent.find((r) => r.slug === game.slug)?.bestScore ?? 0);
+  const authStatus = useAuth((s) => s.status);
+  const pauseKey = useSettings((s) => s.keybindings.pause);
+  const playable = game.status === "live" && game.slug in GAME_LOADERS;
 
-  // Opening a game counts as "recently played" (wait for storage to load first).
+  const handleFinal = useCallback(
+    async (finalScore: number, durationMs: number) => {
+      setScore(finalScore);
+      setPhase("over");
+      recordPlay(game.slug, finalScore);
+      const supabase = getSupabaseBrowser();
+      if (useAuth.getState().status !== "signed_in" || !supabase || finalScore <= 0) {
+        setSubmit({ state: "idle" });
+        return;
+      }
+      setSubmit({ state: "saving" });
+      try {
+        const res = await submitScore(supabase, game.slug, finalScore, durationMs);
+        setSubmit({ state: "saved", best: res.personalBest });
+      } catch (e) {
+        setSubmit({ state: "failed", message: (e as Error).message });
+      }
+    },
+    [game.slug, recordPlay],
+  );
+
+  const launch = useCallback(async () => {
+    const host = hostRef.current;
+    if (!host || !playable) return;
+    setPhase("loading");
+    setSubmit({ state: "idle" });
+    setScore(0);
+    try {
+      if (!moduleRef.current) {
+        const { default: factory } = await GAME_LOADERS[game.slug]();
+        const mod = factory();
+        const { sound, volume, reduceMotion, keybindings } = useSettings.getState();
+        const osReduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        mod.init({ root: host, settings: { sound, volume, reduceMotion: reduceMotion || osReduce, keybindings } });
+        mod.onScore((e) => {
+          if (e.kind === "progress") setScore(e.score);
+          else void handleFinal(e.score, e.durationMs);
+        });
+        moduleRef.current = mod;
+      }
+      moduleRef.current.start();
+      setPhase("playing");
+      frameRef.current?.focus({ preventScroll: true });
+    } catch {
+      setPhase("error");
+    }
+  }, [game.slug, playable, handleFinal]);
+
+  const pause = useCallback(() => {
+    moduleRef.current?.pause();
+    setPhase("paused");
+  }, []);
+
+  const resume = useCallback(() => {
+    moduleRef.current?.resume();
+    setPhase("playing");
+    frameRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  // Tear the module down when leaving the page.
+  useEffect(() => () => moduleRef.current?.destroy(), []);
+
+  // Pause when the tab is hidden; pause/resume on Esc or the pause key.
   useEffect(() => {
-    if (hydrated) recordPlay(game.slug);
-  }, [hydrated, game.slug, recordPlay]);
+    const onVisibility = () => document.hidden && phase === "playing" && pause();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Escape" && e.code !== pauseKey) return;
+      if (phase === "playing") {
+        e.preventDefault();
+        pause();
+      } else if (phase === "paused" && e.code !== "Escape") {
+        e.preventDefault();
+        resume();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [phase, pause, resume, pauseKey]);
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(document.fullscreenElement === frameRef.current);
@@ -32,22 +131,99 @@ export function GameStage({ game }: { game: Game }) {
     else void frameRef.current?.requestFullscreen?.();
   }
 
+  const showArt = phase === "idle" || phase === "loading" || phase === "error" || !playable;
+
   return (
     <div>
       <div
         ref={frameRef}
-        className="relative aspect-video w-full overflow-hidden rounded-xl border border-border-strong bg-bg shadow-card"
+        tabIndex={-1}
+        data-testid="game-stage"
+        data-phase={phase}
+        className="relative aspect-video w-full overflow-hidden rounded-xl border border-border-strong bg-bg shadow-card focus:outline-none"
       >
-        <GameArt game={game} className="absolute inset-0 opacity-40" />
-        <div className="absolute inset-0 grid place-items-center bg-bg/40 p-6 text-center">
-          <div>
+        <div ref={hostRef} className="absolute inset-0" />
+        {showArt && <GameArt game={game} className="absolute inset-0 opacity-40" />}
+
+        {!playable && (
+          <Overlay>
             <p className="font-display text-xl font-black uppercase tracking-wider sm:text-3xl">{game.title}</p>
-            <p className="mt-2 text-sm text-muted sm:text-base">The game engine is loading in the next update.</p>
-            <p className="mt-1 text-xs text-subtle">This is where the game will run.</p>
-          </div>
-        </div>
+            <p className="mt-2 text-sm text-muted sm:text-base">Coming soon. This game is still in development.</p>
+          </Overlay>
+        )}
+
+        {playable && (phase === "idle" || phase === "loading") && (
+          <Overlay>
+            <p className="font-display text-xl font-black uppercase tracking-wider sm:text-3xl">{game.title}</p>
+            <p className="mt-1 text-sm text-muted">{game.tagline}</p>
+            <Button size="lg" className="mt-5" onClick={launch} disabled={phase === "loading"} autoFocus>
+              {phase === "loading" ? "Loading…" : "Play"}
+            </Button>
+            {localBest > 0 && <p className="mt-3 text-xs text-subtle">Your best: {formatNumber(localBest)}</p>}
+          </Overlay>
+        )}
+
+        {phase === "playing" && (
+          <button
+            type="button"
+            onClick={pause}
+            aria-label="Pause game"
+            className="absolute right-3 bottom-3 grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/50 text-white/80 backdrop-blur hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+              <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
+            </svg>
+          </button>
+        )}
+
+        {phase === "paused" && (
+          <Overlay dim>
+            <p className="font-display text-2xl font-black uppercase tracking-wider">Paused</p>
+            <p className="mt-1 text-sm text-muted">Score {formatNumber(score)}</p>
+            <div className="mt-5 flex gap-3">
+              <Button onClick={resume} autoFocus>
+                Resume
+              </Button>
+              <Button variant="secondary" onClick={launch}>
+                Restart
+              </Button>
+            </div>
+            <p className="mt-3 text-xs text-subtle">Press {formatKeyCode(pauseKey)} to resume</p>
+          </Overlay>
+        )}
+
+        {phase === "over" && (
+          <Overlay dim>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-magenta">Game over</p>
+            <p className="font-display text-4xl font-black" aria-live="polite">
+              {formatNumber(score)}
+            </p>
+            <SubmitStatus submit={submit} authStatus={authStatus} localBest={localBest} score={score} />
+            <div className="mt-5 flex flex-wrap justify-center gap-3">
+              <Button onClick={launch} autoFocus>
+                Play again
+              </Button>
+              {authStatus === "guest" && score > 0 && (
+                <SignInButton variant="accent" initialMode="sign_up">
+                  Save my scores
+                </SignInButton>
+              )}
+            </div>
+          </Overlay>
+        )}
+
+        {phase === "error" && (
+          <Overlay dim>
+            <p className="font-display text-xl font-bold uppercase">Couldn&apos;t load the game</p>
+            <p className="mt-1 text-sm text-muted">Check your connection and try again.</p>
+            <Button className="mt-5" onClick={launch}>
+              Retry
+            </Button>
+          </Overlay>
+        )}
       </div>
-      <div className="mt-3 flex items-center justify-end gap-2">
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <p className="text-xs text-subtle">{playable ? `Press Esc or ${formatKeyCode(pauseKey)} to pause.` : " "}</p>
         <Button variant="secondary" size="sm" onClick={toggleFullscreen} aria-pressed={isFullscreen}>
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
             {isFullscreen ? (
@@ -61,4 +237,49 @@ export function GameStage({ game }: { game: Game }) {
       </div>
     </div>
   );
+}
+
+function Overlay({ children, dim = false }: { children: React.ReactNode; dim?: boolean }) {
+  return (
+    <div
+      className={`absolute inset-0 grid place-items-center p-6 text-center ${dim ? "bg-bg/75 backdrop-blur-sm" : "bg-bg/40"}`}
+    >
+      <div className="flex flex-col items-center animate-rise">{children}</div>
+    </div>
+  );
+}
+
+function SubmitStatus({
+  submit,
+  authStatus,
+  localBest,
+  score,
+}: {
+  submit: Submit;
+  authStatus: string;
+  localBest: number;
+  score: number;
+}) {
+  const cls = "mt-2 text-sm";
+  if (submit.state === "saving") return <p className={`${cls} text-muted`}>Saving score…</p>;
+  if (submit.state === "saved")
+    return (
+      <p className={`${cls} text-success`} role="status">
+        Score saved · Best {formatNumber(submit.best)}
+        {score >= submit.best && score > 0 ? " · New personal best!" : ""}
+      </p>
+    );
+  if (submit.state === "failed")
+    return (
+      <p className={`${cls} text-danger`} role="alert">
+        {submit.message}
+      </p>
+    );
+  if (authStatus === "guest" && score > 0)
+    return (
+      <p className={`${cls} text-muted`}>
+        Playing as guest · Best on this device {formatNumber(Math.max(localBest, score))}
+      </p>
+    );
+  return <p className={`${cls} text-muted`}>Best {formatNumber(Math.max(localBest, score))}</p>;
 }

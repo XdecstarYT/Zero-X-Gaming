@@ -29,10 +29,16 @@ export function GameCard({ game, className, meta }: { game: Game; className?: st
           <Badge tone="neutral" className="border-white/10 bg-black/60 text-white/90 backdrop-blur">
             {game.category}
           </Badge>
-          {isNew && (
-            <Badge tone="magenta" className="bg-black/60 backdrop-blur">
-              New
+          {game.status === "coming_soon" ? (
+            <Badge tone="warning" className="bg-black/60 backdrop-blur">
+              Soon
             </Badge>
+          ) : (
+            isNew && (
+              <Badge tone="magenta" className="bg-black/60 backdrop-blur">
+                New
+              </Badge>
+            )
           )}
         </div>
       </div>
