@@ -79,6 +79,7 @@ export type Database = {
           slug: string;
           status: string;
           title: string;
+          xp_divisor: number;
         };
         Insert: {
           category: string;
@@ -88,6 +89,7 @@ export type Database = {
           slug: string;
           status?: string;
           title: string;
+          xp_divisor?: number;
         };
         Update: {
           category?: string;
@@ -204,6 +206,34 @@ export type Database = {
           },
         ];
       };
+      xp_events: {
+        Row: { amount: number; created_at: string; id: number; reason: string; ref: string | null; user_id: string };
+        Insert: {
+          amount: number;
+          created_at?: string;
+          id?: never;
+          reason: string;
+          ref?: string | null;
+          user_id: string;
+        };
+        Update: {
+          amount?: number;
+          created_at?: string;
+          id?: never;
+          reason?: string;
+          ref?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "xp_events_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -220,11 +250,25 @@ export type Database = {
       };
       submit_score: {
         Args: { p_duration_ms: number; p_game_slug: string; p_score: number };
-        Returns: { personal_best: number; score_id: number }[];
+        Returns: {
+          daily_rank: number;
+          is_personal_best: boolean;
+          new_achievements: string[];
+          personal_best: number;
+          score_id: number;
+          total_xp: number;
+          xp_gained: number;
+        }[];
       };
       touch_daily_streak: {
         Args: never;
-        Returns: { current_streak: number; last_active_date: string; longest_streak: number }[];
+        Returns: {
+          current_streak: number;
+          last_active_date: string;
+          longest_streak: number;
+          new_achievements: string[];
+          xp_gained: number;
+        }[];
       };
     };
     Enums: { [_ in never]: never };
