@@ -106,6 +106,7 @@ export function GameLibrary({ initial }: { initial: LibraryFilters }) {
         </div>
       </fieldset>
 
+      <h2 className="sr-only">Results</h2>
       <p className="mt-6 text-sm text-muted" aria-live="polite">
         {results.length} {results.length === 1 ? "game" : "games"}
       </p>
