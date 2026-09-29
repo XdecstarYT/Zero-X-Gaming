@@ -4,15 +4,19 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Providers } from "@/components/layout/Providers";
 import { Toaster } from "@/components/ui/Toaster";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const orbitron = Orbitron({ variable: "--font-orbitron", subsets: ["latin"], weight: ["600", "700", "800", "900"] });
 const grotesk = Space_Grotesk({ variable: "--font-grotesk", subsets: ["latin"] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: { default: "Zero X | Gaming", template: "%s · Zero X | Gaming" },
   description: "Discover, play, and compete in original browser games. No downloads, just play.",
   applicationName: "Zero X | Gaming",
+  openGraph: { type: "website", siteName: "Zero X | Gaming" },
+  twitter: { card: "summary_large_image" },
 };
 
 export const viewport: Viewport = {
