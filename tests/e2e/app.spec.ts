@@ -71,7 +71,8 @@ test("Grid Lock: board renders, keyboard slides work, pause and resume", async (
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await expect(stage).toHaveAttribute("data-phase", "playing");
   await expect(stage.locator("canvas")).toBeVisible();
-  for (const key of ["Shift+ArrowRight", "ArrowDown", "Shift+ArrowUp", "Shift+ArrowLeft"]) await page.keyboard.press(key);
+  for (const key of ["Shift+ArrowRight", "ArrowDown", "Shift+ArrowUp", "Shift+ArrowLeft"])
+    await page.keyboard.press(key);
   await page.keyboard.press("KeyP");
   await expect(stage).toHaveAttribute("data-phase", "paused");
   await page.keyboard.press("KeyP");
