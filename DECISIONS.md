@@ -77,7 +77,7 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 ## Phase 4
 
 29. **An XP ledger (`xp_events`) was added beyond the prompt's eight tables.** Daily and weekly global boards need
-    XP earned *within* a window, which a single `profiles.xp` total can't answer. It's append-only, owner-readable,
+    XP earned _within_ a window, which a single `profiles.xp` total can't answer. It's append-only, owner-readable,
     and written only by server functions.
 30. **XP rules (server-side only):**
     - A run earns `10 + min(floor(score / games.xp_divisor), 190)`.
@@ -85,6 +85,7 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     - Each badge adds its `xp_reward`.
 
     `award_xp()` and `grant_achievement()` are internal: execute is revoked from every client role.
+
 31. **Achievements are awarded inside the same transaction as the triggering score or login**, so a badge can't
     be granted without the event that earned it:
     - First Run: any saved run.
@@ -100,7 +101,7 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 
 ## Phase 5
 
-35. **Grid Lock:** a 6×6 board of 5 tile types, each with its own colour *and* shape so colour-blind players can
+35. **Grid Lock:** a 6×6 board of 5 tile types, each with its own colour _and_ shape so colour-blind players can
     play. Players slide a whole row or column one step (wrapping). Lines of 3+ clear and cascades multiply points.
     A 90-second circuit timer runs, and misses cost 3 s. Its plausibility ceiling is 800 pts/s, because a
     superhuman greedy bot peaks near 520.
@@ -113,3 +114,18 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 38. **The game stage is 4:3 on phones and 16:9 from `sm` up.** Canvas games letterbox into the extra height,
     which leaves room for the on-screen pause button.
 39. **Play stays disabled until hydration**, so a click during page load is never silently dropped.
+
+## Phase 6
+
+40. **Moderation hook: a `reports` table plus `report_content()`, and a `profiles.is_hidden` flag.** Reporting
+    lives on leaderboard rows, since usernames are the only user-generated content today. Moderators work in the
+    Supabase dashboard; building an admin UI is deferred until there's more user content.
+41. **The CSP uses `'unsafe-inline'` for scripts.** Nonces would force dynamic rendering of every page and lose
+    the static home and game pages. The policy still restricts `connect-src` to self plus Supabase, and blocks
+    framing, plugins, and foreign form targets.
+42. **CI uses placeholder Supabase values.** The E2E suite stubs every Supabase call it depends on, so CI needs no
+    secrets and never touches the real project.
+43. **Accessibility is enforced with axe in the E2E suite** (serious and critical violations fail the build), not
+    just checked once by hand.
+44. **Lighthouse was measured in the dev container, where Supabase is unreachable.** The resulting console errors
+    cost Best Practices a few points (96). They don't occur when Supabase is reachable.

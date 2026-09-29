@@ -1,159 +1,200 @@
 # Zero X | Gaming
 
-A browser-based gaming hub: discover, play, and compete in original web games. Dark, neon, fast.
+A browser gaming hub: discover, play, and compete in original web games. Dark, neon, fast. No downloads.
 
-**Status:** Phase 1 (hub UI) and Phase 2 (Supabase backend, auth, profiles) are complete. Games are on hold for now.
-See [Roadmap](#roadmap) and [`DECISIONS.md`](./DECISIONS.md).
+**Status:** all six phases are complete. The project has:
+
+- 4 games
+- accounts
+- server-validated scores
+- XP, levels, badges, and streaks
+- live leaderboards
+- moderation reports
+- CI
+
+See [`DECISIONS.md`](./DECISIONS.md) for every deviation from the original brief.
+
+| Game             | Genre          | Controls (keyboard / touch)                                                |
+| ---------------- | -------------- | -------------------------------------------------------------------------- |
+| **Zero Dash**    | Endless runner | Space / ↑ / W to jump, hold for higher · tap, hold for higher              |
+| **Grid Lock**    | Slide & match  | Arrows move the cursor, Shift + arrows slide · swipe along a row or column |
+| **Orbit**        | Gravity arcade | ← → steer, Space boost · drag to steer, second finger to boost             |
+| **Blitz Trivia** | 60 s quiz      | 1–4 or Tab + Enter · tap an answer                                         |
+
+Esc (or the pause key from Settings) pauses any game. Games also pause when the tab is hidden.
 
 ## Stack
 
 Next.js 16 (App Router) · TypeScript · Tailwind CSS v4 · Zustand · Supabase (Postgres, Auth, RLS) ·
-Vitest + Testing Library · Playwright. Deploy target: Vercel.
+Canvas 2D with a small shared engine · Vitest + Testing Library · Playwright + axe · Vercel.
 
 ## Setup
 
-Requires Node 20.9+ (developed on Node 22).
+Requires Node 20.9+ (CI uses Node 22).
 
 ```bash
 npm install
-cp .env.example .env.local   # add the Supabase URL + publishable key (or leave empty for guest-only mode)
+cp .env.example .env.local   # Supabase URL + publishable key (leave empty for guest-only mode)
 npm run dev                  # http://localhost:3000
 ```
 
-Without Supabase env vars the app runs in **guest-only mode**. Everything works except accounts; favorites and
-settings are stored on the device.
+Without Supabase env vars the app runs in **guest-only mode**: every game is playable, while favorites, recent
+plays, and settings stay on the device. Leaderboards show an "accounts not enabled" state.
 
 ## Scripts
 
-| Script                        | What it does                                                                                |
-| ----------------------------- | ------------------------------------------------------------------------------------------- |
-| `npm run dev`                 | Dev server                                                                                  |
-| `npm run build` / `npm start` | Production build / serve                                                                    |
-| `npm run lint`                | ESLint (flat config)                                                                        |
-| `npm run typecheck`           | Generates route types (`next typegen`) then `tsc --noEmit`                                  |
-| `npm test`                    | Vitest unit + component tests                                                               |
-| `npm run test:e2e`            | Playwright on desktop Chrome and Pixel 7 viewports (builds and starts the app on port 3100) |
-| `npm run format`              | Prettier                                                                                    |
+| Script                        | What it does                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| `npm run dev`                 | Dev server                                                                            |
+| `npm run build` / `npm start` | Production build / serve                                                              |
+| `npm run lint`                | ESLint (flat config)                                                                  |
+| `npm run typecheck`           | `next typegen` + `tsc --noEmit`                                                       |
+| `npm test`                    | Vitest: XP curve, game rules (with bot simulations), auth helpers, stores, components |
+| `npm run test:e2e`            | Playwright on desktop Chrome + Pixel 7: user flows, all 4 games, axe a11y scans       |
+| `npm run format`              | Prettier                                                                              |
 
 ## Environment variables
 
-| Var                                    | Scope  | Purpose                                                   |
-| -------------------------------------- | ------ | --------------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`             | client | Supabase project URL                                      |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | client | Publishable key (`sb_publishable_…`). Safe in the browser |
+| Var                                    | Scope  | Purpose                                                      |
+| -------------------------------------- | ------ | ------------------------------------------------------------ |
+| `NEXT_PUBLIC_SUPABASE_URL`             | client | Supabase project URL                                         |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | client | Publishable key (`sb_publishable_…`), safe in the browser    |
+| `NEXT_PUBLIC_SITE_URL`                 | build  | Canonical URL for sitemap and OG tags (defaults to Vercel's) |
 
-No server-only secret is needed: every privileged write goes through Postgres functions guarded by RLS and
-`auth.uid()`. Never add the `service_role` / secret key to this app.
-
-## Supabase
-
-Project: **zero-x-gaming** (`tbvaqinnbicxhlaqltik`, Sydney `ap-southeast-2`). The schema lives in
-`supabase/migrations/` and has been applied to that project.
-
-### Tables (RLS on all)
-
-| Table                 | Who can read                    | Who can write                                                                |
-| --------------------- | ------------------------------- | ---------------------------------------------------------------------------- |
-| `games`               | everyone                        | nobody (admin/migrations only)                                               |
-| `profiles`            | everyone (username, avatar, xp) | owner, `username` and `avatar_url` columns only; created by a signup trigger |
-| `scores`              | owner                           | only via `submit_score()`                                                    |
-| `achievements`        | everyone                        | nobody                                                                       |
-| `player_achievements` | everyone (public badges)        | nobody (server-awarded, Phase 4)                                             |
-| `favorites`           | owner                           | owner (insert / delete)                                                      |
-| `play_sessions`       | owner                           | owner (insert)                                                               |
-| `daily_streaks`       | owner                           | only via `touch_daily_streak()`                                              |
-
-### Functions (RPC)
-
-- `submit_score(game, score, duration_ms)`: the only way scores enter the database. It rejects anonymous
-  callers, unknown games, and games that aren't `live`. It also rejects out-of-range scores, scores that are
-  implausible for the run length (`games.max_score_per_second`), and more than 1 run per 5 s per game or
-  120 runs per hour.
-- `get_leaderboard(game | null, 'daily' | 'weekly' | 'all', limit)`: read-only boards, best score per player,
-  UTC day / Monday-start week. With `null` it returns the global board ranked by XP.
-- `touch_daily_streak()`: bumps or resets the caller's login streak. The app calls it once per sign-in.
-
-All four games are registered with `status = 'coming_soon'`, so no scores can be submitted until a game ships.
-
-### Dashboard setup (one-time, manual)
-
-These can't be set from the code:
-
-1. **Auth → URL Configuration:** set **Site URL** to the production URL. Add redirect URLs for
-   `http://localhost:3000/auth/callback`, the production URL `/auth/callback`, and Vercel previews
-   (`https://*-<team>.vercel.app/auth/callback`).
-2. **Auth → Providers → Google:** create an OAuth client in Google Cloud Console with the redirect URI
-   `https://tbvaqinnbicxhlaqltik.supabase.co/auth/v1/callback`, then paste the client ID and secret.
-3. **Auth → Providers → Discord:** create an app at discord.com/developers with the same redirect URI, then
-   paste the client ID and secret.
-4. **Auth → Emails / SMTP (before launch):** the built-in mailer is rate-limited, so configure a custom SMTP
-   provider.
-
-Until steps 2 and 3 are done, the Google and Discord buttons show a provider error. Email sign-up works as soon
-as step 1 is done.
-
-### Changing the schema
-
-Add a new file to `supabase/migrations/` (never edit an applied one). Apply it with the Supabase CLI
-(`supabase db push`) or the dashboard SQL editor, then regenerate `src/lib/supabase/database.types.ts`.
+No server secret is used anywhere. Never add the Supabase `service_role` / secret key to this app.
 
 ## Architecture
 
 ```
 src/
-  proxy.ts                refreshes the Supabase session cookie on each request (Next 16 "proxy" = middleware)
-  app/                    routes (App Router)
-    page.tsx              home: hero, featured, continue playing, trending, new releases, ranks
-    games/page.tsx        library: search, category filter, sort (synced to ?q=&category=&sort=)
-    games/[slug]/         game page: player frame (placeholder), fullscreen, controls, leaderboard tabs
-    profile/              server-rendered: account profile when signed in, guest profile otherwise
-    auth/callback/        OAuth + email-confirmation landing (PKCE code or token_hash)
-    auth/error/           friendly auth failure page
-    leaderboards/ settings/ loading.tsx error.tsx not-found.tsx
+  proxy.ts                    refreshes the Supabase session cookie (Next 16 "proxy" = middleware)
+  app/                        routes: / · /games · /games/[slug] · /leaderboards · /profile · /settings · /auth/*
+                              + loading/error/not-found states, manifest, robots, sitemap, OG image
   components/
-    ui/                   design-system primitives: Button, Badge, XPBar, Modal, Toaster, LeaderboardTable, ...
-    layout/               Navbar, AccountControl, SignInModal, UsernameForm, AuthProvider, Providers, ...
-    game/                 GameCard, GameArt (procedural SVG covers), GameStage, GameLibrary, FavoriteButton, ...
-  lib/
-    supabase/             env, browser client, server client, generated Database types
-    auth.ts               validation, safe redirects, error copy, favorites merge (tested)
-    favorites-sync.ts     guest → account favorites merge + remote writes
-    xp.ts game-query.ts format.ts keys.ts mock-data.ts
-  store/                  Zustand: auth, settings (persisted), library (favorites/recent, persisted), toast
-supabase/migrations/      SQL schema, RLS policies, functions
-tests/e2e/                Playwright specs
+    ui/                       design system: Button, Badge, XPBar, Modal, Toaster, LeaderboardTable, Skeleton, …
+    layout/                   Navbar, AccountControl, SignInModal, UsernameForm, AuthProvider, …
+    game/                     GameStage (hosts games), GameCard, GameArt, LeaderboardTabs, ReportDialog, …
+  games/
+    types.ts                  the GameModule contract
+    registry.ts               slug → lazy import(), one chunk per game
+    engine/                   fixed-timestep loop, DPR canvas, WebAudio SFX, seeded RNG, score emitter
+    zero-dash/ grid-lock/ orbit/ blitz-trivia/
+      logic.ts                pure, seeded rules (unit tested)
+      index.ts                rendering + input, implements GameModule
+  lib/                        catalog, XP curve, scores/progress clients, leaderboard hook, auth helpers, supabase/
+  store/                      Zustand: auth, settings, library (favorites/recent), toast
+supabase/migrations/          schema, RLS, functions (append-only history)
+tests/e2e/                    Playwright specs (app flows + a11y)
 ```
 
-**Auth flow:** `AuthProvider` subscribes to `onAuthStateChange` and mirrors the session into the `useAuth`
-store (`loading → guest | signed_in`, or `disabled` without env vars). On sign-in it:
+### Adding a game
 
-- loads the profile,
-- calls `touch_daily_streak()`,
-- merges the guest's local favorites into the account.
+1. Create `src/games/<slug>/logic.ts` (rules) and `index.ts`. The default export is a `GameFactory` returning a
+   `GameModule`:
+   ```ts
+   interface GameModule {
+     init({ root, settings }): void; // build canvas/DOM inside root
+     start(): void;
+     pause(): void;
+     resume(): void;
+     destroy(): void;
+     onScore(listener): () => void; // emit { kind: "progress" | "final", score, durationMs? }
+   }
+   ```
+2. Add one line to `src/games/registry.ts` and an entry in `src/lib/catalog.ts`.
+3. Add a migration that inserts the game into `public.games` with `max_score`, `max_score_per_second`, and
+   `xp_divisor`. Set `status = 'live'` when it ships.
 
-Favorites are updated optimistically and rolled back if the write fails. Signing out clears account favorites from
-the device.
+The platform handles loading, pause UI, fullscreen, game over, score submission, XP, and badges.
 
-**Design tokens** live in `src/app/globals.css`. Raw values are CSS custom properties on `:root` (`--zx-*`),
-mapped to Tailwind utilities via `@theme`. Fonts: Orbitron (display) and Space Grotesk (body).
+### Scores, XP, and progression (all server-side)
 
-**Persisted stores** use `skipHydration` and are rehydrated after mount, so server HTML matches the first client
-render.
+- **`submit_score(game, score, duration_ms)`** is the only way a score enters the database. It rejects:
+  - signed-out players
+  - games that aren't live
+  - scores over `max_score`, or higher than `max_score_per_second × duration`
+  - more than 1 run per 2 s per game, or more than 120 runs per hour
 
-## Accessibility
+  In the same transaction it awards run XP (`10 + min(score / xp_divisor, 190)`) and badges (First Run, Top Ten on
+  today's board, All-Rounder). It returns the PB flag, XP gained, the new total, today's rank, and newly unlocked
+  badges.
 
-- Skip link and a visible focus ring everywhere
-- Native `<dialog>` modals
-- ARIA tabs with arrow-key support
-- `role="switch"` toggles and a `progressbar` XP bar
-- Labelled form fields with `role="alert"` errors
-- Polite live region for toasts
-- Colour tokens that meet AA contrast
+- **`touch_daily_streak()`** runs once per session. The first visit each UTC day earns `10 × streak` XP (max 70),
+  and a 7-day streak unlocks "On Fire".
+- **`get_leaderboard(game | null, 'daily' | 'weekly' | 'all', limit)`** returns read-only boards of best score per
+  player (UTC days, Monday weeks). `null` gives the global XP board, built from the `xp_events` ledger for
+  daily/weekly and from total XP for all-time. Hidden profiles are excluded.
+- **Level curve:** the XP to go from level L to L+1 is `100 × L^1.5`, up to level 100 (`src/lib/xp.ts`).
 
-## Roadmap
+### Tables (RLS on all)
 
-- [x] **Phase 1:** project setup, design tokens, layout, navbar, home page with mock data
-- [x] **Phase 2:** Supabase schema + RLS, auth (email, Google, Discord, guest), profiles
-- [ ] **Games (on hold):** `GameModule` interface, Zero Dash, Grid Lock, Orbit, Blitz Trivia
-- [ ] **Phase 4:** wire leaderboards to `get_leaderboard`, XP awards, achievements
-- [ ] **Phase 6:** polish, a11y/perf audits (Lighthouse), deploy config
+| Table                 | Read                            | Write                                           |
+| --------------------- | ------------------------------- | ----------------------------------------------- |
+| `games`               | everyone                        | migrations only                                 |
+| `profiles`            | everyone (username, avatar, xp) | owner: `username`, `avatar_url` only            |
+| `scores`              | owner                           | `submit_score()` only                           |
+| `xp_events`           | owner                           | server functions only                           |
+| `achievements`        | everyone                        | migrations only                                 |
+| `player_achievements` | everyone (public badges)        | server functions only                           |
+| `favorites`           | owner                           | owner (insert/delete)                           |
+| `play_sessions`       | owner                           | owner (insert)                                  |
+| `daily_streaks`       | owner                           | `touch_daily_streak()` only                     |
+| `reports`             | reporter                        | `report_content()` only (rate-limited, no self) |
+
+### Moderation
+
+Signed-in players can flag another player from any leaderboard row (offensive name, cheating, harassment,
+other). To moderate, review `public.reports` in the Supabase dashboard (filter `status = 'open'`). Set
+`profiles.is_hidden = true` to remove a player from every public board, then mark the report `actioned` or
+`dismissed`. `target_type` is open-ended, so future user content can reuse the same pipeline.
+
+## Supabase project
+
+**zero-x-gaming** (`tbvaqinnbicxhlaqltik`, Sydney). All migrations in `supabase/migrations/` are applied.
+
+One-time dashboard setup, which can't be done from code:
+
+1. **Auth → URL Configuration:** set the Site URL to the production URL. Add redirect URLs for
+   `http://localhost:3000/auth/callback`, `https://<prod-domain>/auth/callback`, and the Vercel preview pattern.
+2. **Auth → Providers → Google / Discord:** create OAuth apps with the redirect URI
+   `https://tbvaqinnbicxhlaqltik.supabase.co/auth/v1/callback`, then paste each client ID and secret.
+3. **Auth → SMTP (before launch):** configure a custom SMTP provider, because the built-in mailer is heavily
+   rate-limited.
+
+**Schema changes:** add a new migration file (never edit an applied one), apply it with `supabase db push`, then
+regenerate `src/lib/supabase/database.types.ts`.
+
+## Deploying (Vercel)
+
+1. Import the repo in Vercel. The framework preset is detected; no `vercel.json` is needed.
+2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and optionally
+   `NEXT_PUBLIC_SITE_URL`.
+3. Add the production and preview callback URLs in Supabase (see above).
+
+Production responses carry security headers (CSP, `X-Frame-Options: DENY`, `nosniff`, a strict referrer, and a
+permissions policy) set in `next.config.ts`.
+
+## Quality
+
+- **CI** (`.github/workflows/ci.yml`) runs lint, typecheck, and unit tests, then a production build and the
+  Playwright suite on desktop and mobile viewports.
+- **Accessibility:**
+  - axe (WCAG 2.1 A/AA) finds no serious or critical issues on any page, including in-game and in dialogs.
+  - Every page has a skip link and visible focus.
+  - Modals use native `<dialog>` and tabs use ARIA.
+  - Grid Lock tiles are shape-coded as well as colour-coded.
+  - Trivia is real DOM with a live region.
+  - Reduce motion (OS setting or in-app toggle) is honoured by the UI and the games.
+- **Lighthouse (mobile, production build):**
+
+  | Page            | Performance | Accessibility |
+  | --------------- | ----------- | ------------- |
+  | `/`             | 96          | 100           |
+  | `/games`        | 96          | 100           |
+  | `/games/orbit`  | 97          | 100           |
+  | `/leaderboards` | 97          | 100           |
+
+  CLS is ≤ 0.06 on every page.
+
+- **Performance:** each game is a separate lazy chunk loaded on Play, cover art is procedural SVG (no images), and
+  fonts are self-hosted with `next/font`.
