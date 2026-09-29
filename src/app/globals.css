@@ -1,0 +1,175 @@
+@import "tailwindcss";
+
+/*
+ * Zero X design tokens.
+ * Raw values live on :root so they can be read by canvas games and inline styles;
+ * the @theme block maps them onto Tailwind utilities (bg-bg, text-cyan, shadow-glow-cyan, ...).
+ */
+:root {
+  /* Surfaces */
+  --zx-bg: #05060b;
+  --zx-surface: #0c0f1c;
+  --zx-surface-2: #131729;
+  --zx-surface-3: #1b2038;
+  --zx-border: #262c4a;
+  --zx-border-strong: #3a4270;
+
+  /* Text (all AA on --zx-bg and --zx-surface) */
+  --zx-text: #eef1ff;
+  --zx-muted: #a2aac6;
+  --zx-subtle: #7c85a6;
+
+  /* Neon accents */
+  --zx-cyan: #22e5ff;
+  --zx-cyan-dim: #0fb4cc;
+  --zx-magenta: #ff2bd6;
+  --zx-magenta-dim: #c61ea5;
+  --zx-violet: #8b5cff;
+
+  /* Status */
+  --zx-success: #3dffa2;
+  --zx-warning: #ffcb3d;
+  --zx-danger: #ff4d6d;
+
+  /* Motion */
+  --zx-dur-fast: 120ms;
+  --zx-dur-base: 200ms;
+  --zx-dur-slow: 400ms;
+  --zx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--zx-bg);
+  --color-surface: var(--zx-surface);
+  --color-surface-2: var(--zx-surface-2);
+  --color-surface-3: var(--zx-surface-3);
+  --color-border: var(--zx-border);
+  --color-border-strong: var(--zx-border-strong);
+  --color-text: var(--zx-text);
+  --color-muted: var(--zx-muted);
+  --color-subtle: var(--zx-subtle);
+  --color-cyan: var(--zx-cyan);
+  --color-cyan-dim: var(--zx-cyan-dim);
+  --color-magenta: var(--zx-magenta);
+  --color-magenta-dim: var(--zx-magenta-dim);
+  --color-violet: var(--zx-violet);
+  --color-success: var(--zx-success);
+  --color-warning: var(--zx-warning);
+  --color-danger: var(--zx-danger);
+
+  --font-sans: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-orbitron), var(--font-grotesk), ui-sans-serif, sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 12px 32px -12px rgb(0 0 0 / 0.7);
+  --shadow-glow-cyan: 0 0 0 1px rgb(34 229 255 / 0.5), 0 0 24px -4px rgb(34 229 255 / 0.55);
+  --shadow-glow-magenta: 0 0 0 1px rgb(255 43 214 / 0.5), 0 0 24px -4px rgb(255 43 214 / 0.55);
+
+  --ease-zx: var(--zx-ease-out);
+
+  --animate-shimmer: zx-shimmer 1.4s linear infinite;
+  --animate-rise: zx-rise var(--zx-dur-slow) var(--zx-ease-out) both;
+  --animate-pulse-glow: zx-pulse-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes zx-shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes zx-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes zx-pulse-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+html {
+  background: var(--zx-bg);
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgb(255 43 214 / 0.1), transparent 60%),
+    radial-gradient(900px 500px at -10% 10%, rgb(34 229 255 / 0.08), transparent 60%), var(--zx-bg);
+  background-attachment: fixed;
+  color: var(--zx-text);
+}
+
+/* Visible, consistent focus ring for keyboard users everywhere. */
+:focus-visible {
+  outline: 2px solid var(--zx-cyan);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: rgb(255 43 214 / 0.35);
+}
+
+/* Faint grid used behind hero sections. */
+.zx-grid-bg {
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.zx-skeleton {
+  background: linear-gradient(90deg, var(--zx-surface-2) 0%, var(--zx-surface-3) 50%, var(--zx-surface-2) 100%);
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+.zx-scroll-row {
+  scrollbar-width: thin;
+  scrollbar-color: var(--zx-border) transparent;
+}
+
+/*
+ * Reduced motion: honoured from the OS setting and from the in-app
+ * "Reduce motion" toggle (which sets data-reduce-motion on <html>).
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html[data-reduce-motion="true"] *,
+html[data-reduce-motion="true"] *::before,
+html[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
