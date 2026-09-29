@@ -5,6 +5,9 @@ import { LeaderboardSkeleton, LeaderboardTable } from "@/components/ui/Leaderboa
 import { Button } from "@/components/ui/Button";
 import { useLeaderboard, type Period } from "@/lib/use-leaderboard";
 import { cn } from "@/lib/cn";
+import { useAuth } from "@/store/auth";
+import type { LeaderboardEntry } from "@/lib/types";
+import { ReportDialog } from "./ReportDialog";
 
 export const PERIODS: { id: Period; label: string }[] = [
   { id: "daily", label: "Daily" },
@@ -25,7 +28,12 @@ export function LiveLeaderboard({
   caption: string;
 }) {
   const { state, retry } = useLeaderboard(game, period, limit);
+  const signedIn = useAuth((s) => s.status === "signed_in");
+  const [reporting, setReporting] = useState<{ userId: string; username: string } | null>(null);
   const valueLabel = game ? "Score" : "XP";
+  const onReport = signedIn
+    ? (e: LeaderboardEntry) => e.userId && setReporting({ userId: e.userId, username: e.username })
+    : undefined;
 
   if (state.status === "loading") return <LeaderboardSkeleton rows={Math.min(limit, 5)} />;
   if (state.status === "disabled")
@@ -44,18 +52,22 @@ export function LiveLeaderboard({
       </div>
     );
   return (
-    <LeaderboardTable
-      entries={state.entries}
-      caption={caption}
-      valueLabel={valueLabel}
-      emptyMessage={
-        game
-          ? period === "daily"
-            ? "No scores today yet. Be the first on the board."
-            : "Be the first to put a score on the board."
-          : "Nobody has earned XP in this period yet."
-      }
-    />
+    <>
+      <LeaderboardTable
+        entries={state.entries}
+        caption={caption}
+        valueLabel={valueLabel}
+        onReport={onReport}
+        emptyMessage={
+          game
+            ? period === "daily"
+              ? "No scores today yet. Be the first on the board."
+              : "Be the first to put a score on the board."
+            : "Nobody has earned XP in this period yet."
+        }
+      />
+      <ReportDialog target={reporting} onClose={() => setReporting(null)} />
+    </>
   );
 }
 

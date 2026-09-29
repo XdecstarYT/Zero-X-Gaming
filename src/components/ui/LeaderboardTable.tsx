@@ -14,12 +14,15 @@ export function LeaderboardTable({
   className,
   valueLabel = "Score",
   emptyMessage = "Be the first to put a score on the board.",
+  onReport,
 }: {
   entries: LeaderboardEntry[];
   caption: string;
   className?: string;
   valueLabel?: string;
   emptyMessage?: string;
+  /** When set, other players' rows get a "report" action. */
+  onReport?: (entry: LeaderboardEntry) => void;
 }) {
   if (entries.length === 0) {
     return (
@@ -45,6 +48,11 @@ export function LeaderboardTable({
             <th scope="col" className="px-4 py-2.5 text-right font-semibold">
               {valueLabel}
             </th>
+            {onReport && (
+              <th scope="col" className="w-10">
+                <span className="sr-only">Actions</span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -61,6 +69,30 @@ export function LeaderboardTable({
                 <span className="ml-2 text-xs text-muted">Lvl {e.level}</span>
               </td>
               <td className="px-4 py-2.5 text-right font-mono tabular-nums">{formatNumber(e.score)}</td>
+              {onReport && (
+                <td className="pr-2 text-right">
+                  {!e.isCurrentUser && e.userId && (
+                    <button
+                      type="button"
+                      onClick={() => onReport(e)}
+                      aria-label={`Report ${e.username}`}
+                      title="Report player"
+                      className="grid h-8 w-8 place-items-center rounded-md text-subtle hover:bg-surface-2 hover:text-danger"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        aria-hidden
+                      >
+                        <path d="M5 21V4m0 0h11l-2 4 2 4H5" />
+                      </svg>
+                    </button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

@@ -149,6 +149,7 @@ export type Database = {
           avatar_url: string | null;
           created_at: string;
           id: string;
+          is_hidden: boolean;
           updated_at: string;
           username: string;
           xp: number;
@@ -168,6 +169,39 @@ export type Database = {
           updated_at?: string;
           username?: string;
           xp?: number;
+        };
+        Relationships: [];
+      };
+      reports: {
+        Row: {
+          created_at: string;
+          details: string | null;
+          id: number;
+          reason: string;
+          reporter_id: string;
+          status: string;
+          target_id: string;
+          target_type: string;
+        };
+        Insert: {
+          created_at?: string;
+          details?: string | null;
+          id?: never;
+          reason: string;
+          reporter_id: string;
+          status?: string;
+          target_id: string;
+          target_type: string;
+        };
+        Update: {
+          created_at?: string;
+          details?: string | null;
+          id?: never;
+          reason?: string;
+          reporter_id?: string;
+          status?: string;
+          target_id?: string;
+          target_type?: string;
         };
         Relationships: [];
       };
@@ -247,6 +281,10 @@ export type Database = {
           username: string;
           xp: number;
         }[];
+      };
+      report_content: {
+        Args: { p_details?: string; p_reason: string; p_target_id: string; p_target_type: string };
+        Returns: undefined;
       };
       submit_score: {
         Args: { p_duration_ms: number; p_game_slug: string; p_score: number };
