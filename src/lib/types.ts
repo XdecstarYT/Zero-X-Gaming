@@ -24,6 +24,8 @@ export interface Game {
   releasedAt: string;
   controls: GameControl[];
   touchControls: string;
+  /** Preferred phone orientation in immersive mode. */
+  orientation?: "landscape" | "any";
 }
 
 export interface LeaderboardEntry {

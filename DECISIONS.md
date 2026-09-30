@@ -173,3 +173,12 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     `background-position`), there's no full-screen `mix-blend-mode`, no animated `filter`, and no fade-in from
     opacity 0. The first version cost about 1.4 s of blocking time and dropped Lighthouse on `/` to 61; after the
     fix it scores 91–95 with the intro playing. Invite links (`?room=`) skip the intro.
+55. **Mobile-first navigation.** Phones get a fixed bottom tab bar (Home, Games, Pass, Ranks, Profile) with 56px
+    targets and safe-area padding, replacing the hamburger menu. The header keeps the logo, settings, and a compact
+    account control. `viewport-fit=cover` plus `env(safe-area-inset-*)` handles notches and home indicators.
+56. **Immersive play on touch devices.** Pressing Play turns the stage into a fixed, full-viewport (`100dvh`)
+    surface. The platform requests element fullscreen, and landscape orientation lock for games that prefer it
+    (`Game.orientation`). Both are best-effort: iOS Safari ignores them, and the fixed layout still fills the
+    screen. Page scroll and pull-to-refresh are disabled while playing. Leaving fullscreen with the back gesture
+    pauses the game. Pause sits at top-center, clear of every game's controls, and Exit lives in the pause and
+    game-over overlays. Landscape games show a dismissable "rotate your phone" card in portrait.

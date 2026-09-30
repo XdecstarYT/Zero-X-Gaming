@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { dismissRotate, expect, test } from "./fixtures";
 
 const BOARD = [
   { rank: 1, user_id: "u1", username: "NeonVandal", avatar_url: null, xp: 5000, score: 4200 },
@@ -46,6 +46,7 @@ test("Zero Dash: play, pause, resume, game over, then shows in continue playing"
   await page.goto("/games/zero-dash");
   const stage = page.getByTestId("game-stage");
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
   await expect(stage).toHaveAttribute("data-phase", "playing");
   await expect(stage.locator("canvas")).toBeVisible();
 
@@ -69,6 +70,7 @@ test("Grid Lock: board renders, keyboard slides work, pause and resume", async (
   await page.goto("/games/grid-lock");
   const stage = page.getByTestId("game-stage");
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
   await expect(stage).toHaveAttribute("data-phase", "playing");
   await expect(stage.locator("canvas")).toBeVisible();
   for (const key of ["Shift+ArrowRight", "ArrowDown", "Shift+ArrowUp", "Shift+ArrowLeft"])
@@ -83,6 +85,7 @@ test("Orbit: starts, steers and pauses when the tab is hidden", async ({ page })
   await page.goto("/games/orbit");
   const stage = page.getByTestId("game-stage");
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
   await expect(stage).toHaveAttribute("data-phase", /playing|over/);
   await page.keyboard.down("ArrowLeft");
   await page.waitForTimeout(300);
@@ -98,6 +101,7 @@ test("Blitz Trivia: pick a category, answer with the keyboard, see feedback", as
   await page.goto("/games/blitz-trivia");
   const stage = page.getByTestId("game-stage");
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
   await expect(stage.getByText("Pick a category")).toBeVisible();
   await stage.getByRole("button", { name: /Math/ }).click();
   await expect(stage.getByRole("button", { name: /^1: / })).toBeVisible();
@@ -114,7 +118,6 @@ test("unknown game shows 404", async ({ page }) => {
 
 test("sign-in modal opens, validates, switches mode and closes with Escape", async ({ page, isMobile }) => {
   await page.goto("/");
-  if (isMobile) await page.getByRole("button", { name: "Open menu" }).click();
   await page.getByRole("button", { name: "Sign in" }).first().click();
   const dialog = page.getByRole("dialog", { name: "Sign in" });
   await expect(dialog).toBeVisible();
@@ -185,4 +188,48 @@ test("leaderboards show an error with retry when the API fails, and empty states
   await expect(aside.getByText("Couldn't load the leaderboard.")).toBeVisible();
   await aside.getByRole("button", { name: "Retry" }).click();
   await expect(aside.getByText("Be the first to put a score on the board.")).toBeVisible();
+});
+
+test("phones get a bottom tab bar; desktop gets the top nav", async ({ page, isMobile }) => {
+  await page.goto("/");
+  const tabs = page.getByRole("navigation", { name: "Primary" });
+  if (isMobile) {
+    await expect(tabs).toBeVisible();
+    for (const name of ["Home", "Games", "Pass", "Ranks", "Profile"])
+      await expect(tabs.getByRole("link", { name })).toBeVisible();
+    await tabs.getByRole("link", { name: "Games" }).click();
+    await expect(page).toHaveURL(/\/games$/);
+    await expect(tabs.getByRole("link", { name: "Games" })).toHaveAttribute("aria-current", "page");
+    // Tab targets are at least 44px tall.
+    const box = await tabs.getByRole("link", { name: "Games" }).boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  } else {
+    await expect(tabs).toBeHidden();
+    await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Games" })).toBeVisible();
+  }
+});
+
+test("on phones, playing goes immersive (full screen) and Exit returns to the page", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "phone-only behaviour");
+  await page.goto("/games/grid-lock");
+  const stage = page.getByTestId("game-stage");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(stage).toHaveAttribute("data-immersive", "true");
+  const box = await stage.boundingBox();
+  const vp = page.viewportSize()!;
+  expect(box!.width).toBeGreaterThanOrEqual(vp.width - 1);
+  expect(box!.height).toBeGreaterThanOrEqual(vp.height - 1);
+  await stage.getByRole("button", { name: "Pause game" }).click();
+  await stage.getByRole("button", { name: "Exit" }).click();
+  await expect(stage).not.toHaveAttribute("data-immersive", "true");
+});
+
+test("landscape games ask phones in portrait to rotate (dismissable)", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "phone-only behaviour");
+  await page.goto("/games/zero-dash");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  const card = page.getByRole("dialog", { name: "Rotate your device" });
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Play in portrait" }).click();
+  await expect(card).toBeHidden();
 });

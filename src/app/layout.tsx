@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Orbitron, Space_Grotesk } from "next/font/google";
 import { Navbar } from "@/components/layout/Navbar";
+import { BottomNav } from "@/components/layout/BottomNav";
 import { Footer } from "@/components/layout/Footer";
 import { Providers } from "@/components/layout/Providers";
 import { Toaster } from "@/components/ui/Toaster";
@@ -23,6 +24,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#05060b",
   colorScheme: "dark",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -32,7 +34,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* Hides the intro before first paint for visitors who've already seen it this session. */}
         <script dangerouslySetInnerHTML={{ __html: introGateScript }} />
       </head>
-      <body className="flex min-h-full flex-col font-sans">
+      <body className="flex min-h-full flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] font-sans md:pb-0">
         <IntroSplash />
         <Providers>
           <Navbar />
@@ -40,6 +42,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             {children}
           </main>
           <Footer />
+          <BottomNav />
           <Toaster />
         </Providers>
       </body>

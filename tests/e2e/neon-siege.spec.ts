@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { dismissRotate, expect, test } from "./fixtures";
 
 test("Neon Siege solo: menu, deploy vs bots, pause/resume, and the run ends", async ({ page }) => {
   test.setTimeout(90_000);
@@ -7,6 +7,7 @@ test("Neon Siege solo: menu, deploy vs bots, pause/resume, and the run ends", as
   await page.goto("/games/neon-siege");
   const stage = page.getByTestId("game-stage");
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
 
   await expect(stage.getByText("Neon Siege")).toBeVisible();
   await stage.getByRole("button", { name: "Hard" }).click();

@@ -33,6 +33,7 @@ export const GAMES: Game[] = [
       { keys: ["Space", "↑", "W"], action: "Jump (hold for higher)" },
       { keys: ["P", "Esc"], action: "Pause" },
     ],
+    orientation: "landscape",
     touchControls: "Tap anywhere to jump. Press and hold for a higher jump.",
   },
   {
@@ -75,6 +76,7 @@ export const GAMES: Game[] = [
       { keys: ["Space"], action: "Boost (uses energy)" },
       { keys: ["P", "Esc"], action: "Pause" },
     ],
+    orientation: "landscape",
     touchControls: "Touch and drag: the probe turns toward your finger. Put a second finger down to boost.",
   },
   {
@@ -121,6 +123,7 @@ export const GAMES: Game[] = [
       { keys: ["Tab"], action: "Scoreboard (online)" },
       { keys: ["Esc", "P"], action: "Pause" },
     ],
+    orientation: "landscape",
     touchControls:
       "Left thumb drags a virtual stick to move, right thumb drags to look. Hold FIRE to shoot, R to reload.",
   },

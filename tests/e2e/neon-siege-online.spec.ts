@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { dismissRotate, expect, test } from "./fixtures";
 
 /**
  * Two tabs in the same browser join the same room over the local
@@ -18,6 +18,7 @@ test("Neon Siege online: two players meet in a room, bots fill the rest, leaving
     await p.goto(url);
     const stage = p.getByTestId("game-stage");
     await p.getByRole("button", { name: "Play", exact: true }).click();
+    await dismissRotate(p);
     await expect(stage.getByText("Online · Deathmatch")).toBeVisible();
     await expect(stage.getByLabel("Room code")).toHaveValue("E2E01");
     await expect(stage.getByText(/Local mode/)).toBeVisible();
@@ -54,6 +55,7 @@ test("room codes are validated", async ({ page }) => {
   await page.goto("/games/neon-siege?net=local");
   const stage = page.getByTestId("game-stage");
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
   await stage.getByLabel("Room code").fill("!!");
   await stage.getByRole("button", { name: "Join room" }).click();
   await expect(stage.getByRole("status").filter({ hasText: "Room codes are 4–8 letters or numbers." })).toBeVisible();

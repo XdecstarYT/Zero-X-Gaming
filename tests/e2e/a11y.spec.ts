@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "./fixtures";
+import { dismissRotate, expect, test } from "./fixtures";
 
 const PAGES = [
   "/",
@@ -39,6 +39,7 @@ test("no serious accessibility violations with a game running and the sign-in di
 }) => {
   await page.goto("/games/blitz-trivia");
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
   await page.getByRole("button", { name: /Mixed/ }).click();
   let results = await new AxeBuilder({ page }).include('[data-testid="game-stage"]').analyze();
   expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual(
@@ -46,7 +47,6 @@ test("no serious accessibility violations with a game running and the sign-in di
   );
 
   await page.goto("/");
-  if (isMobile) await page.getByRole("button", { name: "Open menu" }).click();
   await page.getByRole("button", { name: "Sign in" }).first().click();
   results = await new AxeBuilder({ page }).include("dialog[open]").analyze();
   expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual(
@@ -57,6 +57,7 @@ test("no serious accessibility violations with a game running and the sign-in di
 test("no serious accessibility violations in the Neon Siege mission menu", async ({ page }) => {
   await page.goto("/games/neon-siege?net=local");
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
   await expect(page.getByRole("button", { name: "Join room" })).toBeVisible();
   const results = await new AxeBuilder({ page }).include('[data-testid="game-stage"]').analyze();
   expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual(

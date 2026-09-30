@@ -17,3 +17,9 @@ export const test = base.extend({
 
 export const introTest = base;
 export { expect };
+
+/** Phones show a "rotate your device" card over landscape games; tests play in portrait. */
+export async function dismissRotate(page: import("@playwright/test").Page) {
+  const btn = page.getByRole("button", { name: "Play in portrait" });
+  if (await btn.isVisible().catch(() => false)) await btn.click();
+}

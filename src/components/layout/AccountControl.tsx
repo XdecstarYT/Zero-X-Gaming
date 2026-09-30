@@ -38,15 +38,20 @@ export function useSignOut() {
 }
 
 /** Navbar account area: skeleton → sign-in button (guest) → user chip (signed in). */
-export function AccountControl({ variant = "bar" }: { variant?: "bar" | "menu" }) {
+export function AccountControl({ variant = "bar" }: { variant?: "bar" | "menu" | "compact" }) {
   const { status, profile } = useAuth();
   const signOut = useSignOut();
 
-  if (status === "loading") return <Skeleton className={variant === "bar" ? "h-8 w-24" : "h-10 w-full"} />;
+  if (status === "loading")
+    return (
+      <Skeleton
+        className={variant === "menu" ? "h-10 w-full" : variant === "compact" ? "h-9 w-9 rounded-full" : "h-8 w-24"}
+      />
+    );
 
   if (status !== "signed_in") {
     return (
-      <SignInButton size={variant === "bar" ? "sm" : "md"} className={variant === "menu" ? "w-full" : undefined}>
+      <SignInButton size={variant === "menu" ? "md" : "sm"} className={variant === "menu" ? "w-full" : undefined}>
         Sign in
       </SignInButton>
     );
@@ -54,6 +59,14 @@ export function AccountControl({ variant = "bar" }: { variant?: "bar" | "menu" }
 
   const name = profile?.username ?? "Player";
   const { level } = levelFromXp(profile?.xp ?? 0);
+
+  if (variant === "compact") {
+    return (
+      <Link href="/profile" aria-label={`Your profile: ${name}, level ${level}`} className="block rounded-full">
+        <Avatar name={name} url={profile?.avatar_url} className="h-9 w-9 text-sm" />
+      </Link>
+    );
+  }
 
   return (
     <div className={cn("flex items-center gap-2", variant === "menu" && "w-full justify-between")}>

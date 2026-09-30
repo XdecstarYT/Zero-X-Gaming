@@ -18,6 +18,20 @@ import { GameArt } from "./GameArt";
 
 const noopSubscribe = () => () => {};
 
+function useMedia(query: string) {
+  return useSyncExternalStore(
+    (cb) => {
+      const mq = window.matchMedia(query);
+      mq.addEventListener("change", cb);
+      return () => mq.removeEventListener("change", cb);
+    },
+    () => window.matchMedia(query).matches,
+    () => false,
+  );
+}
+
+type LockableOrientation = ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void };
+
 /** Name shown to other players online: username if signed in, else a per-session guest tag. */
 function displayName() {
   const username = useAuth.getState().profile?.username;
@@ -54,6 +68,12 @@ export function GameStage({ game }: { game: Game }) {
   const [score, setScore] = useState(0);
   const [submit, setSubmit] = useState<Submit>({ state: "idle" });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  /** Phones: once playing, the stage takes over the whole screen. */
+  const [immersive, setImmersive] = useState(false);
+  const [rotateDismissed, setRotateDismissed] = useState(false);
+  const coarse = useMedia("(pointer: coarse)");
+  const portrait = useMedia("(orientation: portrait)");
+  const wantsLandscape = game.orientation === "landscape";
   const recordPlay = useLibrary((s) => s.recordPlay);
   const localBest = useLibrary((s) => s.recent.find((r) => r.slug === game.slug)?.bestScore ?? 0);
   const authStatus = useAuth((s) => s.status);
@@ -97,9 +117,19 @@ export function GameStage({ game }: { game: Game }) {
     setPhase((p) => (p === "playing" ? "paused" : p));
   }, []);
 
+  const enterImmersive = useCallback(() => {
+    setImmersive(true);
+    const frame = frameRef.current;
+    if (frame && !document.fullscreenElement) {
+      frame.requestFullscreen?.({ navigationUI: "hide" }).catch(() => {});
+    }
+    if (wantsLandscape) (screen.orientation as LockableOrientation | undefined)?.lock?.("landscape").catch(() => {});
+  }, [wantsLandscape]);
+
   const launch = useCallback(async () => {
     const host = hostRef.current;
     if (!host || !playable) return;
+    if (window.matchMedia("(pointer: coarse)").matches) enterImmersive();
     setPhase("loading");
     setSubmit({ state: "idle" });
     setScore(0);
@@ -128,7 +158,15 @@ export function GameStage({ game }: { game: Game }) {
     } catch {
       setPhase("error");
     }
-  }, [game.slug, playable, handleFinal, pause]);
+  }, [game.slug, playable, handleFinal, pause, enterImmersive]);
+
+  const exitImmersive = useCallback(() => {
+    moduleRef.current?.pause();
+    setPhase((p) => (p === "playing" ? "paused" : p));
+    setImmersive(false);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    (screen.orientation as LockableOrientation | undefined)?.unlock?.();
+  }, []);
 
   const resume = useCallback(() => {
     moduleRef.current?.resume();
@@ -161,10 +199,27 @@ export function GameStage({ game }: { game: Game }) {
   }, [phase, pause, resume, pauseKey]);
 
   useEffect(() => {
-    const onChange = () => setIsFullscreen(document.fullscreenElement === frameRef.current);
+    const onChange = () => {
+      const fs = document.fullscreenElement === frameRef.current;
+      setIsFullscreen(fs);
+      // Android back / swipe out of fullscreen mid-game: pause rather than keep playing blind.
+      if (!fs && immersive) pause();
+    };
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
+  }, [immersive, pause]);
+
+  // Immersive mode: no page scroll or pull-to-refresh behind the game.
+  useEffect(() => {
+    if (!immersive) return;
+    const { overflow, overscrollBehavior } = document.body.style;
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
+    return () => {
+      document.body.style.overflow = overflow;
+      document.body.style.overscrollBehavior = overscrollBehavior;
+    };
+  }, [immersive]);
 
   function toggleFullscreen() {
     if (document.fullscreenElement) void document.exitFullscreen();
@@ -180,7 +235,12 @@ export function GameStage({ game }: { game: Game }) {
         tabIndex={-1}
         data-testid="game-stage"
         data-phase={phase}
-        className="relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-border-strong bg-bg shadow-card focus:outline-none sm:aspect-video"
+        data-immersive={immersive || undefined}
+        className={
+          immersive
+            ? "fixed inset-0 z-[70] h-[100dvh] w-screen touch-none overflow-hidden bg-black focus:outline-none"
+            : "relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-border-strong bg-bg shadow-card focus:outline-none sm:aspect-video"
+        }
       >
         <div ref={hostRef} className="absolute inset-0" />
         {showArt && <GameArt game={game} className="absolute inset-0 opacity-40" />}
@@ -208,7 +268,11 @@ export function GameStage({ game }: { game: Game }) {
             type="button"
             onClick={pause}
             aria-label="Pause game"
-            className="absolute right-3 bottom-3 grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/50 text-white/80 backdrop-blur hover:text-white"
+            className={
+              immersive
+                ? "absolute top-[max(0.5rem,env(safe-area-inset-top))] left-1/2 z-10 grid h-11 w-11 -translate-x-1/2 place-items-center rounded-full border border-white/15 bg-black/50 text-white/80 backdrop-blur"
+                : "absolute right-3 bottom-3 grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/50 text-white/80 backdrop-blur hover:text-white"
+            }
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
               <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
@@ -227,8 +291,13 @@ export function GameStage({ game }: { game: Game }) {
               <Button variant="secondary" onClick={launch}>
                 Restart
               </Button>
+              {immersive && (
+                <Button variant="ghost" onClick={exitImmersive}>
+                  Exit
+                </Button>
+              )}
             </div>
-            <p className="mt-3 text-xs text-subtle">Press {formatKeyCode(pauseKey)} to resume</p>
+            {!coarse && <p className="mt-3 text-xs text-subtle">Press {formatKeyCode(pauseKey)} to resume</p>}
           </Overlay>
         )}
 
@@ -248,8 +317,40 @@ export function GameStage({ game }: { game: Game }) {
                   Save my scores
                 </SignInButton>
               )}
+              {immersive && (
+                <Button variant="ghost" onClick={exitImmersive}>
+                  Exit
+                </Button>
+              )}
             </div>
           </Overlay>
+        )}
+
+        {immersive && wantsLandscape && portrait && !rotateDismissed && phase !== "over" && (
+          <div
+            className="absolute inset-0 z-20 grid place-items-center bg-black/85 p-6 text-center"
+            role="dialog"
+            aria-label="Rotate your device"
+          >
+            <div className="flex flex-col items-center">
+              <svg
+                viewBox="0 0 48 48"
+                className="h-16 w-16 text-cyan motion-safe:animate-pulse"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                aria-hidden
+              >
+                <rect x="14" y="6" width="20" height="36" rx="3" />
+                <path d="M40 30a14 14 0 0 1-12 12m0 0 3-4m-3 4 4 3" />
+              </svg>
+              <p className="mt-4 font-display text-lg font-bold uppercase tracking-wider">Rotate your phone</p>
+              <p className="mt-1 text-sm text-muted">{game.title} plays best in landscape.</p>
+              <Button variant="secondary" size="sm" className="mt-5" onClick={() => setRotateDismissed(true)}>
+                Play in portrait
+              </Button>
+            </div>
+          </div>
         )}
 
         {phase === "error" && (
