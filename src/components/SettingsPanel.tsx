@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useSettings, type KeyAction } from "@/store/settings";
+import { useSettings, type KeyAction, type Theme } from "@/store/settings";
 import { toast } from "@/store/toast";
 import { Toggle } from "@/components/ui/Toggle";
 import { Button } from "@/components/ui/Button";
@@ -21,6 +21,8 @@ export function SettingsPanel() {
 
   return (
     <div className="space-y-8">
+      <ThemePicker value={s.theme} onChange={s.setTheme} />
+
       <section aria-labelledby="audio-title" className="rounded-lg border border-border bg-surface px-5">
         <h2
           id="audio-title"
@@ -119,5 +121,98 @@ export function SettingsPanel() {
         </ul>
       </section>
     </div>
+  );
+}
+
+const THEME_OPTIONS: {
+  id: Theme;
+  name: string;
+  blurb: string;
+  preview: { bg: string; card: string; text: string; a: string; b: string; font: string };
+}[] = [
+  {
+    id: "classic",
+    name: "Classic",
+    blurb: "The original Zero X look: dark, neon and arcade.",
+    preview: {
+      bg: "#05060b",
+      card: "#131729",
+      text: "#eef1ff",
+      a: "#22e5ff",
+      b: "#ff2bd6",
+      font: "var(--font-orbitron)",
+    },
+  },
+  {
+    id: "x1",
+    name: "X-1+",
+    blurb: "Modern, light and friendly, with softer shapes and brighter colours.",
+    preview: {
+      bg: "#f5f7ff",
+      card: "#ffffff",
+      text: "#1c2342",
+      a: "#2f5bea",
+      b: "#d9366f",
+      font: "var(--font-nunito)",
+    },
+  },
+];
+
+function ThemePicker({ value, onChange }: { value: Theme; onChange: (t: Theme) => void }) {
+  return (
+    <section aria-labelledby="theme-title" className="rounded-lg border border-border bg-surface p-5">
+      <h2 id="theme-title" className="font-display text-sm font-bold uppercase tracking-wider">
+        Theme
+      </h2>
+      <div role="group" aria-labelledby="theme-title" className="mt-4 grid gap-3 sm:grid-cols-2">
+        {THEME_OPTIONS.map((t) => {
+          const on = value === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onChange(t.id)}
+              className={cn(
+                "flex flex-col gap-3 rounded-lg border-2 p-3 text-left transition",
+                on ? "border-cyan shadow-glow-cyan" : "border-border hover:border-border-strong",
+              )}
+            >
+              <span
+                aria-hidden
+                className="block overflow-hidden rounded-md border border-black/10 p-2"
+                style={{ background: t.preview.bg }}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.preview.a }} />
+                  <span
+                    className="text-[11px] font-black"
+                    style={{ color: t.preview.text, fontFamily: t.preview.font }}
+                  >
+                    ZERO X
+                  </span>
+                </span>
+                <span className="mt-2 flex gap-1.5">
+                  {[t.preview.a, t.preview.b, t.preview.a].map((c, i) => (
+                    <span
+                      key={i}
+                      className="block h-10 flex-1 rounded"
+                      style={{ background: t.preview.card, borderTop: `3px solid ${c}` }}
+                    />
+                  ))}
+                </span>
+              </span>
+              <span>
+                <span className="block font-semibold">
+                  {t.name}
+                  {on && <span className="ml-2 text-xs font-bold text-cyan">Active</span>}
+                </span>
+                <span className="block text-sm text-muted">{t.blurb}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }

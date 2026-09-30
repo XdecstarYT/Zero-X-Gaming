@@ -233,3 +233,13 @@ test("landscape games ask phones in portrait to rotate (dismissable)", async ({ 
   await card.getByRole("button", { name: "Play in portrait" }).click();
   await expect(card).toBeHidden();
 });
+
+test("settings: switching to the X-1+ theme applies instantly and persists", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /X-1\+/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "x1");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "x1");
+  await page.getByRole("button", { name: /Classic/ }).click();
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme", "x1");
+});

@@ -66,3 +66,20 @@ test("no serious accessibility violations in the Neon Siege mission menu", async
     [],
   );
 });
+
+for (const path of ["/", "/settings", "/battle-pass", "/games/neon-siege"]) {
+  test(`X-1+ theme: no serious accessibility violations on ${path}`, async ({ page }) => {
+    await page.addInitScript(() =>
+      localStorage.setItem("zx-settings", JSON.stringify({ state: { theme: "x1" }, version: 2 })),
+    );
+    await page.route("**/rest/v1/rpc/get_leaderboard*", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
+    );
+    await page.goto(path);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "x1");
+    await page.waitForLoadState("networkidle");
+    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+    const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+    expect(serious.map((v) => `${v.id}: ${v.help} → ${v.nodes.map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
+  });
+}

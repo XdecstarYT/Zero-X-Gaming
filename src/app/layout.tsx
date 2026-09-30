@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Orbitron, Space_Grotesk } from "next/font/google";
+import { Nunito, Orbitron, Space_Grotesk } from "next/font/google";
 import { Navbar } from "@/components/layout/Navbar";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Footer } from "@/components/layout/Footer";
@@ -7,10 +7,13 @@ import { Providers } from "@/components/layout/Providers";
 import { Toaster } from "@/components/ui/Toaster";
 import { IntroSplash, introGateScript } from "@/components/layout/IntroSplash";
 import { SITE_URL } from "@/lib/site";
+import { themeScript } from "@/store/settings";
 import "./globals.css";
 
 const orbitron = Orbitron({ variable: "--font-orbitron", subsets: ["latin"], weight: ["600", "700", "800", "900"] });
 const grotesk = Space_Grotesk({ variable: "--font-grotesk", subsets: ["latin"] });
+// X-1+ theme: a rounded, friendly face for headings and text.
+const nunito = Nunito({ variable: "--font-nunito", subsets: ["latin"] });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -29,10 +32,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${orbitron.variable} ${grotesk.variable} h-full antialiased`} suppressHydrationWarning>
+    <html lang="en" className={`${orbitron.variable} ${grotesk.variable} ${nunito.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
         {/* Hides the intro before first paint for visitors who've already seen it this session. */}
         <script dangerouslySetInnerHTML={{ __html: introGateScript }} />
+        {/* Applies the saved site theme before first paint. */}
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="flex min-h-full flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] font-sans md:pb-0">
         <IntroSplash />
