@@ -13,6 +13,12 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M7.5 10.5v4M5.5 12.5h4M15.5 11.5h.01M18 13.5h.01" />
     </>
   ),
+  "/sports": (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5l3.3 2.4-1.3 3.9H10l-1.3-3.9zM12 3.5v4M15.3 9.9l4.6-1.4M14 13.8l2.6 3.7M10 13.8l-2.6 3.7M8.7 9.9 4.1 8.5" />
+    </>
+  ),
   "/battle-pass": <path d="M12 3.5 14.6 9l6 .6-4.5 4 1.3 5.9L12 16.5l-5.4 3 1.3-5.9-4.5-4 6-.6z" />,
   "/leaderboards": <path d="M8 21V11M12 21V4M16 21v-7M4 21h16" />,
   "/profile": (
@@ -26,6 +32,7 @@ const ICONS: Record<string, React.ReactNode> = {
 const TABS = [
   { href: "/", label: "Home" },
   { href: "/games", label: "Games" },
+  { href: "/sports", label: "Sports+" },
   { href: "/battle-pass", label: "Pass" },
   { href: "/leaderboards", label: "Ranks" },
   { href: "/profile", label: "Profile" },
@@ -39,7 +46,7 @@ export function BottomNav() {
       aria-label="Primary"
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
     >
-      <ul className="grid grid-cols-5">
+      <ul className="grid grid-cols-6">
         {TABS.map((t) => {
           const active = isActive(pathname, t.href);
           return (

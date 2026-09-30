@@ -56,7 +56,7 @@ export function AccountControl({ variant = "bar" }: { variant?: "bar" | "menu" |
 
   if (status !== "signed_in" && status !== "device") {
     return (
-      <SignInButton size={variant === "menu" ? "md" : "sm"} className={variant === "menu" ? "w-full" : undefined}>
+      <SignInButton size={variant === "menu" ? "md" : "sm"} className={variant === "menu" ? "w-full" : "whitespace-nowrap"}>
         Sign in
       </SignInButton>
     );

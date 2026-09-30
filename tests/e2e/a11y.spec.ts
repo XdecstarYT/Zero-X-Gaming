@@ -4,6 +4,7 @@ import { dismissRotate, expect, test } from "./fixtures";
 const PAGES = [
   "/",
   "/games",
+  "/sports",
   "/games/neon-siege",
   "/games/trenches",
   "/games/code-3",

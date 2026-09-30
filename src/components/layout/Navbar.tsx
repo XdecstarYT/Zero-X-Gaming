@@ -10,9 +10,10 @@ import { CoinChip } from "@/components/shop/Coin";
 export const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/games", label: "Games" },
-  { href: "/battle-pass", label: "Battle Pass" },
-  { href: "/shop", label: "Item Shop" },
-  { href: "/leaderboards", label: "Leaderboards" },
+  { href: "/sports", label: "Sports+" },
+  { href: "/battle-pass", label: "Battle Pass", short: "Pass" },
+  { href: "/shop", label: "Item Shop", short: "Shop" },
+  { href: "/leaderboards", label: "Leaderboards", short: "Ranks" },
   { href: "/profile", label: "Profile" },
 ] as const;
 
@@ -31,7 +32,7 @@ export function Navbar() {
       >
         Skip to content
       </a>
-      <nav aria-label="Main" className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4 sm:h-16 sm:px-6">
+      <nav aria-label="Main" className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:h-16 sm:px-6 lg:gap-6">
         <Link href="/" aria-label="Zero X Gaming home" className="shrink-0 rounded-md">
           <Logo />
         </Link>
@@ -45,11 +46,21 @@ export function Navbar() {
                   href={l.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "relative rounded-md px-3 py-2 text-sm font-semibold transition-colors",
+                    "relative whitespace-nowrap rounded-md px-2 py-2 text-sm font-semibold transition-colors lg:px-3",
                     active ? "text-text" : "text-muted hover:text-text",
                   )}
                 >
-                  {l.label}
+                  {"short" in l ? (
+                    <>
+                      <span className="hidden lg:inline">{l.label}</span>
+                      <span className="lg:hidden" aria-hidden>
+                        {l.short}
+                      </span>
+                      <span className="sr-only lg:hidden">{l.label}</span>
+                    </>
+                  ) : (
+                    l.label
+                  )}
                   {active && (
                     <span
                       className="absolute inset-x-3 -bottom-[13px] h-0.5 rounded-full bg-cyan shadow-[0_0_10px_var(--zx-cyan)]"

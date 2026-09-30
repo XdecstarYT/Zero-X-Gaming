@@ -349,6 +349,15 @@ Code 3 (`src/games/code-3/`) is its own engine: a pure simulation (`sim.ts`, `ve
   action list grouped by kind (commands, talk, checks, enforcement, custody, scene, unit) with icons. The MDT
   (Tab) has tabs: Call, Contact, Queries, Reports and Shift. The menu has a field guide.
 
+### Sports+
+
+`/sports` is the new section for upcoming sports games (`src/lib/sports.ts`, `src/components/sports/`): Pitch
+Kings (five-a-side football), Hoops X (3v3 basketball), Gridiron Blitz (7v7 American football), Slapshot (3v3
+hockey), Ace Rally (tennis), Diamond Derby (home run derby), Knockout (boxing) and Fairway (golf). Each card shows
+its status and season window, original drawn art, the planned features and a **Notify me** toggle remembered on
+the device. Sports+ is in the top nav, the phone tab bar, the footer, the sitemap and a teaser row on the home
+page. Nothing in it is playable yet.
+
 ### Themes
 
 Settings → Theme switches between **Classic** (dark neon) and **X-1+** (light and friendly). Both are the same CSS

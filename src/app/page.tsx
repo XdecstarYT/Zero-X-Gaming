@@ -10,6 +10,7 @@ import { CardRow, CardRowItem, Section } from "@/components/layout/Section";
 import { FEATURED_SLUG, GAMES, getGame } from "@/lib/catalog";
 import { queryGames } from "@/lib/game-query";
 import { formatCompact } from "@/lib/format";
+import { SportsLineup } from "@/components/sports/SportsLineup";
 
 export default function HomePage() {
   const featured = getGame(FEATURED_SLUG) ?? GAMES[0];
@@ -115,6 +116,10 @@ export default function HomePage() {
             </CardRowItem>
           ))}
         </CardRow>
+      </Section>
+
+      <Section title="Sports+" eyebrow="Coming soon" href="/sports" hrefLabel="See all sports">
+        <SportsLineup compact />
       </Section>
 
       <Section title="Climb the ranks" eyebrow="Compete" href="/leaderboards" hrefLabel="All leaderboards">

@@ -342,4 +342,8 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 96. **Blur came from the adaptive resolution and the post chain.** Resolution used to drop to 55 %; it now stops
     at 75 %. The grade's chromatic fringing and heavy grain are gone, SMAA runs before a sharpening pass, and
     ambient occlusion (the most expensive pass) moved to Ultra.
+97. **Sports+ is a showcase, not a game list.** The upcoming titles live in their own data file rather than the
+    games catalog, so they never show up as playable, on leaderboards or in search until they ship. "Notify me"
+    is stored on the device only (no account or email needed). To fit a sixth link, the top nav uses short labels
+    (Pass, Shop, Ranks) between tablet and desktop widths, and the phone tab bar has six tabs.
 

@@ -23,7 +23,7 @@ export function Logo({ className }: { className?: string }) {
       <LogoMark />
       <span className="font-display text-base font-black uppercase tracking-[0.18em]">
         Zero <span className="text-magenta">X</span>
-        <span className="ml-2 hidden text-muted sm:inline">| Gaming</span>
+        <span className="ml-2 hidden text-muted sm:inline md:hidden lg:inline">| Gaming</span>
       </span>
     </span>
   );
