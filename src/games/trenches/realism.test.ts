@@ -174,3 +174,57 @@ describe("Trenches realism", () => {
     expect(mb.world.entities.get("a")?.stance).toBe(2);
   });
 });
+
+describe("Trenches explosives over the network", () => {
+  it("a grenade thrown by one player hurts the other player's soldier (and counts as a grenade kill)", async () => {
+    const { ma, mb } = await pair();
+    const spot = openCell(ma);
+    // B stands where A's grenade will land; both parked in the open.
+    for (let t = 0; t < 0.3; t += DT) {
+      ma.step(DT, IDLE);
+      mb.step(DT, IDLE);
+    }
+    Object.assign(ma.me, { x: spot.x, y: spot.y, angle: 0 });
+    mb.me.hp = 1;
+    let thrown = false;
+    for (let t = 0; t < 5 && mb.me.alive; t += DT) {
+      Object.assign(ma.me, { x: spot.x, y: spot.y, angle: 0 });
+      const nade = mb["grenades"][0] ?? ma["grenades"][0];
+      if (nade) Object.assign(mb.me, { x: nade.x, y: nade.y });
+      ma.step(DT, { ...IDLE, throw: !thrown });
+      thrown = true;
+      mb.step(DT, IDLE);
+    }
+    expect(ma.me.grenades).toBe(1);
+    expect(mb.me.alive).toBe(false);
+    for (let t = 0; t < 0.3; t += DT) {
+      ma.step(DT, IDLE);
+      mb.step(DT, IDLE);
+    }
+    expect(ma.battleStats().grenadeKills).toBe(1);
+    expect(ma.effects().blasts.length).toBeGreaterThan(0);
+  });
+
+  it("the host's artillery barrage lands on every client", async () => {
+    const { ma, mb } = await pair();
+    ma["nextBarrageAt"] = 0;
+    for (let t = 0; t < 8; t += DT) {
+      ma.step(DT, IDLE);
+      mb.step(DT, IDLE);
+    }
+    expect(mb.effects().blasts.filter((b) => b.big).length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("Breakthrough battles", () => {
+  it("start with the defenders holding every flag and report the attack", async () => {
+    const hub = new MemoryHub<TrenchMsg>();
+    const t = hub.join("a", "A");
+    await t.connect();
+    const m = new TrenchesMatch(t, { ...snapshot([{ id: "a", name: "A", team: 1, ready: true, cls: "rifleman" }]), mode: "breakthrough" }, { solo: true, roster: [{ id: "a", name: "A", joinedAt: 1 }] });
+    expect(m.cq.flags.every((f) => f.owner === 2)).toBe(true);
+    expect(m.status().primary).toMatch(/^ATTACK · SECTOR 1\/3 · 200 TICKETS/);
+    expect(m.status().storm).toMatch(/^A theirs · B theirs ·/);
+    expect(m.resultLines().map(([k]) => k)).toContain("Flags taken");
+  });
+});

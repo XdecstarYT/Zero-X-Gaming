@@ -1,3 +1,4 @@
+import type { DamageSource } from "./world";
 /**
  * Networking for Neon Siege online matches.
  *
@@ -46,7 +47,7 @@ export type NetMessage =
   | { t: "shot"; s: string; w: WeaponKind; fx: number; fy: number; tx: number; ty: number }
   /** Attacker `a` hit victim `v` for `d` damage; only the victim's owner applies it. */
   | { t: "hit"; a: string; v: string; d: number; w: WeaponKind }
-  | { t: "kill"; k: string; v: string; w: WeaponKind | "storm" }
+  | { t: "kill"; k: string; v: string; w: DamageSource }
   /** Host heartbeat: seconds left, kill limit, and whether the match is over. */
   | { t: "match"; left: number; limit: number; over: boolean };
 

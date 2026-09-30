@@ -56,6 +56,8 @@ export interface PlayerInput {
   crouch?: boolean;
   prone?: boolean;
   dig?: boolean;
+  /** Throw a grenade (pressed this step). */
+  throw?: boolean;
 }
 
 export const IDLE: PlayerInput = {

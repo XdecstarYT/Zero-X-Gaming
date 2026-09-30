@@ -22,7 +22,7 @@ See [`DECISIONS.md`](./DECISIONS.md) for every deviation from the original brief
 | Game             | Genre          | Controls (keyboard / touch)                                                       |
 | ---------------- | -------------- | --------------------------------------------------------------------------------- |
 | **Neon Siege**   | Battle royale  | WASD + mouse, click fire, right-click aim, E loot, 1–5 switch, R reload · stick, drag look, FIRE/AIM |
-| **Trenches**     | War / Conquest | WASD + mouse, click fire, right-click aim, Shift sprint, C crouch, X prone, hold G dig, 1–5 switch, R reload, Tab scores · stick (push to sprint), drag look, FIRE/AIM/CRCH/PRONE/DIG |
+| **Trenches**     | War / Conquest | WASD + mouse, click fire, right-click aim, Shift sprint, C crouch, X prone, Q grenade, hold G dig, 1–5 switch, R reload, Tab scores · stick (push to sprint), drag look, FIRE/AIM/CRCH/PRONE/NADE/DIG |
 
 Esc (or the pause key from Settings) pauses any game. Games also pause when the tab is hidden.
 
@@ -191,6 +191,19 @@ slug and menu) and optional `ModeController` hooks (`markers`, `tagColor`, `resu
   cell, engineers 3× faster). Digs are broadcast; the host re-sends the full list every 5 s for late joiners.
 - **Conquest** (`conquest.ts`): five flags, 150 tickets a side, 8 s captures (tug-of-war), ticket bleed for the
   side holding more flags, 1 ticket per death, 15-minute limit.
+- **Breakthrough** (`conquest.ts`): Iron Legion attacks, Crimson Front defends. The flags fall in sectors (A+B,
+  then C, then D+E); only the live sector can be fought over. Attackers have 200 tickets (+60 per sector taken),
+  defenders never run out; 20-minute limit.
+- **Grenades and artillery** (`explosives.ts`): Q (or NADE) throws a grenade on a real ballistic arc; it bounces
+  off walls, drops into trenches, rolls, and blows after 3.2 s. The host calls an artillery barrage every 45–80 s
+  (8 shells walking around a live flag, with a whistle and a warning). Blasts fall off with distance and are
+  soaked up by trenches, lying flat and walls. Every client simulates each grenade and hurts only the soldiers
+  it owns; kills flow through the normal kill messages.
+- **Progression:** every battle (20 s or longer) earns season XP (`trenchesMatchXp`, mirrored by
+  `public.trenches_match_xp`), counts toward the daily/weekly challenges and the battle pass free coin lane, and is
+  added to the player's **war record** (profile page: totals, battles per front, and ten medals from "Mentioned in
+  Dispatches" to the "Victoria Cross"). Online accounts go through `record_trenches_match` (range-checked and
+  rate-limited); guests and device accounts use the same rules on the device.
 - **Classes:** Rifleman, Trench Raider, Medic, Sniper, Engineer. Teams: Iron Legion and Crimson Front.
 - **Lobbies** (`lobby.ts`, `directory.ts`, `menu.ts`): create a lobby (name, front, 4v4 to 16v16, bot fill),
   browse the live list or join by code or invite link (`?lobby=CODE`). The host can change the front; players

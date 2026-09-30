@@ -36,6 +36,13 @@ export interface ModeStatus {
   detail?: string;
 }
 
+export interface ViewEffects {
+  /** Grenades in flight: world position, z = height (m). */
+  projectiles: { id: string; x: number; y: number; z: number }[];
+  /** Explosions: `at` in world time. */
+  blasts: { id: string; x: number; y: number; at: number; big: boolean }[];
+}
+
 /** A point of interest drawn on the minimap and in 3D (e.g. a Conquest flag). */
 export interface Marker {
   id: string;
@@ -84,6 +91,10 @@ export interface ModeController {
    * toggle crouch / prone, G digs, and the crosshair shrinks to a dot.
    */
   readonly realism?: boolean;
+  /** Optional: things in flight and recent explosions for the 3D view (Trenches). */
+  effects?(): ViewEffects;
+  /** Optional: stat boxes for the results screen, e.g. [["Kills", "7"], ...]. */
+  resultLines?(): [string, string][];
   /** Optional: an in-progress action for the HUD progress bar (e.g. digging), k in 0..1. */
   task?(): { label: string; k: number } | null;
 }

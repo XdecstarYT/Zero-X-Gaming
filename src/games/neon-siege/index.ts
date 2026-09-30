@@ -55,6 +55,8 @@ export interface ShellConfig {
     graphics: HTMLElement;
     start: (controller: ModeController) => void;
   }) => void | (() => void);
+  /** Records a finished battle for this game's progression (season XP, medals). */
+  onMatchEnd?: (mode: ModeController) => Promise<MatchReward | null> | null;
 }
 
 /** Called when a match ends with stats (season XP / challenges / coins). */
@@ -100,6 +102,9 @@ export class NeonSiege implements GameModule {
   private crouchPressed = false;
   private pronePressed = false;
   private touchDig = false;
+  private throwPressed = false;
+  /** Camera shake from nearby explosions (0..1, decays). */
+  private shake = 0;
   private slotPressed: number | null = null;
   private touchFire = false;
   private stick: { id: number; ox: number; oy: number; x: number; y: number } | null = null;
@@ -539,7 +544,14 @@ export class NeonSiege implements GameModule {
       dig.addEventListener("pointerup", stopDig);
       dig.addEventListener("pointercancel", stopDig);
       dig.addEventListener("pointerleave", stopDig);
-      extra.push(crouch, prone, dig);
+      const nade = round("NADE", `right-[calc(4%+5.5rem)] bottom-[calc(30%+7.5rem)] ${small}`);
+      nade.setAttribute("aria-label", "Throw grenade");
+      nade.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.throwPressed = true;
+      });
+      extra.push(crouch, prone, dig, nade);
     }
     this.touchLayer = el("div", "pointer-events-none absolute inset-0 z-[5]", this.stickKnob, fire, fireL, aim, reload, ...extra);
     this.opts.root.appendChild(this.touchLayer);
@@ -575,6 +587,7 @@ export class NeonSiege implements GameModule {
       "KeyC",
       "KeyX",
       "KeyG",
+      "KeyQ",
       "ShiftLeft",
       "ShiftRight",
       "ArrowUp",
@@ -596,6 +609,7 @@ export class NeonSiege implements GameModule {
     if (e.code === "KeyE") this.interactPressed = true;
     if (e.code === "KeyC") this.crouchPressed = true;
     if (e.code === "KeyX") this.pronePressed = true;
+    if (e.code === "KeyQ") this.throwPressed = true;
     const slot = WEAPON_KEYS.indexOf(e.code);
     if (slot >= 0) this.slotPressed = slot;
   };
@@ -718,7 +732,9 @@ export class NeonSiege implements GameModule {
       crouch: this.crouchPressed,
       prone: this.pronePressed,
       dig: has("KeyG") || this.touchDig,
+      throw: this.throwPressed,
     };
+    this.throwPressed = false;
     this.reloadPressed = false;
     this.interactPressed = false;
     this.crouchPressed = false;
@@ -762,11 +778,12 @@ export class NeonSiege implements GameModule {
           } else if (ev.target === me.id) this.audio.cue(ev.attacker === "storm" ? "storm" : "hurt");
           break;
         case "kill": {
-          const how = ev.weapon === "storm" ? "was lost to the storm" : `✕ ${WEAPONS[ev.weapon]?.name ?? ""}`;
           const text =
             ev.weapon === "storm"
-              ? `${mode.nameOf(ev.victim)} ${how}`
-              : `${mode.nameOf(ev.killer)}  ✕  ${mode.nameOf(ev.victim)}`;
+              ? `${mode.nameOf(ev.victim)} was lost to the storm`
+              : ev.weapon === "artillery"
+                ? `${mode.nameOf(ev.victim)} was caught by artillery`
+                : `${mode.nameOf(ev.killer)}  ${ev.weapon === "grenade" ? "💥" : "✕"}  ${mode.nameOf(ev.victim)}`;
           this.killFeed = [
             ...this.killFeed.slice(-6),
             { text, at: t, mine: ev.killer === me.id || ev.victim === me.id },
@@ -788,6 +805,18 @@ export class NeonSiege implements GameModule {
         case "heal":
           if (ev.id === me.id) this.audio.cue("heal");
           break;
+        case "blast": {
+          const d = Math.hypot(ev.x - me.x, ev.y - me.y);
+          const rel = Math.atan2(ev.y - me.y, ev.x - me.x) - me.angle;
+          this.audio.boom(d, Math.sin(rel), ev.big);
+          this.shake = Math.max(this.shake, Math.max(0, 1 - d / (ev.big ? 40 : 18)));
+          break;
+        }
+        case "incoming": {
+          const d = Math.hypot(ev.x - me.x, ev.y - me.y);
+          if (d < 70) this.audio.whistle(Math.sin(Math.atan2(ev.y - me.y, ev.x - me.x) - me.angle));
+          break;
+        }
       }
     }
     this.tracers = this.tracers.filter((tr) => t - tr.at < 0.25);
@@ -795,6 +824,7 @@ export class NeonSiege implements GameModule {
     if (mode.world.map.theme === "battlefield" && Math.random() < dt / 5)
       this.audio.shot(Math.random() < 0.5 ? "sniper" : "shotgun", 60 + Math.random() * 40, Math.random() * 2 - 1);
     this.pings = this.pings.filter((p) => t - p.at < 1.2);
+    this.shake = Math.max(0, this.shake - dt * 1.8);
     const wantAds = me.aiming ? 1 : 0;
     this.ads += (wantAds - this.ads) * Math.min(1, dt * 12);
     this.lastHp = me.hp;
@@ -806,7 +836,7 @@ export class NeonSiege implements GameModule {
       const banner = mode.banner();
       const w = activeWeapon(me);
       const fighters = [...mode.world.entities.values()].map((e) => e.name).join(", ");
-      this.srHud.textContent = `${st.primary}. ${st.kills} kills. ${st.storm ?? ""}. ${banner ? `${banner.text}. ` : ""}${Math.ceil(me.hp)} health, ${Math.ceil(me.shield)} shield. ${w ? `${itemLabel(w)}, ${w.ammo} ammo.` : ""} Fighters: ${fighters}.`;
+      this.srHud.textContent = `${st.primary}. ${st.kills} kills. ${st.storm ?? ""}. ${st.detail ? `${st.detail}. ` : ""}${banner ? `${banner.text}. ` : ""}${Math.ceil(me.hp)} health, ${Math.ceil(me.shield)} shield. ${w ? `${itemLabel(w)}, ${w.ammo} ammo.` : ""} Fighters: ${fighters}.`;
     }
     this.emitter.progress(mode.score(), performance.now());
 
@@ -827,8 +857,11 @@ export class NeonSiege implements GameModule {
     const stats = mode.stats();
     const score = mode.score();
     const durationMs = Math.round(this.loop.activeMs);
-    const reward =
-      stats && mode.ranked && this.onMatchEnd ? this.onMatchEnd(stats, { won: mode.won(), ranked: true }) : null;
+    const reward = this.config.onMatchEnd
+      ? this.config.onMatchEnd(mode)
+      : stats && mode.ranked && this.onMatchEnd
+        ? this.onMatchEnd(stats, { won: mode.won(), ranked: true })
+        : null;
     // Results screen first; the platform's game-over (score submit) follows on Continue.
     void showResults(this.opts.root, {
       stats,
@@ -838,6 +871,7 @@ export class NeonSiege implements GameModule {
       reduceMotion: this.opts.settings.reduceMotion,
       score,
       title: mode.resultTitle?.(),
+      lines: mode.resultLines?.(),
     }).then(() => {
       if (this.destroyed) return;
       // Lobby games go back to their lobby instead of ending the run.
@@ -878,6 +912,8 @@ export class NeonSiege implements GameModule {
       ads: this.ads,
       markers: mode.markers?.().filter((m) => m.kind === "flag"),
       tagColor: mode.tagColor ? (id) => mode.tagColor!(id) : undefined,
+      effects: mode.effects?.(),
+      shake: this.opts.settings.reduceMotion ? 0 : this.shake,
     };
     this.view.render(mode.world, mode.me, fx);
     const prompt = this.promptFor();

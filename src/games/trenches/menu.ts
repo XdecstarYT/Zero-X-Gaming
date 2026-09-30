@@ -3,6 +3,7 @@ import { BroadcastChannelTransport, MemoryHub, normalizeRoom, randomRoom, ROOM_R
 import { SupabaseTransport } from "../neon-siege/net-supabase";
 import type { Team } from "./battlefield";
 import { LocalDirectory, SupabaseDirectory, type LobbyDirectory, type LobbyInfo } from "./directory";
+import type { GameMode } from "./conquest";
 import { DEFAULT_FRONT, FRONT_IDS, FRONTS, isFrontId, type FrontId } from "./fronts";
 import { LobbyRoom, MAX_FIGHTERS } from "./lobby";
 import { TEAM_COLORS, TEAM_NAMES, TrenchesMatch } from "./match";
@@ -43,6 +44,15 @@ const PRIMARY =
 const CARD = "flex w-full flex-col gap-2 rounded-lg border border-border bg-surface/85 p-3 text-left";
 const CLASS_KEY = "zx-trenches-class";
 const FRONT_KEY = "zx-trenches-front";
+const MODE_KEY = "zx-trenches-mode";
+
+const MODES: Record<GameMode, { name: string; blurb: string }> = {
+  conquest: { name: "Conquest", blurb: "Both sides fight for all five flags. Hold more than the enemy to drain their tickets." },
+  breakthrough: {
+    name: "Breakthrough",
+    blurb: "Iron Legion attacks, Crimson Front defends. Take the sectors in order (A+B, then C, then D+E) before the tickets run out.",
+  },
+};
 
 function isLocalMode() {
   return new URLSearchParams(window.location.search).get("net") === "local" || !SupabaseTransport.available();
@@ -79,6 +89,13 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
   const local = isLocalMode();
   let cls = readClass();
   let front = readFront();
+  let mode: GameMode = (() => {
+    try {
+      return localStorage.getItem(MODE_KEY) === "breakthrough" ? "breakthrough" : "conquest";
+    } catch {
+      return "conquest";
+    }
+  })();
   let directory: LobbyDirectory | null = null;
   let lobby: LobbyRoom | null = null;
   let lobbyUnsub: (() => void)[] = [];
@@ -145,6 +162,39 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
     return wrap;
   }
 
+  /** Conquest / Breakthrough as a pick-one group. */
+  function modePicker(selected: GameMode, onPick: (m: GameMode) => void) {
+    const wrap = el("div", "grid w-full grid-cols-2 gap-2");
+    wrap.setAttribute("role", "group");
+    wrap.setAttribute("aria-label", "Game mode");
+    const buttons = (Object.keys(MODES) as GameMode[]).map((id) => {
+      const b = button("", "rounded-md border-2 border-border bg-surface-2 p-2 text-left hover:border-[#c9a24a]", () => {
+        buttons.forEach((x) => {
+          const on = x.dataset.mode === id;
+          x.setAttribute("aria-pressed", String(on));
+          x.style.borderColor = on ? "#c9a24a" : "";
+        });
+        onPick(id);
+      });
+      b.dataset.mode = id;
+      b.append(el("span", "block text-sm font-bold", MODES[id].name), el("span", "block text-[11px] leading-tight text-muted", MODES[id].blurb));
+      b.setAttribute("aria-pressed", String(id === selected));
+      if (id === selected) b.style.borderColor = "#c9a24a";
+      return b;
+    });
+    wrap.append(...buttons);
+    return wrap;
+  }
+
+  const pickMode = (m: GameMode) => {
+    mode = m;
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {
+      // ignore
+    }
+  };
+
   const pickFront = (f: FrontId) => {
     front = f;
     try {
@@ -197,7 +247,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
     const botsLabel = el("label", "flex items-center gap-2 text-xs", botsBox, "Fill empty slots with bots");
     const create = button("Create lobby", PRIMARY, () => {
       const code = randomRoom();
-      void joinLobby(code, { name: nameInput.value.trim().slice(0, 32) || `${playerName}'s lobby`, max: Number(sizeSel.value), bots: botsBox.checked, front }, true);
+      void joinLobby(code, { name: nameInput.value.trim().slice(0, 32) || `${playerName}'s lobby`, max: Number(sizeSel.value), bots: botsBox.checked, front, mode }, true);
     });
 
     // Join by code
@@ -262,8 +312,8 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       .catch(() => list.replaceChildren(el("li", "p-3 text-center text-xs text-muted", "Couldn't load the lobby list. You can still join with a code.")));
 
     const controls = ctx.coarse
-      ? "Left thumb: move (push fully to sprint) · Right thumb: look · FIRE (drag to aim) · AIM · CRCH / PRONE · hold DIG"
-      : "WASD move · Mouse look · Click fire · Right-click aim · Shift sprint · C crouch · X prone · hold G dig · 1–5 switch · R reload · Tab scores";
+      ? "Left thumb: move (push fully to sprint) · Right thumb: look · FIRE (drag to aim) · AIM · CRCH / PRONE · NADE · hold DIG"
+      : "WASD move · Mouse look · Click fire · Right-click aim · Shift sprint · C crouch · X prone · Q grenade · hold G dig · 1–5 switch · R reload · Tab scores";
 
     container.replaceChildren(
       header(),
@@ -276,6 +326,8 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
           frontBlurb.textContent = FRONTS[f].blurb;
         }),
         frontBlurb,
+        el("h3", "mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Game mode"),
+        modePicker(mode, pickMode),
       ),
       el(
         "section",
@@ -290,7 +342,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
           "section",
           CARD,
           el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-cyan", "Play now"),
-          el("p", "text-xs text-muted", "10 v 10 against bots on the chosen front. Capture flags A–E and drain the enemy's tickets."),
+          el("p", "text-xs text-muted", "10 v 10 against bots on the chosen front and mode, under artillery fire."),
           quick,
           el("h3", "mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan", "Create a lobby"),
           nameLabel,
@@ -340,6 +392,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       max: 20,
       bots: true,
       front,
+      mode,
       players: [{ id: "me", name: playerName, team: 1, ready: true, cls }],
       seed: Math.floor(Math.random() * 2 ** 31),
       matchId: 1,
@@ -349,7 +402,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
 
   // ----------------------------------------------------------------- lobby
 
-  async function joinLobby(code: string, settings: { name: string; max: number; bots: boolean; front: FrontId }, creating: boolean) {
+  async function joinLobby(code: string, settings: { name: string; max: number; bots: boolean; front: FrontId; mode?: GameMode }, creating: boolean) {
     leaveLobby();
     const room = new LobbyRoom(makeTransport(code, playerName), code, playerName, settings);
     lobby = room;
@@ -490,9 +543,17 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
     });
 
     const f = FRONTS[s.front] ?? FRONTS[DEFAULT_FRONT];
+    const m = MODES[s.mode === "breakthrough" ? "breakthrough" : "conquest"];
     const frontCard = room.isHost && s.phase !== "match"
-      ? el("section", CARD + " max-w-2xl", el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Battlefield"), frontPicker(s.front, (id) => room.setFront(id)))
-      : el("p", "text-sm", el("strong", "", f.name), ` · ${f.place}. ${f.blurb}`);
+      ? el(
+          "section",
+          CARD + " max-w-2xl",
+          el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Battlefield"),
+          frontPicker(s.front, (id) => room.setFront(id)),
+          el("h3", "mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Game mode"),
+          modePicker(s.mode === "breakthrough" ? "breakthrough" : "conquest", (id) => room.setMode(id)),
+        )
+      : el("p", "text-sm", el("strong", "", `${f.name} · ${m.name}`), ` · ${f.place}. ${m.blurb}`);
     container.replaceChildren(
       header(),
       el(

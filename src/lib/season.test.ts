@@ -68,3 +68,21 @@ describe("free coin track", () => {
     expect(tierCoinsBetween(0, 99_999)).toBe(175);
   });
 });
+
+describe("Trenches battles in the season", () => {
+  it("trenchesMatchXp mirrors the SQL (checked against the database: 925)", async () => {
+    const { trenchesMatchXp, TRENCHES_XP_CAP } = await import("./season");
+    expect(trenchesMatchXp({ kills: 3, captures: 2, won: true, durationS: 600, digs: 10 })).toBe(925);
+    expect(trenchesMatchXp({ kills: 60, captures: 30, won: true, durationS: 900, digs: 400 })).toBe(TRENCHES_XP_CAP);
+  });
+
+  it("wins count as wins and top-10s for challenges; losses as neither", async () => {
+    const { asChallengeMatch, metricValue } = await import("./season");
+    const base = { kills: 4, deaths: 1, captures: 0, durationS: 300, damage: 500, digs: 0, grenadeKills: 0, bestStreak: 0, front: "somme", mode: "conquest" as const, players: 8 };
+    const win = asChallengeMatch({ ...base, won: true });
+    const loss = asChallengeMatch({ ...base, won: false });
+    expect([metricValue("wins", win), metricValue("top10", win)]).toEqual([1, 1]);
+    expect([metricValue("wins", loss), metricValue("top10", loss)]).toEqual([0, 0]);
+    expect(metricValue("kills", loss)).toBe(4);
+  });
+});

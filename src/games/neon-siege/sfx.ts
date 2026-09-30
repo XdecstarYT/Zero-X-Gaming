@@ -84,6 +84,63 @@ export class SiegeAudio {
     osc.stop(t + 0.16);
   }
 
+  /** An explosion `dist` metres away: a long low rumble with a crack up close. */
+  boom(dist = 0, pan = 0, big = false) {
+    const ctx = this.ready();
+    if (!ctx || !this.noise || !this.master) return;
+    const t = ctx.currentTime;
+    const falloff = (big ? 1.4 : 1) / (1 + dist * 0.05);
+    if (falloff < 0.03) return;
+    const out = ctx.createStereoPanner();
+    out.pan.value = Math.max(-1, Math.min(1, pan));
+    out.connect(this.master);
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.playbackRate.value = 0.35 + Math.random() * 0.15;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(Math.max(200, 2400 / (1 + dist * 0.06)), t);
+    lp.frequency.exponentialRampToValueAtTime(120, t + 1.2);
+    const g = ctx.createGain();
+    const dur = big ? 2.2 : 1.4;
+    g.gain.setValueAtTime(0.9 * falloff, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(lp).connect(g).connect(out);
+    src.start(t, Math.random() * 0.3);
+    src.stop(t + dur + 0.1);
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(big ? 70 : 95, t);
+    osc.frequency.exponentialRampToValueAtTime(28, t + 0.5);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.9 * falloff, t);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+    osc.connect(og).connect(out);
+    osc.start(t);
+    osc.stop(t + 0.62);
+  }
+
+  /** An incoming shell: a falling whistle. */
+  whistle(pan = 0) {
+    const ctx = this.ready();
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const out = ctx.createStereoPanner();
+    out.pan.value = Math.max(-1, Math.min(1, pan));
+    out.connect(this.master);
+    const o = ctx.createOscillator();
+    o.type = "sine";
+    o.frequency.setValueAtTime(1900, t);
+    o.frequency.exponentialRampToValueAtTime(420, t + 1.1);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.1, t + 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.15);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 1.2);
+  }
+
   cue(name: Cue) {
     const ctx = this.ready();
     if (!ctx || !this.master) return;

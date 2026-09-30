@@ -280,4 +280,14 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     season progress, coins, the battle pass and banner. A new account adopts the guest progress already on the
     device. Device accounts can't follow a player to another device and don't appear on the online leaderboards;
     once Supabase is connected the same dialog creates online accounts instead.
+76. **Trenches battles count toward the season, but not the leaderboards.** Battles are peer-to-peer, so a score
+    can't be verified. Instead `record_trenches_match` awards season XP under a plausibility check and a rate
+    limit (like Neon Siege matches) and never pays Cash Cup coins. The war record and medals are kept per player on
+    the device; online accounts also get a server-side battle history (`trenches_matches`).
+77. **Explosives are simulated by everyone, applied by owners.** A thrown grenade is broadcast once (position,
+    angle, power); each client runs the same ballistic simulation and damages only the soldiers it owns, exactly
+    like gunfire. Barrages are planned by the host and sent as shell positions and delays. Small timing
+    differences between clients change where a grenade lands by centimetres, which is acceptable.
+78. **Breakthrough reuses the Conquest flags.** Sectors are fixed flag groups (A+B, C, D+E) because every front is
+    point-mirrored with the flags laid out west to east, so the attack always pushes across the whole map.
 

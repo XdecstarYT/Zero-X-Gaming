@@ -31,6 +31,9 @@ const ADS_SLOW = 0.7;
 
 export type EntityKind = "human" | "bot";
 
+/** What dealt damage: a gun, the storm, or (Trenches) a grenade / artillery shell. */
+export type DamageSource = WeaponKind | "storm" | "grenade" | "artillery";
+
 export interface Entity {
   id: string;
   name: string;
@@ -72,6 +75,8 @@ export interface Entity {
   stance?: 0 | 1 | 2;
   /** Trenches: sprint stamina 0..1. */
   stamina?: number;
+  /** Trenches: grenades carried. */
+  grenades?: number;
 }
 
 export interface LootDrop {
@@ -100,7 +105,11 @@ export type WorldEvent =
       toY: number;
     }
   | { type: "damage"; target: string; attacker: string; amount: number; shield: boolean }
-  | { type: "kill"; killer: string; victim: string; weapon: WeaponKind | "storm" }
+  | { type: "kill"; killer: string; victim: string; weapon: DamageSource }
+  /** Trenches: an explosion (grenade or shell) at a point. */
+  | { type: "blast"; x: number; y: number; big: boolean }
+  /** Trenches: a shell is about to land here (whistle). */
+  | { type: "incoming"; x: number; y: number }
   | { type: "respawn"; id: string }
   | { type: "reload"; id: string }
   | { type: "pickup"; id: string; item: Item }
@@ -319,7 +328,7 @@ export function damage(
   target: Entity,
   attacker: Entity | { id: string },
   amount: number,
-  weapon: WeaponKind | "storm" = "ar",
+  weapon: DamageSource = "ar",
 ) {
   if (!target.alive || amount <= 0) return;
   let left = amount;

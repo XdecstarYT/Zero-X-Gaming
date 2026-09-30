@@ -549,6 +549,27 @@ export type Database = {
           },
         ];
       };
+      trenches_matches: {
+        Row: {
+          captures: number;
+          created_at: string;
+          damage: number;
+          deaths: number;
+          digs: number;
+          duration_s: number;
+          front: string;
+          id: number;
+          kills: number;
+          mode: string;
+          season_id: string;
+          user_id: string;
+          won: boolean;
+          xp: number;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       xp_events: {
         Row: { amount: number; created_at: string; id: number; reason: string; ref: string | null; user_id: string };
         Insert: {
@@ -580,6 +601,21 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      record_trenches_match: {
+        Args: {
+          p_captures: number
+          p_damage: number
+          p_deaths: number
+          p_digs: number
+          p_duration_s: number
+          p_front: string
+          p_kills: number
+          p_mode: string
+          p_players: number
+          p_won: boolean
+        }
+        Returns: Json
+      }
       record_siege_match: {
         Args: {
           p_chests: number

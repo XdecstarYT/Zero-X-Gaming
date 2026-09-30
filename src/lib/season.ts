@@ -171,6 +171,46 @@ export function matchXp(m: SiegeMatch) {
   return Math.min(MATCH_XP_CAP, xp);
 }
 
+/** A finished Trenches battle (Conquest or Breakthrough). */
+export interface TrenchesMatch {
+  kills: number;
+  deaths: number;
+  /** Flags captured while standing in the ring. */
+  captures: number;
+  won: boolean;
+  durationS: number;
+  damage: number;
+  /** Trench cells dug. */
+  digs: number;
+  grenadeKills: number;
+  bestStreak: number;
+  front: string;
+  mode: "conquest" | "breakthrough";
+  players: number;
+}
+
+export const TRENCHES_XP_CAP = 1500;
+
+/** Season XP for a Trenches battle. Mirrored exactly by `public.trenches_match_xp` in SQL. */
+export function trenchesMatchXp(m: Pick<TrenchesMatch, "kills" | "captures" | "won" | "durationS" | "digs">) {
+  const xp =
+    60 + m.kills * 45 + m.captures * 90 + (m.won ? 300 : 0) + Math.floor(Math.min(m.durationS, 900) / 3) + Math.min(m.digs, 40) * 5;
+  return Math.min(TRENCHES_XP_CAP, xp);
+}
+
+/** Trenches battles count toward the season challenges through the same metrics. */
+export function asChallengeMatch(m: TrenchesMatch): SiegeMatch {
+  return {
+    kills: m.kills,
+    // A win counts as a "top 10" finish; a loss doesn't.
+    placement: m.won ? 1 : 11,
+    players: Math.max(11, m.players),
+    damage: m.damage,
+    chests: 0,
+    survivedS: Math.min(900, Math.floor(m.durationS)),
+  };
+}
+
 // ---------------------------------------------------------------- challenges
 
 export type Metric = "kills" | "wins" | "top10" | "chests" | "damage" | "matches" | "survive";

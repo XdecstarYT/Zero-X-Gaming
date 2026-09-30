@@ -5,6 +5,7 @@ import { GuestIdentity } from "@/components/layout/GuestIdentity";
 import { Avatar } from "@/components/layout/AccountControl";
 import { UsernameForm } from "@/components/layout/UsernameForm";
 import { FavoritesList } from "@/components/game/FavoritesList";
+import { WarRecord } from "@/components/game/WarRecord";
 import Link from "next/link";
 import { BADGES, MOCK_PLAYER, getGame } from "@/lib/catalog";
 import { formatNumber, timeAgo } from "@/lib/format";
@@ -127,6 +128,8 @@ export default async function ProfilePage() {
           <UsernameForm userId={p.userId} current={p.username} />
         </section>
       )}
+
+      <WarRecord />
 
       <section aria-labelledby="badges-title">
         <h2 id="badges-title" className="mb-4 font-display text-xl font-bold uppercase">

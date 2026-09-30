@@ -85,6 +85,14 @@ export class ThreeView implements ViewRenderer {
   /** Smoothed camera / character heights (stepping into a trench, changing stance). */
   private eyeY = EYE;
   private charY = new Map<string, number>();
+  /** Trenches explosives: grenades in flight, dirt sprays and scorch marks. */
+  private nades = new Map<string, THREE.Mesh>();
+  private nadeGeo = new THREE.CapsuleGeometry(0.045, 0.07, 3, 8);
+  private nadeMat = new THREE.MeshStandardMaterial({ color: "#3d4630", roughness: 0.6, metalness: 0.3 });
+  private seenBlasts = new Set<string>();
+  private dirt: { pts: THREE.Points; vel: Float32Array; born: number; floor: number }[] = [];
+  private scorches: THREE.Mesh[] = [];
+  private scorchMat = new THREE.MeshBasicMaterial({ color: "#1c1712", transparent: true, opacity: 0.7, depthWrite: false });
   private weather: { obj: THREE.Points | THREE.LineSegments; pos: Float32Array; kind: "rain" | "snow" | "dust" } | null = null;
   private flags = new Map<string, { group: THREE.Group; cloth: THREE.Mesh; ring: THREE.Mesh }>();
   private artillery: { sprite: THREE.Sprite; born: number } | null = null;
@@ -264,6 +272,11 @@ export class ThreeView implements ViewRenderer {
     if (this.town) this.scene.remove(this.town);
     this.map = world.map;
     const opts = { shadows: this.quality === "high", detail: this.quality } as const;
+    for (const sc of this.scorches) {
+      sc.geometry.dispose();
+      sc.removeFromParent();
+    }
+    this.scorches = [];
     this.front = world.map.front ? buildFront(world.map, opts) : null;
     const built = this.front ?? buildTown(world.map, opts);
     this.dugSeen = world.map.dug?.length ?? 0;
@@ -347,6 +360,12 @@ export class ThreeView implements ViewRenderer {
     this.camera.position.set(me.x, this.eyeY + Math.sin(fx.bob * 2) * 0.035 * bobAmt - deadK * Math.min(1.2, this.eyeY - floor - 0.25), me.y);
     this.camera.rotation.order = "YXZ";
     this.camera.rotation.set(-deadK * 0.3, -me.angle - Math.PI / 2, deadK * 0.5 + Math.sin(fx.bob) * 0.004 * bobAmt);
+    const shake = fx.shake ?? 0;
+    if (shake > 0.01) {
+      this.camera.position.x += (Math.random() - 0.5) * 0.14 * shake;
+      this.camera.position.y += (Math.random() - 0.5) * 0.1 * shake;
+      this.camera.rotation.z += (Math.random() - 0.5) * 0.03 * shake;
+    }
 
     // Sun shadow follows the player.
     const sd = this.sunOffset;
@@ -365,6 +384,7 @@ export class ThreeView implements ViewRenderer {
     this.updateFlags(fx.markers ?? [], t);
     if (this.war) this.updateBattle(me, t);
     this.updateWeather(dt);
+    this.updateExplosives(fx, t, dt);
     this.updateViewmodel(world, me, fx, t, dt);
 
     this.wind.value = t;
@@ -557,6 +577,92 @@ export class ThreeView implements ViewRenderer {
       this.scene.remove(f.sprite);
       this.fxPool.push(f.sprite);
       return false;
+    });
+  }
+
+  /** Grenades in flight; each new blast gets a flash, a light pulse, a dirt spray and a scorch mark. */
+  private updateExplosives(fx: ViewFx, t: number, dt: number) {
+    const e = fx.effects;
+    const live = new Set<string>();
+    for (const p of e?.projectiles ?? []) {
+      live.add(p.id);
+      let m = this.nades.get(p.id);
+      if (!m) {
+        m = new THREE.Mesh(this.nadeGeo, this.nadeMat);
+        m.castShadow = this.quality === "high";
+        this.nades.set(p.id, m);
+        this.scene.add(m);
+      }
+      m.position.set(p.x, p.z + 0.06, p.y);
+      m.rotation.x += dt * 9;
+    }
+    for (const [id, m] of this.nades)
+      if (!live.has(id)) {
+        m.removeFromParent();
+        this.nades.delete(id);
+      }
+
+    for (const b of e?.blasts ?? []) {
+      if (this.seenBlasts.has(b.id) || t - b.at > 0.5) continue;
+      this.seenBlasts.add(b.id);
+      if (this.seenBlasts.size > 300) this.seenBlasts = new Set([...this.seenBlasts].slice(-100));
+      const floor = this.front?.floorAt(b.x, b.y) ?? 0;
+      const flash = this.takeSprite(this.glow, b.big ? "#ffc27a" : "#ffd9a0", THREE.AdditiveBlending);
+      flash.position.set(b.x, floor + (b.big ? 1.6 : 0.8), b.y);
+      this.fx.push({ sprite: flash, born: t, until: t + (b.big ? 0.55 : 0.4), grow: b.big ? 40 : 18 });
+      this.flashLight.position.set(b.x, floor + 1.2, b.y);
+      this.flashLight.intensity = b.big ? 40 : 18;
+      // Dirt thrown up by the blast.
+      const n = b.big ? 90 : 50;
+      const pos = new Float32Array(n * 3);
+      const vel = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const out = (b.big ? 3 : 2) + Math.random() * (b.big ? 6 : 4);
+        pos.set([b.x, floor + 0.2, b.y], i * 3);
+        vel.set([Math.cos(a) * out, (b.big ? 7 : 5) + Math.random() * (b.big ? 9 : 5), Math.sin(a) * out], i * 3);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      const pts = new THREE.Points(
+        geo,
+        new THREE.PointsMaterial({ color: this.map?.front?.earth ?? "#5a4a38", size: b.big ? 0.22 : 0.14, transparent: true, opacity: 1 }),
+      );
+      pts.frustumCulled = false;
+      this.scene.add(pts);
+      this.dirt.push({ pts, vel, born: t, floor });
+      // A scorch mark that stays for the rest of the battle (oldest fade out first).
+      const scorch = new THREE.Mesh(new THREE.CircleGeometry(b.big ? 2.4 : 1.2, 16).rotateX(-Math.PI / 2), this.scorchMat);
+      scorch.position.set(b.x, floor + 0.03 + (this.scorches.length % 20) * 0.0005, b.y);
+      this.scene.add(scorch);
+      this.scorches.push(scorch);
+      if (this.scorches.length > 40) {
+        const old = this.scorches.shift()!;
+        old.geometry.dispose();
+        old.removeFromParent();
+      }
+    }
+
+    this.dirt = this.dirt.filter((d) => {
+      const age = t - d.born;
+      const mat = d.pts.material as THREE.PointsMaterial;
+      if (age > 1.8) {
+        d.pts.geometry.dispose();
+        mat.dispose();
+        d.pts.removeFromParent();
+        return false;
+      }
+      const pos = d.pts.geometry.attributes.position as THREE.BufferAttribute;
+      const arr = pos.array as Float32Array;
+      for (let i = 0; i < arr.length; i += 3) {
+        d.vel[i + 1] -= 9.8 * dt;
+        arr[i] += d.vel[i] * dt;
+        arr[i + 1] = Math.max(d.floor, arr[i + 1] + d.vel[i + 1] * dt);
+        arr[i + 2] += d.vel[i + 2] * dt;
+      }
+      pos.needsUpdate = true;
+      mat.opacity = Math.min(1, (1.8 - age) / 0.6);
+      return true;
     });
   }
 

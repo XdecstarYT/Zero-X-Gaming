@@ -105,7 +105,8 @@ export class LocalDirectory implements LobbyDirectory {
       const now = Date.now();
       let changed = false;
       for (const [code, v] of this.seen)
-        if (now - v.at > 3500) {
+        // Generous: a busy or backgrounded tab can miss a few heartbeats.
+        if (now - v.at > 8000) {
           this.seen.delete(code);
           changed = true;
         }

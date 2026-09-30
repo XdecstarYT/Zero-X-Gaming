@@ -20,6 +20,8 @@ export interface MatchReward {
   hasPass: boolean;
   unlocked: string[];
   challenges: { title: string; xp: number }[];
+  /** Medals earned this battle (Trenches). */
+  medals?: { name: string; description: string; ribbon: [string, string, string] }[];
 }
 
 export interface ResultsInput {
@@ -33,6 +35,8 @@ export interface ResultsInput {
   score: number;
   /** Headline override (e.g. "Victory" / "Defeat" in team modes). */
   title?: string;
+  /** Mode-specific stat boxes (replace the battle royale stats). */
+  lines?: [string, string][];
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text?: string) {
@@ -89,11 +93,23 @@ export function showResults(root: HTMLElement, input: ResultsInput): Promise<voi
   title.id = "siege-results-title";
   title.style.color = won ? "#ffb321" : input.title === "Defeat" ? "#ff5a4f" : "#ffffff";
   head.append(title);
-  if (!ranked) head.append(el("p", "mt-1 text-xs text-white/60", "Unranked match: no XP, coins or leaderboard score."));
+  if (!ranked && !input.reward)
+    head.append(el("p", "mt-1 text-xs text-white/60", "Unranked match: no XP, coins or leaderboard score."));
   card.append(head);
 
   // Stats
-  if (stats) {
+  if (input.lines?.length) {
+    const grid = el("dl", "grid grid-cols-2 gap-2 sm:grid-cols-4");
+    for (const [label, value] of input.lines) {
+      const box = el("div", "rounded-lg bg-white/5 p-2 text-center");
+      box.append(
+        el("dt", "text-[11px] uppercase tracking-wider text-white/60", label),
+        el("dd", "font-display text-xl font-black", value),
+      );
+      grid.append(box);
+    }
+    card.append(grid);
+  } else if (stats) {
     const grid = el("dl", "grid grid-cols-2 gap-2 sm:grid-cols-4");
     const mins = `${Math.floor(stats.survivedS / 60)}:${String(stats.survivedS % 60).padStart(2, "0")}`;
     for (const [label, value] of [
@@ -242,6 +258,23 @@ export function showResults(root: HTMLElement, input: ResultsInput): Promise<voi
         extras.append(box);
       }
       if (extras.childElementCount) rewards.append(extras);
+
+      // Medals (Trenches war record)
+      if (r.medals?.length) {
+        const box = el("section", "rounded-xl border border-[#c9a24a]/50 bg-[#c9a24a]/10 p-3");
+        box.append(el("h3", "text-center font-display text-sm font-black tracking-[0.3em] text-[#e4d3a8]", "MEDAL AWARDED"));
+        const row = el("div", "mt-2 flex flex-wrap justify-center gap-3");
+        for (const m of r.medals) {
+          const item = el("div", "flex w-40 flex-col items-center gap-1 text-center");
+          const ribbon = el("div", "h-3 w-10 rounded-sm");
+          ribbon.style.background = `linear-gradient(90deg, ${m.ribbon[0]} 0 33%, ${m.ribbon[1]} 33% 66%, ${m.ribbon[2]} 66%)`;
+          const disc = el("div", "grid h-9 w-9 place-items-center rounded-full border-2 border-[#8a6a2a] bg-gradient-to-br from-[#f3d98a] to-[#a67c2a] font-display text-sm font-black text-[#3a2a08]", "★");
+          item.append(ribbon, disc, el("p", "text-sm font-bold", m.name), el("p", "text-[11px] text-white/70", m.description));
+          row.append(item);
+        }
+        box.append(row);
+        rewards.append(box);
+      }
     })
     .catch(() => {
       status.textContent = "Couldn't save season progress. Check your connection.";

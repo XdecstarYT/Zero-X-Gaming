@@ -1,7 +1,7 @@
 import { createRng, type Rng } from "../engine/rng";
-import { applySkill, createBrain, hintPosition, SKILLS, updateBot, type BotBrain } from "../neon-siege/bots";
+import { applySkill, canSee, createBrain, hintPosition, SKILLS, updateBot, type BotBrain } from "../neon-siege/bots";
 import { makeConsumable, makeWeapon, SLOTS } from "../neon-siege/items";
-import type { Banner, Marker, ModeController, ModeStatus, ScoreRow } from "../neon-siege/mode";
+import type { Banner, Marker, ModeController, ModeStatus, ScoreRow, ViewEffects } from "../neon-siege/mode";
 import { electHost, type PeerInfo, type Transport } from "../neon-siege/net";
 import { GROUND } from "../neon-siege/map";
 import type { PlayerInput } from "../neon-siege/royale";
@@ -23,7 +23,31 @@ import {
 } from "../neon-siege/world";
 import { battlefield, type Battlefield, type Team } from "./battlefield";
 import { DEFAULT_FRONT, FRONTS, isFrontId } from "./fronts";
-import { createConquest, onDeath, stepConquest, MATCH_SECONDS, type ConquestState } from "./conquest";
+import {
+  ATTACKERS,
+  BREAKTHROUGH_SECONDS,
+  createConquest,
+  isLive,
+  onDeath,
+  SECTORS,
+  stepConquest,
+  MATCH_SECONDS,
+  type ConquestState,
+  type GameMode,
+} from "./conquest";
+import {
+  blastDamage,
+  floorAt,
+  GRENADE_BLAST,
+  planBarrage,
+  powerFor,
+  SHELL_BLAST,
+  stepGrenade,
+  throwGrenade,
+  type BlastSpec,
+  type Grenade,
+} from "./explosives";
+import type { TrenchesMatch as BattleStats } from "@/lib/season";
 import type { LobbySnapshot, TEntState, TrenchClass, TrenchMsg } from "./protocol";
 
 /**
@@ -58,6 +82,14 @@ const STANCE_SPREAD = [1, 0.7, 0.45];
 const STANCES = ["STANDING", "CROUCHED", "PRONE"];
 const BOT_NAMES = ["Hale", "Brooks", "Mercer", "Voss", "Keller", "Dunn", "Rook", "Carver", "Pike", "Sutter", "Lowe", "Grant", "Wolfe", "Marsh", "Reyes", "Holt"];
 const BOT_CLASSES: TrenchClass[] = ["rifleman", "rifleman", "assault", "medic", "marksman", "rifleman", "engineer"];
+/** Grenades per class, restocked on redeploy. */
+export const GRENADES: Record<TrenchClass, number> = { rifleman: 2, assault: 3, medic: 1, marksman: 1, engineer: 2 };
+const THROW_COOLDOWN = 1.2;
+const BOT_THROW_COOLDOWN = 14;
+/** Artillery: a barrage every BARRAGE_MIN..MAX seconds. */
+const BARRAGE_MIN = 45;
+const BARRAGE_MAX = 80;
+const BARRAGE_SHELLS = 8;
 
 /** Class loadouts, restocked on every redeploy. */
 export function equipClass(e: Entity, cls: TrenchClass) {
@@ -93,6 +125,7 @@ export function equipClass(e: Entity, cls: TrenchClass) {
   e.active = 0;
   e.stance = 0;
   e.stamina = 1;
+  e.grenades = GRENADES[cls];
 }
 
 export interface MatchOptions {
@@ -132,6 +165,17 @@ export class TrenchesMatch implements ModeController {
   private digCell = -1;
   private digK = 0;
   private digsAcc = 0;
+  readonly mode: GameMode;
+  private grenades: Grenade[] = [];
+  private blasts: ViewEffects["blasts"] = [];
+  private shells: { x: number; y: number; at: number; warned: boolean }[] = [];
+  private nadeSeq = 0;
+  private nextThrowAt = 0;
+  private botThrowAt = new Map<string, number>();
+  private nextBarrageAt = 0;
+  private lastSector = 0;
+  /** This soldier's battle, for the results screen and the war record. */
+  private tally = { captures: 0, digs: 0, grenadeKills: 0, streak: 0, bestStreak: 0 };
   readonly m: number;
 
   constructor(
@@ -144,8 +188,10 @@ export class TrenchesMatch implements ModeController {
     this.field = battlefield(isFrontId(snap.front) ? snap.front : DEFAULT_FRONT);
     this.world = createWorld(this.field.map);
     this.world.chests = [];
-    this.cq = createConquest(this.field.flags);
-    this.lastOwners = this.cq.flags.map(() => 0);
+    this.mode = snap.mode === "breakthrough" ? "breakthrough" : "conquest";
+    this.cq = createConquest(this.field.flags, undefined, this.mode);
+    this.nextBarrageAt = 30 + (snap.seed % 20);
+    this.lastOwners = this.cq.flags.map((f) => f.owner);
     for (const p of snap.players) this.teams.set(p.id, p.team);
     const mine = snap.players.find((p) => p.id === transport.selfId);
     const team: Team = mine?.team ?? 1;
@@ -176,7 +222,13 @@ export class TrenchesMatch implements ModeController {
     );
     if (this.isHost) this.fillBots();
     const def = FRONTS[this.field.front];
-    this.flash({ text: def.name.toUpperCase(), sub: `${def.place} · Conquest: capture and hold the flags. Every death costs a ticket.`, color: TEAM_COLORS[team] }, 5);
+    const how =
+      this.mode === "breakthrough"
+        ? team === ATTACKERS
+          ? "Breakthrough: you attack. Take the sectors in order before your tickets run out."
+          : "Breakthrough: you defend. Hold the line: every sector they take brings them closer."
+        : "Conquest: capture and hold the flags. Every death costs a ticket.";
+    this.flash({ text: def.name.toUpperCase(), sub: `${def.place} · ${how}`, color: TEAM_COLORS[team] }, 5);
   }
 
   get isHost() {
@@ -198,7 +250,8 @@ export class TrenchesMatch implements ModeController {
 
   private spawn(e: Entity, cls: TrenchClass) {
     const team = e.team as Team;
-    const flags = this.cq.flags.filter((f) => f.owner === team);
+    // Spawn at owned flags that aren't under attack (Breakthrough: not in the live sector).
+    const flags = this.cq.flags.filter((f, i) => f.owner === team && (this.mode === "conquest" || !isLive(this.cq, i) || team !== ATTACKERS));
     // Try a few spots and take the least crowded, so squads don't spawn inside each other.
     const atFlag = flags.length > 0 && this.rng.next() < 0.6;
     let best = { x: 0, y: 0 };
@@ -337,8 +390,21 @@ export class TrenchesMatch implements ModeController {
         if (from !== this.hostId || !Array.isArray(msg.c)) return;
         for (const c of msg.c.slice(0, MAX_DUG)) if (Number.isInteger(c)) this.applyDig(c, false);
         break;
+      case "nade": {
+        if (this.owns(msg.o) || this.grenades.some((g) => g.id === msg.id) || this.grenades.length > 40) return;
+        if (![msg.x, msg.y, msg.a, msg.p].every(Number.isFinite)) return;
+        this.grenades.push(throwGrenade(msg.id, msg.o, msg.x, msg.y, msg.a, this.world.time, msg.p));
+        break;
+      }
+      case "arty": {
+        if (from !== this.hostId || !Array.isArray(msg.s)) return;
+        for (const [x, y, delay] of msg.s.slice(0, 16))
+          if ([x, y, delay].every(Number.isFinite)) this.shells.push({ x, y, at: this.world.time + Math.max(0, Math.min(20, delay)), warned: false });
+        break;
+      }
       case "cq":
         if (from !== this.hostId) return;
+        if (typeof msg.sc === "number" && msg.sc >= 0 && msg.sc <= SECTORS.length) this.cq.sector = msg.sc;
         this.cq.tickets = msg.tk;
         msg.f.forEach(([p, owner], i) => {
           const f = this.cq.flags[i];
@@ -422,6 +488,7 @@ export class TrenchesMatch implements ModeController {
       f: this.cq.flags.map((f) => [Math.round(f.p * 100) / 100, f.owner]),
       time: Math.round(this.cq.time),
       win: this.cq.winner,
+      sc: this.cq.sector,
     });
   }
 
@@ -465,8 +532,18 @@ export class TrenchesMatch implements ModeController {
       }
     }
 
+    this.stepExplosives(dt);
+
     const events = drainEvents(w);
     for (const ev of events) {
+      if (ev.type === "kill") {
+        if (ev.killer === this.me.id && ev.victim !== this.me.id) {
+          this.tally.streak++;
+          this.tally.bestStreak = Math.max(this.tally.bestStreak, this.tally.streak);
+          if (ev.weapon === "grenade") this.tally.grenadeKills++;
+        }
+        if (ev.victim === this.me.id) this.tally.streak = 0;
+      }
       if (ev.type === "shot" && this.owns(ev.shooter)) {
         const r = (v: number) => Math.round(v * 100) / 100;
         this.transport.send({ t: "shot", m: this.m, s: ev.shooter, w: ev.weapon, fx: r(ev.fromX), fy: r(ev.fromY), tx: r(ev.toX), ty: r(ev.toY) });
@@ -486,11 +563,25 @@ export class TrenchesMatch implements ModeController {
       if (f.owner !== this.lastOwners[i]) {
         if (f.owner) {
           const ours = f.owner === this.myTeam;
+          if (ours && this.me.alive && Math.hypot(this.me.x - f.x, this.me.y - f.y) <= f.r) this.tally.captures++;
           this.flash({ text: `${ours ? "WE TOOK" : "WE LOST"} ${f.id}`, sub: `${TEAM_NAMES[f.owner]} hold flag ${f.id}`, color: TEAM_COLORS[f.owner] }, 2.5);
         }
         this.lastOwners[i] = f.owner;
       }
     });
+
+    if (this.cq.sector !== this.lastSector) {
+      const taken = SECTORS[this.lastSector]?.map((i) => this.cq.flags[i].id).join(" + ");
+      const attacking = this.myTeam === ATTACKERS;
+      if (this.cq.winner === null)
+        this.flash(
+          attacking
+            ? { text: `SECTOR ${this.lastSector + 1} TAKEN`, sub: `${taken} are ours. Reinforcements are here: push on!`, color: TEAM_COLORS[1] }
+            : { text: `SECTOR ${this.lastSector + 1} LOST`, sub: `Fall back and hold the next line.`, color: TEAM_COLORS[2] },
+          3.5,
+        );
+      this.lastSector = this.cq.sector;
+    }
 
     this.sendAcc += dt;
     if (this.sendAcc >= SEND_INTERVAL) {
@@ -515,13 +606,15 @@ export class TrenchesMatch implements ModeController {
       const phase = (hashId(b.id) % 50) / 10;
       if (Math.floor((w.time - phase) / OBJECTIVE_PERIOD) !== Math.floor((w.time - dt - phase) / OBJECTIVE_PERIOD)) {
         const team = b.team as Team;
-        const wanted = this.cq.flags.filter((f) => f.owner !== team);
-        const pool = wanted.length ? wanted : this.cq.flags;
+        const live = this.cq.flags.filter((_, i) => isLive(this.cq, i));
+        const wanted = live.filter((f) => f.owner !== team);
+        const pool = this.mode === "breakthrough" ? (wanted.length && team === ATTACKERS ? wanted : live) : wanted.length ? wanted : this.cq.flags;
         const f = pool.sort((a, c) => Math.hypot(a.x - b.x, a.y - b.y) - Math.hypot(c.x - b.x, c.y - b.y))[this.rng.next() < 0.7 ? 0 : pool.length - 1];
         hintPosition(w, brain, f.x, f.y, 2, this.rng);
       }
       b.spreadMult = SKILLS.normal.spreadMult * STANCE_SPREAD[b.stance ?? 0];
       updateBot(w, b, brain, dt, this.rng);
+      this.botGrenade(b);
       // Stance: keep low in a trench, pop up to fire; drop prone to snipe in the open.
       const engaged = w.time - b.firedAt < 1.4;
       const still = b.speed < 0.4;
@@ -533,6 +626,10 @@ export class TrenchesMatch implements ModeController {
       living.map((e) => ({ x: e.x, y: e.y, team: e.team as Team, alive: e.alive })),
       dt,
     );
+    if (w.time >= this.nextBarrageAt) {
+      this.nextBarrageAt = w.time + BARRAGE_MIN + this.rng.next() * (BARRAGE_MAX - BARRAGE_MIN);
+      this.callBarrage();
+    }
     this.digsAcc += dt;
     if (this.digsAcc >= DIGS_INTERVAL) {
       this.digsAcc = 0;
@@ -594,6 +691,125 @@ export class TrenchesMatch implements ModeController {
     else me.speed = 0;
     if (input.reload) startReload(w, me);
     if (input.fire && !sprint && !digging) fire(w, me, this.rng);
+    if (input.throw && !digging && (me.grenades ?? 0) > 0 && w.time >= this.nextThrowAt) this.throwFrom(me, 1);
+  }
+
+  // ------------------------------------------------------------ explosives
+
+  /** Throw a grenade from a soldier we own and tell everyone. */
+  private throwFrom(e: Entity, power: number) {
+    e.grenades = (e.grenades ?? 0) - 1;
+    if (e === this.me) this.nextThrowAt = this.world.time + THROW_COOLDOWN;
+    const id = `${e.id}:${++this.nadeSeq}`;
+    const g = throwGrenade(id, e.id, e.x, e.y, e.angle, this.world.time, power);
+    this.grenades.push(g);
+    const r = (v: number) => Math.round(v * 100) / 100;
+    this.transport.send({ t: "nade", m: this.m, id, o: e.id, x: r(e.x), y: r(e.y), a: r(e.angle), p: r(power) });
+  }
+
+  /** Bots lob a grenade at an enemy they can see at grenade range, now and then. */
+  private botGrenade(b: Entity) {
+    const w = this.world;
+    if (!b.alive || (b.grenades ?? 0) <= 0 || w.time < (this.botThrowAt.get(b.id) ?? 0)) return;
+    if (this.rng.next() > 0.02) return;
+    for (const t of w.entities.values()) {
+      if (!t.alive || t.team === b.team) continue;
+      const d = Math.hypot(t.x - b.x, t.y - b.y);
+      if (d < 9 || d > 24 || !canSee(w, b, t, 26)) continue;
+      b.angle = Math.atan2(t.y - b.y, t.x - b.x) + (this.rng.next() - 0.5) * 0.12;
+      this.botThrowAt.set(b.id, w.time + BOT_THROW_COOLDOWN);
+      this.throwFrom(b, powerFor(d * (0.9 + this.rng.next() * 0.2)));
+      return;
+    }
+  }
+
+  /** Host: shells walk around a contested flag (or no-man's-land). */
+  private callBarrage() {
+    const live = this.cq.flags.filter((_, i) => isLive(this.cq, i));
+    const f = this.rng.pick(live.length ? live : this.cq.flags);
+    const cx = f.x + (this.rng.next() - 0.5) * 16;
+    const cy = f.y + (this.rng.next() - 0.5) * 16;
+    const plan = planBarrage(cx, cy, BARRAGE_SHELLS, () => this.rng.next());
+    const r = (v: number) => Math.round(v * 100) / 100;
+    const s = plan.map((p) => [r(p.x), r(p.y), r(p.delay)] as [number, number, number]);
+    this.transport.send({ t: "arty", m: this.m, s });
+    for (const [x, y, delay] of s) this.shells.push({ x, y, at: this.world.time + delay, warned: false });
+  }
+
+  private stepExplosives(dt: number) {
+    const w = this.world;
+    for (const g of this.grenades) stepGrenade(g, w.map, dt);
+    const due = this.grenades.filter((g) => w.time >= g.fuseAt);
+    this.grenades = this.grenades.filter((g) => w.time < g.fuseAt);
+    for (const g of due) this.explode({ x: g.x, y: g.y, ...GRENADE_BLAST }, g.z, g.owner, "grenade", false);
+    for (const sh of this.shells) {
+      if (!sh.warned && w.time >= sh.at - 1.1) {
+        sh.warned = true;
+        w.events.push({ type: "incoming", x: sh.x, y: sh.y });
+        if (Math.hypot(this.me.x - sh.x, this.me.y - sh.y) < 22 && this.world.time >= this.bannerUntil)
+          this.flash({ text: "INCOMING ARTILLERY", sub: "Get into a trench or go prone!", color: "#ffb321" }, 2.5);
+      }
+    }
+    const landed = this.shells.filter((sh) => w.time >= sh.at);
+    this.shells = this.shells.filter((sh) => w.time < sh.at);
+    for (const sh of landed) this.explode({ x: sh.x, y: sh.y, ...SHELL_BLAST }, floorAt(w.map, sh.x, sh.y), "artillery", "artillery", true);
+    this.blasts = this.blasts.filter((b) => w.time - b.at < 3);
+  }
+
+  /** Every client hurts only the soldiers it owns; kills flow through the usual kill messages. */
+  private explode(b: BlastSpec, z: number, owner: string, weapon: "grenade" | "artillery", big: boolean) {
+    const w = this.world;
+    if (this.cq.winner !== null) return;
+    w.events.push({ type: "blast", x: b.x, y: b.y, big });
+    this.blasts.push({ id: `${owner}:${w.time.toFixed(3)}:${b.x.toFixed(1)}`, x: b.x, y: b.y, at: w.time, big });
+    const attacker = w.entities.get(owner) ?? { id: owner };
+    for (const e of w.entities.values()) {
+      if (!e.alive || !this.owns(e.id)) continue;
+      // Friendly fire is off for grenades too (but artillery hits everyone).
+      if (weapon === "grenade" && "team" in attacker && attacker.team === e.team && e.id !== owner) continue;
+      const dmg = blastDamage(b, w.map, e, z);
+      if (dmg > 0) damage(w, e, attacker, dmg, weapon);
+    }
+  }
+
+  effects(): ViewEffects {
+    return {
+      projectiles: this.grenades.map((g) => ({ id: g.id, x: g.x, y: g.y, z: g.z })),
+      blasts: this.blasts,
+    };
+  }
+
+  /** The battle so far, for the results screen, season XP and the war record. */
+  battleStats(): BattleStats {
+    return {
+      kills: this.me.kills,
+      deaths: this.me.deaths,
+      captures: this.tally.captures,
+      won: this.won(),
+      durationS: Math.round(this.cq.time),
+      damage: Math.round(this.me.damageDealt),
+      digs: this.tally.digs,
+      grenadeKills: this.tally.grenadeKills,
+      bestStreak: this.tally.bestStreak,
+      front: this.field.front,
+      mode: this.mode,
+      players: this.world.entities.size,
+    };
+  }
+
+  resultLines(): [string, string][] {
+    const b = this.battleStats();
+    const t = `${Math.floor(b.durationS / 60)}:${String(b.durationS % 60).padStart(2, "0")}`;
+    return [
+      ["Kills", String(b.kills)],
+      ["Deaths", String(b.deaths)],
+      ["Flags taken", String(b.captures)],
+      ["Best streak", String(b.bestStreak)],
+      ["Grenade kills", String(b.grenadeKills)],
+      ["Trench dug", `${b.digs} m`],
+      ["Damage", String(b.damage)],
+      ["Battle time", t],
+    ];
   }
 
   private groundSpeed(e: Entity) {
@@ -665,7 +881,10 @@ export class TrenchesMatch implements ModeController {
     if ((map.dug?.length ?? 0) >= MAX_DUG || !this.diggable(i)) return false;
     map.ground[i] = GROUND.trench;
     (map.dug ??= []).push(i);
-    if (local) this.transport.send({ t: "dig", m: this.m, c: i });
+    if (local) {
+      this.transport.send({ t: "dig", m: this.m, c: i });
+      this.tally.digs++;
+    }
     return true;
   }
 
@@ -681,9 +900,10 @@ export class TrenchesMatch implements ModeController {
   }
 
   status(): ModeStatus {
-    const left = Math.max(0, MATCH_SECONDS - this.cq.time);
+    const left = Math.max(0, (this.mode === "breakthrough" ? BREAKTHROUGH_SECONDS : MATCH_SECONDS) - this.cq.time);
     const clock = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`;
     const flags = this.cq.flags
+      .filter((_, i) => isLive(this.cq, i))
       .map((f) => {
         const [a, b] = f.present;
         const who = f.owner === 0 ? "—" : f.owner === this.myTeam ? "ours" : "theirs";
@@ -691,19 +911,31 @@ export class TrenchesMatch implements ModeController {
       })
       .join(" · ");
     const stamina = Math.round((this.me.stamina ?? 1) * 100);
+    const bt = this.mode === "breakthrough";
+    const sector = `SECTOR ${Math.min(SECTORS.length, this.cq.sector + 1)}/${SECTORS.length}`;
     return {
-      primary: `${TEAM_SHORT[1]} ${this.cq.tickets[0]} · ${this.cq.tickets[1]} ${TEAM_SHORT[2]}`,
+      primary: bt
+        ? `${this.myTeam === ATTACKERS ? "ATTACK" : "DEFEND"} · ${sector} · ${this.cq.tickets[0]} TICKETS`
+        : `${TEAM_SHORT[1]} ${this.cq.tickets[0]} · ${this.cq.tickets[1]} ${TEAM_SHORT[2]}`,
       kills: this.me.kills,
       storm: `${flags} · ${clock}`,
-      stormUrgent: this.cq.tickets[this.myTeam - 1] < 30,
-      detail: this.me.alive ? `${STANCES[this.me.stance ?? 0]}${this.inTrench(this.me) ? " · IN TRENCH" : ""} · STAMINA ${stamina}%` : "",
+      stormUrgent: bt ? this.cq.tickets[0] < 30 : this.cq.tickets[this.myTeam - 1] < 30,
+      detail: this.me.alive
+        ? `${STANCES[this.me.stance ?? 0]}${this.inTrench(this.me) ? " · IN TRENCH" : ""} · STAMINA ${stamina}% · GRENADES ${this.me.grenades ?? 0}`
+        : "",
     };
   }
 
   banner(): Banner | null {
     if (this.isOver()) {
       const title = this.resultTitle();
-      return { text: title.toUpperCase(), sub: `${TEAM_NAMES[1]} ${this.cq.tickets[0]} – ${this.cq.tickets[1]} ${TEAM_NAMES[2]}`, color: title === "Victory" ? "#ffb321" : "#ff5a4f" };
+      const sub =
+        this.mode === "breakthrough"
+          ? this.cq.winner === ATTACKERS
+            ? `${TEAM_NAMES[1]} broke through all ${SECTORS.length} sectors`
+            : `${TEAM_NAMES[2]} held the line at sector ${Math.min(SECTORS.length, this.cq.sector + 1)}`
+          : `${TEAM_NAMES[1]} ${this.cq.tickets[0]} – ${this.cq.tickets[1]} ${TEAM_NAMES[2]}`;
+      return { text: title.toUpperCase(), sub, color: title === "Victory" ? "#ffb321" : "#ff5a4f" };
     }
     if (!this.me.alive)
       return { text: "REDEPLOYING", sub: `Back in the fight in ${Math.max(0, Math.ceil(this.me.respawnAt - this.world.time))}s`, color: "#ff5a4f" };

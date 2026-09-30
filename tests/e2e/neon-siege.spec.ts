@@ -50,7 +50,9 @@ test("Neon Siege battle royale: drop in, loot keys, pause/resume, the storm clos
 });
 
 test("Neon Siege 3D view starts and shows the HUD", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
+  // Software WebGL: a small viewport keeps frames (and so the HUD) responsive.
+  await page.setViewportSize({ width: 640, height: 400 });
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/games/neon-siege");
@@ -62,7 +64,7 @@ test("Neon Siege 3D view starts and shows the HUD", async ({ page }) => {
   // Software WebGL in CI is slow to build the town; real GPUs take a fraction of this.
   await expect(stage.locator("canvas").first()).toBeVisible({ timeout: 45_000 });
   await expect(stage.getByTestId("siege-hud")).toContainText("ALIVE", { timeout: 20_000 });
-  await expect(stage.locator(`[aria-label="Slot 1: Service Pistol"]`)).toBeVisible();
+  await expect(stage.locator(`[aria-label="Slot 1: Service Pistol"]`)).toBeVisible({ timeout: 45_000 });
   expect(errors).toEqual([]);
 });
 

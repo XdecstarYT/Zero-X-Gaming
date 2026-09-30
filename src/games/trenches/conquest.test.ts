@@ -3,7 +3,18 @@ import { findPath } from "../neon-siege/path";
 import { GROUND, SOLID } from "../neon-siege/map";
 import { battlefield, generateBattlefield } from "./battlefield";
 import { FRONT_IDS, FRONTS } from "./fronts";
-import { BLEED_SECONDS, CAPTURE_SECONDS, createConquest, onDeath, START_TICKETS, stepConquest, type Soldier } from "./conquest";
+import {
+  BLEED_SECONDS,
+  BREAKTHROUGH_TICKETS,
+  CAPTURE_SECONDS,
+  createConquest,
+  isLive,
+  onDeath,
+  SECTOR_REINFORCEMENTS,
+  START_TICKETS,
+  stepConquest,
+  type Soldier,
+} from "./conquest";
 
 const flags = battlefield().flags;
 const run = (s: ReturnType<typeof createConquest>, soldiers: Soldier[], seconds: number) => {
@@ -92,5 +103,37 @@ describe("conquest", () => {
     expect(onDeath(s, 2)).toEqual([{ type: "ended", winner: 1 }]);
     expect(s.winner).toBe(1);
     expect(createConquest(flags).tickets).toEqual([START_TICKETS, START_TICKETS]);
+  });
+});
+
+describe("breakthrough", () => {
+  it("defenders start holding everything; only the live sector can be taken", () => {
+    const s = createConquest(flags, undefined, "breakthrough");
+    expect(s.flags.map((f) => f.owner)).toEqual([2, 2, 2, 2, 2]);
+    expect(isLive(s, 0) && isLive(s, 1) && !isLive(s, 2)).toBe(true);
+    // Attackers standing on C (sector 2) get nowhere.
+    run(s, [{ x: flags[2].x, y: flags[2].y, team: 1, alive: true }], CAPTURE_SECONDS * 3);
+    expect(s.flags[2].owner).toBe(2);
+  });
+
+  it("taking a sector brings reinforcements and opens the next; the last one wins", () => {
+    const s = createConquest(flags, undefined, "breakthrough");
+    const on = (i: number): Soldier[] => [0, 1, 2].map(() => ({ x: flags[i].x, y: flags[i].y, team: 1 as const, alive: true }));
+    run(s, [...on(0), ...on(1)], CAPTURE_SECONDS * 2 + 1);
+    expect(s.sector).toBe(1);
+    expect(s.tickets[0]).toBe(BREAKTHROUGH_TICKETS + SECTOR_REINFORCEMENTS);
+    run(s, on(2), CAPTURE_SECONDS * 2 + 1);
+    expect(s.sector).toBe(2);
+    const ev = run(s, [...on(3), ...on(4)], CAPTURE_SECONDS * 2 + 1);
+    expect(ev).toContainEqual({ type: "ended", winner: 1 });
+    expect(s.winner).toBe(1);
+  });
+
+  it("only attackers pay tickets for deaths; running out loses", () => {
+    const s = createConquest(flags, undefined, "breakthrough");
+    onDeath(s, 2);
+    expect(s.tickets[0]).toBe(BREAKTHROUGH_TICKETS);
+    s.tickets[0] = 1;
+    expect(onDeath(s, 1)).toEqual([{ type: "ended", winner: 2 }]);
   });
 });

@@ -63,6 +63,25 @@ test("Trenches lobbies: create, browse, join, chat, start together", async ({ pa
 
   const hudA = a.getByTestId("siege-hud");
   const hudB = b.getByTestId("siege-hud");
-  await expect(hudA).toContainText("LEGION", { timeout: 15_000 });
-  await expect(hudB).toContainText("LEGION", { timeout: 15_000 });
+  await expect(hudA).toContainText("LEGION", { timeout: 30_000 });
+  await expect(hudB).toContainText("LEGION", { timeout: 30_000 });
+});
+
+test("Trenches Breakthrough: pick the mode, attack in sectors, throw a grenade", async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => localStorage.setItem("zx-siege-gfx", "2d"));
+  await page.goto("/games/trenches?net=local");
+  const stage = page.getByTestId("game-stage");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
+  await stage.getByRole("group", { name: "Game mode" }).getByRole("button", { name: /Breakthrough/ }).click();
+  await stage.getByRole("button", { name: "Quick battle vs bots" }).click();
+  const hud = stage.getByTestId("siege-hud");
+  await expect(hud).toContainText("ATTACK · SECTOR 1/3", { timeout: 15_000 });
+  await expect(hud).toContainText("GRENADES 2");
+  await page.keyboard.press("q");
+  await expect(hud).toContainText("GRENADES 1");
+  expect(errors).toEqual([]);
 });

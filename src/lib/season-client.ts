@@ -9,6 +9,9 @@ import { deviceSaveSuffix } from "./device-accounts";
 import { getSupabaseBrowser } from "./supabase/client";
 import {
   activeChallenges,
+  asChallengeMatch,
+  trenchesMatchXp,
+  type TrenchesMatch,
   BANNERS,
   DEFAULT_ITEMS,
   matchXp,
@@ -207,44 +210,74 @@ export async function recordSiegeMatch(m: RecordedMatch): Promise<MatchSummary> 
       p_difficulty: m.difficulty,
     });
     if (error) throw new Error(error.message);
-    const r = data as {
-      xp_match: number;
-      xp_challenges: number;
-      xp_total: number;
-      tier_before: number;
-      tier_after: number;
-      unlocked: { kind: CosmeticKind; item: string }[];
-      challenges: { id: string; title: string; xp: number }[];
-      cash_cup: boolean;
-      coins_won: number;
-      coins: number;
-      has_pass: boolean;
-    };
-    useWallet.getState().set(r.coins);
-    const before = r.xp_total - r.xp_match - r.xp_challenges;
-    return {
-      tierCoins: tierCoinsBetween(before, r.xp_total),
-      xpMatch: r.xp_match,
-      xpChallenges: r.xp_challenges,
-      xpTotal: r.xp_total,
-      tierBefore: r.tier_before,
-      tierAfter: r.tier_after,
-      unlocked: r.unlocked.map((u) => REWARDS.find((x) => x.kind === u.kind && x.item === u.item)!).filter(Boolean),
-      challenges: r.challenges,
-      cashCup: r.cash_cup,
-      coinsWon: r.coins_won,
-      coins: r.coins,
-      hasPass: r.has_pass,
-    };
+    return summaryFromServer(data as unknown as ServerMatchResult);
   }
   return recordGuestMatch(m);
 }
 
-/** Guest progression, same rules as the server. Exported for tests. */
-export function recordGuestMatch(m: RecordedMatch, now = Date.now()): MatchSummary {
+/** Record a finished Trenches battle (season XP, challenges, free-lane coins). */
+export async function recordTrenchesMatch(m: TrenchesMatch): Promise<MatchSummary> {
+  const auth = signedInClient();
+  if (auth) {
+    const { data, error } = await auth.supabase.rpc("record_trenches_match", {
+      p_kills: m.kills,
+      p_deaths: m.deaths,
+      p_captures: m.captures,
+      p_won: m.won,
+      p_duration_s: Math.floor(m.durationS),
+      p_damage: Math.round(m.damage),
+      p_digs: m.digs,
+      p_players: m.players,
+      p_front: m.front,
+      p_mode: m.mode,
+    });
+    if (error) throw new Error(error.message);
+    return summaryFromServer(data as unknown as ServerMatchResult);
+  }
+  return recordGuestMatch({ ...asChallengeMatch(m), difficulty: "normal" }, Date.now(), trenchesMatchXp(m), false);
+}
+
+interface ServerMatchResult {
+  xp_match: number;
+  xp_challenges: number;
+  xp_total: number;
+  tier_before: number;
+  tier_after: number;
+  unlocked: { kind: CosmeticKind; item: string }[];
+  challenges: { id: string; title: string; xp: number }[];
+  cash_cup: boolean;
+  coins_won: number;
+  coins: number;
+  has_pass: boolean;
+}
+
+function summaryFromServer(r: ServerMatchResult): MatchSummary {
+  useWallet.getState().set(r.coins);
+  const before = r.xp_total - r.xp_match - r.xp_challenges;
+  return {
+    tierCoins: tierCoinsBetween(before, r.xp_total),
+    xpMatch: r.xp_match,
+    xpChallenges: r.xp_challenges,
+    xpTotal: r.xp_total,
+    tierBefore: r.tier_before,
+    tierAfter: r.tier_after,
+    unlocked: r.unlocked.map((u) => REWARDS.find((x) => x.kind === u.kind && x.item === u.item)!).filter(Boolean),
+    challenges: r.challenges,
+    cashCup: r.cash_cup,
+    coinsWon: r.coins_won,
+    coins: r.coins,
+    hasPass: r.has_pass,
+  };
+}
+
+/**
+ * Guest progression, same rules as the server. Exported for tests. Trenches
+ * battles pass their own XP and don't count toward Cash Cups.
+ */
+export function recordGuestMatch(m: RecordedMatch, now = Date.now(), xpOverride?: number, siege = true): MatchSummary {
   const g = readGuest();
   const before = g.xp;
-  const xpMatch = matchXp(m);
+  const xpMatch = xpOverride ?? matchXp(m);
   let xpChallenges = 0;
   const done: MatchSummary["challenges"] = [];
   for (const c of activeChallenges(now)) {
@@ -264,7 +297,7 @@ export function recordGuestMatch(m: RecordedMatch, now = Date.now()): MatchSumma
   const live = new Set(activeChallenges(now).map((c) => `${c.id}:${c.period}`));
   for (const k of Object.keys(g.challenges)) if (!live.has(k)) delete g.challenges[k];
 
-  const cashCup = isCashCup(g.matches + 1);
+  const cashCup = siege && isCashCup(g.matches + 1);
   const coinsWon = cashCup && m.difficulty === CASH_CUP_DIFFICULTY ? cashCupPrize(m.placement) : 0;
   g.xp += xpMatch + xpChallenges;
   const tierCoins = tierCoinsBetween(before, g.xp);

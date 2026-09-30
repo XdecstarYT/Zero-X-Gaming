@@ -1,5 +1,7 @@
+import type { DamageSource } from "../neon-siege/world";
 import type { Rarity, WeaponKind } from "../neon-siege/items";
 import type { Team } from "./battlefield";
+import type { GameMode } from "./conquest";
 import type { FrontId } from "./fronts";
 
 /** Everything Trenches sends over a room (lobby + match share one channel). */
@@ -34,6 +36,8 @@ export interface LobbySnapshot {
   bots: boolean;
   /** The battlefield. */
   front: FrontId;
+  /** Conquest or Breakthrough (older lobbies: Conquest). */
+  mode?: GameMode;
   players: LobbyPlayer[];
   seed: number;
   /** Increments every time the host starts a match. */
@@ -68,8 +72,12 @@ export type TrenchMsg =
   | { t: "state"; m: number; e: TEntState[]; bots?: boolean }
   | { t: "shot"; m: number; s: string; w: WeaponKind; fx: number; fy: number; tx: number; ty: number }
   | { t: "hit"; m: number; a: string; v: string; d: number; w: WeaponKind }
-  | { t: "kill"; m: number; k: string; v: string; w: WeaponKind | "storm" }
-  | { t: "cq"; m: number; tk: [number, number]; f: [number, number][]; time: number; win: number | null }
+  | { t: "kill"; m: number; k: string; v: string; w: DamageSource }
+  | { t: "cq"; m: number; tk: [number, number]; f: [number, number][]; time: number; win: number | null; sc?: number }
+  /** A grenade left someone's hand (every client simulates it). */
+  | { t: "nade"; m: number; id: string; o: string; x: number; y: number; a: number; p: number }
+  /** Host: an artillery barrage, shells as [x, y, seconds from now]. */
+  | { t: "arty"; m: number; s: [number, number, number][] }
   /** A soldier finished digging a trench cell. */
   | { t: "dig"; m: number; c: number }
   /** Host: every cell dug so far this battle (for late joiners). */
