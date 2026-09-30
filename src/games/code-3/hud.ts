@@ -154,6 +154,10 @@ export class Code3Hud {
   private callSig = "";
   private toastUntil = 0;
   onChoose: (i: number) => void = () => {};
+  /** A modal (the ticket book) opened or closed: the game frees / relocks the mouse. */
+  onModal: (open: boolean) => void = () => {};
+  private ticket = el("div", "pointer-events-auto absolute inset-0 z-30 hidden items-center justify-center bg-black/55 p-3");
+  private ticketSel = new Set<string>();
   onChooseId: (id: string) => void = () => {};
   onAccept: (yes: boolean) => void = () => {};
 
@@ -249,13 +253,106 @@ export class Code3Hud {
     const actions = el("div", coarse ? "absolute inset-x-0 top-[17%] flex justify-center" : "absolute top-[22%] right-3 flex justify-end", this.menu);
     const center = el("div", `absolute inset-x-0 ${coarse ? "bottom-[40%]" : "bottom-16"} flex flex-col items-center gap-2`, this.speech, this.prompt);
     this.mdt.append(this.mdtTabs, this.mdtBody);
-    this.root.append(topLeft, topRight, gauge, bottomLeft, actions, center, top, this.crosshair, this.hurt, this.toast, this.mdt);
+    this.root.append(topLeft, topRight, gauge, bottomLeft, actions, center, top, this.crosshair, this.hurt, this.toast, this.mdt, this.ticket);
     host.append(this.root, this.sr);
   }
 
   destroy() {
     this.root.remove();
     this.sr.remove();
+  }
+
+  /** Choose action i: "Write a ticket" opens the ticket book, everything else goes straight to the sim. */
+  pick(i: number, opts: Option[]) {
+    if (this.ticketOpen) return this.toggleTicket(i);
+    if (opts[i]?.id === "cite" && this.openTicket()) return;
+    this.onChoose(i);
+  }
+
+  get ticketOpen() {
+    return !this.ticket.classList.contains("hidden");
+  }
+
+  /** The ticket book: tick the violations, see the fines, issue it. */
+  private openTicket() {
+    const book = this.sim.ticketBook();
+    if (!book) return false;
+    this.ticketSel = new Set(book.known);
+    this.ticket.classList.remove("hidden");
+    this.ticket.classList.add("flex");
+    this.renderTicket();
+    this.onModal(true);
+    return true;
+  }
+
+  closeTicket() {
+    if (!this.ticketOpen) return;
+    this.ticket.classList.add("hidden");
+    this.ticket.classList.remove("flex");
+    this.onModal(false);
+  }
+
+  toggleTicket(i: number) {
+    const book = this.sim.ticketBook();
+    const e = book?.book[i];
+    if (!e) return;
+    if (this.ticketSel.has(e.v)) this.ticketSel.delete(e.v);
+    else this.ticketSel.add(e.v);
+    this.renderTicket();
+  }
+
+  issueTicket() {
+    if (!this.ticketSel.size) return;
+    this.onChooseId(`ticket:${[...this.ticketSel].join(",")}`);
+    this.closeTicket();
+  }
+
+  private renderTicket() {
+    const book = this.sim.ticketBook();
+    if (!book) return this.closeTicket();
+    const known = new Set<string>(book.known);
+    const total = book.book.filter((e) => this.ticketSel.has(e.v)).reduce((t, e) => t + e.fine, 0);
+    const rows = book.book.map((e, i) => {
+      const on = this.ticketSel.has(e.v);
+      const row = el(
+        "button",
+        `flex w-full items-center gap-2 border-b border-dashed border-[#bbb] px-1 py-1 text-left ${on ? "bg-[#fff3c4]" : "hover:bg-black/5"}`,
+        el("span", `grid h-4 w-4 shrink-0 place-items-center border border-[#333] text-[10px] font-black`, on ? "✓" : ""),
+        el("span", "w-4 shrink-0 text-[10px] text-[#777]", i < 9 ? String(i + 1) : ""),
+        el("span", "flex-1 uppercase", e.v),
+        known.has(e.v) ? el("span", "rounded bg-[#166534] px-1 text-[9px] font-bold text-white", "SEEN") : el("span", "text-[9px] text-[#b91c1c]", on ? "not established" : ""),
+        el("span", "w-12 text-right tabular-nums", `$${e.fine}`),
+      );
+      (row as HTMLButtonElement).type = "button";
+      row.addEventListener("click", () => this.toggleTicket(i));
+      return row;
+    });
+    const issue = el("button", `rounded px-4 py-2 text-sm font-black uppercase tracking-wider ${this.ticketSel.size ? "bg-[#1d4ed8] text-white" : "bg-[#ccc] text-[#777]"}`, this.coarse ? "Issue ticket" : "Issue ticket [Enter]");
+    const cancel = el("button", "rounded border border-[#555] px-4 py-2 text-sm font-bold uppercase text-[#333]", this.coarse ? "Cancel" : "Cancel [Esc]");
+    (issue as HTMLButtonElement).type = (cancel as HTMLButtonElement).type = "button";
+    issue.addEventListener("click", () => this.issueTicket());
+    cancel.addEventListener("click", () => this.closeTicket());
+    const bogus = [...this.ticketSel].filter((v) => !known.has(v)).length;
+    this.ticket.replaceChildren(
+      el(
+        "div",
+        "flex max-h-full w-[min(94vw,26rem)] flex-col overflow-hidden rounded-sm bg-[#f5f1e6] font-mono text-[12px] text-[#222] shadow-2xl [text-shadow:none]",
+        el(
+          "div",
+          "border-b-2 border-[#222] px-3 py-2",
+          el("p", "text-center text-sm font-black tracking-widest", "BAYVIEW PD · NOTICE TO APPEAR"),
+          el("p", "mt-1 flex justify-between text-[11px]", el("span", "", `DRIVER / SUBJECT: ${book.name}`), el("span", "", this.sim.clockText())),
+        ),
+        el("div", "min-h-0 flex-1 overflow-auto px-2", ...rows),
+        el(
+          "div",
+          "border-t-2 border-[#222] px-3 py-2",
+          el("p", "flex justify-between text-sm font-black", el("span", "", "TOTAL FINE"), el("span", "tabular-nums", `$${total}`)),
+          bogus ? el("p", "mt-1 text-[11px] text-[#b91c1c]", `${bogus} charge${bogus > 1 ? "s" : ""} you haven't established will be thrown out in court (points lost).`) : el("p", "mt-1 text-[11px] text-[#555]", "Only write what you saw or checked."),
+          el("div", "mt-2 flex justify-end gap-2", cancel, issue),
+        ),
+      ),
+    );
   }
 
   cycleZoom() {
@@ -439,7 +536,7 @@ export class Code3Hud {
         b.style.borderColor = g.color;
         b.type = "button";
         b.dataset.option = o.id;
-        b.addEventListener("click", () => this.onChoose(i));
+        b.addEventListener("click", () => this.pick(i, opts));
         rows.push(b);
       });
       this.menu.replaceChildren(...rows);

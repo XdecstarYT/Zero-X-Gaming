@@ -332,4 +332,14 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 93. **Felony stops need a reason.** The option only appears for high-risk cars (stolen, flagged by the plate
     reader, tied to a call, or with known offences); walking up to such a car's window still works, it's just
     riskier.
+94. **The Code 3 trailer plays three times, then never again.** It's a 33-second cinematic built from CSS and SVG
+    (no video file), shown after the intro on up to three visits, once per visit, never in the same visit as
+    the one-time mega ad and never on invite links. Like the mega ad it can't be skipped but releases the page
+    when it ends; the last beat links to the game.
+95. **Bogus tickets cost you.** The ticket book lets you write anything, but only violations you established
+    (seen, radar, plate or licence check) pay; the rest are "thrown out in court" (−25 each). That keeps the
+    freedom without making ticket spam a strategy.
+96. **Blur came from the adaptive resolution and the post chain.** Resolution used to drop to 55 %; it now stops
+    at 75 %. The grade's chromatic fringing and heavy grain are gone, SMAA runs before a sharpening pass, and
+    ambient occlusion (the most expensive pass) moved to Ultra.
 

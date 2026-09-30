@@ -132,7 +132,11 @@ export type Violation =
   | "no licence"
   | "reckless driving"
   | "jaywalking"
-  | "noise ordinance";
+  | "noise ordinance"
+  | "no seatbelt"
+  | "phone while driving"
+  | "illegal parking"
+  | "littering";
 
 /** Things that justify an arrest. */
 export type Offence =

@@ -117,6 +117,12 @@ export interface Car {
   spiked?: boolean;
   /** Tow truck collects it at this time. */
   towAt?: number;
+  /** Part of the street scene (kept by the population manager), e.g. an illegally parked car. */
+  fixture?: boolean;
+  /** Why this parked car is illegal ("blocking a fire hydrant"). */
+  parking?: string;
+  /** A parking ticket is on the windscreen. */
+  ticketed?: boolean;
   /** What the player has seen this car do (reasons to stop it). */
   seen: Set<"speeding" | "red light" | "reckless driving">;
   /** Wheel spin (render). */

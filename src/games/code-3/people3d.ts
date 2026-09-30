@@ -381,7 +381,9 @@ export type Pose =
   | "panic"
   | "phone"
   | "point"
-  | "search";
+  | "search"
+  | "film"
+  | "direct";
 
 export interface PedModel {
   group: THREE.Group;
@@ -690,6 +692,21 @@ function target(pose: Pose, step: number, speed: number, t: number, seed: number
       locomotion(p, 0, 0, t + seed);
       p.set("armR", 0.15, 0, 1.45).set("foreR", 0, 0, 0.05);
       break;
+    case "film":
+      // Phone held up at eye level, both hands.
+      locomotion(p, 0, 0, t + seed);
+      p.set("armR", 0.25, 0, 1.25).set("foreR", 0, 0.2, 1.25).set("armL", -0.45, 0, 1.2).set("foreL", 0, -0.2, 1.3);
+      p.set("head", 0, 0, -0.05);
+      break;
+    case "direct": {
+      // Traffic control: left arm out holding a lane, right arm waving the other through.
+      locomotion(p, step, speed, t + seed);
+      const w = Math.sin(t * 3.2);
+      p.set("armL", 1.45, 0, 0.25).set("foreL", 0, 0, 0.05).set("handL", 0, 0, 0.9);
+      p.set("armR", -0.9, 0, 0.9 + w * 0.5).set("foreR", 0, 0, 0.6 + w * 0.5);
+      p.set("head", 0, -0.4 + w * 0.3, 0);
+      break;
+    }
     case "search":
       locomotion(p, 0, 0, t + seed);
       p.set("chest", 0, 0, -0.32).set("spine", 0, 0, -0.15);

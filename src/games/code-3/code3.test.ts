@@ -3,7 +3,7 @@ import { generateCity, HALF_STREET, line, LINES, lightFor, locationOf, nodeId, o
 import { hipRoofGeometry, isLawn, wallGeometry } from "./scenery";
 import { makePerson } from "./people";
 import { createRng } from "../engine/rng";
-import { Code3Sim, NO_INPUT, type Code3Input, type Ped } from "./sim";
+import { Code3Sim, FINES, NO_INPUT, type Code3Input, type Ped } from "./sim";
 import { forward, makeCar, right, speedOf, stepCar } from "./vehicles";
 
 const DT = 1 / 60;
@@ -734,5 +734,96 @@ describe("scenery geometry", () => {
     expect(isLawn(city, h.x, h.z)).toBe(false);
     const down = city.blocks.find((b) => b.district === "downtown")!;
     expect(isLawn(city, down.x0 + 2, down.z0 + 2)).toBe(false);
+  });
+});
+
+describe("the ticket book and the living street", () => {
+  it("a ticket pays for what you established; charges you never saw are thrown out", () => {
+    const s = new Code3Sim({ seed: 15, firstCall: 1e9 });
+    run(s, 2);
+    const { c, d, k } = pullOver(s);
+    Object.assign(d.person, { warrants: [], licence: "valid" });
+    c.reg!.status = "expired";
+    s.choose("plate");
+    const book = s.ticketBook()!;
+    expect(book.known).toContain("expired registration");
+    expect(book.book.map((b) => b.v)).toContain("no seatbelt");
+    const before = s.stats.score;
+    k.violations.delete("no seatbelt");
+    s.choose("ticket:expired registration,no seatbelt");
+    expect(s.stats.citations).toBe(1);
+    expect(s.stats.fines).toBe(FINES["expired registration"]);
+    expect(s.stats.score - before).toBe(40 + 30 - 25);
+    expect(k.resolved).toBe("cited");
+  });
+
+  it("illegally parked cars can be ticketed or towed; they stay in the world", () => {
+    const s = new Code3Sim({ seed: 61, firstCall: 1e9 });
+    const parked = s.cars.filter((c) => c.fixture);
+    expect(parked.length).toBeGreaterThanOrEqual(8);
+    run(s, 0.05, { enter: true });
+    const c = parked[0];
+    s.player.x = c.x + 2;
+    s.player.z = c.z;
+    expect(s.options().some((o) => o.id === "park-ticket" && o.label.includes(c.parking!))).toBe(true);
+    s.choose("park-ticket");
+    expect(c.ticketed).toBe(true);
+    expect(s.stats.fines).toBe(FINES["illegal parking"]);
+    // Far from the officer, still there.
+    s.player.x = 5;
+    s.player.z = 5;
+    run(s, 1);
+    expect(s.car(c.id)).toBeTruthy();
+    s.player.x = c.x + 2;
+    s.player.z = c.z;
+    s.choose("park-tow");
+    run(s, 13);
+    expect(s.car(c.id)).toBeUndefined();
+  });
+
+  it("directing traffic holds the lanes you choose, and releases them", () => {
+    const s = new Code3Sim({ seed: 62, firstCall: 1e9 });
+    run(s, 0.05, { enter: true });
+    const n = nodeId(3, 3);
+    const p = { x: line(3), z: line(3) };
+    s.player.x = p.x + 1;
+    s.player.z = p.z + 1;
+    expect(has(s, "tc-all")).toBe(true);
+    s.choose("tc-ns");
+    expect(s.directing).toBe(true);
+    const d = s.deploy.find((x) => x.kind === "traffic")!;
+    expect(d.node).toBe(n);
+    expect(d.hold).toBe("ns");
+    s.choose("tc-off");
+    expect(s.deploy.some((x) => x.kind === "traffic")).toBe(false);
+  });
+
+  it("witnesses point you at the suspect; coffee restores you", () => {
+    const s = new Code3Sim({ seed: 63, firstCall: 1e9 });
+    const call = s.offerCall("shoplift");
+    s.acceptCall(call);
+    run(s, 0.05, { enter: true });
+    const w = s.peds.find((q) => q.state === "walk" && q.role === "civilian")!;
+    const sus = s.ped(call.suspects[0])!;
+    Object.assign(w, { walk: undefined, state: "stand", x: sus.x + 25, z: sus.z });
+    s.player.x = w.x + 1;
+    s.player.z = w.z;
+    let tries = 0;
+    while (!s.stats.report.some((r) => r.text === "Witness lead") && tries++ < 6) {
+      w.witnessed = false;
+      s.player.x = w.x + 1;
+      s.player.z = w.z;
+      s.choose("witness");
+    }
+    expect(s.stats.report.some((r) => r.text === "Witness lead")).toBe(true);
+    const store = s.city.places.find((q) => q.kind === "store")!;
+    s.player.x = store.x;
+    s.player.z = store.z;
+    s.player.stamina = 0.1;
+    s.player.hp = 50;
+    expect(has(s, "coffee")).toBe(true);
+    s.choose("coffee");
+    expect(s.player.stamina).toBe(1);
+    expect(s.player.hp).toBe(75);
   });
 });

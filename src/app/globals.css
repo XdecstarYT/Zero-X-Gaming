@@ -614,3 +614,84 @@ html[data-reduce-motion="true"] .zx-intro {
     filter: hue-rotate(180deg);
   }
 }
+
+/* Code 3 trailer. */
+.zx-c3-red {
+  animation: zx-c3-flash 0.4s steps(2) infinite;
+}
+.zx-c3-blue {
+  animation: zx-c3-flash 0.4s steps(2) infinite reverse;
+}
+@keyframes zx-c3-flash {
+  50% {
+    opacity: 0.15;
+  }
+}
+.zx-c3-pan {
+  animation: zx-c3-pan 4s linear forwards;
+}
+.zx-c3-pan-fast {
+  animation: zx-c3-pan 2s linear infinite;
+}
+@keyframes zx-c3-pan {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-35%);
+  }
+}
+.zx-c3-drive {
+  animation: zx-c3-drive 4s ease-out forwards;
+}
+@keyframes zx-c3-drive {
+  from {
+    left: -30%;
+  }
+  to {
+    left: 55%;
+  }
+}
+.zx-c3-chase {
+  left: 30%;
+  animation: zx-c3-bounce 0.35s ease-in-out infinite alternate;
+}
+@keyframes zx-c3-bounce {
+  to {
+    transform: translateY(3px) rotate(-0.6deg);
+  }
+}
+.zx-c3-road {
+  background: repeating-linear-gradient(90deg, #e2b83a 0 60px, transparent 60px 120px);
+  animation: zx-c3-road 0.3s linear infinite;
+}
+@keyframes zx-c3-road {
+  to {
+    transform: translate(-120px, -50%);
+  }
+}
+.zx-c3-ticket {
+  animation: zx-c3-ticket 1.2s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+@keyframes zx-c3-ticket {
+  from {
+    transform: translateY(80vh) rotate(20deg);
+  }
+}
+.zx-c3-static {
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.15) 0 1px, transparent 1px 3px);
+  animation: zx-c3-road 0.2s steps(3) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .zx-c3-red,
+  .zx-c3-blue,
+  .zx-c3-pan,
+  .zx-c3-pan-fast,
+  .zx-c3-drive,
+  .zx-c3-chase,
+  .zx-c3-road,
+  .zx-c3-ticket,
+  .zx-c3-static {
+    animation: none;
+  }
+}

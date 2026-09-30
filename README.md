@@ -330,6 +330,20 @@ Code 3 (`src/games/code-3/`) is its own engine: a pure simulation (`sim.ts`, `ve
   vandalism in progress (a tagger, and fresh graffiti on the wall), wanted fugitive (find them from the
   description; they bolt when they spot you), abandoned vehicle (run the plate, recover it if stolen, tow it),
   road rage (two drivers fighting at the kerb) and a noise complaint (talk to the resident; warn or cite).
+- **Ticket book:** "Write a ticket" opens a notice-to-appear form: tick the violations (speeding, red light,
+  seatbelt, phone, expired registration, insurance, licence, parking, jaywalking, littering, noise...), see each
+  fine and the total, and issue it (keys 1–9 tick, Enter issues). Charges you established pay; ones you never saw
+  or checked are thrown out in court and cost points. Seatbelts and phones get noticed at the window.
+- **A world you can work:** illegally parked cars at hydrants, bus stops and red zones (ticket them, and the slip
+  sits under the wiper, or have them towed; sometimes the owner comes running); direct traffic from the middle
+  of an intersection (stop all lanes or hold one axis and wave the other through); ask passers-by if they've seen
+  your suspect (they point you the right way); grab a coffee at a shop or gas station; get the unit fixed at the
+  gas station. Pedestrians greet you, freeze with their hands up if you point a weapon their way, and get their
+  phones out to film.
+- **Sharper and smoother:** a contrast-adaptive sharpening pass (no more chromatic fringing, lighter grain),
+  anti-aliasing before the grade, higher render resolution, adaptive resolution that never drops below 75 %,
+  facade textures painted in idle frames so streaming never stalls, and ambient occlusion moved to a new
+  **Ultra** setting.
 - **HUD:** a compass with the call's bearing and a location bar (street, cross street, district), a speedometer
   dial with the limit marked and light-bar lamps, an active-call card with the next step, a score feed, and the
   action list grouped by kind (commands, talk, checks, enforcement, custody, scene, unit) with icons. The MDT

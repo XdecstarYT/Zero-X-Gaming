@@ -3,7 +3,10 @@ import { expect, introTest } from "./fixtures";
 /** Intro tests: the one-time mega ad counts as seen (it has its own test below). */
 const test = introTest.extend({
   page: async ({ page }, run) => {
-    await page.addInitScript(() => localStorage.setItem("zx-mega-ad-seen", "1"));
+    await page.addInitScript(() => {
+      localStorage.setItem("zx-mega-ad-seen", "1");
+      localStorage.setItem("zx-code3-ad-count", "3");
+    });
     await run(page);
   },
 });
@@ -76,3 +79,25 @@ introTest("the mega ad plays once after the intro, can't be skipped, then never 
   await expect(page.getByTestId("mega-ad")).toHaveCount(0);
 });
 
+
+introTest("the Code 3 trailer plays after the intro on later visits, three times at most", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    localStorage.setItem("zx-mega-ad-seen", "1");
+    if (!localStorage.getItem("zx-code3-ad-count")) localStorage.setItem("zx-code3-ad-count", "2");
+  });
+  await page.goto("/");
+  await page.getByRole("dialog", { name: "Zero X Gaming intro" }).getByRole("button", { name: "Skip intro" }).click();
+  const ad = page.getByTestId("code3-ad");
+  await expect(ad).toBeVisible();
+  await expect(ad).toContainText(/Ad · \d+s/);
+  expect(await page.evaluate(() => localStorage.getItem("zx-code3-ad-count"))).toBe("3");
+  await expect(ad).toContainText("CODE 3", { timeout: 10_000 });
+  await expect(ad).toBeHidden({ timeout: 40_000 });
+  // That was the third run: never again.
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await page.getByRole("dialog", { name: "Zero X Gaming intro" }).getByRole("button", { name: "Skip intro" }).click();
+  await page.waitForTimeout(1500);
+  await expect(page.getByTestId("code3-ad")).toHaveCount(0);
+});

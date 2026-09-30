@@ -10,6 +10,7 @@ export const test = base.extend({
       try {
         sessionStorage.setItem("zx-intro-seen", "1");
         localStorage.setItem("zx-mega-ad-seen", "1");
+        localStorage.setItem("zx-code3-ad-count", "3");
       } catch {}
     });
     await run(page);

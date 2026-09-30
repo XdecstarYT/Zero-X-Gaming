@@ -65,19 +65,27 @@ const KERB = 0.15;
 /** World streaming chunk size (m): two blocks. */
 const CHUNK = 144;
 
-/** Cinematic grade: filmic contrast, slight teal/orange split, vignette, grain. */
+/** Grade: contrast-adaptive sharpening, filmic contrast, slight teal/orange split, vignette, fine grain. */
 const GRADE_SHADER = {
-  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, night: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, night: { value: 0 }, texel: { value: new THREE.Vector2(1 / 1280, 1 / 720) }, sharpen: { value: 0.55 } },
   vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float time; uniform float night; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float time; uniform float night; uniform vec2 texel; uniform float sharpen; varying vec2 vUv;
     float rand(vec2 c){ return fract(sin(dot(c, vec2(12.9898,78.233))) * 43758.5453); }
     void main(){
       vec2 uv = vUv;
       vec2 d = uv - 0.5;
-      // A touch of chromatic fringing toward the edges.
-      float ca = dot(d, d) * 0.004;
-      vec3 c = vec3(texture2D(tDiffuse, uv + d * ca).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - d * ca).b);
+      // Contrast-adaptive sharpening: restore the detail upscaling and anti-aliasing soften.
+      vec3 c = texture2D(tDiffuse, uv).rgb;
+      vec3 n = texture2D(tDiffuse, uv + vec2(0.0, texel.y)).rgb;
+      vec3 s = texture2D(tDiffuse, uv - vec2(0.0, texel.y)).rgb;
+      vec3 e = texture2D(tDiffuse, uv + vec2(texel.x, 0.0)).rgb;
+      vec3 w = texture2D(tDiffuse, uv - vec2(texel.x, 0.0)).rgb;
+      vec3 mn = min(c, min(min(n, s), min(e, w)));
+      vec3 mx = max(c, max(max(n, s), max(e, w)));
+      vec3 amp = clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0);
+      vec3 wgt = -sqrt(amp) * mix(0.125, 0.2, sharpen);
+      c = clamp((c + (n + s + e + w) * wgt) / (1.0 + 4.0 * wgt), 0.0, 1.0);
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       // Split tone: cool shadows, warm highlights (stronger at night: sodium lamps vs blue dark).
       vec3 shadowTint = mix(vec3(0.96, 1.0, 1.04), vec3(0.9, 0.97, 1.1), night);
@@ -88,7 +96,7 @@ const GRADE_SHADER = {
       c = c * c * (3.0 - 2.0 * c) * 0.18 + c * 0.82;
       // Vignette and grain.
       c *= 1.0 - dot(d, d) * 0.55;
-      c += (rand(uv * 700.0 + time) - 0.5) * 0.025;
+      c += (rand(uv * 700.0 + time) - 0.5) * 0.01;
       gl_FragColor = vec4(c, 1.0);
     }`,
 };
@@ -331,11 +339,13 @@ export class Code3View {
     private host: HTMLElement,
     private sim: Code3Sim,
     private quality: Quality,
+    /** Ultra: ambient occlusion and a higher-resolution post chain on top of High. */
+    private ultra = false,
   ) {
     const high = quality === "high";
     this.weather = sim.weather;
     this.renderer = new THREE.WebGLRenderer({ antialias: !high, powerPreference: "high-performance", stencil: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, high ? 1.5 : 1));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, high ? (ultra ? 2 : 1.5) : 1.25));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.9;
@@ -622,29 +632,38 @@ export class Code3View {
       const h = Math.max(1, r.height);
       const target = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 0 });
       this.composer = new EffectComposer(this.renderer, target);
-      this.composer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
+      this.composer.setPixelRatio(this.postRatio());
       this.composer.addPass(new RenderPass(this.scene, this.camera));
-      const ao = new GTAOPass(this.scene, this.camera, w, h);
-      ao.updateGtaoMaterial({ radius: 0.8, distanceExponent: 1.4, thickness: 1.4, scale: 1.2 });
-      ao.blendIntensity = 0.85;
-      this.composer.addPass(ao);
+      if (ultra) {
+        const ao = new GTAOPass(this.scene, this.camera, w, h);
+        ao.updateGtaoMaterial({ radius: 0.8, distanceExponent: 1.4, thickness: 1.4, scale: 1.2 });
+        ao.blendIntensity = 0.85;
+        this.composer.addPass(ao);
+      }
       this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.4, 0.5, 0.9);
       this.composer.addPass(this.bloom);
       this.composer.addPass(new OutputPass());
+      // Anti-alias first, then grade and sharpen, so the edges stay crisp.
+      this.composer.addPass(new SMAAPass());
       this.grade = new ShaderPass(GRADE_SHADER);
       this.composer.addPass(this.grade);
-      this.composer.addPass(new SMAAPass());
     }
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(host);
     this.resize();
   }
 
+  private resScale = 1;
+  private postRatio() {
+    return Math.min(window.devicePixelRatio || 1, this.ultra ? 2 : 1.5) * this.resScale;
+  }
+
   /** Render-resolution scale (1 = full) for adaptive performance on phones. */
   setResolution(k: number) {
-    const base = Math.min(window.devicePixelRatio || 1, this.quality === "high" ? 1.5 : 1);
+    this.resScale = k;
+    const base = Math.min(window.devicePixelRatio || 1, this.quality === "high" ? (this.ultra ? 2 : 1.5) : 1.25);
     this.renderer.setPixelRatio(base * k);
-    this.composer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25) * k);
+    this.composer?.setPixelRatio(this.postRatio());
     this.resize();
   }
 
@@ -653,6 +672,7 @@ export class Code3View {
     const h = Math.max(1, this.host.clientHeight);
     this.renderer.setSize(w, h, false);
     this.composer?.setSize(w, h);
+    if (this.grade) (this.grade.uniforms.texel.value as THREE.Vector2).set(1 / (w * this.postRatio()), 1 / (h * this.postRatio()));
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -683,7 +703,23 @@ export class Code3View {
     need.sort((a, b) => a.d - b.d);
     // One chunk per frame while playing (no hitches); everything nearby up front.
     for (const n of all ? need : need.slice(0, 1)) this.loadChunk(n.i);
+    return need.length > 0;
   }
+
+  /** Facade styles not painted yet: painted one per idle frame, so streaming never waits on a canvas. */
+  private warm = [
+    ...["tower", "office"].flatMap((k) => [0, 1, 2, 3].flatMap((st) => [`u:${k}:${st}`, `b:${k}:${st}`])),
+    ...[0, 1, 2, 3].flatMap((st) => [`u:house:${st}`, `u:house:${st}:front`]),
+    "b:store:0",
+    "u:warehouse:0",
+    "b:warehouse:0",
+    "u:warehouse:1",
+    "b:warehouse:1",
+    "u:station:0",
+    "b:station:0",
+    "u:hospital:0",
+    "b:hospital:0",
+  ];
 
   private loadChunk(i: number) {
     const g = new THREE.Group();
@@ -1067,7 +1103,11 @@ export class Code3View {
     this.frameDt = frameDt;
     const t = sim.time;
     this.timeOfDay();
-    this.streamChunks();
+    if (!this.streamChunks()) {
+      while (this.warm.length && this.facadeMats.has(this.warm[0])) this.warm.shift();
+      const key = this.warm.shift();
+      if (key) this.facadeMat(key);
+    }
     this.syncCars(t, frameDt);
     this.syncPeds(cam);
     this.syncFx(sim.events, t);
@@ -1325,6 +1365,14 @@ export class Code3View {
         this.bar[0].intensity = c.lights && phase < 2 ? 30 : 0;
         this.bar[1].intensity = c.lights && phase >= 2 ? 30 : 0;
       }
+      // A parking ticket under the wiper.
+      if (c.ticketed && !m.group.userData.ticket) {
+        // Lying on the windscreen: faces forward and up.
+        const slip = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.16).rotateX(-Math.PI / 2).rotateZ(-0.62), new THREE.MeshStandardMaterial({ color: "#f6f3ea", roughness: 0.9, side: THREE.DoubleSide }));
+        slip.position.set(c.spec.len * 0.17, 1.12, -0.3);
+        m.group.add(slip);
+        m.group.userData.ticket = true;
+      }
       // Wrecked: smoke from the bonnet.
       if (c.health < 30) {
         if (!m.smoke) {
@@ -1390,7 +1438,7 @@ export class Code3View {
       case "panic":
         return "panic";
       case "stand":
-        return p.drawn ? "aim" : p.task === "spray" ? "point" : p.task === "music" ? "talk" : "stand";
+        return p.drawn ? "aim" : p.task === "spray" ? "point" : p.task === "music" ? "talk" : p.task === "film" ? "film" : "stand";
       case "talk":
         return "talk";
       default:
@@ -1467,7 +1515,7 @@ export class Code3View {
       om.group.rotation.set(0, -pl.h, 0);
       const moving = pl.moving ? (pl.sprinting ? 6.5 : 3.2) : 0;
       this.officerStep += moving * this.frameDt;
-      posePed(om, cam.aiming ? "aim" : sim.radioUntil > t ? "radio" : sim.talking ? "talk" : "walk", this.officerStep, moving, t, this.frameDt);
+      posePed(om, cam.aiming ? "aim" : sim.radioUntil > t ? "radio" : sim.talking ? "talk" : sim.directing ? "direct" : "walk", this.officerStep, moving, t, this.frameDt);
       this.torch.intensity = sim.flashlight ? 60 : 0;
       om.gun.visible = pl.weapon === "pistol" && cam.aiming;
       om.taser.visible = pl.weapon === "taser" && cam.aiming;

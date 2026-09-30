@@ -49,7 +49,7 @@ class Code3Game implements GameModule {
   private hud: Code3Hud | null = null;
   private touch: HTMLDivElement | null = null;
   private coarse = false;
-  private quality: Quality = "high";
+  private quality: Quality | "ultra" = "high";
   private unit: CarKind = "cruiser";
   private shift: "night" | "day" = "night";
   private length: "full" | "short" = "full";
@@ -95,7 +95,7 @@ class Code3Game implements GameModule {
     this.coarse = window.matchMedia("(pointer: coarse)").matches;
     try {
       const q = localStorage.getItem(GFX_KEY);
-      this.quality = q === "low" || q === "high" ? q : this.coarse ? "low" : "high";
+      this.quality = q === "low" || q === "high" || q === "ultra" ? q : this.coarse ? "low" : "high";
       const u = localStorage.getItem(UNIT_KEY) as CarKind | null;
       if (u && UNITS.some((x) => x.kind === u)) this.unit = u;
     } catch {
@@ -283,7 +283,8 @@ class Code3Game implements GameModule {
           group(
             "Graphics",
             [
-              { value: "high" as const, title: "High", sub: "Shadows, bloom, sharper" },
+              { value: "ultra" as const, title: "Ultra", sub: "Adds ambient occlusion, full resolution" },
+              { value: "high" as const, title: "High", sub: "Shadows, bloom, sharpened" },
               { value: "low" as const, title: "Low", sub: "Faster on phones and older PCs" },
             ],
             this.quality,
@@ -364,7 +365,7 @@ class Code3Game implements GameModule {
     this.pitch = 0;
     this.wasInCar = true;
     try {
-      this.view = new Code3View(this.host, this.sim, this.quality);
+      this.view = new Code3View(this.host, this.sim, this.quality === "low" ? "low" : "high", this.quality === "ultra");
     } catch {
       this.showMenu();
       this.menu.prepend(el("p", "w-full rounded bg-red-900/60 p-2 text-center text-sm", "3D graphics aren't available on this device (WebGL is off)."));
@@ -375,6 +376,10 @@ class Code3Game implements GameModule {
     this.hud = new Code3Hud(this.host, this.sim, this.coarse);
     this.hud.onChoose = (i) => (this.pressed.choose = i);
     this.hud.onChooseId = (id) => (this.pressed.chooseId = id);
+    this.hud.onModal = (open) => {
+      if (open && document.pointerLockElement === this.host) document.exitPointerLock();
+      else if (!open) this.lockPointer();
+    };
     this.hud.onAccept = (yes) => {
       if (yes) this.pressed.accept = true;
       else this.pressed.decline = true;
@@ -429,6 +434,7 @@ class Code3Game implements GameModule {
       sprint: k("ShiftLeft", "ShiftRight") || this.touchSprint || (!!this.stick && fwd > 0.92),
       fire: !inCar && (this.mouseDown || this.touchFire || k("KeyF")),
       horn: k("KeyH") || this.touchYelp,
+      aim: !inCar && (this.rightDown || this.aimToggle),
       ...p,
     };
   }
@@ -477,7 +483,8 @@ class Code3Game implements GameModule {
     this.frameAvg += (frameDt - this.frameAvg) * 0.05;
     if (now - this.resAt > 1500) {
       this.resAt = now;
-      const next = this.frameAvg > 1 / 32 ? Math.max(0.55, this.resScale - 0.1) : this.frameAvg < 1 / 55 ? Math.min(1, this.resScale + 0.05) : this.resScale;
+      // Drop resolution only for sustained slow frames, never below 75 % (it goes soft fast), and recover quickly.
+      const next = this.frameAvg > 1 / 26 ? Math.max(0.75, this.resScale - 0.05) : this.frameAvg < 1 / 48 ? Math.min(1, this.resScale + 0.05) : this.resScale;
       if (next !== this.resScale) {
         this.resScale = next;
         this.view.setResolution(next);
@@ -574,6 +581,13 @@ class Code3Game implements GameModule {
   };
 
   private onKeyDown = (e: KeyboardEvent) => {
+    if (this.hud?.ticketOpen) {
+      if (e.code.startsWith("Digit")) this.hud.toggleTicket(Number(e.code.slice(5)) - 1);
+      else if (e.code === "Enter" || e.code === "NumpadEnter") this.hud.issueTicket();
+      else if (e.code === "Escape") this.hud.closeTicket();
+      e.preventDefault();
+      return;
+    }
     if (!this.loop.isRunning || !this.sim) return;
     const handled = [
       "KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "ShiftLeft", "ShiftRight",
@@ -641,7 +655,12 @@ class Code3Game implements GameModule {
         break;
       }
       default:
-        if (e.code.startsWith("Digit")) p.choose = Number(e.code.slice(5)) - 1;
+        if (e.code.startsWith("Digit")) {
+          // Through the HUD: "Write a ticket" opens the ticket book instead of writing straight away.
+          const i = Number(e.code.slice(5)) - 1;
+          if (this.hud) this.hud.pick(i, this.sim?.options() ?? []);
+          else p.choose = i;
+        }
     }
   };
 
