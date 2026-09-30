@@ -39,7 +39,7 @@ test("Trenches lobbies: create, browse, join, chat, start together", async ({ pa
 
   const a = await open(page);
   await a.getByLabel("Lobby name").fill("E2E Front");
-  await a.getByLabel("Size").selectOption("4");
+  await a.getByLabel("Size").selectOption("8");
   await a.getByRole("button", { name: "Create lobby" }).click();
   await expect(a.getByRole("button", { name: "Leave lobby" })).toBeVisible();
   await expect(a.getByRole("button", { name: /Start battle/ })).toBeVisible();

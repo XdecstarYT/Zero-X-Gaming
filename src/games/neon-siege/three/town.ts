@@ -27,11 +27,11 @@ import {
  */
 
 export const FLOOR_H = 3;
-const BRICK_TILE_H = 0.6;
+export const BRICK_TILE_H = 0.6;
 
 type Bucket = { mat: THREE.Material; geos: THREE.BufferGeometry[]; shadow: boolean };
 
-class Batcher {
+export class Batcher {
   private buckets = new Map<string, Bucket>();
   add(key: string, mat: THREE.Material, geo: THREE.BufferGeometry, m: THREE.Matrix4, color?: THREE.Color, shadow = true) {
     let b = this.buckets.get(key);
@@ -71,13 +71,13 @@ const Q = new THREE.Quaternion();
 const S = new THREE.Vector3();
 const P = new THREE.Vector3();
 const E = new THREE.Euler();
-function mat4(x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, ry = 0, rx = 0, rz = 0) {
+export function mat4(x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, ry = 0, rx = 0, rz = 0) {
   E.set(rx, ry, rz);
   Q.setFromEuler(E);
   return M.compose(P.set(x, y, z), Q, S.set(sx, sy, sz));
 }
 
-function std(t: TexSet | null, opts: THREE.MeshStandardMaterialParameters = {}) {
+export function std(t: TexSet | null, opts: THREE.MeshStandardMaterialParameters = {}) {
   return new THREE.MeshStandardMaterial({
     map: t?.map ?? null,
     normalMap: t?.normal ?? null,
@@ -89,7 +89,7 @@ function std(t: TexSet | null, opts: THREE.MeshStandardMaterialParameters = {}) 
 }
 
 /** Box with UVs in metres (u along the face width, v up), so tiled textures keep real scale. */
-function metricBox(w: number, h: number, d: number, tileW = 1, tileH = 1) {
+export function metricBox(w: number, h: number, d: number, tileW = 1, tileH = 1) {
   const g = new THREE.BoxGeometry(w, h, d);
   const uv = g.attributes.uv as THREE.BufferAttribute;
   const n = g.attributes.normal as THREE.BufferAttribute;
@@ -104,7 +104,7 @@ function metricBox(w: number, h: number, d: number, tileW = 1, tileH = 1) {
 }
 
 /** Displace a geometry's vertices with smooth-ish noise for organic shapes (rocks, foliage). */
-function lumpy(geo: THREE.BufferGeometry, seed: number, amount: number) {
+export function lumpy(geo: THREE.BufferGeometry, seed: number, amount: number) {
   const g = geo.index ? geo.toNonIndexed() : geo.clone();
   const pos = g.attributes.position as THREE.BufferAttribute;
   const rng = createRng(seed);
@@ -470,19 +470,19 @@ export function buildTown(map: GameMap, opts: TownOptions) {
   return { root, time };
 }
 
-const cardGeo = new THREE.PlaneGeometry(1, 1);
+export const cardGeo = new THREE.PlaneGeometry(1, 1);
 /** A slumped sandbag. */
-const sackGeo = (() => {
+export const sackGeo = (() => {
   const g = new THREE.CapsuleGeometry(0.11, 0.3, 3, 8);
   g.rotateZ(Math.PI / 2);
   g.scale(1, 0.8, 1.35);
   return g;
 })();
 /** One loop of a barbed-wire coil. */
-const coilGeo = new THREE.TorusGeometry(0.4, 0.012, 4, 22);
+export const coilGeo = new THREE.TorusGeometry(0.4, 0.012, 4, 22);
 
 /** A shell-shattered tree: bare, split trunk with a few broken limbs. */
-function addDeadTree(batch: Batcher, mats: Record<string, THREE.Material>, x: number, z: number, hash: number) {
+export function addDeadTree(batch: Batcher, mats: Record<string, THREE.Material>, x: number, z: number, hash: number) {
   const rng = createRng(hash);
   const h = rng.range(2.5, 5.5);
   batch.add("bark", mats.bark, new THREE.CylinderGeometry(0.06, 0.22, h, 7), mat4(x, h / 2, z, 1, 1, 1, 0, rng.range(-0.08, 0.08), rng.range(-0.08, 0.08)));
@@ -646,7 +646,7 @@ function buildGrass(map: GameMap, detail: "high" | "low", time: { value: number 
   return mesh;
 }
 
-function addBuilding(
+export function addBuilding(
   batch: Batcher,
   mats: Record<string, THREE.Material>,
   b: Building,

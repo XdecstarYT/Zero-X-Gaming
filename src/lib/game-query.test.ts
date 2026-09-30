@@ -12,13 +12,14 @@ describe("queryGames", () => {
   });
 
   it("filters by category", () => {
-    expect(slugs(queryGames(GAMES, { category: "puzzle" }))).toEqual(["grid-lock"]);
+    expect(slugs(queryGames(GAMES, { category: "shooter" })).sort()).toEqual(["neon-siege", "trenches"]);
+    expect(queryGames(GAMES, { category: "puzzle" })).toEqual([]);
   });
 
   it("searches title, tagline and tags case-insensitively", () => {
-    expect(slugs(queryGames(GAMES, { search: "  ORBIT " }))).toEqual(["orbit"]);
-    expect(slugs(queryGames(GAMES, { search: "gravity" }))).toEqual(["orbit"]);
-    expect(slugs(queryGames(GAMES, { search: "match-3" }))).toEqual(["grid-lock"]);
+    expect(slugs(queryGames(GAMES, { search: "  TRENCHES " }))).toEqual(["trenches"]);
+    expect(slugs(queryGames(GAMES, { search: "battle royale" }))).toEqual(["neon-siege"]);
+    expect(slugs(queryGames(GAMES, { search: "conquest" }))).toEqual(["trenches"]);
   });
 
   it("returns an empty list when nothing matches", () => {
@@ -30,7 +31,8 @@ describe("queryGames", () => {
   });
 
   it("sorts by rating", () => {
-    expect(slugs(queryGames(GAMES, { sort: "top" }))[0]).toBe("zero-dash");
+    const rated = GAMES.map((g, i) => ({ ...g, rating: i === 1 ? 4.8 : 3.1 }));
+    expect(slugs(queryGames(rated, { sort: "top" }))[0]).toBe(GAMES[1].slug);
   });
 
   it("does not mutate the input", () => {

@@ -258,3 +258,18 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     others send requests. Starting flips the phase and bumps the match id, which every client (and anyone who
     joins mid-battle) treats as "load in". The public lobby list is Supabase presence, so it needs no table.
     With no authoritative server, matches are unranked and don't reach the leaderboards.
+71. **The hub now carries only its two 3D shooters.** Zero Dash, Grid Lock, Orbit and Blitz Trivia were removed
+    from the code; in the database they are `retired` (not deleted), so old scores, favourites and All-Rounder
+    badges stay valid while new scores are refused. All-Rounder is now labelled a legacy badge.
+72. **Trenches went for realism over arcade feel.** Maps grew from 84×48 m to 150–190 m with five fronts;
+    trenches became real pits instead of flat floors, and cover is a rule of the simulation (the 2D sim has no
+    height): in a trench you show only head and shoulders, crouched you are fully covered but can't fire out.
+    Weapons hit 2.2× harder, there's no crosshair, and stance, sprint and stamina matter.
+73. **Digging changes only the ground layer.** A dug cell stays walkable (so paths and bots are unaffected) and
+    becomes trench. Digs are peer-to-peer like everything else, validated on receipt, capped at 4,000 per battle,
+    and re-sent by the host every 5 s. Each battle gets its own copy of the ground, so digs never leak between
+    matches.
+74. **The "weird light" in the FPS was the glowing effects.** Loot beams, chest glows and the unlit storm wall
+    read as lights in the middle of the map; loot and chests no longer glow, the storm wall is a dim fogged haze,
+    and the screen vignette is softer.
+

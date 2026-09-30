@@ -8,7 +8,7 @@ const BOARD = [
 test("home renders hero, featured game and sections", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Play. Compete.");
-  await expect(page.getByRole("heading", { name: "Zero Dash", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trenches", level: 2 })).toBeVisible();
   for (const name of ["Continue playing", "Trending", "New releases", "Climb the ranks"]) {
     await expect(page.getByRole("heading", { name, level: 2 })).toBeVisible();
   }
@@ -17,97 +17,29 @@ test("home renders hero, featured game and sections", async ({ page }) => {
 
 test("library filters by search and category and syncs the URL", async ({ page }) => {
   await page.goto("/games");
-  await expect(page.getByText("6 games")).toBeVisible();
-  await page.getByLabel("Search games").fill("gravity");
+  await expect(page.getByText("2 games")).toBeVisible();
+  await page.getByLabel("Search games").fill("conquest");
   await expect(page.getByText("1 game", { exact: true })).toBeVisible();
-  await expect(page).toHaveURL(/q=gravity/);
+  await expect(page).toHaveURL(/q=conquest/);
   await page.getByLabel("Search games").fill("");
-  await page.getByRole("button", { name: "Puzzle" }).click();
-  await expect(page.getByRole("heading", { name: "Grid Lock" })).toBeVisible();
-  await expect(page).toHaveURL(/category=puzzle/);
+  await page.getByRole("button", { name: "Shooter" }).click();
+  await expect(page.getByRole("heading", { name: "Trenches" })).toBeVisible();
+  await expect(page).toHaveURL(/category=shooter/);
   await page.getByLabel("Search games").fill("nothing-matches");
   await expect(page.getByText("No games match")).toBeVisible();
 });
 
 test("favorites persist across pages", async ({ page }) => {
-  await page.goto("/games/orbit");
-  await expect(page.getByRole("heading", { level: 1, name: "Orbit" })).toBeVisible();
+  await page.goto("/games/trenches");
+  await expect(page.getByRole("heading", { level: 1, name: "Trenches" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Weekly" })).toHaveAttribute("aria-selected", "true");
-  await page.getByRole("button", { name: "Add Orbit to favorites" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Added Orbit to favorites" })).toBeVisible();
+  await page.getByRole("button", { name: "Add Trenches to favorites" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Added Trenches to favorites" })).toBeVisible();
 
   await page.goto("/profile");
   await expect(
-    page.getByRole("list", { name: "Favorite games" }).getByRole("heading", { name: "Orbit" }),
+    page.getByRole("list", { name: "Favorite games" }).getByRole("heading", { name: "Trenches" }),
   ).toBeVisible();
-});
-
-test("Zero Dash: play, pause, resume, game over, then shows in continue playing", async ({ page }) => {
-  await page.goto("/games/zero-dash");
-  const stage = page.getByTestId("game-stage");
-  await page.getByRole("button", { name: "Play", exact: true }).click();
-  await dismissRotate(page);
-  await expect(stage).toHaveAttribute("data-phase", "playing");
-  await expect(stage.locator("canvas")).toBeVisible();
-
-  await page.keyboard.press("Escape");
-  await expect(stage).toHaveAttribute("data-phase", "paused");
-  await expect(stage.getByText("Paused")).toBeVisible();
-  await stage.getByRole("button", { name: "Resume" }).click();
-  await expect(stage).toHaveAttribute("data-phase", "playing");
-
-  // Never jumping: the first obstacle ends the run.
-  await expect(stage).toHaveAttribute("data-phase", "over", { timeout: 20_000 });
-  await expect(stage.getByText("Game over")).toBeVisible();
-  await expect(stage.getByRole("button", { name: "Play again" })).toBeVisible();
-
-  await page.goto("/");
-  const recent = page.getByRole("list", { name: "Recently played games" });
-  await expect(recent.getByRole("heading", { name: "Zero Dash" })).toBeVisible();
-});
-
-test("Grid Lock: board renders, keyboard slides work, pause and resume", async ({ page }) => {
-  await page.goto("/games/grid-lock");
-  const stage = page.getByTestId("game-stage");
-  await page.getByRole("button", { name: "Play", exact: true }).click();
-  await dismissRotate(page);
-  await expect(stage).toHaveAttribute("data-phase", "playing");
-  await expect(stage.locator("canvas")).toBeVisible();
-  for (const key of ["Shift+ArrowRight", "ArrowDown", "Shift+ArrowUp", "Shift+ArrowLeft"])
-    await page.keyboard.press(key);
-  await page.keyboard.press("KeyP");
-  await expect(stage).toHaveAttribute("data-phase", "paused");
-  await page.keyboard.press("KeyP");
-  await expect(stage).toHaveAttribute("data-phase", "playing");
-});
-
-test("Orbit: starts, steers and pauses when the tab is hidden", async ({ page }) => {
-  await page.goto("/games/orbit");
-  const stage = page.getByTestId("game-stage");
-  await page.getByRole("button", { name: "Play", exact: true }).click();
-  await dismissRotate(page);
-  await expect(stage).toHaveAttribute("data-phase", /playing|over/);
-  await page.keyboard.down("ArrowLeft");
-  await page.waitForTimeout(300);
-  await page.keyboard.up("ArrowLeft");
-  await page.evaluate(() => {
-    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  await expect(stage).toHaveAttribute("data-phase", /paused|over/);
-});
-
-test("Blitz Trivia: pick a category, answer with the keyboard, see feedback", async ({ page }) => {
-  await page.goto("/games/blitz-trivia");
-  const stage = page.getByTestId("game-stage");
-  await page.getByRole("button", { name: "Play", exact: true }).click();
-  await dismissRotate(page);
-  await expect(stage.getByText("Pick a category")).toBeVisible();
-  await stage.getByRole("button", { name: /Math/ }).click();
-  await expect(stage.getByRole("button", { name: /^1: / })).toBeVisible();
-  await page.keyboard.press("1");
-  await expect(stage.getByText(/Correct! \+100|Wrong: it was/)).toBeVisible();
-  await expect(stage.getByRole("button", { name: /^2: / })).toBeEnabled();
 });
 
 test("unknown game shows 404", async ({ page }) => {
@@ -158,7 +90,7 @@ test("reduce motion setting persists and applies to <html>", async ({ page }) =>
 });
 
 test("no horizontal overflow", async ({ page }) => {
-  for (const path of ["/", "/games", "/games/zero-dash", "/leaderboards", "/profile", "/settings"]) {
+  for (const path of ["/", "/games", "/games/trenches", "/leaderboards", "/profile", "/settings"]) {
     await page.goto(path);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, path).toBeLessThanOrEqual(0);
@@ -184,7 +116,7 @@ test("leaderboards show an error with retry when the API fails, and empty states
       ? route.fulfill({ status: 500, body: "{}" })
       : route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
   });
-  await page.goto("/games/zero-dash");
+  await page.goto("/games/neon-siege");
   const aside = page.getByRole("complementary");
   await expect(aside.getByText("Couldn't load the leaderboard.")).toBeVisible();
   await aside.getByRole("button", { name: "Retry" }).click();
@@ -212,9 +144,10 @@ test("phones get a bottom tab bar; desktop gets the top nav", async ({ page, isM
 
 test("on phones, playing goes immersive (full screen) and Exit returns to the page", async ({ page, isMobile }) => {
   test.skip(!isMobile, "phone-only behaviour");
-  await page.goto("/games/grid-lock");
+  await page.goto("/games/trenches?net=local");
   const stage = page.getByTestId("game-stage");
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
   await expect(stage).toHaveAttribute("data-immersive", "true");
   const box = await stage.boundingBox();
   const vp = page.viewportSize()!;
@@ -227,7 +160,7 @@ test("on phones, playing goes immersive (full screen) and Exit returns to the pa
 
 test("landscape games ask phones in portrait to rotate (dismissable)", async ({ page, isMobile }) => {
   test.skip(!isMobile, "phone-only behaviour");
-  await page.goto("/games/zero-dash");
+  await page.goto("/games/trenches?net=local");
   await page.getByRole("button", { name: "Play", exact: true }).click();
   const card = page.getByRole("dialog", { name: "Rotate your device" });
   await expect(card).toBeVisible();

@@ -5,19 +5,19 @@ describe("library store", () => {
   beforeEach(() => useLibrary.setState({ favorites: [], recent: [] }));
 
   it("toggles favorites", () => {
-    useLibrary.getState().toggleFavorite("orbit");
-    expect(useLibrary.getState().favorites).toEqual(["orbit"]);
-    useLibrary.getState().toggleFavorite("orbit");
+    useLibrary.getState().toggleFavorite("trenches");
+    expect(useLibrary.getState().favorites).toEqual(["trenches"]);
+    useLibrary.getState().toggleFavorite("trenches");
     expect(useLibrary.getState().favorites).toEqual([]);
   });
 
   it("moves replayed games to the front and keeps the best score", () => {
     const { recordPlay } = useLibrary.getState();
-    recordPlay("orbit", 500);
-    recordPlay("zero-dash", 10);
-    recordPlay("orbit", 200);
+    recordPlay("trenches", 500);
+    recordPlay("neon-siege", 10);
+    recordPlay("trenches", 200);
     const { recent } = useLibrary.getState();
-    expect(recent.map((r) => r.slug)).toEqual(["orbit", "zero-dash"]);
+    expect(recent.map((r) => r.slug)).toEqual(["trenches", "neon-siege"]);
     expect(recent[0].bestScore).toBe(500);
   });
 

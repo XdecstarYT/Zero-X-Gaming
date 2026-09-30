@@ -38,7 +38,7 @@ describe("validateEmail / validatePassword", () => {
 describe("safeNextPath", () => {
   it.each([
     ["/profile", "/profile"],
-    ["/games/orbit?x=1", "/games/orbit?x=1"],
+    ["/games/trenches?x=1", "/games/trenches?x=1"],
     [null, "/"],
     ["", "/"],
     ["https://evil.com", "/"],
@@ -65,14 +65,14 @@ describe("friendlyAuthError", () => {
 });
 
 describe("mergeFavorites", () => {
-  const known = new Set(["orbit", "grid-lock", "zero-dash"]);
+  const known = new Set(["trenches", "retired-arcade", "neon-siege"]);
   it("unions local and remote, local first, and only uploads what's missing", () => {
-    expect(mergeFavorites(["orbit", "zero-dash"], ["grid-lock", "orbit"], known)).toEqual({
-      merged: ["orbit", "zero-dash", "grid-lock"],
-      toUpload: ["zero-dash"],
+    expect(mergeFavorites(["trenches", "neon-siege"], ["retired-arcade", "trenches"], known)).toEqual({
+      merged: ["trenches", "neon-siege", "retired-arcade"],
+      toUpload: ["neon-siege"],
     });
   });
   it("drops unknown games", () => {
-    expect(mergeFavorites(["retired-game", "orbit"], [], known)).toEqual({ merged: ["orbit"], toUpload: ["orbit"] });
+    expect(mergeFavorites(["retired-game", "trenches"], [], known)).toEqual({ merged: ["trenches"], toUpload: ["trenches"] });
   });
 });

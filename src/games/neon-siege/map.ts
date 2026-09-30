@@ -21,9 +21,60 @@ export const SOLID = {
   fence: 7,
   /** Sandbag parapet (Trenches). */
   sandbag: 8,
+  /** Flooded shell hole / sea (Trenches): blocks movement, not bullets or sight. */
+  water: 9,
+  /** Barbed-wire entanglement (Trenches): blocks movement, not bullets or sight. */
+  wire: 10,
+  /** Low scrub (Trenches): blocks movement, not bullets or sight. */
+  shrub: 11,
 } as const;
 
-export const GROUND = { grass: 0, road: 1, floor: 2, dirt: 3 } as const;
+/** Solid cells that stop bodies but not rays (bullets, line of sight). */
+export const SEE_THROUGH = new Set<number>([SOLID.water, SOLID.wire, SOLID.shrub]);
+
+export const GROUND = {
+  grass: 0,
+  road: 1,
+  floor: 2,
+  dirt: 3,
+  /** A dug trench: walkable, 1.3 m below the surface (Trenches). */
+  trench: 4,
+  sand: 5,
+  snow: 6,
+  /** Duckboard track laid over the mud. */
+  duck: 7,
+} as const;
+
+export interface MapDecor {
+  /** Shell craters (visual; water ones also have water cells at their centre). */
+  craters: { x: number; y: number; r: number; water?: boolean }[];
+  /** Trench cells roofed with timber (Gallipoli's Lone Pine). */
+  covered?: number[];
+}
+
+/** Visual/atmospheric settings for a Trenches front (read by the 3D view). */
+export interface FrontTheme {
+  id: string;
+  /** Surface tint for open ground (no-man's-land) and its secondary patches. */
+  soil: string;
+  soil2: string;
+  /** Trench wall/floor earth. */
+  earth: string;
+  sky: { turbidity: number; rayleigh: number; mie: number; elevation: number; azimuth: number };
+  sun: { color: string; intensity: number };
+  hemi: { sky: string; ground: string; intensity: number };
+  fog: { color: string; near: number; far: number };
+  exposure: number;
+  clouds: string;
+  weather: "none" | "rain" | "snow" | "dust";
+  /** A sea beyond this map edge (Gallipoli). */
+  sea?: "west" | "east";
+  /** Grass tufts per 100 m² of open ground. */
+  grass: number;
+  grassColor: string;
+  /** Smoke drifting over no-man's-land (0..1). */
+  smoke: number;
+}
 
 export interface Building {
   x: number;
@@ -52,6 +103,12 @@ export interface GameMap {
   windows: { x: number; y: number }[];
   /** Visual theme for the 3D view (default "town"). */
   theme?: "town" | "battlefield";
+  /** Trenches: the front's look (sky, soil, weather). */
+  front?: FrontTheme;
+  /** Trenches: visual-only set dressing. */
+  decor?: MapDecor;
+  /** Trenches: cells dug into trench during the match, in order (renderers watch this). */
+  dug?: number[];
 }
 
 export function wallAt(map: GameMap, cx: number, cy: number): number {
@@ -106,7 +163,7 @@ export function castRay(map: GameMap, ox: number, oy: number, angle: number, max
       side = 1;
     }
     const w = wallAt(map, cx, cy);
-    if (w !== 0) {
+    if (w !== 0 && !SEE_THROUGH.has(w)) {
       const hit = side === 0 ? oy + dist * dy : ox + dist * dx;
       return { dist, side, wall: w, u: hit - Math.floor(hit) };
     }
@@ -131,10 +188,15 @@ export function moveWithCollision(map: GameMap, x: number, y: number, dx: number
   return { x: nx, y: ny };
 }
 
+const floorCache = new WeakMap<Uint8Array, { x: number; y: number }[]>();
+/** Walkable cells (cached per map: the solid grid never changes during a match). */
 export function floorCells(map: GameMap): { x: number; y: number }[] {
+  const hit = floorCache.get(map.cells);
+  if (hit) return hit;
   const out: { x: number; y: number }[] = [];
   for (let y = 0; y < map.height; y++)
     for (let x = 0; x < map.width; x++) if (map.cells[y * map.width + x] === 0) out.push({ x, y });
+  floorCache.set(map.cells, out);
   return out;
 }
 

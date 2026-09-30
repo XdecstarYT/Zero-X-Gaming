@@ -1,5 +1,6 @@
 import { electHost, type PeerInfo, type Transport } from "../neon-siege/net";
 import type { Team } from "./battlefield";
+import { DEFAULT_FRONT, isFrontId, type FrontId } from "./fronts";
 import { cleanChat, type LobbyPlayer, type LobbySnapshot, type TrenchClass, type TrenchMsg } from "./protocol";
 
 /**
@@ -10,13 +11,14 @@ import { cleanChat, type LobbyPlayer, type LobbySnapshot, type TrenchClass, type
  */
 
 export const MIN_FIGHTERS = 2;
-export const MAX_FIGHTERS = 16;
+export const MAX_FIGHTERS = 32;
 const HEARTBEAT_MS = 1500;
 
 export interface LobbySettings {
   name: string;
   max: number;
   bots: boolean;
+  front: FrontId;
 }
 
 export interface ChatLine {
@@ -109,6 +111,13 @@ export class LobbyRoom {
     this.pushChat({ name: this.myName, text: t, at: Date.now() });
   }
 
+  /** Host: choose the battlefield. */
+  setFront(front: FrontId) {
+    if (!this.isHost || !isFrontId(front) || this.snapshot?.phase === "match") return;
+    this.settings = { ...this.settings, front };
+    this.rebuild();
+  }
+
   /** Host: start the battle for everyone in the room. */
   start() {
     if (!this.isHost || !this.snapshot || this.snapshot.phase === "match") return;
@@ -163,7 +172,8 @@ export class LobbyRoom {
         this.snapshot = m.s;
         // Adopt the host's view of everyone's prefs (used if we become host).
         for (const p of m.s.players) this.prefs.set(p.id, { team: p.team, ready: p.ready, cls: p.cls });
-        this.settings = { name: m.s.name, max: m.s.max, bots: m.s.bots };
+        if (!isFrontId(this.snapshot.front)) this.snapshot = { ...this.snapshot, front: DEFAULT_FRONT };
+        this.settings = { name: m.s.name, max: m.s.max, bots: m.s.bots, front: this.snapshot.front };
         this.emitChange();
         this.checkStart();
         break;
@@ -213,6 +223,7 @@ export class LobbyRoom {
       phase: prev?.phase ?? "lobby",
       max: Math.max(MIN_FIGHTERS, Math.min(MAX_FIGHTERS, this.settings.max)),
       bots: this.settings.bots,
+      front: this.settings.front,
       players,
       seed: prev?.seed ?? 0,
       matchId: prev?.matchId ?? 0,

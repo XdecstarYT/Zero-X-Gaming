@@ -32,6 +32,8 @@ export interface ModeStatus {
   /** Storm line, e.g. "Storm shrinking" / "Storm in 0:24". */
   storm?: string;
   stormUrgent?: boolean;
+  /** Extra line under the minimap (e.g. stance and stamina). */
+  detail?: string;
 }
 
 /** A point of interest drawn on the minimap and in 3D (e.g. a Conquest flag). */
@@ -77,6 +79,13 @@ export interface ModeController {
   afterResults?(): boolean;
   /** Optional: name-tag colour for an entity (team games). */
   tagColor?(id: string): string;
+  /**
+   * Optional realism mode (Trenches): Shift sprints (instead of aiming), C / X
+   * toggle crouch / prone, G digs, and the crosshair shrinks to a dot.
+   */
+  readonly realism?: boolean;
+  /** Optional: an in-progress action for the HUD progress bar (e.g. digging), k in 0..1. */
+  task?(): { label: string; k: number } | null;
 }
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;

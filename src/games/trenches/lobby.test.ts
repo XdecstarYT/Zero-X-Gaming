@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 async function lobby(hub: MemoryHub<TrenchMsg>, id: string, max = 8) {
-  const r = new LobbyRoom(hub.join(id, `Player ${id}`), "WAR01", `Player ${id}`, { name: "Friday Night Trenches", max, bots: true }, { seed: () => 4242 });
+  const r = new LobbyRoom(hub.join(id, `Player ${id}`), "WAR01", `Player ${id}`, { name: "Friday Night Trenches", max, bots: true, front: "somme" }, { seed: () => 4242 });
   rooms.push(r);
   await r.connect();
   return r;
@@ -63,7 +63,7 @@ describe("Trenches lobby", () => {
     expect(started.sort()).toEqual(["a", "b"]);
     expect(b.snapshot).toMatchObject({ phase: "match", seed: 4242, matchId: 1 });
 
-    const late = new LobbyRoom(hub.join("z", "Late"), "WAR01", "Late", { name: "", max: 8, bots: true });
+    const late = new LobbyRoom(hub.join("z", "Late"), "WAR01", "Late", { name: "", max: 8, bots: true, front: "verdun" });
     rooms.push(late);
     let lateStart: LobbySnapshot | null = null;
     late.onStart((s) => (lateStart = s));
@@ -143,12 +143,11 @@ describe("Trenches battle over the network", () => {
     run(0.2);
     ma.cq.tickets = [5, 1];
     mb.me.hp = 1;
-    // Host's player shoots B point blank.
-    Object.assign(ma.me, { x: 40.5, y: 20.5, angle: 0 });
-    Object.assign(mb.me, { x: 43.5, y: 20.5 });
+    // Host's player shoots B point blank, in the open square at the centre flag.
+    const C = ma.cq.flags[2];
     for (let t = 0; t < 2 && !ma.isOver(); t += DT) {
-      Object.assign(ma.me, { x: 40.5, y: 20.5, angle: 0 });
-      Object.assign(mb.me, { x: 43.5, y: 20.5 });
+      Object.assign(ma.me, { x: C.x - 1.5, y: C.y, angle: 0 });
+      Object.assign(mb.me, { x: C.x + 1.5, y: C.y });
       for (const e of ma.world.entities.values()) if (e.kind === "bot") Object.assign(e, { x: 3.5, y: 5.5, alive: false, respawnAt: 999 });
       ma.step(DT, { ...IDLE, fire: true });
       mb.step(DT, IDLE);

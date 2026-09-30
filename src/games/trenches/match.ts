@@ -3,20 +3,26 @@ import { applySkill, createBrain, hintPosition, SKILLS, updateBot, type BotBrain
 import { makeConsumable, makeWeapon, SLOTS } from "../neon-siege/items";
 import type { Banner, Marker, ModeController, ModeStatus, ScoreRow } from "../neon-siege/mode";
 import { electHost, type PeerInfo, type Transport } from "../neon-siege/net";
-import { applyPlayerInput, type PlayerInput } from "../neon-siege/royale";
+import { GROUND } from "../neon-siege/map";
+import type { PlayerInput } from "../neon-siege/royale";
 import {
   activeWeapon,
   createEntity,
   createWorld,
   damage,
   drainEvents,
+  fire,
+  move,
   RESPAWN_DELAY,
+  startReload,
+  switchSlot,
   tickWorld,
   type Entity,
   type World,
   type WorldEvent,
 } from "../neon-siege/world";
 import { battlefield, type Battlefield, type Team } from "./battlefield";
+import { DEFAULT_FRONT, FRONTS, isFrontId } from "./fronts";
 import { createConquest, onDeath, stepConquest, MATCH_SECONDS, type ConquestState } from "./conquest";
 import type { LobbySnapshot, TEntState, TrenchClass, TrenchMsg } from "./protocol";
 
@@ -36,9 +42,22 @@ const NEUTRAL = "#e8e4d8";
 const SEND_INTERVAL = 1 / 15;
 const CQ_INTERVAL = 0.25;
 const OBJECTIVE_PERIOD = 5;
-const MAX_HIT = 130;
+const MAX_HIT = 260;
+/** Rounds hit hard: roughly 2–3 rifle hits kill, like the real thing. */
+const LETHALITY = 2.2;
+/** Seconds to dig one cell of trench (engineers dig three times as fast). */
+export const DIG_SECONDS = 3.6;
+const ENGINEER_DIG = 3;
+const MAX_DUG = 4000;
+const DIGS_INTERVAL = 5;
+/** Sprint: seconds of stamina from full, and the speed boost. */
+const SPRINT_SECONDS = 10;
+const SPRINT_MULT = 1.65;
+const STANCE_SPEED = [1, 0.5, 0.22];
+const STANCE_SPREAD = [1, 0.7, 0.45];
+const STANCES = ["STANDING", "CROUCHED", "PRONE"];
 const BOT_NAMES = ["Hale", "Brooks", "Mercer", "Voss", "Keller", "Dunn", "Rook", "Carver", "Pike", "Sutter", "Lowe", "Grant", "Wolfe", "Marsh", "Reyes", "Holt"];
-const BOT_CLASSES: TrenchClass[] = ["rifleman", "rifleman", "assault", "medic", "marksman"];
+const BOT_CLASSES: TrenchClass[] = ["rifleman", "rifleman", "assault", "medic", "marksman", "rifleman", "engineer"];
 
 /** Class loadouts, restocked on every redeploy. */
 export function equipClass(e: Entity, cls: TrenchClass) {
@@ -65,8 +84,15 @@ export function equipClass(e: Entity, cls: TrenchClass) {
       e.inventory[1] = makeWeapon("pistol", "rare");
       e.inventory[2] = makeConsumable("medkit", 1);
       break;
+    case "engineer":
+      e.inventory[0] = makeWeapon("smg", "uncommon");
+      e.inventory[1] = makeWeapon("shotgun", "uncommon");
+      e.inventory[2] = makeConsumable("medkit", 1);
+      break;
   }
   e.active = 0;
+  e.stance = 0;
+  e.stamina = 1;
 }
 
 export interface MatchOptions {
@@ -82,6 +108,7 @@ export interface MatchOptions {
 export class TrenchesMatch implements ModeController {
   readonly ranked = false;
   readonly showNames = true;
+  readonly realism = true;
   readonly storm = null;
   readonly world: World;
   readonly me: Entity;
@@ -101,6 +128,10 @@ export class TrenchesMatch implements ModeController {
   private bannerMsg: Banner | null = null;
   private bannerUntil = 0;
   private lastOwners: number[] = [];
+  private myClass: TrenchClass;
+  private digCell = -1;
+  private digK = 0;
+  private digsAcc = 0;
   readonly m: number;
 
   constructor(
@@ -110,7 +141,7 @@ export class TrenchesMatch implements ModeController {
   ) {
     this.m = snap.matchId;
     this.rng = createRng(snap.seed ^ hashId(transport.selfId));
-    this.field = battlefield();
+    this.field = battlefield(isFrontId(snap.front) ? snap.front : DEFAULT_FRONT);
     this.world = createWorld(this.field.map);
     this.world.chests = [];
     this.cq = createConquest(this.field.flags);
@@ -128,7 +159,9 @@ export class TrenchesMatch implements ModeController {
       outfit: UNIFORMS[team],
     });
     this.world.entities.set(this.me.id, this.me);
-    this.spawn(this.me, opts.myClass ?? mine?.cls ?? "rifleman");
+    this.myClass = opts.myClass ?? mine?.cls ?? "rifleman";
+    this.spawn(this.me, this.myClass);
+    this.world.cover = (shooter, target, dist, rng) => this.covered(shooter, target, dist, rng.next());
     this.world.events = [];
     this.world.onHit = (shooter, target, amount, weapon) => {
       if (this.owns(target.id)) return false;
@@ -142,7 +175,8 @@ export class TrenchesMatch implements ModeController {
       transport.onMessage((msg, from) => this.handleMessage(msg, from)),
     );
     if (this.isHost) this.fillBots();
-    this.flash({ text: "CONQUEST", sub: "Capture and hold the flags. Every death costs your side a ticket.", color: TEAM_COLORS[team] }, 4);
+    const def = FRONTS[this.field.front];
+    this.flash({ text: def.name.toUpperCase(), sub: `${def.place} · Conquest: capture and hold the flags. Every death costs a ticket.`, color: TEAM_COLORS[team] }, 5);
   }
 
   get isHost() {
@@ -166,7 +200,7 @@ export class TrenchesMatch implements ModeController {
     const team = e.team as Team;
     const flags = this.cq.flags.filter((f) => f.owner === team);
     // Try a few spots and take the least crowded, so squads don't spawn inside each other.
-    const atFlag = flags.length > 0 && this.rng.next() < 0.5;
+    const atFlag = flags.length > 0 && this.rng.next() < 0.6;
     let best = { x: 0, y: 0 };
     let bestGap = -1;
     for (let i = 0; i < 6; i++) {
@@ -232,6 +266,7 @@ export class TrenchesMatch implements ModeController {
 
   private adoptBot(b: Entity) {
     applySkill(b, SKILLS.normal);
+    b.damageMult = SKILLS.normal.damageMult * LETHALITY;
     if (!b.inventory.some(Boolean)) equipClass(b, this.botClass.get(b.id) ?? "rifleman");
     this.targets.delete(b.id);
     if (!this.brains.has(b.id)) this.brains.set(b.id, createBrain(SKILLS.normal, this.rng));
@@ -295,6 +330,13 @@ export class TrenchesMatch implements ModeController {
         }
         break;
       }
+      case "dig":
+        if (Number.isInteger(msg.c)) this.applyDig(msg.c, false);
+        break;
+      case "digs":
+        if (from !== this.hostId || !Array.isArray(msg.c)) return;
+        for (const c of msg.c.slice(0, MAX_DUG)) if (Number.isInteger(c)) this.applyDig(c, false);
+        break;
       case "cq":
         if (from !== this.hostId) return;
         this.cq.tickets = msg.tk;
@@ -329,6 +371,7 @@ export class TrenchesMatch implements ModeController {
     e.shield = es.sh;
     e.alive = es.al;
     e.aiming = es.ad;
+    e.stance = es.st === 1 || es.st === 2 ? es.st : 0;
     const held = e.inventory[0];
     if (!es.w) e.inventory[0] = null;
     else if (held?.type !== "weapon" || held.kind !== es.w || held.rarity !== es.r) e.inventory[0] = makeWeapon(es.w, es.r ?? "common");
@@ -362,6 +405,7 @@ export class TrenchesMatch implements ModeController {
       r: w?.rarity ?? null,
       ad: e.aiming,
       sp: Math.round(e.speed * 10) / 10,
+      st: e.stance ?? 0,
     };
   }
 
@@ -390,9 +434,9 @@ export class TrenchesMatch implements ModeController {
     const over = this.isOver();
 
     if (!over) {
-      applyPlayerInput({ world: w, rng: this.rng }, this.me, { ...input, interact: false }, dt);
-      if (!this.me.alive && w.time >= this.me.respawnAt) this.spawn(this.me, this.opts.myClass ?? "rifleman");
-    }
+      this.applyInput(input, dt);
+      if (!this.me.alive && w.time >= this.me.respawnAt) this.spawn(this.me, this.myClass);
+    } else this.digCell = -1;
 
     // Interpolate remote soldiers.
     const k = 1 - Math.exp(-15 * dt);
@@ -476,18 +520,157 @@ export class TrenchesMatch implements ModeController {
         const f = pool.sort((a, c) => Math.hypot(a.x - b.x, a.y - b.y) - Math.hypot(c.x - b.x, c.y - b.y))[this.rng.next() < 0.7 ? 0 : pool.length - 1];
         hintPosition(w, brain, f.x, f.y, 2, this.rng);
       }
+      b.spreadMult = SKILLS.normal.spreadMult * STANCE_SPREAD[b.stance ?? 0];
       updateBot(w, b, brain, dt, this.rng);
+      // Stance: keep low in a trench, pop up to fire; drop prone to snipe in the open.
+      const engaged = w.time - b.firedAt < 1.4;
+      const still = b.speed < 0.4;
+      const inTrench = this.inTrench(b);
+      b.stance = !still ? 0 : inTrench ? (engaged ? 0 : 1) : engaged ? (hashId(b.id) % 3 === 0 ? 2 : 1) : 0;
     }
     stepConquest(
       this.cq,
       living.map((e) => ({ x: e.x, y: e.y, team: e.team as Team, alive: e.alive })),
       dt,
     );
+    this.digsAcc += dt;
+    if (this.digsAcc >= DIGS_INTERVAL) {
+      this.digsAcc = 0;
+      const dug = w.map.dug ?? [];
+      if (dug.length) this.transport.send({ t: "digs", m: this.m, c: dug });
+    }
     this.cqAcc += dt;
     if (this.cqAcc >= CQ_INTERVAL || this.cq.winner !== null) {
       this.cqAcc = 0;
       this.sendCq();
     }
+  }
+
+  // ---------------------------------------------------------------- realism
+
+  /** The local soldier: stance, sprint + stamina, digging, then move / aim / fire. */
+  private applyInput(input: PlayerInput, dt: number) {
+    const w = this.world;
+    const me = this.me;
+    if (!me.alive) {
+      this.digCell = -1;
+      return;
+    }
+    if (input.crouch) me.stance = me.stance === 1 ? 0 : 1;
+    if (input.prone) me.stance = me.stance === 2 ? 0 : 2;
+    const moving = Math.hypot(input.forward, input.strafe) > 0.1;
+    const sprint = !!input.sprint && input.forward > 0.3 && !input.aim && (me.stamina ?? 1) > 0.02;
+    if (sprint) me.stance = 0;
+    me.stamina = Math.max(0, Math.min(1, (me.stamina ?? 1) + (sprint ? -dt / SPRINT_SECONDS : dt / (moving ? 18 : 7))));
+
+    // Digging (hold): the cell underfoot, or the next one ahead when already in a trench.
+    const target = input.dig ? this.digTarget() : -1;
+    if (target >= 0) {
+      if (target !== this.digCell) {
+        this.digCell = target;
+        this.digK = 0;
+      }
+      this.digK += (dt / DIG_SECONDS) * (this.myClass === "engineer" ? ENGINEER_DIG : 1);
+      if (this.digK >= 1) {
+        this.applyDig(target, true);
+        this.digCell = -1;
+        this.digK = 0;
+      }
+    } else {
+      this.digCell = -1;
+      this.digK = 0;
+    }
+    const digging = this.digCell >= 0;
+
+    if (input.slot !== null && input.slot >= 0 && input.slot < SLOTS) switchSlot(w, me, input.slot);
+    me.angle += input.turn;
+    me.aiming = input.aim && !sprint && !digging && !!activeWeapon(me) && !me.using && me.reloadUntil <= w.time;
+    // Accuracy: stance, movement, hip fire and a winded soldier all widen the cone.
+    const tired = (me.stamina ?? 1) < 0.3 ? 1.35 : 1;
+    me.spreadMult = STANCE_SPREAD[me.stance ?? 0] * (moving ? 1.6 : 1) * (me.aiming ? 1 : 1.5) * tired;
+    me.damageMult = LETHALITY;
+    const speed = STANCE_SPEED[me.stance ?? 0] * (sprint ? SPRINT_MULT : 1) * this.groundSpeed(me);
+    if (!digging) move(w, me, input.forward, input.strafe, dt, speed);
+    else me.speed = 0;
+    if (input.reload) startReload(w, me);
+    if (input.fire && !sprint && !digging) fire(w, me, this.rng);
+  }
+
+  private groundSpeed(e: Entity) {
+    const map = this.world.map;
+    const g = map.ground[Math.floor(e.y) * map.width + Math.floor(e.x)];
+    if (g === GROUND.duck || g === GROUND.road) return 1.05;
+    if (g === GROUND.trench) return 0.9;
+    if (this.field.front === "passchendaele" && (g === GROUND.dirt || g === GROUND.grass)) return 0.78;
+    if (g === GROUND.snow || g === GROUND.sand) return 0.9;
+    return 1;
+  }
+
+  inTrench(e: { x: number; y: number }) {
+    const map = this.world.map;
+    const x = Math.floor(e.x);
+    const y = Math.floor(e.y);
+    return x >= 0 && y >= 0 && x < map.width && y < map.height && map.ground[y * map.width + x] === GROUND.trench;
+  }
+
+  /**
+   * Cover model: soldiers in a trench show only head and shoulders (and nothing
+   * when crouched or prone); a crouched soldier in a trench can't fire out of it;
+   * prone and crouched soldiers in the open are smaller targets at range.
+   * Returns true when the round is stopped. `roll` is uniform in [0, 1).
+   */
+  covered(shooter: Entity, target: Entity, dist: number, roll: number) {
+    if (dist < 3.5) return false;
+    const tIn = this.inTrench(target);
+    const sIn = this.inTrench(shooter);
+    if (sIn && (shooter.stance ?? 0) > 0 && !tIn) return true;
+    if (tIn && sIn && this.trenchLine(shooter, target)) return false;
+    const st = target.stance ?? 0;
+    if (tIn) return st > 0 || roll < 0.6;
+    if (st === 2 && dist > 8) return roll < 0.5;
+    if (st === 1 && dist > 12) return roll < 0.2;
+    return false;
+  }
+
+  /** Both soldiers are in the same stretch of trench (the whole line between them is trench). */
+  private trenchLine(a: Entity, b: Entity) {
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    const n = Math.ceil(d * 2);
+    for (let i = 1; i < n; i++) if (!this.inTrench({ x: a.x + ((b.x - a.x) * i) / n, y: a.y + ((b.y - a.y) * i) / n })) return false;
+    return true;
+  }
+
+  private diggable(i: number) {
+    const map = this.world.map;
+    const x = i % map.width;
+    const y = Math.floor(i / map.width);
+    if (i < 0 || i >= map.cells.length || x < 2 || y < 2 || x >= map.width - 2 || y >= map.height - 2) return false;
+    const g = map.ground[i];
+    return map.cells[i] === 0 && g !== GROUND.trench && g !== GROUND.floor && g !== GROUND.duck;
+  }
+
+  private digTarget() {
+    const me = this.me;
+    if ((me.stance ?? 0) === 2 || me.using) return -1;
+    const W = this.world.map.width;
+    const here = Math.floor(me.y) * W + Math.floor(me.x);
+    if (this.diggable(here)) return here;
+    const ahead = Math.floor(me.y + Math.sin(me.angle) * 0.95) * W + Math.floor(me.x + Math.cos(me.angle) * 0.95);
+    return this.inTrench(me) && this.diggable(ahead) ? ahead : -1;
+  }
+
+  /** Turn a cell into trench (local dig → broadcast; remote digs are validated the same way). */
+  private applyDig(i: number, local: boolean) {
+    const map = this.world.map;
+    if ((map.dug?.length ?? 0) >= MAX_DUG || !this.diggable(i)) return false;
+    map.ground[i] = GROUND.trench;
+    (map.dug ??= []).push(i);
+    if (local) this.transport.send({ t: "dig", m: this.m, c: i });
+    return true;
+  }
+
+  task() {
+    return this.digCell >= 0 ? { label: "Digging", k: this.digK } : null;
   }
 
   // -------------------------------------------------------------------- HUD
@@ -507,11 +690,13 @@ export class TrenchesMatch implements ModeController {
         return `${f.id} ${a && b ? "⚔" : who}`;
       })
       .join(" · ");
+    const stamina = Math.round((this.me.stamina ?? 1) * 100);
     return {
       primary: `${TEAM_SHORT[1]} ${this.cq.tickets[0]} · ${this.cq.tickets[1]} ${TEAM_SHORT[2]}`,
       kills: this.me.kills,
       storm: `${flags} · ${clock}`,
       stormUrgent: this.cq.tickets[this.myTeam - 1] < 30,
+      detail: this.me.alive ? `${STANCES[this.me.stance ?? 0]}${this.inTrench(this.me) ? " · IN TRENCH" : ""} · STAMINA ${stamina}%` : "",
     };
   }
 

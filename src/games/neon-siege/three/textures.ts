@@ -149,6 +149,24 @@ export function dirtTexture(size = 256): TexSet {
   return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
 }
 
+/**
+ * Neutral grey churned soil (clods, pebbles, boot-trodden patches). Tinted per
+ * front through vertex colours, so one texture serves mud, chalk, sand and snow.
+ */
+export function soilTexture(size = 256): TexSet {
+  const rng = createRng(19);
+  const n = fbm(rng, [4, 16, 64]);
+  const clod = valueNoise(rng, 24);
+  const { color, bump, normal } = paint(size, (u, v) => {
+    const k = n(u, v);
+    const c = Math.max(0, clod(u, v) - 0.6) * 2.5;
+    const pebble = rng.next() > 0.97 ? 22 : 0;
+    const base = 150 * (0.78 + k * 0.44) + pebble - c * 26;
+    return [base, base, base, k * 0.7 + c * 0.3];
+  });
+  return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
+}
+
 export function concreteTexture(size = 256): TexSet {
   const rng = createRng(14);
   const n = fbm(rng, [3, 12, 48]);

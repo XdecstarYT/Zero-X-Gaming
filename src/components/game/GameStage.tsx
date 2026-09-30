@@ -383,7 +383,7 @@ export function GameStage({ game }: { game: Game }) {
 function Overlay({ children, dim = false }: { children: React.ReactNode; dim?: boolean }) {
   return (
     <div
-      className={`absolute inset-0 grid place-items-center p-6 text-center ${dim ? "bg-bg/75 backdrop-blur-sm" : "bg-bg/40"}`}
+      className={`absolute inset-0 z-30 grid place-items-center p-6 text-center ${dim ? "bg-bg/75 backdrop-blur-sm" : "bg-bg/40"}`}
     >
       <div className="flex flex-col items-center animate-rise">{children}</div>
     </div>

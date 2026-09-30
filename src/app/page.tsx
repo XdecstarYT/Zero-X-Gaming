@@ -42,8 +42,8 @@ export default function HomePage() {
               </span>
             </h1>
             <p className="mt-5 max-w-xl text-lg text-muted">
-              Fast, original browser games built for quick runs and high scores. Earn XP, unlock badges, and climb the
-              leaderboards on desktop or phone.
+              Two full 3D shooters in your browser. Dig in on five Great War fronts in Trenches, or drop into the Neon
+              Siege battle royale. Earn XP, unlock the battle pass, and play with friends on desktop or phone.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <LinkButton href={`/games/${featured.slug}`} size="lg">

@@ -3,6 +3,7 @@ import { BroadcastChannelTransport, MemoryHub, normalizeRoom, randomRoom, ROOM_R
 import { SupabaseTransport } from "../neon-siege/net-supabase";
 import type { Team } from "./battlefield";
 import { LocalDirectory, SupabaseDirectory, type LobbyDirectory, type LobbyInfo } from "./directory";
+import { DEFAULT_FRONT, FRONT_IDS, FRONTS, isFrontId, type FrontId } from "./fronts";
 import { LobbyRoom, MAX_FIGHTERS } from "./lobby";
 import { TEAM_COLORS, TEAM_NAMES, TrenchesMatch } from "./match";
 import { CLASSES, type LobbySnapshot, type TrenchClass, type TrenchMsg } from "./protocol";
@@ -41,6 +42,7 @@ const PRIMARY =
   "rounded-md bg-[#c9a24a] px-5 py-2.5 font-display text-sm font-bold uppercase tracking-wider text-[#1a1408] hover:brightness-110 disabled:opacity-50";
 const CARD = "flex w-full flex-col gap-2 rounded-lg border border-border bg-surface/85 p-3 text-left";
 const CLASS_KEY = "zx-trenches-class";
+const FRONT_KEY = "zx-trenches-front";
 
 function isLocalMode() {
   return new URLSearchParams(window.location.search).get("net") === "local" || !SupabaseTransport.available();
@@ -62,10 +64,21 @@ function readClass(): TrenchClass {
   return "rifleman";
 }
 
+function readFront(): FrontId {
+  try {
+    const f = localStorage.getItem(FRONT_KEY);
+    if (isFrontId(f)) return f;
+  } catch {
+    // ignore
+  }
+  return DEFAULT_FRONT;
+}
+
 export function buildTrenchesMenu(ctx: Ctx): () => void {
   const { container, playerName } = ctx;
   const local = isLocalMode();
   let cls = readClass();
+  let front = readFront();
   let directory: LobbyDirectory | null = null;
   let lobby: LobbyRoom | null = null;
   let lobbyUnsub: (() => void)[] = [];
@@ -82,7 +95,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
   };
 
   function classPicker() {
-    const wrap = el("div", "grid w-full grid-cols-2 gap-2 sm:grid-cols-4");
+    const wrap = el("div", "grid w-full grid-cols-2 gap-2 sm:grid-cols-5");
     wrap.setAttribute("role", "group");
     wrap.setAttribute("aria-label", "Class");
     const buttons = (Object.keys(CLASSES) as TrenchClass[]).map((c) => {
@@ -104,6 +117,43 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
     return wrap;
   }
 
+  /** The five fronts as a pick-one group. */
+  function frontPicker(selected: FrontId, onPick: (f: FrontId) => void) {
+    const wrap = el("div", "grid w-full grid-cols-2 gap-2 sm:grid-cols-5");
+    wrap.setAttribute("role", "group");
+    wrap.setAttribute("aria-label", "Battlefield");
+    const buttons = FRONT_IDS.map((id) => {
+      const f = FRONTS[id];
+      const b = button("", "rounded-md border-2 border-border bg-surface-2 p-2 text-left hover:border-[#c9a24a]", () => {
+        buttons.forEach((x) => {
+          const on = x.dataset.front === id;
+          x.setAttribute("aria-pressed", String(on));
+          x.style.borderColor = on ? "#c9a24a" : "";
+        });
+        onPick(id);
+      });
+      b.dataset.front = id;
+      b.title = f.blurb;
+      const swatch = el("span", "mb-1 block h-1.5 w-full rounded-full");
+      swatch.style.background = `linear-gradient(90deg, ${f.theme.soil}, ${f.theme.fog.color}, ${f.theme.earth})`;
+      b.append(swatch, el("span", "block text-sm font-bold", f.name), el("span", "block text-[11px] leading-tight text-muted", `${f.place} · ${f.width}×${f.height} m`));
+      b.setAttribute("aria-pressed", String(id === selected));
+      if (id === selected) b.style.borderColor = "#c9a24a";
+      return b;
+    });
+    wrap.append(...buttons);
+    return wrap;
+  }
+
+  const pickFront = (f: FrontId) => {
+    front = f;
+    try {
+      localStorage.setItem(FRONT_KEY, f);
+    } catch {
+      // ignore
+    }
+  };
+
   function header() {
     return el(
       "div",
@@ -121,6 +171,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
     status.setAttribute("role", "status");
 
     const quick = button("Quick battle vs bots", PRIMARY, () => void startSolo());
+    const frontBlurb = el("p", "text-[11px] text-muted", FRONTS[front].blurb);
 
     // Create
     const nameInput = el("input", "h-10 w-full rounded-md border border-border bg-bg px-3 text-sm focus:border-cyan focus:outline-none");
@@ -129,10 +180,10 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
     nameInput.maxLength = 32;
     const sizeSel = el("select", "h-10 rounded-md border border-border bg-bg px-2 text-sm");
     sizeSel.id = "trenches-lobby-size";
-    for (const n of [4, 8, 12, 16]) {
+    for (const n of [8, 16, 24, 32]) {
       const o = el("option", "", `${n / 2} v ${n / 2}`);
       o.value = String(n);
-      if (n === 8) o.selected = true;
+      if (n === 16) o.selected = true;
       sizeSel.append(o);
     }
     const botsBox = el("input");
@@ -146,7 +197,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
     const botsLabel = el("label", "flex items-center gap-2 text-xs", botsBox, "Fill empty slots with bots");
     const create = button("Create lobby", PRIMARY, () => {
       const code = randomRoom();
-      void joinLobby(code, { name: nameInput.value.trim().slice(0, 32) || `${playerName}'s lobby`, max: Number(sizeSel.value), bots: botsBox.checked }, true);
+      void joinLobby(code, { name: nameInput.value.trim().slice(0, 32) || `${playerName}'s lobby`, max: Number(sizeSel.value), bots: botsBox.checked, front }, true);
     });
 
     // Join by code
@@ -167,7 +218,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
         codeInput.focus();
         return;
       }
-      void joinLobby(code, { name: `Lobby ${code}`, max: 8, bots: true }, false);
+      void joinLobby(code, { name: `Lobby ${code}`, max: 16, bots: true, front: DEFAULT_FRONT }, false);
     });
     codeInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") join.click();
@@ -185,7 +236,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       list.replaceChildren(
         ...items.map((l) => {
           const full = l.players >= l.max;
-          const joinBtn = button(full ? "Full" : "Join", BTN, () => void joinLobby(l.code, { name: l.name, max: l.max, bots: true }, false));
+          const joinBtn = button(full ? "Full" : "Join", BTN, () => void joinLobby(l.code, { name: l.name, max: l.max, bots: true, front: DEFAULT_FRONT }, false));
           joinBtn.disabled = full;
           joinBtn.setAttribute("aria-label", `Join ${l.name}`);
           return el(
@@ -211,11 +262,21 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       .catch(() => list.replaceChildren(el("li", "p-3 text-center text-xs text-muted", "Couldn't load the lobby list. You can still join with a code.")));
 
     const controls = ctx.coarse
-      ? "Left thumb: move · Right thumb: look · FIRE (drag to aim) · AIM · stand in a flag's ring to capture it"
-      : "WASD move · Mouse look · Click fire · Right-click aim · 1–5 switch · R reload · Tab scores · stand in a flag's ring to capture it";
+      ? "Left thumb: move (push fully to sprint) · Right thumb: look · FIRE (drag to aim) · AIM · CRCH / PRONE · hold DIG"
+      : "WASD move · Mouse look · Click fire · Right-click aim · Shift sprint · C crouch · X prone · hold G dig · 1–5 switch · R reload · Tab scores";
 
     container.replaceChildren(
       header(),
+      el(
+        "section",
+        CARD + " max-w-2xl",
+        el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Battlefield"),
+        frontPicker(front, (f) => {
+          pickFront(f);
+          frontBlurb.textContent = FRONTS[f].blurb;
+        }),
+        frontBlurb,
+      ),
       el(
         "section",
         CARD + " max-w-2xl",
@@ -229,7 +290,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
           "section",
           CARD,
           el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-cyan", "Play now"),
-          el("p", "text-xs text-muted", "6 v 6 against bots. Capture flags A, B and C and drain the enemy's tickets."),
+          el("p", "text-xs text-muted", "10 v 10 against bots on the chosen front. Capture flags A–E and drain the enemy's tickets."),
           quick,
           el("h3", "mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan", "Create a lobby"),
           nameLabel,
@@ -276,8 +337,9 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       name: "Skirmish",
       hostId: "me",
       phase: "match",
-      max: 12,
+      max: 20,
       bots: true,
+      front,
       players: [{ id: "me", name: playerName, team: 1, ready: true, cls }],
       seed: Math.floor(Math.random() * 2 ** 31),
       matchId: 1,
@@ -287,7 +349,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
 
   // ----------------------------------------------------------------- lobby
 
-  async function joinLobby(code: string, settings: { name: string; max: number; bots: boolean }, creating: boolean) {
+  async function joinLobby(code: string, settings: { name: string; max: number; bots: boolean; front: FrontId }, creating: boolean) {
     leaveLobby();
     const room = new LobbyRoom(makeTransport(code, playerName), code, playerName, settings);
     lobby = room;
@@ -427,6 +489,10 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       if (e.key === "Enter") send();
     });
 
+    const f = FRONTS[s.front] ?? FRONTS[DEFAULT_FRONT];
+    const frontCard = room.isHost && s.phase !== "match"
+      ? el("section", CARD + " max-w-2xl", el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Battlefield"), frontPicker(s.front, (id) => room.setFront(id)))
+      : el("p", "text-sm", el("strong", "", f.name), ` · ${f.place}. ${f.blurb}`);
     container.replaceChildren(
       header(),
       el(
@@ -444,6 +510,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
         ),
         copy,
       ),
+      frontCard,
       el("div", "grid w-full max-w-2xl gap-3 sm:grid-cols-2", team(1), team(2)),
       el("div", "flex flex-wrap justify-center gap-2", switchTeam, ready, startBtn, rejoin, leave),
       el("section", CARD + " max-w-2xl", el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Class"), classPicker()),
@@ -455,7 +522,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
 
   // Invite links: ?lobby=CODE joins straight away.
   const invited = normalizeRoom(new URLSearchParams(window.location.search).get("lobby") ?? "");
-  if (ROOM_RE.test(invited)) void joinLobby(invited, { name: `Lobby ${invited}`, max: 8, bots: true }, false);
+  if (ROOM_RE.test(invited)) void joinLobby(invited, { name: `Lobby ${invited}`, max: 16, bots: true, front: DEFAULT_FRONT }, false);
   else showHome();
 
   return () => {

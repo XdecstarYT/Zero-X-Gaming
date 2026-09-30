@@ -39,7 +39,7 @@ export default function Image() {
       <div style={{ marginTop: 48, fontSize: 88, fontWeight: 900, lineHeight: 1.05 }}>Play. Compete.</div>
       <div style={{ fontSize: 88, fontWeight: 900, color: "#22e5ff" }}>Level up.</div>
       <div style={{ marginTop: 32, fontSize: 32, color: "#a2aac6" }}>
-        Zero Dash · Grid Lock · Orbit · Blitz Trivia. No downloads.
+        Trenches · Neon Siege. 3D shooters in your browser. No downloads.
       </div>
     </div>,
     size,

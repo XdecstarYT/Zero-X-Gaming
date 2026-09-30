@@ -12,6 +12,7 @@ import type { GameMap } from "./map";
 import { activeItem, activeWeapon, DRAW_TIME, type Entity, type World } from "./world";
 import { Character } from "./three/character";
 import { buildConsumable, buildGun, type GunModel } from "./three/guns";
+import { buildFront, type FrontScene } from "./three/front";
 import { cloudTexture, flashTexture, glowTexture, stormTexture } from "./three/textures";
 import { buildTown } from "./three/town";
 import { FOV_DEG, zoomFor, type ViewFx, type ViewRenderer } from "./view";
@@ -24,6 +25,8 @@ import type { Marker } from "./mode";
  */
 
 const EYE = 1.62;
+/** Eye height per stance: standing, crouched, prone. */
+const STANCE_EYE = [EYE, 1.0, 0.36];
 const TRACER_LIFE = 0.09;
 const SUN_DIR = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 38), THREE.MathUtils.degToRad(145));
 const SUN_OFFSET = SUN_DIR.clone().multiplyScalar(70);
@@ -63,7 +66,7 @@ export class ThreeView implements ViewRenderer {
   private characters = new Map<string, Character>();
   private nameTags = new Map<string, THREE.Sprite>();
   private loot = new Map<string, THREE.Group>();
-  private chests = new Map<string, { lid: THREE.Group; glow: THREE.Sprite }>();
+  private chests = new Map<string, { lid: THREE.Group }>();
   private tracers: { mesh: THREE.Mesh; until: number }[] = [];
   private tracerPool: THREE.Mesh[] = [];
   private fx: Fx[] = [];
@@ -76,6 +79,13 @@ export class ThreeView implements ViewRenderer {
   private hemi!: THREE.HemisphereLight;
   private sunOffset = SUN_OFFSET.clone();
   private war = false;
+  /** Trenches: the chunked battlefield (trench pits, digging). */
+  private front: FrontScene | null = null;
+  private dugSeen = 0;
+  /** Smoothed camera / character heights (stepping into a trench, changing stance). */
+  private eyeY = EYE;
+  private charY = new Map<string, number>();
+  private weather: { obj: THREE.Points | THREE.LineSegments; pos: Float32Array; kind: "rain" | "snow" | "dust" } | null = null;
   private flags = new Map<string, { group: THREE.Group; cloth: THREE.Mesh; ring: THREE.Mesh }>();
   private smoke: { sprite: THREE.Sprite; vx: number; vy: number; base: THREE.Vector3; phase: number }[] = [];
   private artillery: { sprite: THREE.Sprite; born: number } | null = null;
@@ -207,13 +217,12 @@ export class ThreeView implements ViewRenderer {
       new THREE.CylinderGeometry(1, 1, 1, 96, 1, true),
       new THREE.MeshBasicMaterial({
         map: this.stormTex,
-        color: "#b98cff",
+        color: "#6f5a92",
         transparent: true,
         alphaMap: fadeUpTexture(),
-        opacity: 0.55,
+        opacity: 0.4,
         side: THREE.DoubleSide,
         depthWrite: false,
-        fog: false,
       }),
     );
     this.storm.visible = false;
@@ -255,7 +264,11 @@ export class ThreeView implements ViewRenderer {
   private buildWorld(world: World) {
     if (this.town) this.scene.remove(this.town);
     this.map = world.map;
-    const built = buildTown(world.map, { shadows: this.quality === "high", detail: this.quality });
+    const opts = { shadows: this.quality === "high", detail: this.quality } as const;
+    this.front = world.map.front ? buildFront(world.map, opts) : null;
+    const built = this.front ?? buildTown(world.map, opts);
+    this.dugSeen = world.map.dug?.length ?? 0;
+    this.charY.clear();
     this.town = built.root;
     this.wind = built.time;
     this.scene.add(this.town);
@@ -269,7 +282,7 @@ export class ThreeView implements ViewRenderer {
       g.position.set(c.x, 0, c.y);
       g.rotation.y = ((c.x * 7 + c.y * 3) % 4) * (Math.PI / 2);
       const woodM = new THREE.MeshStandardMaterial({ color: "#6b4424", roughness: 0.7 });
-      const goldM = new THREE.MeshStandardMaterial({ color: "#e0b43c", metalness: 0.9, roughness: 0.3, emissive: "#6b4a00", emissiveIntensity: 0.5 });
+      const goldM = new THREE.MeshStandardMaterial({ color: "#e0b43c", metalness: 0.9, roughness: 0.3, emissive: "#6b4a00", emissiveIntensity: 0.15 });
       const base = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.38, 0.45), woodM);
       base.position.y = 0.19;
       base.castShadow = true;
@@ -284,20 +297,14 @@ export class ThreeView implements ViewRenderer {
       const lock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.04), goldM);
       lock.position.set(0, 0.02, 0.46);
       lid.add(top, lock);
-      const glow = new THREE.Sprite(
-        new THREE.SpriteMaterial({ map: this.glow, color: "#ffcf5a", blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }),
-      );
-      glow.scale.set(1.6, 1.6, 1);
-      glow.position.y = 0.45;
-      g.add(base, band, lid, glow);
+      g.add(base, band, lid);
       this.scene.add(g);
-      this.chests.set(c.id, { lid, glow });
+      this.chests.set(c.id, { lid });
     }
   }
 
   private lootModel(item: Item) {
     const g = new THREE.Group();
-    const color = item.type === "weapon" ? RARITY[item.rarity].color : item.kind === "medkit" ? "#f2f2f2" : "#3c9bff";
     const model = new THREE.Group();
     if (item.type === "weapon") {
       const gun = buildGun(item.kind, item.rarity, "factory");
@@ -311,17 +318,6 @@ export class ThreeView implements ViewRenderer {
     model.position.y = 0.45;
     model.name = "model";
     g.add(model);
-    const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.18, 2.2, 10, 1, true),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
-    );
-    beam.position.y = 1.1;
-    const halo = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: this.glow, color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7 }),
-    );
-    halo.scale.set(0.9, 0.9, 1);
-    halo.position.y = 0.1;
-    g.add(beam, halo);
     return g;
   }
 
@@ -343,7 +339,13 @@ export class ThreeView implements ViewRenderer {
     }
     const bobAmt = fx.reduceMotion ? 0 : Math.min(1, me.speed / 3.4) * (1 - fx.ads * 0.8);
     const deadK = me.alive ? 0 : Math.min(1, (t - me.hurtAt) / 0.8);
-    this.camera.position.set(me.x, EYE + Math.sin(fx.bob * 2) * 0.035 * bobAmt - deadK * 1.2, me.y);
+    const dug = world.map.dug;
+    if (this.front && dug) while (this.dugSeen < dug.length) this.front.dig(dug[this.dugSeen++]);
+    // Eye height follows the terrain (down into trenches) and stance.
+    const floor = this.front?.floorAt(me.x, me.y) ?? 0;
+    const eyeTarget = floor + STANCE_EYE[me.stance ?? 0];
+    this.eyeY += (eyeTarget - this.eyeY) * Math.min(1, dt * 9);
+    this.camera.position.set(me.x, this.eyeY + Math.sin(fx.bob * 2) * 0.035 * bobAmt - deadK * Math.min(1.2, this.eyeY - floor - 0.25), me.y);
     this.camera.rotation.order = "YXZ";
     this.camera.rotation.set(-deadK * 0.3, -me.angle - Math.PI / 2, deadK * 0.5 + Math.sin(fx.bob) * 0.004 * bobAmt);
 
@@ -358,13 +360,12 @@ export class ThreeView implements ViewRenderer {
       const ch = this.chests.get(c.id);
       if (!ch) continue;
       ch.lid.rotation.x += ((c.opened ? -1.9 : 0) - ch.lid.rotation.x) * Math.min(1, dt * 8);
-      ch.glow.visible = !c.opened;
-      if (!c.opened) (ch.glow.material as THREE.SpriteMaterial).opacity = 0.4 + Math.sin(t * 3 + c.x) * 0.15;
     }
     this.syncTracers(world, me, fx, t);
     this.updateStorm(fx, me, t);
     this.updateFlags(fx.markers ?? [], t);
     if (this.war) this.updateBattle(me, t, dt);
+    this.updateWeather(dt);
     this.updateViewmodel(world, me, fx, t, dt);
 
     this.wind.value = t;
@@ -405,7 +406,10 @@ export class ThreeView implements ViewRenderer {
       }
       ch.setOutfit(e.outfit);
       ch.setItem(activeItem(e));
-      ch.root.position.set(e.x, 0, e.y);
+      const fy = this.front?.floorAt(e.x, e.y) ?? 0;
+      const cy = (this.charY.get(e.id) ?? fy) + (fy - (this.charY.get(e.id) ?? fy)) * Math.min(1, dt * 9);
+      this.charY.set(e.id, cy);
+      ch.root.position.set(e.x, cy, e.y);
       ch.root.rotation.y = -e.angle;
       if (this.quality !== "high") {
         let blob = this.blobs.get(e.id);
@@ -415,7 +419,7 @@ export class ThreeView implements ViewRenderer {
           this.blobs.set(e.id, blob);
           this.scene.add(blob);
         }
-        blob.position.set(e.x, 0.03, e.y);
+        blob.position.set(e.x, cy + 0.03, e.y);
         blob.visible = e.alive;
       }
       ch.update(
@@ -427,6 +431,7 @@ export class ThreeView implements ViewRenderer {
           alive: e.alive,
           deadAgo: t - e.hurtAt,
           using: !!e.using,
+          stance: e.stance ?? 0,
         },
         dt,
       );
@@ -439,7 +444,7 @@ export class ThreeView implements ViewRenderer {
           this.nameTags.set(e.id, tag);
           this.scene.add(tag);
         }
-        tag.position.set(e.x, 2.15, e.y);
+        tag.position.set(e.x, cy + [2.15, 1.55, 0.75][e.stance ?? 0], e.y);
         // Team games: teammates always tagged, enemies only up close.
         const enemy = e.team !== me.team;
         tag.visible = e.alive && (!fx.tagColor || !enemy || Math.hypot(e.x - me.x, e.y - me.y) < 14);
@@ -556,7 +561,7 @@ export class ThreeView implements ViewRenderer {
     });
   }
 
-  /** Overcast dusk, haze and drifting battle smoke for the battlefield; clear day for the town. */
+  /** Each Trenches front brings its own sky, light, haze, smoke and weather; the town is a clear day. */
   private applyTheme(war: boolean, world: World) {
     this.war = war;
     const u = this.sky.material.uniforms;
@@ -564,39 +569,42 @@ export class ThreeView implements ViewRenderer {
     const fog = this.scene.fog as THREE.Fog;
     for (const s of this.smoke) s.sprite.removeFromParent();
     this.smoke = [];
-    if (war) {
-      const dir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 11), THREE.MathUtils.degToRad(250));
-      // Low Rayleigh + high turbidity washes the blue out into a grey, smoky overcast.
-      u.turbidity.value = 20;
-      u.rayleigh.value = 0.35;
-      u.mieCoefficient.value = 0.03;
+    this.setWeather("none");
+    const th = world.map.front;
+    if (war && th) {
+      const dir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - th.sky.elevation), THREE.MathUtils.degToRad(th.sky.azimuth));
+      u.turbidity.value = th.sky.turbidity;
+      u.rayleigh.value = th.sky.rayleigh;
+      u.mieCoefficient.value = th.sky.mie;
       u.sunPosition.value.copy(dir);
       this.sunOffset = dir.clone().multiplyScalar(70);
-      this.sun.color.set("#ffc28a");
-      this.sun.intensity = 1.7;
-      this.hemi.color.set("#b9b4a8");
-      this.hemi.groundColor.set("#4a3e30");
-      this.hemi.intensity = 0.85;
-      this.fogBase.set("#9d978a");
+      this.sun.color.set(th.sun.color);
+      this.sun.intensity = th.sun.intensity;
+      this.hemi.color.set(th.hemi.sky);
+      this.hemi.groundColor.set(th.hemi.ground);
+      this.hemi.intensity = th.hemi.intensity;
+      this.fogBase.set(th.fog.color);
       fog.color.copy(this.fogBase);
-      fog.near = 12;
-      fog.far = high ? 95 : 70;
-      this.renderer.toneMappingExposure = 0.72;
-      (this.clouds.material as THREE.MeshBasicMaterial).color.set("#9a958c");
+      fog.near = th.fog.near;
+      fog.far = high ? th.fog.far : th.fog.far * 0.8;
+      this.renderer.toneMappingExposure = th.exposure;
+      (this.clouds.material as THREE.MeshBasicMaterial).color.set(th.clouds);
       const tex = glowTexture();
       const W = world.map.width;
       const H = world.map.height;
-      for (let i = 0; i < (high ? 14 : 8); i++) {
+      const n = Math.round((high ? 24 : 12) * th.smoke);
+      for (let i = 0; i < n; i++) {
         const sprite = new THREE.Sprite(
           new THREE.SpriteMaterial({ map: tex, color: "#8c8579", transparent: true, opacity: 0.22, depthWrite: false }),
         );
         const base = new THREE.Vector3(12 + Math.random() * (W - 24), 1 + Math.random() * 3, 3 + Math.random() * (H - 6));
         sprite.position.copy(base);
-        const size = 8 + Math.random() * 10;
+        const size = 8 + Math.random() * 12;
         sprite.scale.set(size, size * 0.7, 1);
         this.scene.add(sprite);
         this.smoke.push({ sprite, base, vx: 0.2 + Math.random() * 0.3, vy: 0.15 + Math.random() * 0.2, phase: Math.random() * 30 });
       }
+      if (th.weather !== "none") this.setWeather(th.weather);
     } else {
       u.turbidity.value = 5;
       u.rayleigh.value = 1.4;
@@ -612,7 +620,78 @@ export class ThreeView implements ViewRenderer {
       fog.near = high ? 40 : 28;
       fog.far = high ? 150 : 90;
       this.renderer.toneMappingExposure = 0.62;
+      (this.clouds.material as THREE.MeshBasicMaterial).color.set("#ffffff");
     }
+  }
+
+  /** Rain streaks, snowflakes or dust motes in a box that travels with the camera. */
+  private setWeather(kind: "none" | "rain" | "snow" | "dust") {
+    if (this.weather) {
+      this.weather.obj.removeFromParent();
+      this.weather.obj.geometry.dispose();
+      (this.weather.obj.material as THREE.Material).dispose();
+      this.weather = null;
+    }
+    if (kind === "none") return;
+    const high = this.quality === "high";
+    const n = kind === "rain" ? (high ? 2200 : 1100) : kind === "snow" ? (high ? 2400 : 1200) : 400;
+    const per = kind === "rain" ? 2 : 1;
+    const pos = new Float32Array(n * per * 3);
+    for (let i = 0; i < n; i++) {
+      const x = (Math.random() - 0.5) * 40;
+      const y = Math.random() * 18;
+      const z = (Math.random() - 0.5) * 40;
+      for (let k = 0; k < per; k++) pos.set([x, y + k * 0.45, z], (i * per + k) * 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const obj =
+      kind === "rain"
+        ? new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: "#b4bcc6", transparent: true, opacity: 0.32, depthWrite: false }))
+        : new THREE.Points(
+            geo,
+            new THREE.PointsMaterial({
+              color: kind === "snow" ? "#ffffff" : "#e8dcc0",
+              size: kind === "snow" ? 0.07 : 0.035,
+              transparent: true,
+              opacity: kind === "snow" ? 0.9 : 0.45,
+              depthWrite: false,
+            }),
+          );
+    obj.frustumCulled = false;
+    this.scene.add(obj);
+    this.weather = { obj, pos, kind };
+  }
+
+  private updateWeather(dt: number) {
+    const w = this.weather;
+    if (!w) return;
+    const cam = this.camera.position;
+    const per = w.kind === "rain" ? 2 : 1;
+    const fall = w.kind === "rain" ? 20 : w.kind === "snow" ? 1.3 : 0.1;
+    const drift = w.kind === "rain" ? 1.5 : w.kind === "snow" ? 0.6 : 0.8;
+    const t = performance.now() / 1000;
+    const p = w.pos;
+    for (let i = 0; i < p.length; i += per * 3) {
+      let x = p[i] + drift * dt + (w.kind === "snow" ? Math.sin(t + i) * 0.3 * dt : 0);
+      let y = p[i + 1] - fall * dt;
+      let z = p[i + 2] + (w.kind === "dust" ? Math.sin(t * 0.5 + i) * 0.2 * dt : 0);
+      // Wrap around the camera so the box always surrounds the viewer.
+      const rx = x - (cam.x - w.obj.position.x);
+      const rz = z - (cam.z - w.obj.position.z);
+      if (rx < -20) x += 40;
+      else if (rx > 20) x -= 40;
+      if (rz < -20) z += 40;
+      else if (rz > 20) z -= 40;
+      if (y < cam.y - 4) y += 18;
+      if (w.kind === "dust" && y > cam.y + 10) y -= 14;
+      for (let k = 0; k < per; k++) {
+        p[i + k * 3] = x + (k ? drift * 0.03 : 0);
+        p[i + k * 3 + 1] = y + k * 0.45;
+        p[i + k * 3 + 2] = z;
+      }
+    }
+    (w.obj.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
   }
 
   /** Drifting smoke and distant artillery flashes on the horizon. */
@@ -627,12 +706,12 @@ export class ThreeView implements ViewRenderer {
       const a = Math.random() * Math.PI * 2;
       const flash = this.artillery?.sprite ?? this.takeSprite(this.glow, "#ffb068", THREE.AdditiveBlending);
       flash.position.set(me.x + Math.cos(a) * 140, 4, me.y + Math.sin(a) * 140);
-      flash.scale.set(60, 30, 1);
+      flash.scale.set(26, 10, 1);
       this.artillery = { sprite: flash, born: t };
     }
     if (this.artillery) {
       const k = (t - this.artillery.born) / 0.6;
-      (this.artillery.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, 1 - k) * 0.8;
+      (this.artillery.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, 1 - k) * 0.35;
       this.artillery.sprite.visible = k < 1;
     }
     void dt;
@@ -659,7 +738,7 @@ export class ThreeView implements ViewRenderer {
         );
         const ring = new THREE.Mesh(
           new THREE.RingGeometry(Math.max(0.2, (m.r ?? 3) - 0.15), m.r ?? 3, 64).rotateX(-Math.PI / 2),
-          new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.45, depthWrite: false }),
+          new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.22, depthWrite: false }),
         );
         ring.position.y = 0.04;
         group.add(pole, cloth, ring);
@@ -809,7 +888,7 @@ const GRADE_SHADER = {
       col = (col - 0.5) * 1.05 + 0.5;
       col *= vec3(1.02, 1.0, 0.97);
       float d = distance(vUv, vec2(0.5));
-      col *= mix(1.0, 0.78, smoothstep(0.45, 0.85, d));
+      col *= mix(1.0, 0.9, smoothstep(0.5, 0.9, d));
       gl_FragColor = vec4(clamp(col, 0.0, 1.0), c.a);
     }`,
 };

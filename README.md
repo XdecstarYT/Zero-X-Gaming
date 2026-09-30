@@ -5,8 +5,9 @@ A browser gaming hub: discover, play, and compete in original web games. Dark, n
 **Status:** all six phases are complete, plus an intro splash and an arena FPS with bots and online play. The project
 has:
 
-- 6 games, including **Neon Siege**, a 3D battle royale with AI bots, online rooms, and a Season 1 battle pass, and
-  **Trenches**, a 3D war shooter with multiplayer lobbies and Conquest
+- 2 full 3D shooters: **Trenches**, a realistic Great War shooter (five large fronts, diggable trenches,
+  multiplayer lobbies, Conquest) and **Neon Siege**, a battle royale with AI bots, online rooms and a Season 1
+  battle pass
 - a cinematic intro splash on each visitor's first page load in a session
 - ZXG accounts (account name + password, no email)
 - server-validated scores
@@ -19,12 +20,8 @@ See [`DECISIONS.md`](./DECISIONS.md) for every deviation from the original brief
 
 | Game             | Genre          | Controls (keyboard / touch)                                                       |
 | ---------------- | -------------- | --------------------------------------------------------------------------------- |
-| **Zero Dash**    | Endless runner | Space / ↑ / W to jump, hold for higher · tap, hold for higher                     |
-| **Grid Lock**    | Slide & match  | Arrows move the cursor, Shift + arrows slide · swipe along a row or column        |
-| **Orbit**        | Gravity arcade | ← → steer, Space boost · drag to steer, second finger to boost                    |
-| **Blitz Trivia** | 60 s quiz      | 1–4 or Tab + Enter · tap an answer                                                |
 | **Neon Siege**   | Battle royale  | WASD + mouse, click fire, right-click aim, E loot, 1–5 switch, R reload · stick, drag look, FIRE/AIM |
-| **Trenches**     | War / Conquest | WASD + mouse, click fire, right-click aim, 1–5 switch, R reload, Tab scores · stick, drag look, FIRE/AIM |
+| **Trenches**     | War / Conquest | WASD + mouse, click fire, right-click aim, Shift sprint, C crouch, X prone, hold G dig, 1–5 switch, R reload, Tab scores · stick (push to sprint), drag look, FIRE/AIM/CRCH/PRONE/DIG |
 
 Esc (or the pause key from Settings) pauses any game. Games also pause when the tab is hidden.
 
@@ -55,7 +52,7 @@ plays, and settings stay on the device. Leaderboards show an "accounts not enabl
 | `npm run lint`                | ESLint (flat config)                                                                  |
 | `npm run typecheck`           | `next typegen` + `tsc --noEmit`                                                       |
 | `npm test`                    | Vitest: XP curve, game rules (with bot simulations), auth helpers, stores, components |
-| `npm run test:e2e`            | Playwright on desktop Chrome + Pixel 7: user flows, all games, Trenches lobbies, axe a11y scans       |
+| `npm run test:e2e`            | Playwright on desktop Chrome + Pixel 7: user flows, both games, Trenches lobbies, axe a11y scans       |
 | `npm run format`              | Prettier                                                                              |
 
 ## Environment variables
@@ -171,25 +168,36 @@ empty slots. The match runs to 15 kills or 5 minutes.
 - **Sync:** fighters broadcast state at 15 Hz, and other clients interpolate.
 - **Unranked:** there's no authoritative server, so online scores never reach the leaderboards.
 
-### Trenches: war shooter with lobbies
+### Trenches: realistic war shooter with lobbies
 
-Trenches (`src/games/trenches/`) reuses the Neon Siege engine, 3D renderer, HUD and netcode through a
-`ShellConfig` (its own slug and menu) and the `ModeController` hooks (`markers`, `tagColor`, `resultTitle`,
-`afterResults`).
+Trenches (`src/games/trenches/`) reuses the Neon Siege engine, HUD and netcode through a `ShellConfig` (its own
+slug and menu) and optional `ModeController` hooks (`markers`, `tagColor`, `resultTitle`, `afterResults`,
+`realism`, `task`).
 
-- **Battlefield** (`battlefield.ts`): an 84×48 point-mirrored front: zigzag trenches with sandbag parapets,
-  communication trenches, barbed wire, pillboxes, shell craters, dead trees and a ruined farmhouse. The 3D
-  renderer switches to the `battlefield` theme: mud and gravel, earth berms, roofless ruins, an overcast smoky
-  dusk, drifting smoke and distant artillery.
-- **Conquest** (`conquest.ts`): three flags (A, B, C), 150 tickets a side, 8 s captures (tug-of-war),
-  ticket bleed every 3 s (doubled when one side holds all three), 1 ticket per death, 15-minute limit.
-- **Classes:** Rifleman, Assault, Medic, Marksman. Teams are Iron Legion and Crimson Front, each in its own uniform.
-- **Lobbies** (`lobby.ts`, `directory.ts`, `menu.ts`): create a lobby (name, 2v2 to 8v8, bot fill), browse the
-  live list or join by code or invite link (`?lobby=CODE`). Inside: auto-balanced teams, switch team, class,
-  ready up, chat. The host starts the battle for everyone; late joiners drop straight in, and after the match
-  everyone returns to the lobby. The lobby list is a Supabase presence channel (`trenches:directory`), rooms
-  are `trenches:<code>` broadcast channels, and `?net=local` runs both over BroadcastChannel between tabs.
-- **Netcode:** as Neon Siege: each client owns its soldier, the oldest peer hosts (bots, flags, tickets) and
+- **Fronts** (`fronts.ts`, `battlefield.ts`): five 150–190 m battlefields, each point-mirrored for fairness:
+  **Gallipoli** (sand, scrub and gullies above the beach and the Aegean; the lines are close, Lone Pine is roofed),
+  **The Somme** (chalky mud, a ruined village and the Lochnagar mine crater), **Verdun** (a concrete fort in a
+  shattered, foggy forest), **Passchendaele** (rain, flooded shell holes, duckboard tracks, pillboxes, a ruined
+  church) and **Vimy Ridge** (snow, a chain of mine craters). Each has support and front trench lines with
+  traverses, communication trenches, saps, MG nests, wire belts with lanes, dugouts and five flags (A–E).
+- **3D** (`neon-siege/three/front.ts`): the ground is built in 32 m chunks. Trench cells are real 1.35 m pits
+  with earth walls, timber revetments and duckboards, sandbags on the lip facing the enemy; a dug cell rebuilds
+  only its chunk. Each front has its own sky, light, fog, smoke and weather (rain, snow, dust).
+- **Realism** (`match.ts`): stances (stand / crouch / prone) change speed, accuracy and silhouette; sprint drains
+  stamina; mud and snow slow you; weapons hit about 2.2× harder; no crosshair (a dot, aim down sights); cover:
+  soldiers in a trench are hard to hit and invisible when crouched (and can't fire out while crouched).
+- **Digging:** hold G (or DIG) to dig the cell underfoot, then keep digging forward to extend the trench (3.6 s a
+  cell, engineers 3× faster). Digs are broadcast; the host re-sends the full list every 5 s for late joiners.
+- **Conquest** (`conquest.ts`): five flags, 150 tickets a side, 8 s captures (tug-of-war), ticket bleed for the
+  side holding more flags, 1 ticket per death, 15-minute limit.
+- **Classes:** Rifleman, Trench Raider, Medic, Sniper, Engineer. Teams: Iron Legion and Crimson Front.
+- **Lobbies** (`lobby.ts`, `directory.ts`, `menu.ts`): create a lobby (name, front, 4v4 to 16v16, bot fill),
+  browse the live list or join by code or invite link (`?lobby=CODE`). The host can change the front; players
+  switch team, pick a class, ready up and chat. The host starts the battle for everyone; late joiners drop
+  straight in, and after the match everyone returns to the lobby. The lobby list is a Supabase presence channel
+  (`trenches:directory`), rooms are `trenches:<code>` broadcast channels, and `?net=local` runs both over
+  BroadcastChannel between tabs.
+- **Netcode:** each client owns its soldier (and stance), the oldest peer hosts bots, flags and tickets and
   broadcasts the Conquest state 4× a second. Matches are unranked.
 
 ### Themes
@@ -301,8 +309,6 @@ permissions policy) set in `next.config.ts`.
   - axe (WCAG 2.1 A/AA) finds no serious or critical issues on any page, including in-game and in dialogs.
   - Every page has a skip link and visible focus.
   - Modals use native `<dialog>` and tabs use ARIA.
-  - Grid Lock tiles are shape-coded as well as colour-coded.
-  - Trivia is real DOM with a live region.
   - Reduce motion (OS setting or in-app toggle) is honoured by the UI and the games.
 - **Lighthouse (mobile, production build):**
 

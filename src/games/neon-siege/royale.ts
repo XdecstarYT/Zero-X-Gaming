@@ -51,6 +51,11 @@ export interface PlayerInput {
   interact: boolean;
   /** Select a hotbar slot this step. */
   slot: number | null;
+  /** Realism modes (Trenches): sprint held, stance toggles pressed this step, dig held. */
+  sprint?: boolean;
+  crouch?: boolean;
+  prone?: boolean;
+  dig?: boolean;
 }
 
 export const IDLE: PlayerInput = {

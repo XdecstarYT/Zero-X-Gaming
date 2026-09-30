@@ -56,7 +56,7 @@ export function findPath(
   sy: number,
   gx: number,
   gy: number,
-  maxNodes = 6000,
+  maxNodes = Math.max(6000, (map.width * map.height) >> 1),
 ): { x: number; y: number }[] | null {
   const start = { x: Math.floor(sx), y: Math.floor(sy) };
   const goal = { x: Math.floor(gx), y: Math.floor(gy) };

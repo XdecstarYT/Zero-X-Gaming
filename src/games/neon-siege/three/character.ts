@@ -21,6 +21,8 @@ export interface PoseState {
   deadAgo: number;
   /** Using a consumable. */
   using: boolean;
+  /** 0 standing, 1 crouched, 2 prone. */
+  stance?: 0 | 1 | 2;
 }
 
 const geo = {
@@ -333,28 +335,33 @@ export class Character {
       this.legs.forEach((l) => (l.hip.rotation.z = 0));
       return;
     }
-    this.body.rotation.z = 0;
-    this.body.position.y = 0;
+    const stance = p.stance ?? 0;
+    const prone = stance === 2;
+    // Prone: the whole body lies face down along the facing direction, propped on the elbows.
+    this.body.rotation.z = prone ? -Math.PI / 2 : 0;
+    this.body.position.set(prone ? -0.9 : 0, prone ? 0.16 : 0, 0);
 
     const moving = Math.min(1, p.speed / 3.4);
-    this.walk += dt * (4 + 6 * moving) * (moving > 0.05 ? 1 : 0);
+    this.walk += dt * (4 + 6 * moving) * (moving > 0.05 ? 1 : 0) * (stance ? 0.6 : 1);
     const s = Math.sin(this.walk);
-    const swing = 0.55 * moving;
-    this.legs[0].hip.rotation.z = s * swing;
-    this.legs[1].hip.rotation.z = -s * swing;
-    this.legs[0].knee.rotation.z = -Math.max(0, -s) * swing * 1.3;
-    this.legs[1].knee.rotation.z = -Math.max(0, s) * swing * 1.3;
-    this.hips.position.y = 0.95 - Math.abs(Math.cos(this.walk)) * 0.035 * moving;
-    this.torso.rotation.z = -0.08 * moving - Math.max(0, 1 - p.hurtAgo / 0.2) * 0.12;
+    const swing = (stance === 1 ? 0.25 : prone ? 0.15 : 0.55) * moving;
+    const crouch = stance === 1 ? 1 : 0;
+    this.legs[0].hip.rotation.z = s * swing + crouch * 1.35;
+    this.legs[1].hip.rotation.z = -s * swing + crouch * 0.6;
+    this.legs[0].knee.rotation.z = -Math.max(0, -s) * swing * 1.3 - crouch * 2.1;
+    this.legs[1].knee.rotation.z = -Math.max(0, s) * swing * 1.3 - crouch * 1.9;
+    this.hips.position.y = (crouch ? 0.52 : 0.95) - Math.abs(Math.cos(this.walk)) * 0.035 * moving;
+    this.torso.rotation.z = prone ? 0.32 : -0.08 * moving - crouch * 0.18 - Math.max(0, 1 - p.hurtAgo / 0.2) * 0.12;
     this.torso.rotation.y = s * 0.06 * moving;
 
     // Weapon hold: aimed at shoulder height, or low-ready while running.
     const recoil = Math.max(0, 1 - p.firedAgo / 0.08);
-    const aim = p.aiming || p.firedAgo < 0.6 ? 1 : 0;
-    const hx = 0.18 - recoil * 0.05;
-    const hy = aim ? 0.36 : 0.2;
+    const aim = p.aiming || p.firedAgo < 0.6 || prone ? 1 : 0;
+    const hx = (prone ? 0.02 : 0.18) - recoil * 0.05;
+    const hy = prone ? 0.58 : aim ? 0.36 : 0.2;
     this.held.position.set(hx, hy + recoil * 0.015, 0.1);
-    this.held.rotation.z = aim ? recoil * 0.12 : -0.35;
+    // Prone: point the gun along the spine (level with the ground).
+    this.held.rotation.z = prone ? Math.PI / 2 - 0.32 + recoil * 0.08 : aim ? recoil * 0.12 : -0.35;
     this.held.rotation.y = aim ? 0 : 0.25;
 
     const shoulderR = tmpA.set(0.02, 0.44, 0.19);

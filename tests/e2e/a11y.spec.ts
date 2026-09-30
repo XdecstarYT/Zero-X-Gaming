@@ -4,8 +4,6 @@ import { dismissRotate, expect, test } from "./fixtures";
 const PAGES = [
   "/",
   "/games",
-  "/games/zero-dash",
-  "/games/blitz-trivia",
   "/games/neon-siege",
   "/games/trenches",
   "/leaderboards",
@@ -37,14 +35,11 @@ for (const path of PAGES) {
   });
 }
 
-test("no serious accessibility violations with a game running and the sign-in dialog open", async ({
-  page,
-  isMobile,
-}) => {
-  await page.goto("/games/blitz-trivia");
+test("no serious accessibility violations with a game running and the sign-in dialog open", async ({ page }) => {
+  await page.goto("/games/trenches?net=local");
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await dismissRotate(page);
-  await page.getByRole("button", { name: /Mixed/ }).click();
+  await expect(page.getByRole("button", { name: "Quick battle vs bots" })).toBeVisible();
   let results = await new AxeBuilder({ page }).include('[data-testid="game-stage"]').analyze();
   expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual(
     [],

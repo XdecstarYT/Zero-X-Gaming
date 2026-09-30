@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { findPath } from "../neon-siege/path";
-import { battlefield, BF_H, BF_W, generateBattlefield } from "./battlefield";
+import { GROUND, SOLID } from "../neon-siege/map";
+import { battlefield, generateBattlefield } from "./battlefield";
+import { FRONT_IDS, FRONTS } from "./fronts";
 import { BLEED_SECONDS, CAPTURE_SECONDS, createConquest, onDeath, START_TICKETS, stepConquest, type Soldier } from "./conquest";
 
 const flags = battlefield().flags;
@@ -10,17 +12,38 @@ const run = (s: ReturnType<typeof createConquest>, soldiers: Soldier[], seconds:
   return events;
 };
 
-describe("battlefield", () => {
-  it("is mirrored, walled, and every flag is reachable from both bases", () => {
-    const { map, bases } = generateBattlefield();
-    expect(map.width).toBe(BF_W);
-    expect(map.height).toBe(BF_H);
-    for (let y = 0; y < BF_H; y++)
-      for (let x = 0; x < BF_W; x++)
-        expect(map.cells[y * BF_W + x]).toBe(map.cells[(BF_H - 1 - y) * BF_W + (BF_W - 1 - x)]);
-    expect(bases[0].length).toBeGreaterThan(8);
+describe("battlefields", () => {
+  it.each(FRONT_IDS)("%s is large, mirrored, walled, has trenches, and every flag is reachable from both bases", (id) => {
+    const { map, bases, flags: fl } = generateBattlefield(id);
+    const W = map.width;
+    const H = map.height;
+    expect([W, H]).toEqual([FRONTS[id].width, FRONTS[id].height]);
+    expect(W).toBeGreaterThanOrEqual(150);
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        const m = (H - 1 - y) * W + (W - 1 - x);
+        expect(map.cells[i]).toBe(map.cells[m]);
+        expect(map.ground[i]).toBe(map.ground[m]);
+      }
+    for (let x = 0; x < W; x++) expect(map.cells[x]).toBe(SOLID.perimeter);
+    const trenchCells = map.ground.filter((g) => g === GROUND.trench).length;
+    expect(trenchCells).toBeGreaterThan(H * 6);
+    expect(fl.map((f) => f.id)).toEqual(["A", "B", "C", "D", "E"]);
+    expect(bases[0].length).toBeGreaterThan(20);
     for (const base of bases)
-      for (const f of flags) expect(findPath(map, base[0].x, base[0].y, f.x, f.y, 20000), `flag ${f.id}`).not.toBeNull();
+      for (const f of fl) expect(findPath(map, base[0].x, base[0].y, f.x, f.y), `flag ${f.id}`).not.toBeNull();
+    expect(map.front?.id).toBe(id);
+  });
+
+  it("gives every match its own ground layer (digging never leaks into the next battle)", () => {
+    const a = battlefield("somme");
+    const b = battlefield("somme");
+    expect(a.map.ground).not.toBe(b.map.ground);
+    expect(a.map.cells).toBe(b.map.cells);
+    a.map.ground[5000] = GROUND.trench;
+    a.map.dug!.push(5000);
+    expect(b.map.dug).toEqual([]);
   });
 });
 

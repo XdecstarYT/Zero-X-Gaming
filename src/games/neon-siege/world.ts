@@ -68,6 +68,10 @@ export interface Entity {
   outfit: string;
   /** Damage dealt this life/match (stats). */
   damageDealt: number;
+  /** Trenches: 0 standing, 1 crouched, 2 prone. */
+  stance?: 0 | 1 | 2;
+  /** Trenches: sprint stamina 0..1. */
+  stamina?: number;
 }
 
 export interface LootDrop {
@@ -116,6 +120,11 @@ export interface World {
    * elsewhere (damage is then NOT applied locally).
    */
   onHit?: (shooter: Entity, target: Entity, amount: number, weapon: WeaponKind) => boolean;
+  /**
+   * Optional cover model (Trenches): return true when a shot that would hit
+   * `target` is stopped by cover instead (a trench lip, the ground when prone).
+   */
+  cover?: (shooter: Entity, target: Entity, dist: number, rng: Rng) => boolean;
 }
 
 export function createWorld(map: GameMap): World {
@@ -270,8 +279,13 @@ export function fire(world: World, shooter: Entity, rng: Rng) {
   let first: { dist: number; dx: number; dy: number; hit: Entity | null } | null = null;
   for (let p = 0; p < stats.pellets; p++) {
     const angle = shooter.angle + (rng.next() - 0.5) * 2 * spread;
-    const { wall, best, dx, dy } = traceShot(world, shooter, angle);
-    if (!first) first = { dist: best ? best.dist : wall.dist, dx, dy, hit: best?.target ?? null };
+    const trace = traceShot(world, shooter, angle);
+    const { wall, dx, dy } = trace;
+    let best = trace.best;
+    // Cover soaks the round: the tracer ends at the target, but nobody is hit.
+    const covered = best && world.cover?.(shooter, best.target, best.dist, rng);
+    if (!first) first = { dist: best ? best.dist : wall.dist, dx, dy, hit: covered ? null : (best?.target ?? null) };
+    if (covered) best = null;
     if (best) {
       const cur = perTarget.get(best.target) ?? { amount: 0, dist: best.dist };
       cur.amount += damageAt(item, best.dist) * shooter.damageMult;

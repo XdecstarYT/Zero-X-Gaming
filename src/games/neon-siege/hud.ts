@@ -63,8 +63,19 @@ export function paintMapImage(map: GameMap, scale = 2) {
       const i = y * map.width + x;
       const cell = map.cells[i];
       const gr = map.ground[i];
+      const soil = map.front?.soil;
       let color =
-        gr === GROUND.road ? "#5d6166" : gr === GROUND.floor ? "#9c8b73" : gr === GROUND.dirt ? "#8a7552" : "#5f7d3f";
+        gr === GROUND.road
+          ? "#5d6166"
+          : gr === GROUND.floor
+            ? "#9c8b73"
+            : gr === GROUND.trench
+              ? "#2e271f"
+              : gr === GROUND.duck
+                ? "#7a6446"
+                : gr === GROUND.dirt || gr === GROUND.sand || gr === GROUND.snow
+                  ? (soil ?? "#8a7552")
+                  : (map.front?.soil2 ?? "#5f7d3f");
       if (cell === SOLID.brick) color = "#8f4a36";
       else if (cell === SOLID.concrete) color = "#a3a39d";
       else if (cell === SOLID.perimeter) color = "#3b3d3a";
@@ -73,6 +84,9 @@ export function paintMapImage(map: GameMap, scale = 2) {
       else if (cell === SOLID.crate) color = "#8a6a3e";
       else if (cell === SOLID.fence) color = "#6b5640";
       else if (cell === SOLID.sandbag) color = "#9a8a62";
+      else if (cell === SOLID.water) color = "#4f6068";
+      else if (cell === SOLID.wire) color = "#4a4540";
+      else if (cell === SOLID.shrub) color = "#6b7442";
       g.fillStyle = color;
       g.fillRect(x * scale, y * scale, scale, scale);
     }
@@ -83,11 +97,14 @@ export class SiegeHud {
   readonly root: HTMLDivElement;
   private status = el("div", "rounded-md bg-black/45 px-2.5 py-1 text-right font-display text-[11px] font-bold tracking-wider sm:text-xs");
   private stormLine = el("div", "mt-1 rounded bg-black/45 px-2 py-0.5 text-[10px] font-semibold sm:text-[11px]");
+  private detailLine = el("div", "mt-1 rounded bg-black/45 px-2 py-0.5 text-[10px] font-semibold sm:text-[11px]");
+  private dot = el("div", "absolute top-1/2 left-1/2 hidden h-[3px] w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/80", "box-shadow:0 0 2px rgba(0,0,0,.9)");
   private feed = el("div", "mt-1.5 flex flex-col items-end gap-0.5 text-[10px] font-semibold sm:text-[11px]");
   private mini = el("canvas", "block rounded-md border border-white/25 bg-black/40");
   private miniCtx: CanvasRenderingContext2D;
   private mapImage: HTMLCanvasElement | null = null;
   private mapFor: GameMap | null = null;
+  private mapDug = 0;
   private bars = el("div", "flex w-[min(19rem,62vw)] flex-col gap-1");
   private shieldFill = el("div", "h-full bg-[#3c9bff] transition-[width] duration-150");
   private hpFill = el("div", "h-full bg-[#4fd26b] transition-[width] duration-150");
@@ -149,7 +166,8 @@ export class SiegeHud {
 
     const top = el("div", "absolute top-2 right-2 left-2 flex items-start justify-between gap-2");
     const topLeft = el("div", "flex flex-col items-start");
-    topLeft.append(this.mini, this.stormLine);
+    this.detailLine.hidden = true;
+    topLeft.append(this.mini, this.stormLine, this.detailLine);
     const topRight = el("div", "flex max-w-[45%] flex-col items-end");
     topRight.append(this.status, this.feed);
     top.append(topLeft, topRight);
@@ -193,7 +211,7 @@ export class SiegeHud {
     this.progress.append(this.progressLabel, track);
     this.bannerBox.append(this.bannerText, this.bannerSub);
 
-    this.root.append(this.stormTint, this.hurt, this.scope, this.cross, this.hitMarker, this.progress, top, bottom, this.bannerBox, this.board);
+    this.root.append(this.stormTint, this.hurt, this.scope, this.cross, this.dot, this.hitMarker, this.progress, top, bottom, this.bannerBox, this.board);
     host.appendChild(this.root);
   }
 
@@ -220,6 +238,11 @@ export class SiegeHud {
       this.stormLine.textContent = storm;
       this.stormLine.hidden = !storm;
       this.stormLine.style.color = st.stormUrgent ? "#d7b4ff" : "#ffffff";
+    });
+    const detail = st.detail ?? "";
+    this.set("detail", detail, () => {
+      this.detailLine.textContent = detail;
+      this.detailLine.hidden = !detail;
     });
 
     // Kill feed
@@ -286,7 +309,14 @@ export class SiegeHud {
       this.progress.classList.remove("hidden");
       this.progressLabel.textContent = busy;
       this.progressFill.style.width = `${Math.min(100, (1 - left / total) * 100)}%`;
-    } else this.progress.classList.add("hidden");
+    } else {
+      const task = me.alive ? mode.task?.() : null;
+      if (task) {
+        this.progress.classList.remove("hidden");
+        this.progressLabel.textContent = task.label;
+        this.progressFill.style.width = `${Math.min(100, task.k * 100)}%`;
+      } else this.progress.classList.add("hidden");
+    }
 
     // Interact prompt
     const promptText = f.prompt && me.alive ? (this.opts.coarse ? f.prompt : `[E]  ${f.prompt}`) : "";
@@ -303,9 +333,12 @@ export class SiegeHud {
     const spread = def ? def.spread + (def.adsSpread - def.spread) * f.ads : 0.03;
     const recoil = Math.max(0, 1 - (t - me.firedAt) / 0.15);
     const gap = Math.round(4 + spread * 180 + recoil * 5);
-    const crossKey = `${gap}|${scoped || !me.alive || !w}`;
+    // Realism modes: no spread crosshair, just a small dot (aim down sights to shoot straight).
+    const dotOnly = !!mode.realism;
+    const crossKey = `${gap}|${scoped || !me.alive || !w}|${dotOnly}`;
     this.set("cross", crossKey, () => {
-      this.cross.style.display = scoped || !me.alive || !w ? "none" : "";
+      this.dot.classList.toggle("hidden", !dotOnly || scoped || !me.alive || f.ads > 0.5);
+      this.cross.style.display = dotOnly || scoped || !me.alive || !w ? "none" : "";
       const len = 7;
       const [u, r, d, l] = this.crossBars;
       u.style.cssText += `;width:2px;height:${len}px;left:-1px;top:${-gap - len}px`;
@@ -381,9 +414,10 @@ export class SiegeHud {
       this.mini.height = Math.round(144 * aspect);
       this.mini.style.height = `calc(min(22vmin,8.5rem) * ${aspect})`;
     }
-    if (this.mapFor !== map) {
+    if (this.mapFor !== map || (map.dug?.length ?? 0) !== this.mapDug) {
       this.mapImage = paintMapImage(map, 2);
       this.mapFor = map;
+      this.mapDug = map.dug?.length ?? 0;
     }
     const s = 144 / map.width;
     const mh = map.height * s;

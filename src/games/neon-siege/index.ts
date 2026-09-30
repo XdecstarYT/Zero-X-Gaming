@@ -97,6 +97,9 @@ export class NeonSiege implements GameModule {
   private aimToggle = false;
   private reloadPressed = false;
   private interactPressed = false;
+  private crouchPressed = false;
+  private pronePressed = false;
+  private touchDig = false;
   private slotPressed: number | null = null;
   private touchFire = false;
   private stick: { id: number; ox: number; oy: number; x: number; y: number } | null = null;
@@ -507,7 +510,38 @@ export class NeonSiege implements GameModule {
       "absolute top-1/2 left-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/40",
     );
     this.stickKnob.appendChild(knob);
-    this.touchLayer = el("div", "pointer-events-none absolute inset-0 z-[5]", this.stickKnob, fire, fireL, aim, reload);
+    const extra: HTMLElement[] = [];
+    if (this.mode?.realism) {
+      // Stance toggles and a hold-to-dig button (Trenches).
+      const small = "h-11 w-11 border-white/40 bg-white/10 text-[9px]";
+      const crouch = round("CRCH", `right-[calc(4%+5.5rem)] bottom-[calc(30%+4rem)] ${small}`);
+      crouch.setAttribute("aria-label", "Crouch");
+      crouch.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.crouchPressed = true;
+      });
+      const prone = round("PRONE", `right-[calc(4%+9rem)] bottom-[calc(30%+1rem)] ${small}`);
+      prone.setAttribute("aria-label", "Go prone");
+      prone.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.pronePressed = true;
+      });
+      const dig = round("DIG", `right-[calc(4%+9rem)] bottom-[calc(30%+4.5rem)] ${small}`);
+      dig.setAttribute("aria-label", "Dig (hold)");
+      dig.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.touchDig = true;
+      });
+      const stopDig = () => (this.touchDig = false);
+      dig.addEventListener("pointerup", stopDig);
+      dig.addEventListener("pointercancel", stopDig);
+      dig.addEventListener("pointerleave", stopDig);
+      extra.push(crouch, prone, dig);
+    }
+    this.touchLayer = el("div", "pointer-events-none absolute inset-0 z-[5]", this.stickKnob, fire, fireL, aim, reload, ...extra);
     this.opts.root.appendChild(this.touchLayer);
   }
 
@@ -518,6 +552,7 @@ export class NeonSiege implements GameModule {
     this.mouseDown = false;
     this.rightDown = false;
     this.touchFire = false;
+    this.touchDig = false;
     this.stick = null;
     this.look = null;
     this.fireLook = null;
@@ -537,7 +572,11 @@ export class NeonSiege implements GameModule {
       "KeyR",
       "KeyF",
       "KeyZ",
+      "KeyC",
+      "KeyX",
+      "KeyG",
       "ShiftLeft",
+      "ShiftRight",
       "ArrowUp",
       "ArrowDown",
       "ArrowLeft",
@@ -555,6 +594,8 @@ export class NeonSiege implements GameModule {
     this.keys.add(e.code);
     if (e.code === "KeyR") this.reloadPressed = true;
     if (e.code === "KeyE") this.interactPressed = true;
+    if (e.code === "KeyC") this.crouchPressed = true;
+    if (e.code === "KeyX") this.pronePressed = true;
     const slot = WEAPON_KEYS.indexOf(e.code);
     if (slot >= 0) this.slotPressed = slot;
   };
@@ -661,18 +702,27 @@ export class NeonSiege implements GameModule {
     }
     const turn = this.turnAccum + keyTurn * KEY_TURN * dt * this.lookScale();
     this.turnAccum = 0;
+    const realism = !!this.mode?.realism;
+    // A fully pushed stick sprints on touch.
+    const stickSprint = !!this.stick && forward > 0.92;
     const input: PlayerInput = {
       forward,
       strafe,
       turn,
       fire: this.mouseDown || this.touchFire || has("Space", "KeyF", k.jump),
       reload: this.reloadPressed,
-      aim: this.rightDown || this.aimToggle || has("KeyZ", "ShiftLeft"),
+      aim: this.rightDown || this.aimToggle || has("KeyZ") || (!realism && has("ShiftLeft")),
       interact: this.interactPressed,
       slot: this.slotPressed,
+      sprint: realism && (has("ShiftLeft", "ShiftRight") || stickSprint),
+      crouch: this.crouchPressed,
+      prone: this.pronePressed,
+      dig: has("KeyG") || this.touchDig,
     };
     this.reloadPressed = false;
     this.interactPressed = false;
+    this.crouchPressed = false;
+    this.pronePressed = false;
     if (this.slotPressed !== null) this.aimToggle = false;
     this.slotPressed = null;
     if (forward || strafe) this.bob += dt * 9;
