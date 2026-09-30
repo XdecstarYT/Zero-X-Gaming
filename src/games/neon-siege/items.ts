@@ -138,6 +138,8 @@ export interface WeaponItem {
   kind: WeaponKind;
   rarity: Rarity;
   ammo: number;
+  /** Trenches: period weapons with their own stats, names and models. */
+  era?: "ww1";
 }
 
 export interface ConsumableItem {
@@ -150,8 +152,53 @@ export type Item = WeaponItem | ConsumableItem;
 
 export const SLOTS = 5;
 
-export function makeWeapon(kind: WeaponKind, rarity: Rarity = "common"): WeaponItem {
-  return { type: "weapon", kind, rarity, ammo: WEAPONS[kind].mag };
+/**
+ * Great War weapons (Trenches): the same five slots with period handling. Bolt
+ * actions hit hard and cycle slowly; the MP18 sprays; the trench gun pumps.
+ * Damage is realistic, so Trenches doesn't multiply it further.
+ */
+export const WW1_WEAPONS: Record<WeaponKind, WeaponDef> = {
+  pistol: { ...WEAPONS.pistol, name: "Webley Revolver", damage: 34, interval: 0.38, mag: 6, reload: 2.6, spread: 0.03, adsSpread: 0.012, range: 14 },
+  smg: { ...WEAPONS.smg, name: "Bergmann MP18", damage: 21, interval: 0.09, mag: 32, reload: 2.9, spread: 0.06, adsSpread: 0.03, range: 14 },
+  ar: {
+    ...WEAPONS.ar,
+    name: "Lee-Enfield Rifle",
+    damage: 68,
+    interval: 1.05,
+    auto: false,
+    mag: 10,
+    reload: 3.4,
+    spread: 0.035,
+    adsSpread: 0.004,
+    range: 45,
+    zoom: 1.5,
+    mobility: 0.95,
+  },
+  shotgun: { ...WEAPONS.shotgun, name: "M1897 Trench Gun", damage: 17, pellets: 7, interval: 0.8, mag: 6, reload: 3.8, spread: 0.1, adsSpread: 0.08 },
+  sniper: {
+    ...WEAPONS.sniper,
+    name: "Scoped Lee-Enfield",
+    damage: 115,
+    interval: 1.35,
+    mag: 5,
+    reload: 3.6,
+    spread: 0.06,
+    adsSpread: 0.0008,
+    range: 80,
+    zoom: 3.2,
+  },
+};
+
+/** The stats table for a weapon item (its era). */
+export function weaponDef(w: Pick<WeaponItem, "kind" | "era">): WeaponDef {
+  return w.era === "ww1" ? WW1_WEAPONS[w.kind] : WEAPONS[w.kind];
+}
+
+export function makeWeapon(kind: WeaponKind, rarity: Rarity = "common", era?: "ww1"): WeaponItem {
+  const w: WeaponItem = { type: "weapon", kind, rarity, ammo: 0 };
+  if (era) w.era = era;
+  w.ammo = weaponDef(w).mag;
+  return w;
 }
 
 export function makeConsumable(kind: ConsumableKind, count = 1): ConsumableItem {
@@ -160,7 +207,7 @@ export function makeConsumable(kind: ConsumableKind, count = 1): ConsumableItem 
 
 /** Effective stats for a weapon item (rarity applied). */
 export function weaponStats(w: WeaponItem) {
-  const def = WEAPONS[w.kind];
+  const def = weaponDef(w);
   const r = RARITY[w.rarity];
   return { ...def, damage: def.damage * r.damage, reload: def.reload * r.reload };
 }
@@ -180,6 +227,7 @@ export function itemValue(item: Item): number {
 
 export function itemLabel(item: Item): string {
   if (item.type === "consumable") return `${CONSUMABLES[item.kind].name}${item.count > 1 ? ` ×${item.count}` : ""}`;
+  if (item.era) return weaponDef(item).name;
   return `${RARITY[item.rarity].label} ${WEAPONS[item.kind].name}`;
 }
 

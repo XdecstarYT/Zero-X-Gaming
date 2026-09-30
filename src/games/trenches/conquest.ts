@@ -20,7 +20,11 @@ export const MATCH_SECONDS = 15 * 60;
  * one, each sector taken brings reinforcements); defenders never run out, but
  * lose if the last sector falls.
  */
-export type GameMode = "conquest" | "breakthrough";
+export type GameMode = "conquest" | "breakthrough" | "frontline";
+export const GAME_MODES: GameMode[] = ["conquest", "frontline", "breakthrough"];
+export function isGameMode(v: unknown): v is GameMode {
+  return v === "conquest" || v === "breakthrough" || v === "frontline";
+}
 export const BREAKTHROUGH_TICKETS = 200;
 export const SECTOR_REINFORCEMENTS = 60;
 export const BREAKTHROUGH_SECONDS = 20 * 60;
@@ -28,8 +32,25 @@ export const ATTACKERS = 1 as const;
 /** Flag indices per sector (flags are A, B, C, D, E). */
 export const SECTORS = [[0, 1], [2], [3, 4]];
 
+/**
+ * Frontline (Cape Helles): the attackers take five objectives one at a time,
+ * beach → village → village → trench line → HQ. There are no tickets: every
+ * attacker has FRONTLINE_RESPAWNS redeploys (each objective taken gives one
+ * back); the defenders' reserves are endless.
+ */
+export const FRONTLINE_OBJECTIVES = [[0], [1], [2], [3], [4]];
+export const FRONTLINE_RESPAWNS = 3;
+export const FRONTLINE_SECONDS = 25 * 60;
+
+/** The ordered objective groups for a mode (empty for Classic). */
+export function sectorsFor(mode: GameMode) {
+  return mode === "breakthrough" ? SECTORS : mode === "frontline" ? FRONTLINE_OBJECTIVES : [];
+}
+
 export interface FlagState {
   id: Flag["id"];
+  /** Frontline objective name, e.g. "W Beach". */
+  name?: string;
   x: number;
   y: number;
   r: number;
@@ -45,6 +66,8 @@ export interface ConquestState {
   sector: number;
   tickets: [number, number];
   flags: FlagState[];
+  /** Frontline: every attacker is out of redeploys (set by the host). */
+  attackersOut?: boolean;
   bleedAcc: number;
   time: number;
   winner: 0 | Team | null;
@@ -57,11 +80,11 @@ export type ConquestEvent =
   | { type: "ended"; winner: 0 | Team };
 
 export function createConquest(flags: Flag[], tickets = START_TICKETS, mode: GameMode = "conquest"): ConquestState {
-  const bt = mode === "breakthrough";
+  const bt = mode !== "conquest";
   return {
     mode,
     sector: 0,
-    tickets: bt ? [BREAKTHROUGH_TICKETS, BREAKTHROUGH_TICKETS] : [tickets, tickets],
+    tickets: mode === "frontline" ? [0, 0] : bt ? [BREAKTHROUGH_TICKETS, BREAKTHROUGH_TICKETS] : [tickets, tickets],
     // Breakthrough: the defenders start holding every flag.
     flags: flags.map((f) => ({ ...f, p: bt ? 1 : 0, owner: bt ? 2 : 0, present: [0, 0] })),
     bleedAcc: 0,
@@ -72,7 +95,7 @@ export function createConquest(flags: Flag[], tickets = START_TICKETS, mode: Gam
 
 /** Breakthrough: can this flag be fought over right now? (Always true in Conquest.) */
 export function isLive(s: ConquestState, index: number) {
-  return s.mode !== "breakthrough" || (SECTORS[s.sector] ?? []).includes(index);
+  return s.mode === "conquest" || (sectorsFor(s.mode)[s.sector] ?? []).includes(index);
 }
 
 export interface Soldier {
@@ -117,17 +140,18 @@ export function stepConquest(s: ConquestState, soldiers: Soldier[], dt: number):
     }
   }
 
-  if (s.mode === "breakthrough") {
-    const sector = SECTORS[s.sector];
+  if (s.mode !== "conquest") {
+    const sectors = sectorsFor(s.mode);
+    const sector = sectors[s.sector];
     if (sector && sector.every((i) => s.flags[i].owner === ATTACKERS)) {
       s.sector++;
       events.push({ type: "sector", sector: s.sector - 1 });
-      if (s.sector >= SECTORS.length) {
+      if (s.sector >= sectors.length) {
         s.winner = ATTACKERS;
         events.push({ type: "ended", winner: ATTACKERS });
         return events;
       }
-      s.tickets[0] += SECTOR_REINFORCEMENTS;
+      if (s.mode === "breakthrough") s.tickets[0] += SECTOR_REINFORCEMENTS;
     }
     return [...events, ...checkEnd(s)];
   }
@@ -147,11 +171,18 @@ export function stepConquest(s: ConquestState, soldiers: Soldier[], dt: number):
   return [...events, ...checkEnd(s)];
 }
 
+/** Frontline: the host found every attacker out of redeploys. */
+export function attackersEliminated(s: ConquestState): ConquestEvent[] {
+  if (s.winner !== null || s.mode !== "frontline") return [];
+  s.attackersOut = true;
+  return checkEnd(s);
+}
+
 /** A soldier of `team` died: their side loses a ticket. */
 export function onDeath(s: ConquestState, team: Team): ConquestEvent[] {
   if (s.winner !== null) return [];
-  // Breakthrough defenders have endless reserves.
-  if (s.mode === "breakthrough" && team !== ATTACKERS) return [];
+  // Breakthrough defenders have endless reserves; Frontline counts redeploys, not tickets.
+  if (s.mode === "frontline" || (s.mode === "breakthrough" && team !== ATTACKERS)) return [];
   s.tickets[team - 1] = Math.max(0, s.tickets[team - 1] - 1);
   return checkEnd(s);
 }
@@ -160,6 +191,12 @@ function checkEnd(s: ConquestState): ConquestEvent[] {
   if (s.winner !== null) return [];
   const [a, b] = s.tickets;
   let winner: 0 | Team | null = null;
+  if (s.mode === "frontline") {
+    if (s.attackersOut || s.time >= FRONTLINE_SECONDS) winner = 2;
+    if (winner === null) return [];
+    s.winner = winner;
+    return [{ type: "ended", winner }];
+  }
   if (s.mode === "breakthrough") {
     if (a <= 0 || s.time >= BREAKTHROUGH_SECONDS) winner = 2;
     if (winner === null) return [];

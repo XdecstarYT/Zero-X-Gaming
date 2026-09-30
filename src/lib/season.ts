@@ -171,7 +171,7 @@ export function matchXp(m: SiegeMatch) {
   return Math.min(MATCH_XP_CAP, xp);
 }
 
-/** A finished Trenches battle (Conquest or Breakthrough). */
+/** A finished Trenches battle (Classic, Breakthrough or Frontline). */
 export interface TrenchesMatch {
   kills: number;
   deaths: number;
@@ -185,7 +185,7 @@ export interface TrenchesMatch {
   grenadeKills: number;
   bestStreak: number;
   front: string;
-  mode: "conquest" | "breakthrough";
+  mode: "conquest" | "breakthrough" | "frontline";
   players: number;
 }
 

@@ -7,12 +7,13 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
 import { outfitOf, wrapOf } from "./cosmetics";
-import { RARITY, WEAPONS, type Item } from "./items";
+import { RARITY, weaponDef, type Item } from "./items";
 import type { GameMap } from "./map";
 import { activeItem, activeWeapon, DRAW_TIME, type Entity, type World } from "./world";
 import { Character } from "./three/character";
 import { buildConsumable, buildGun, type GunModel } from "./three/guns";
 import { buildFront, type FrontScene } from "./three/front";
+import { buildMillsBomb, buildSpade } from "./three/guns";
 import { cloudTexture, flashTexture, glowTexture, stormTexture } from "./three/textures";
 import { buildTown } from "./three/town";
 import { FOV_DEG, zoomFor, type ViewFx, type ViewRenderer } from "./view";
@@ -85,6 +86,10 @@ export class ThreeView implements ViewRenderer {
   /** Smoothed camera / character heights (stepping into a trench, changing stance). */
   private eyeY = EYE;
   private charY = new Map<string, number>();
+  /** Viewmodel animation state: sprint lowering, the hand props for throwing and digging. */
+  private sprintK = 0;
+  private vmBomb: THREE.Group | null = null;
+  private vmSpade: THREE.Group | null = null;
   /** Trenches explosives: grenades in flight, dirt sprays and scorch marks. */
   private nades = new Map<string, THREE.Mesh>();
   private nadeGeo = new THREE.CapsuleGeometry(0.045, 0.07, 3, 8);
@@ -95,6 +100,7 @@ export class ThreeView implements ViewRenderer {
   private scorchMat = new THREE.MeshBasicMaterial({ color: "#1c1712", transparent: true, opacity: 0.7, depthWrite: false });
   private weather: { obj: THREE.Points | THREE.LineSegments; pos: Float32Array; kind: "rain" | "snow" | "dust" } | null = null;
   private flags = new Map<string, { group: THREE.Group; cloth: THREE.Mesh; ring: THREE.Mesh }>();
+  private crates = new Map<string, THREE.Group>();
   private artillery: { sprite: THREE.Sprite; born: number } | null = null;
   private nextShell = 4;
   private fogStorm = new THREE.Color("#5b3a8f");
@@ -343,7 +349,7 @@ export class ThreeView implements ViewRenderer {
 
     // Camera
     const w = activeWeapon(me);
-    const zoom = zoomFor(w ? WEAPONS[w.kind].zoom : 1, fx.ads);
+    const zoom = zoomFor(w ? weaponDef(w).zoom : 1, fx.ads);
     const fov = (2 * Math.atan(Math.tan((FOV_DEG * Math.PI) / 360) / zoom) * 180) / Math.PI;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov = fov;
@@ -840,6 +846,59 @@ export class ThreeView implements ViewRenderer {
         f.group.removeFromParent();
         this.flags.delete(id);
       }
+    this.updateCrates(markers, t);
+  }
+
+  /** Supply crates: a wooden ammo box with rope handles, a parachute canopy and a green smoke marker. */
+  private updateCrates(markers: Marker[], t: number) {
+    const live = new Set<string>();
+    for (const m of markers) {
+      if (m.kind !== "crate") continue;
+      live.add(m.id);
+      let c = this.crates.get(m.id);
+      if (!c) {
+        c = new THREE.Group();
+        const wood = new THREE.MeshStandardMaterial({ color: "#6b4f2a", roughness: 0.85 });
+        const band = new THREE.MeshStandardMaterial({ color: "#3a3a36", roughness: 0.5, metalness: 0.6 });
+        const box = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.6, 0.7), wood);
+        box.position.y = 0.3;
+        box.castShadow = this.quality === "high";
+        c.add(box);
+        for (const x of [-0.4, 0.4]) {
+          const b = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.62, 0.72), band);
+          b.position.set(x, 0.3, 0);
+          c.add(b);
+        }
+        const lid = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.05, 0.72), wood);
+        lid.position.y = 0.62;
+        c.add(lid);
+        // Canopy draped over the back of the crate.
+        const canopy = new THREE.Mesh(
+          new THREE.SphereGeometry(0.9, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2.4),
+          new THREE.MeshStandardMaterial({ color: "#d9d0b8", roughness: 1, side: THREE.DoubleSide }),
+        );
+        canopy.scale.set(1, 0.35, 1);
+        canopy.position.set(-0.9, 0.05, 0.3);
+        canopy.rotation.z = 0.5;
+        c.add(canopy);
+        const smoke = new THREE.Sprite(
+          new THREE.SpriteMaterial({ map: this.glow, color: "#7dffb0", transparent: true, depthWrite: false, opacity: 0.3 }),
+        );
+        smoke.scale.set(1.2, 3, 1);
+        c.add(smoke);
+        c.userData.smoke = smoke;
+        this.scene.add(c);
+        this.crates.set(m.id, c);
+      }
+      c.position.set(m.x, this.front?.floorAt(m.x, m.y) ?? 0, m.y);
+      const smoke = c.userData.smoke as THREE.Sprite;
+      smoke.position.y = 1.8 + Math.sin(t * 1.7) * 0.15;
+    }
+    for (const [id, c] of this.crates)
+      if (!live.has(id)) {
+        c.removeFromParent();
+        this.crates.delete(id);
+      }
   }
 
   private updateStorm(fx: ViewFx, me: Entity, t: number) {
@@ -882,7 +941,7 @@ export class ThreeView implements ViewRenderer {
       this.lastActive = me.active;
       this.drawnAt = t;
     }
-    const key = item ? (item.type === "weapon" ? `${item.kind}.${item.rarity}.${this.wrap}` : item.kind) : "";
+    const key = item ? (item.type === "weapon" ? `${item.kind}.${item.rarity}.${this.wrap}.${item.era ?? ""}` : item.kind) : "";
     if (key !== this.vmKey) {
       this.vmKey = key;
       if (this.vmGun) this.vm.remove(this.vmGun.group);
@@ -890,7 +949,7 @@ export class ThreeView implements ViewRenderer {
       this.vmGun = null;
       this.vmItem = null;
       if (item?.type === "weapon") {
-        this.vmGun = buildGun(item.kind, item.rarity, wrapOf(this.wrap).id);
+        this.vmGun = buildGun(item.kind, item.rarity, wrapOf(this.wrap).id, item.era);
         this.vmGun.group.rotation.y = Math.PI / 2; // barrel forward (-Z)
         this.vm.add(this.vmGun.group);
       } else if (item) {
@@ -909,23 +968,69 @@ export class ThreeView implements ViewRenderer {
     const recoil = Math.max(0, 1 - (t - me.firedAt) / (w?.kind === "sniper" || w?.kind === "shotgun" ? 0.25 : 0.09));
     const kick = w ? (w.kind === "sniper" ? 0.09 : w.kind === "shotgun" ? 0.08 : w.kind === "pistol" ? 0.035 : 0.025) : 0;
     const reloading = me.reloadUntil > t;
-    const reloadK = reloading ? Math.sin(Math.min(1, 1 - (me.reloadUntil - t) / (w ? WEAPONS[w.kind].reload * RARITY[w.rarity].reload : 1)) * Math.PI) : 0;
+    const reloadK = reloading ? Math.sin(Math.min(1, 1 - (me.reloadUntil - t) / (w ? weaponDef(w).reload * RARITY[w.rarity].reload : 1)) * Math.PI) : 0;
     const drawK = Math.max(0, 1 - (t - this.drawnAt) / DRAW_TIME);
     const ads = fx.ads;
+
+    // Sprinting (moving fast, not aiming) lowers and cants the weapon.
+    const sprinting = me.speed > 4.3 && ads < 0.2 && !reloading;
+    this.sprintK += ((sprinting ? 1 : 0) - this.sprintK) * Math.min(1, dt * 8);
+    const sk = fx.reduceMotion ? 0 : this.sprintK;
+    // Breathing: a slow figure-eight, calmer when aiming.
+    const breathe = fx.reduceMotion ? 0 : 1 - ads * 0.75;
+    const brx = Math.sin(t * 1.3) * 0.004 * breathe;
+    const bry = Math.sin(t * 2.6) * 0.003 * breathe;
+    // Throwing a grenade / digging take the gun out of the way.
+    const throwAgo = t - (me.thrownAt ?? -10);
+    const throwing = throwAgo < 0.7;
+    const digging = !!me.digging;
+    const away = Math.max(throwing ? Math.sin(Math.min(1, throwAgo / 0.7) * Math.PI) : 0, digging ? 1 : 0);
+
+    // Bolt-action / pump cycling after each shot (Great War rifles and the trench gun).
+    const def = w ? weaponDef(w) : null;
+    const cycles = !!w && !def?.auto && (w.kind === "ar" || w.kind === "sniper" || w.kind === "shotgun") && def!.interval > 0.6;
+    const cycleAgo = t - me.firedAt;
+    const cycleK = cycles && cycleAgo > 0.12 && cycleAgo < def!.interval * 0.9 ? Math.sin(((cycleAgo - 0.12) / (def!.interval * 0.9 - 0.12)) * Math.PI) : 0;
+    const reloadP = reloading && w ? Math.min(1, 1 - (me.reloadUntil - t) / (weaponDef(w).reload * RARITY[w.rarity].reload)) : 0;
 
     if (this.vmGun) {
       const hip = w?.kind === "pistol" ? new THREE.Vector3(0.13, -0.15, -0.42) : new THREE.Vector3(0.17, -0.17, -0.4);
       const aimed = new THREE.Vector3(0, -this.vmGun.sightY, -0.34 + (w?.kind === "pistol" ? -0.1 : 0));
       const pos = hip.lerp(aimed, ads);
-      this.vmGun.group.position.set(pos.x + bx + this.sway * 0.4, pos.y + by - reloadK * 0.12 - drawK * 0.25, pos.z + recoil * kick);
-      this.vmGun.group.rotation.set(recoil * kick * 2.2 + reloadK * 0.5 - drawK * 0.6, Math.PI / 2 + this.sway, reloadK * 0.6);
+      this.vmGun.group.position.set(
+        pos.x + bx + brx + this.sway * 0.4 - sk * 0.04 + cycleK * 0.015,
+        pos.y + by + bry - reloadK * 0.12 - drawK * 0.25 - sk * 0.09 - away * 0.45 - cycleK * 0.02,
+        pos.z + recoil * kick + sk * 0.05,
+      );
+      this.vmGun.group.rotation.set(
+        recoil * kick * 2.2 + reloadK * 0.5 - drawK * 0.6 - sk * 0.35 - away * 0.8,
+        Math.PI / 2 + this.sway + sk * 0.55,
+        reloadK * 0.6 + cycleK * 0.35,
+      );
+      this.vmGun.group.visible = away < 0.95;
       this.vmGun.group.updateMatrix();
-      // Arms: from off-screen below toward the grip and forend.
+      // Arms: from off-screen below toward the grip and forend; the right hand works the
+      // bolt / the left hand the pump; reloads drop the left hand to the magazine.
       const grip = this.vmGun.grip.clone().applyMatrix4(this.vmGun.group.matrix);
       const fore = this.vmGun.fore.clone().applyMatrix4(this.vmGun.group.matrix);
-      aimArm(this.vmArms[0], new THREE.Vector3(0.26, -0.5, 0.15), grip);
-      aimArm(this.vmArms[1], new THREE.Vector3(-0.12, -0.55, 0.1), reloadK > 0.3 ? grip.clone().add(new THREE.Vector3(-0.05, -0.12, 0.05)) : fore);
-      this.vmArms[1].visible = true;
+      const bolt = new THREE.Vector3(-0.1, 0.03, 0.06).applyMatrix4(this.vmGun.group.matrix);
+      const pump = this.vmGun.fore.clone().add(new THREE.Vector3(-0.1 * cycleK, 0, 0)).applyMatrix4(this.vmGun.group.matrix);
+      const magWell = new THREE.Vector3(0.0, -0.1, 0).applyMatrix4(this.vmGun.group.matrix);
+      const topLoad = new THREE.Vector3(-0.06, 0.08, 0).applyMatrix4(this.vmGun.group.matrix);
+      const pumpGun = w?.kind === "shotgun";
+      const rightHand = cycleK > 0.05 && !pumpGun ? grip.clone().lerp(bolt, Math.min(1, cycleK * 1.6)) : grip;
+      let leftHand = pumpGun && cycleK > 0 ? pump : fore;
+      if (reloading) {
+        // 0–0.35 down to the pouch, 0.35–0.75 to the gun (magazine / stripper clip), then back.
+        const offscreen = new THREE.Vector3(-0.2, -0.6, 0.0);
+        if (reloadP < 0.35) leftHand = fore.clone().lerp(offscreen, reloadP / 0.35);
+        else if (reloadP < 0.75) leftHand = offscreen.clone().lerp(w?.era ? topLoad : magWell, Math.min(1, (reloadP - 0.35) / 0.2));
+        else leftHand = (w?.era ? topLoad : magWell).clone().lerp(fore, (reloadP - 0.75) / 0.25);
+      }
+      aimArm(this.vmArms[0], new THREE.Vector3(0.26, -0.5, 0.15), rightHand);
+      aimArm(this.vmArms[1], new THREE.Vector3(-0.12, -0.55, 0.1), leftHand);
+      this.vmArms[0].visible = this.vmGun.group.visible;
+      this.vmArms[1].visible = this.vmGun.group.visible;
       // Muzzle flash
       const flashing = t - me.firedAt < 0.045;
       this.vmFlash.visible = flashing;
@@ -936,6 +1041,7 @@ export class ThreeView implements ViewRenderer {
         this.vmFlash.material.rotation = Math.random() * Math.PI;
       }
     } else if (this.vmItem) {
+      this.vmItem.visible = away < 0.5;
       const using = !!me.using;
       this.vmItem.position.set(0.2 + bx, -0.2 + by + (using ? 0.08 : 0) - drawK * 0.25, -0.4 + (using ? 0.08 : 0));
       this.vmItem.rotation.set(using ? Math.sin(t * 8) * 0.1 : 0, 0.4, 0);
@@ -943,6 +1049,38 @@ export class ThreeView implements ViewRenderer {
       this.vmArms[1].visible = false;
       this.vmFlash.visible = false;
     }
+
+    // Mills bomb in the right hand, swung overarm and released.
+    if (throwing) {
+      this.vmBomb ??= buildMillsBomb();
+      if (!this.vmBomb.parent) this.vm.add(this.vmBomb);
+      const k = Math.min(1, throwAgo / 0.7);
+      const back = new THREE.Vector3(0.22, 0.05, -0.1);
+      const out = new THREE.Vector3(0.05, 0.1, -0.9);
+      const p = k < 0.45 ? new THREE.Vector3(0.2, -0.25, -0.35).lerp(back, k / 0.45) : back.clone().lerp(out, (k - 0.45) / 0.55);
+      this.vmBomb.position.copy(p);
+      this.vmBomb.rotation.set(k * 6, 0, k * 2);
+      this.vmBomb.visible = k < 0.8;
+      aimArm(this.vmArms[0], new THREE.Vector3(0.26, -0.5, 0.15), p);
+      this.vmArms[0].visible = true;
+    } else if (this.vmBomb) this.vmBomb.visible = false;
+
+    // Entrenching tool: repeated stabs into the ground ahead.
+    if (digging) {
+      this.vmSpade ??= buildSpade();
+      if (!this.vmSpade.parent) this.vm.add(this.vmSpade);
+      const stab = fx.reduceMotion ? 0.5 : (Math.sin(t * 7) + 1) / 2;
+      this.vmSpade.visible = true;
+      this.vmSpade.position.set(0.05, -0.28 - stab * 0.12, -0.45 - stab * 0.1);
+      this.vmSpade.rotation.set(0, Math.PI / 2, -1.0 - stab * 0.35);
+      this.vmSpade.updateMatrix();
+      const hi = new THREE.Vector3(-0.2, 0, 0).applyMatrix4(this.vmSpade.matrix);
+      const lo = new THREE.Vector3(0.05, 0, 0).applyMatrix4(this.vmSpade.matrix);
+      aimArm(this.vmArms[0], new THREE.Vector3(0.26, -0.5, 0.15), hi);
+      aimArm(this.vmArms[1], new THREE.Vector3(-0.12, -0.55, 0.1), lo);
+      this.vmArms[0].visible = true;
+      this.vmArms[1].visible = true;
+    } else if (this.vmSpade) this.vmSpade.visible = false;
   }
 }
 

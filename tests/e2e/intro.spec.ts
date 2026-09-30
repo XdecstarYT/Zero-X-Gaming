@@ -1,4 +1,12 @@
-import { expect, introTest as test } from "./fixtures";
+import { expect, introTest } from "./fixtures";
+
+/** Intro tests: the one-time mega ad counts as seen (it has its own test below). */
+const test = introTest.extend({
+  page: async ({ page }, run) => {
+    await page.addInitScript(() => localStorage.setItem("zx-mega-ad-seen", "1"));
+    await run(page);
+  },
+});
 
 test("intro plays on first visit, can be skipped, and doesn't return this session", async ({ page }) => {
   await page.goto("/");
@@ -45,3 +53,26 @@ test("invite links (?room=) skip the intro so friends land straight in the game"
   await expect(page.locator("#zx-intro")).toBeHidden();
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeEnabled();
 });
+
+introTest("the mega ad plays once after the intro, can't be skipped, then never again", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+  await page.getByRole("dialog", { name: "Zero X Gaming intro" }).getByRole("button", { name: "Skip intro" }).click();
+  const ad = page.getByTestId("mega-ad");
+  await expect(ad).toBeVisible();
+  await expect(ad).toContainText(/Ad · \d+s/);
+  expect(await page.locator("main").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
+  // Keys and clicks don't dismiss it.
+  await page.keyboard.press("Escape");
+  await page.mouse.click(20, 20);
+  await expect(ad).toBeVisible();
+  await expect(ad).toContainText("Trenches", { timeout: 15_000 });
+  await expect(ad).toBeHidden({ timeout: 45_000 });
+  expect(await page.locator("main").evaluate((el) => (el as HTMLElement).inert)).toBe(false);
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await page.getByRole("dialog", { name: "Zero X Gaming intro" }).getByRole("button", { name: "Skip intro" }).click();
+  await page.waitForTimeout(1500);
+  await expect(page.getByTestId("mega-ad")).toHaveCount(0);
+});
+

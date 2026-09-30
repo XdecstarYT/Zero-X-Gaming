@@ -1,5 +1,5 @@
 import type { Rng } from "../engine/rng";
-import { CONSUMABLES, itemValue, WEAPONS, type Item } from "./items";
+import { CONSUMABLES, itemValue, weaponDef, type Item } from "./items";
 import { floorCells, lineOfSight } from "./map";
 import { findPath } from "./path";
 import { outside, type Circle } from "./storm";
@@ -419,14 +419,14 @@ export function updateBot(world: World, bot: Entity, brain: BotBrain, dt: number
       }
       const reacted = world.time - brain.acquiredAt >= s.reaction + (bot.aiming ? 0.35 : 0);
       const onTarget = aimErr < 0.06 + Math.atan2(0.3, Math.max(dist, 0.5));
-      if (reacted && onTarget && world.time >= brain.burstResumeAt && dist < (WEAPONS[w.kind].range * 2.5 + 4)) {
-        if (brain.burstLeft <= 0) brain.burstLeft = WEAPONS[w.kind].auto ? rng.int(s.burst[0], s.burst[1]) : 1;
+      if (reacted && onTarget && world.time >= brain.burstResumeAt && dist < (weaponDef(w).range * 2.5 + 4)) {
+        if (brain.burstLeft <= 0) brain.burstLeft = weaponDef(w).auto ? rng.int(s.burst[0], s.burst[1]) : 1;
         if (fire(world, bot, rng)) {
           fired = true;
           brain.burstLeft--;
           if (brain.burstLeft <= 0)
             brain.burstResumeAt =
-              world.time + (WEAPONS[w.kind].auto ? rng.range(s.burstPause[0], s.burstPause[1]) : rng.range(0.1, 0.4));
+              world.time + (weaponDef(w).auto ? rng.range(s.burstPause[0], s.burstPause[1]) : rng.range(0.1, 0.4));
         }
       }
       break;
@@ -480,7 +480,7 @@ export function updateBot(world: World, bot: Entity, brain: BotBrain, dt: number
         if (slot >= 0) switchSlot(world, bot, slot);
       }
       const w = activeWeapon(bot);
-      if (w && w.ammo < WEAPONS[w.kind].mag * 0.5 && !isReloading(world, bot)) startReload(world, bot);
+      if (w && w.ammo < weaponDef(w).mag * 0.5 && !isReloading(world, bot)) startReload(world, bot);
       followPath(world, bot, brain, dt);
       if (brain.path.length === 0) brain.nextThink = 0;
       break;

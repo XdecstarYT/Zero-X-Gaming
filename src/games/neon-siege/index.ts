@@ -4,7 +4,7 @@ import { ScoreEmitter } from "../engine/emitter";
 import type { Difficulty } from "./bots";
 import { OUTFITS } from "./cosmetics";
 import { SiegeHud, type KillFeedItem } from "./hud";
-import { itemLabel, RARITY, SLOTS, WEAPONS } from "./items";
+import { itemLabel, RARITY, SLOTS, weaponDef } from "./items";
 import { readGraphics, readLoadout, writeGraphics, type Graphics } from "./loadout";
 import { RoyaleController, type ModeController } from "./mode";
 import { CanvasView } from "./render";
@@ -103,6 +103,7 @@ export class NeonSiege implements GameModule {
   private pronePressed = false;
   private touchDig = false;
   private throwPressed = false;
+  private supportPressed: PlayerInput["support"] = null;
   /** Camera shake from nearby explosions (0..1, decays). */
   private shake = 0;
   private slotPressed: number | null = null;
@@ -551,7 +552,26 @@ export class NeonSiege implements GameModule {
         e.stopPropagation();
         this.throwPressed = true;
       });
-      extra.push(crouch, prone, dig, nade);
+      // Support calls: artillery on the aim point, a supply drop, a recon flare.
+      const support = (label: string, aria: string, kind: NonNullable<PlayerInput["support"]>, pos: string) => {
+        const b = round(label, `${pos} ${small}`);
+        b.setAttribute("aria-label", aria);
+        b.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.supportPressed = kind;
+        });
+        return b;
+      };
+      extra.push(
+        crouch,
+        prone,
+        dig,
+        nade,
+        support("ARTY", "Call artillery", "artillery", "right-[calc(4%+12.5rem)] bottom-[calc(30%+4.5rem)]"),
+        support("SUP", "Call a supply drop", "supply", "right-[calc(4%+12.5rem)] bottom-[calc(30%+1rem)]"),
+        support("RCN", "Fire a recon flare", "recon", "right-[calc(4%+9rem)] bottom-[calc(30%+8rem)]"),
+      );
     }
     this.touchLayer = el("div", "pointer-events-none absolute inset-0 z-[5]", this.stickKnob, fire, fireL, aim, reload, ...extra);
     this.opts.root.appendChild(this.touchLayer);
@@ -588,6 +608,7 @@ export class NeonSiege implements GameModule {
       "KeyX",
       "KeyG",
       "KeyQ",
+      ...(this.mode?.realism ? ["KeyB", "KeyN", "KeyT"] : []),
       "ShiftLeft",
       "ShiftRight",
       "ArrowUp",
@@ -610,6 +631,9 @@ export class NeonSiege implements GameModule {
     if (e.code === "KeyC") this.crouchPressed = true;
     if (e.code === "KeyX") this.pronePressed = true;
     if (e.code === "KeyQ") this.throwPressed = true;
+    if (e.code === "KeyB") this.supportPressed = "artillery";
+    if (e.code === "KeyN") this.supportPressed = "supply";
+    if (e.code === "KeyT") this.supportPressed = "recon";
     const slot = WEAPON_KEYS.indexOf(e.code);
     if (slot >= 0) this.slotPressed = slot;
   };
@@ -646,7 +670,7 @@ export class NeonSiege implements GameModule {
   /** Slower look while zoomed in. */
   private lookScale() {
     const w = this.mode ? activeWeapon(this.mode.me) : null;
-    return 1 / (1 + ((w ? WEAPONS[w.kind].zoom : 1) - 1) * this.ads);
+    return 1 / (1 + ((w ? weaponDef(w).zoom : 1) - 1) * this.ads);
   }
 
   private onLockChange = () => {
@@ -733,8 +757,10 @@ export class NeonSiege implements GameModule {
       prone: this.pronePressed,
       dig: has("KeyG") || this.touchDig,
       throw: this.throwPressed,
+      support: realism ? this.supportPressed : null,
     };
     this.throwPressed = false;
+    this.supportPressed = null;
     this.reloadPressed = false;
     this.interactPressed = false;
     this.crouchPressed = false;

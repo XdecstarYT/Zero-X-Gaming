@@ -55,7 +55,8 @@ export interface Marker {
   r?: number;
   /** 0..1 how raised the flag is (3D). */
   raise?: number;
-  kind: "flag" | "ally";
+  /** "enemy" = spotted by a recon flare (minimap only), "crate" = a supply crate. */
+  kind: "flag" | "ally" | "enemy" | "crate";
 }
 
 /** What the Neon Siege shell needs from a game mode (battle royale vs bots, or an online match). */

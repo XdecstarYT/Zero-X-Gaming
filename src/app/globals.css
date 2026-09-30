@@ -544,3 +544,73 @@ html[data-reduce-motion="true"] .zx-intro {
     transform: translateY(115vh) rotate(720deg);
   }
 }
+
+/* ------------------------------------------------------------------ mega ad */
+.zx-ad-scene {
+  animation: zx-ad-in 450ms var(--zx-ease-out) both;
+}
+@keyframes zx-ad-in {
+  from {
+    opacity: 0;
+  }
+}
+.zx-ad-kenburns {
+  animation: zx-ad-zoom 3.8s linear both;
+}
+@keyframes zx-ad-zoom {
+  from {
+    transform: scale(1.05) translateX(0);
+  }
+  to {
+    transform: scale(1.22) translateX(-3%);
+  }
+}
+.zx-ad-rise {
+  opacity: 0;
+  animation: zx-ad-rise 500ms var(--zx-ease-out) forwards;
+}
+@keyframes zx-ad-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.zx-ad-slam {
+  animation: zx-ad-slam 520ms 150ms var(--zx-ease-out) both;
+}
+@keyframes zx-ad-slam {
+  from {
+    opacity: 0;
+    transform: scale(1.8) skewX(-8deg);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+.zx-ad-rays {
+  background: repeating-conic-gradient(from 0deg, rgba(34, 229, 255, 0.08) 0 6deg, transparent 6deg 18deg),
+    radial-gradient(circle at center, rgba(255, 45, 170, 0.25), transparent 60%);
+  animation: zx-ad-spin 14s linear infinite;
+}
+@keyframes zx-ad-spin {
+  to {
+    transform: rotate(360deg) scale(1.4);
+  }
+}
+.zx-ad-police {
+  background: radial-gradient(circle at 20% 30%, rgba(255, 30, 40, 0.55), transparent 45%),
+    radial-gradient(circle at 80% 30%, rgba(40, 90, 255, 0.55), transparent 45%);
+  animation: zx-ad-strobe 0.5s steps(2) infinite;
+}
+@keyframes zx-ad-strobe {
+  50% {
+    filter: hue-rotate(180deg);
+  }
+}

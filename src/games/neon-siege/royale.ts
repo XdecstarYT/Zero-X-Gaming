@@ -58,6 +58,8 @@ export interface PlayerInput {
   dig?: boolean;
   /** Throw a grenade (pressed this step). */
   throw?: boolean;
+  /** Call in support (Trenches): pressed this step. */
+  support?: "artillery" | "supply" | "recon" | null;
 }
 
 export const IDLE: PlayerInput = {

@@ -3,11 +3,22 @@ import { BroadcastChannelTransport, MemoryHub, normalizeRoom, randomRoom, ROOM_R
 import { SupabaseTransport } from "../neon-siege/net-supabase";
 import type { Team } from "./battlefield";
 import { LocalDirectory, SupabaseDirectory, type LobbyDirectory, type LobbyInfo } from "./directory";
-import type { GameMode } from "./conquest";
-import { DEFAULT_FRONT, FRONT_IDS, FRONTS, isFrontId, type FrontId } from "./fronts";
+import { FRONTLINE_RESPAWNS, isGameMode, type GameMode } from "./conquest";
+import { DEFAULT_FRONT, FRONT_IDS, FRONTLINE_FRONT, FRONTS, isFrontId, type FrontId } from "./fronts";
 import { LobbyRoom, MAX_FIGHTERS } from "./lobby";
 import { TEAM_COLORS, TEAM_NAMES, TrenchesMatch } from "./match";
-import { CLASSES, type LobbySnapshot, type TrenchClass, type TrenchMsg } from "./protocol";
+import {
+  CLASSES,
+  DEFAULT_LOADOUTS,
+  GADGETS,
+  isLoadout,
+  PRIMARIES,
+  SECONDARIES,
+  type Loadout,
+  type LobbySnapshot,
+  type TrenchClass,
+  type TrenchMsg,
+} from "./protocol";
 
 /**
  * The Trenches front end (DOM, inside the shared FPS shell): home screen with
@@ -45,9 +56,14 @@ const CARD = "flex w-full flex-col gap-2 rounded-lg border border-border bg-surf
 const CLASS_KEY = "zx-trenches-class";
 const FRONT_KEY = "zx-trenches-front";
 const MODE_KEY = "zx-trenches-mode";
+const LOADOUT_KEY = "zx-trenches-loadout-";
 
 const MODES: Record<GameMode, { name: string; blurb: string }> = {
-  conquest: { name: "Conquest", blurb: "Both sides fight for all five flags. Hold more than the enemy to drain their tickets." },
+  conquest: { name: "Classic", blurb: "Both sides fight for all five flags. Hold more than the enemy to drain their tickets." },
+  frontline: {
+    name: "Frontline",
+    blurb: `Cape Helles: storm the beach, take two villages, cross no-man's-land and seize the HQ, one objective at a time. Attackers get only ${FRONTLINE_RESPAWNS} redeploys (+1 per objective).`,
+  },
   breakthrough: {
     name: "Breakthrough",
     blurb: "Iron Legion attacks, Crimson Front defends. Take the sectors in order (A+B, then C, then D+E) before the tickets run out.",
@@ -74,10 +90,20 @@ function readClass(): TrenchClass {
   return "rifleman";
 }
 
+function readLoadout(c: TrenchClass): Loadout {
+  try {
+    const l = JSON.parse(localStorage.getItem(LOADOUT_KEY + c) ?? "null");
+    if (isLoadout(l)) return l;
+  } catch {
+    // ignore
+  }
+  return DEFAULT_LOADOUTS[c];
+}
+
 function readFront(): FrontId {
   try {
     const f = localStorage.getItem(FRONT_KEY);
-    if (isFrontId(f)) return f;
+    if (isFrontId(f) && !FRONTS[f].frontlineOnly) return f;
   } catch {
     // ignore
   }
@@ -91,7 +117,8 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
   let front = readFront();
   let mode: GameMode = (() => {
     try {
-      return localStorage.getItem(MODE_KEY) === "breakthrough" ? "breakthrough" : "conquest";
+      const m = localStorage.getItem(MODE_KEY);
+      return isGameMode(m) ? m : "conquest";
     } catch {
       return "conquest";
     }
@@ -109,7 +136,54 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       // ignore
     }
     lobby?.setClass(c);
+    refreshLoadout?.();
   };
+
+  let refreshLoadout: (() => void) | null = null;
+
+  /** Primary / secondary / gadget for the current class (remembered per class). */
+  function loadoutEditor() {
+    const wrap = el("div", "grid w-full gap-2 sm:grid-cols-3");
+    wrap.setAttribute("role", "group");
+    wrap.setAttribute("aria-label", "Loadout");
+    const perk = el("p", "text-[11px] font-semibold text-[#c9a24a] sm:col-span-3");
+    const field = <K extends keyof Loadout>(key: K, label: string, options: Record<string, string>) => {
+      const sel = el("select", "h-9 w-full rounded-md border border-border bg-bg px-2 text-sm");
+      sel.id = `trenches-loadout-${key}`;
+      for (const [v, name] of Object.entries(options)) {
+        const o = el("option", "", name);
+        o.value = v;
+        sel.append(o);
+      }
+      sel.addEventListener("change", () => {
+        const next = { ...readLoadout(cls), [key]: sel.value } as Loadout;
+        if (!isLoadout(next)) return;
+        try {
+          localStorage.setItem(LOADOUT_KEY + cls, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+      });
+      const lab = el("label", "text-[11px] font-semibold uppercase tracking-wider text-muted", label);
+      lab.htmlFor = sel.id;
+      return { sel, node: el("div", "flex flex-col gap-1", lab, sel) };
+    };
+    const gadgetNames = Object.fromEntries(Object.entries(GADGETS).map(([k, g]) => [k, `${g.name} (${g.blurb})`]));
+    const p = field("primary", "Primary", PRIMARIES);
+    const s2 = field("secondary", "Sidearm", SECONDARIES);
+    const g = field("gadget", "Gadget", gadgetNames);
+    const refresh = () => {
+      const l = readLoadout(cls);
+      p.sel.value = l.primary;
+      s2.sel.value = l.secondary;
+      g.sel.value = l.gadget;
+      perk.textContent = `${CLASSES[cls].name}: ${CLASSES[cls].perk}`;
+    };
+    refreshLoadout = refresh;
+    refresh();
+    wrap.append(p.node, s2.node, g.node, perk);
+    return wrap;
+  }
 
   function classPicker() {
     const wrap = el("div", "grid w-full grid-cols-2 gap-2 sm:grid-cols-5");
@@ -134,9 +208,10 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
     return wrap;
   }
 
-  /** The five fronts as a pick-one group. */
-  function frontPicker(selected: FrontId, onPick: (f: FrontId) => void) {
+  /** The five fronts as a pick-one group (Frontline always fights at Cape Helles). */
+  function frontPicker(selected: FrontId, onPick: (f: FrontId) => void, locked = false) {
     const wrap = el("div", "grid w-full grid-cols-2 gap-2 sm:grid-cols-5");
+    if (locked) wrap.classList.add("opacity-50");
     wrap.setAttribute("role", "group");
     wrap.setAttribute("aria-label", "Battlefield");
     const buttons = FRONT_IDS.map((id) => {
@@ -150,6 +225,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
         onPick(id);
       });
       b.dataset.front = id;
+      b.disabled = locked;
       b.title = f.blurb;
       const swatch = el("span", "mb-1 block h-1.5 w-full rounded-full");
       swatch.style.background = `linear-gradient(90deg, ${f.theme.soil}, ${f.theme.fog.color}, ${f.theme.earth})`;
@@ -162,9 +238,9 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
     return wrap;
   }
 
-  /** Conquest / Breakthrough as a pick-one group. */
+  /** Classic / Frontline / Breakthrough as a pick-one group. */
   function modePicker(selected: GameMode, onPick: (m: GameMode) => void) {
-    const wrap = el("div", "grid w-full grid-cols-2 gap-2");
+    const wrap = el("div", "grid w-full gap-2 sm:grid-cols-3");
     wrap.setAttribute("role", "group");
     wrap.setAttribute("aria-label", "Game mode");
     const buttons = (Object.keys(MODES) as GameMode[]).map((id) => {
@@ -209,7 +285,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       "div",
       "text-center",
       el("p", "font-display text-3xl font-black uppercase tracking-[0.25em] text-[#e4d3a8] sm:text-5xl", "Trenches"),
-      el("p", "mt-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-[#c9a24a]", "Conquest · No Man's Land"),
+      el("p", "mt-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-[#c9a24a]", "Classic · Frontline · Breakthrough"),
     );
   }
 
@@ -221,7 +297,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
     status.setAttribute("role", "status");
 
     const quick = button("Quick battle vs bots", PRIMARY, () => void startSolo());
-    const frontBlurb = el("p", "text-[11px] text-muted", FRONTS[front].blurb);
+    const frontBlurb = el("p", "text-[11px] text-muted", mode === "frontline" ? `${FRONTS[FRONTLINE_FRONT].name}: ${FRONTS[FRONTLINE_FRONT].blurb}` : FRONTS[front].blurb);
 
     // Create
     const nameInput = el("input", "h-10 w-full rounded-md border border-border bg-bg px-3 text-sm focus:border-cyan focus:outline-none");
@@ -312,28 +388,37 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       .catch(() => list.replaceChildren(el("li", "p-3 text-center text-xs text-muted", "Couldn't load the lobby list. You can still join with a code.")));
 
     const controls = ctx.coarse
-      ? "Left thumb: move (push fully to sprint) · Right thumb: look · FIRE (drag to aim) · AIM · CRCH / PRONE · NADE · hold DIG"
-      : "WASD move · Mouse look · Click fire · Right-click aim · Shift sprint · C crouch · X prone · Q grenade · hold G dig · 1–5 switch · R reload · Tab scores";
+      ? "Left thumb: move (push fully to sprint) · Right thumb: look · FIRE (drag to aim) · AIM · CRCH / PRONE · NADE · hold DIG · ARTY / SUP / RCN"
+      : "WASD move · Mouse look · Click fire · Right-click aim · Shift sprint · C crouch · X prone · Q grenade · hold G dig · B artillery · N supplies · T recon flare · 1–5 switch · R reload · Tab scores";
 
     container.replaceChildren(
       header(),
       el(
         "section",
         CARD + " max-w-2xl",
-        el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Battlefield"),
-        frontPicker(front, (f) => {
-          pickFront(f);
-          frontBlurb.textContent = FRONTS[f].blurb;
+        el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Game mode"),
+        modePicker(mode, (m) => {
+          pickMode(m);
+          showHome();
         }),
+        el("h3", "mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Battlefield"),
+        frontPicker(
+          front,
+          (f) => {
+            pickFront(f);
+            frontBlurb.textContent = FRONTS[f].blurb;
+          },
+          mode === "frontline",
+        ),
         frontBlurb,
-        el("h3", "mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Game mode"),
-        modePicker(mode, pickMode),
       ),
       el(
         "section",
         CARD + " max-w-2xl",
         el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Your class"),
         classPicker(),
+        el("h3", "mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Loadout"),
+        loadoutEditor(),
       ),
       el(
         "div",
@@ -397,7 +482,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       seed: Math.floor(Math.random() * 2 ** 31),
       matchId: 1,
     };
-    ctx.start(new TrenchesMatch(transport, snap, { solo: true, roster: [{ id: "me", name: playerName, joinedAt: 1 }], myClass: cls }));
+    ctx.start(new TrenchesMatch(transport, snap, { solo: true, roster: [{ id: "me", name: playerName, joinedAt: 1 }], myClass: cls, myLoadout: readLoadout(cls) }));
   }
 
   // ----------------------------------------------------------------- lobby
@@ -435,6 +520,7 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       new TrenchesMatch(room.transport, s, {
         roster: room.roster,
         myClass: cls,
+        myLoadout: readLoadout(cls),
         onBackToLobby: () => {
           if (room.isHost) room.backToLobby();
           renderLobby();
@@ -542,16 +628,17 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       if (e.key === "Enter") send();
     });
 
-    const f = FRONTS[s.front] ?? FRONTS[DEFAULT_FRONT];
-    const m = MODES[s.mode === "breakthrough" ? "breakthrough" : "conquest"];
+    const lobbyMode: GameMode = isGameMode(s.mode) ? s.mode : "conquest";
+    const f = lobbyMode === "frontline" ? FRONTS[FRONTLINE_FRONT] : (FRONTS[s.front] ?? FRONTS[DEFAULT_FRONT]);
+    const m = MODES[lobbyMode];
     const frontCard = room.isHost && s.phase !== "match"
       ? el(
           "section",
           CARD + " max-w-2xl",
-          el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Battlefield"),
-          frontPicker(s.front, (id) => room.setFront(id)),
-          el("h3", "mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Game mode"),
-          modePicker(s.mode === "breakthrough" ? "breakthrough" : "conquest", (id) => room.setMode(id)),
+          el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Game mode"),
+          modePicker(lobbyMode, (id) => room.setMode(id)),
+          el("h3", "mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Battlefield"),
+          frontPicker(s.front, (id) => room.setFront(id), lobbyMode === "frontline"),
         )
       : el("p", "text-sm", el("strong", "", `${f.name} · ${m.name}`), ` · ${f.place}. ${m.blurb}`);
     container.replaceChildren(
@@ -574,7 +661,14 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       frontCard,
       el("div", "grid w-full max-w-2xl gap-3 sm:grid-cols-2", team(1), team(2)),
       el("div", "flex flex-wrap justify-center gap-2", switchTeam, ready, startBtn, rejoin, leave),
-      el("section", CARD + " max-w-2xl", el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Class"), classPicker()),
+      el(
+        "section",
+        CARD + " max-w-2xl",
+        el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Class"),
+        classPicker(),
+        el("h3", "mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "Loadout"),
+        loadoutEditor(),
+      ),
       el("section", CARD + " max-w-2xl", chatLog, el("div", "flex gap-2", chatLabel, chatInput, button("Send", BTN, send))),
       el("p", "text-[11px] text-subtle", room.isHost ? "Start whenever you like; bots fill the empty slots." : "Waiting for the host to start the battle."),
     );

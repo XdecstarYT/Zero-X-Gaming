@@ -303,14 +303,14 @@ export class Character {
   }
 
   setItem(item: Item | null) {
-    const key = item ? (item.type === "weapon" ? `${item.kind}.${item.rarity}.${this.wrap}` : item.kind) : "";
+    const key = item ? (item.type === "weapon" ? `${item.kind}.${item.rarity}.${this.wrap}.${item.era ?? ""}` : item.kind) : "";
     if (key === this.heldKey) return;
     this.heldKey = key;
     this.held.clear();
     this.gun = null;
     if (!item) return;
     if (item.type === "weapon") {
-      this.gun = buildGun(item.kind, item.rarity, this.wrap);
+      this.gun = buildGun(item.kind, item.rarity, this.wrap, item.era);
       this.held.add(this.gun.group);
     } else {
       const c = buildConsumable(item.kind);

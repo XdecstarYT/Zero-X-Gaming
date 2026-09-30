@@ -94,7 +94,8 @@ function part(g: THREE.Group, geo: THREE.BufferGeometry, m: THREE.Material, x: n
   return mesh;
 }
 
-export function buildGun(kind: WeaponKind, rarity: Rarity, wrapId: string): GunModel {
+export function buildGun(kind: WeaponKind, rarity: Rarity, wrapId: string, era?: "ww1"): GunModel {
+  if (era === "ww1") return buildWW1Gun(kind);
   const g = new THREE.Group();
   const body = wrapMat(wrapId);
   const accent = rarityMat(rarity);
@@ -231,5 +232,199 @@ export function buildConsumable(kind: ConsumableKind): THREE.Group {
     cork.position.y = 0.125;
     g.add(cork);
   }
+  return g;
+}
+
+// --------------------------------------------------------------- Great War
+
+const walnut = () => mat("walnut", () => new THREE.MeshStandardMaterial({ color: "#5a3a22", metalness: 0, roughness: 0.55 }));
+const walnutDark = () => mat("walnutDark", () => new THREE.MeshStandardMaterial({ color: "#3e2716", metalness: 0, roughness: 0.6 }));
+const blued = () => mat("blued", () => new THREE.MeshStandardMaterial({ color: "#23262b", metalness: 0.75, roughness: 0.38 }));
+const worn = () => mat("worn", () => new THREE.MeshStandardMaterial({ color: "#4a4d52", metalness: 0.8, roughness: 0.3 }));
+const brass = () => mat("brass", () => new THREE.MeshStandardMaterial({ color: "#b08a3e", metalness: 0.85, roughness: 0.35 }));
+const leather = () => mat("leather", () => new THREE.MeshStandardMaterial({ color: "#5b3b22", metalness: 0, roughness: 0.8 }));
+
+function plainBox(w: number, h: number, d: number) {
+  const k = `p${w},${h},${d}`;
+  let g = geoCache.get(k);
+  if (!g) geoCache.set(k, (g = new THREE.BoxGeometry(w, h, d)));
+  return g;
+}
+
+/** A tapering wooden stock (butt) seen from the side, extruded to its width. */
+function stockGeo(len: number, heel: number, toe: number, wrist: number, width: number) {
+  const k = `s${len},${heel},${toe},${wrist},${width}`;
+  let g = geoCache.get(k);
+  if (!g) {
+    const s = new THREE.Shape();
+    s.moveTo(0, wrist / 2);
+    s.lineTo(-len, heel);
+    s.lineTo(-len, -toe);
+    s.lineTo(0, -wrist / 2);
+    s.closePath();
+    g = new THREE.ExtrudeGeometry(s, { depth: width, bevelEnabled: true, bevelSize: 0.006, bevelThickness: 0.006, bevelSegments: 2 });
+    g.translate(0, 0, -width / 2);
+    geoCache.set(k, g);
+  }
+  return g;
+}
+
+/** Period weapons for Trenches: walnut, blued steel and brass, at real size. */
+export function buildWW1Gun(kind: WeaponKind): GunModel {
+  const g = new THREE.Group();
+  const muzzle = new THREE.Object3D();
+  let grip = new THREE.Vector3();
+  let fore = new THREE.Vector3();
+  let sightY = 0.05;
+
+  const rifle = (scoped: boolean) => {
+    // Full-length wooden furniture over the barrel (Lee-Enfield SMLE).
+    part(g, plainBox(0.62, 0.045, 0.042), walnut(), 0.28, -0.005); // forend
+    part(g, plainBox(0.5, 0.022, 0.036), walnut(), 0.3, 0.03); // upper handguard
+    part(g, cyl(0.009, 0.1), blued(), 0.64, 0.012); // barrel stub + nose cap
+    part(g, plainBox(0.05, 0.05, 0.046), blued(), 0.6, 0.0); // nose cap
+    part(g, plainBox(0.02, 0.035, 0.03), blued(), 0.645, 0.03); // front sight protector
+    part(g, plainBox(0.2, 0.05, 0.04), blued(), -0.07, 0.008); // receiver
+    part(g, plainBox(0.06, 0.07, 0.034), blued(), -0.02, -0.055); // magazine
+    part(g, plainBox(0.07, 0.008, 0.03), blued(), -0.08, -0.03); // trigger guard
+    // Bolt with its round knob, on the right.
+    part(g, cyl(0.008, 0.1), worn(), -0.1, 0.03);
+    const handle = part(g, cyl(0.005, 0.05), worn(), -0.1, 0.02, 0.03);
+    handle.rotation.y = Math.PI / 2;
+    part(g, new THREE.SphereGeometry(0.011, 10, 8), worn(), -0.1, 0.012, 0.056);
+    part(g, plainBox(0.06, 0.012, 0.02), blued(), 0.1, 0.045); // rear sight leaf
+    part(g, stockGeo(0.36, 0.05, 0.075, 0.045, 0.04), walnut(), -0.16, -0.01); // butt
+    part(g, plainBox(0.012, 0.13, 0.042), brass(), -0.525, 0.0); // brass butt plate
+    part(g, plainBox(0.03, 0.006, 0.043), brass(), 0.12, -0.03); // barrel band
+    part(g, plainBox(0.03, 0.006, 0.043), brass(), 0.44, -0.03);
+    // Sling.
+    const sling = part(g, plainBox(0.6, 0.004, 0.022), leather(), 0.0, -0.075);
+    sling.rotation.z = 0.06;
+    if (scoped) {
+      // Offset Aldis-pattern scope on a side mount.
+      part(g, cyl(0.016, 0.3, 14), blued(), -0.02, 0.085, -0.012);
+      part(g, cyl(0.021, 0.05, 14), blued(), 0.13, 0.085, -0.012);
+      part(g, cyl(0.02, 0.05, 14), blued(), -0.16, 0.085, -0.012);
+      part(g, cyl(0.018, 0.052, 14), glass(), 0.13, 0.085, -0.012);
+      part(g, plainBox(0.03, 0.04, 0.02), blued(), -0.06, 0.055, -0.01);
+      part(g, plainBox(0.03, 0.04, 0.02), blued(), 0.05, 0.055, -0.01);
+      muzzle.position.set(0.7, 0.012, 0);
+      sightY = 0.085;
+    } else {
+      // Pattern 1907 sword bayonet.
+      part(g, plainBox(0.04, 0.035, 0.03), blued(), 0.67, -0.008);
+      const blade = part(g, plainBox(0.42, 0.022, 0.004), worn(), 0.9, -0.012);
+      blade.scale.set(1, 1, 1);
+      part(g, new THREE.ConeGeometry(0.011, 0.04, 4).rotateZ(-Math.PI / 2), worn(), 1.13, -0.012);
+      muzzle.position.set(0.69, 0.012, 0);
+      sightY = 0.045;
+    }
+    grip = new THREE.Vector3(-0.12, -0.045, 0);
+    fore = new THREE.Vector3(0.2, -0.03, 0);
+  };
+
+  switch (kind) {
+    case "ar":
+      rifle(false);
+      break;
+    case "sniper":
+      rifle(true);
+      break;
+    case "smg": {
+      // Bergmann MP18: perforated barrel jacket, side magazine, wooden stock.
+      part(g, cyl(0.022, 0.24, 14), blued(), 0.2, 0.01); // jacket
+      for (let i = 0; i < 6; i++) part(g, cyl(0.0232, 0.012, 14), worn(), 0.1 + i * 0.04, 0.01); // cooling rings
+      part(g, cyl(0.008, 0.04), blued(), 0.34, 0.01); // muzzle
+      part(g, cyl(0.02, 0.2, 14), blued(), -0.01, 0.01); // receiver tube
+      part(g, plainBox(0.035, 0.05, 0.03), blued(), -0.02, -0.01, 0.0); // trigger housing
+      const mag = part(g, cyl(0.02, 0.13, 12), blued(), 0.06, 0.01, -0.08); // side magazine (left)
+      mag.rotation.y = Math.PI / 2;
+      part(g, plainBox(0.05, 0.03, 0.05), blued(), 0.06, 0.01, -0.03); // mag well
+      part(g, plainBox(0.07, 0.008, 0.03), blued(), -0.04, -0.035); // trigger guard
+      part(g, cyl(0.006, 0.03), worn(), -0.05, 0.02, 0.025).rotation.y = Math.PI / 2; // bolt handle
+      part(g, stockGeo(0.34, 0.045, 0.08, 0.05, 0.04), walnut(), -0.1, -0.015); // stock
+      part(g, plainBox(0.012, 0.13, 0.042), worn(), -0.445, -0.02); // butt plate
+      part(g, plainBox(0.015, 0.02, 0.012), blued(), 0.3, 0.035); // front sight
+      muzzle.position.set(0.37, 0.01, 0);
+      grip = new THREE.Vector3(-0.1, -0.04, 0);
+      fore = new THREE.Vector3(0.14, -0.015, 0);
+      sightY = 0.035;
+      break;
+    }
+    case "shotgun": {
+      // Winchester M1897 trench gun: vented heat shield, ribbed pump, bayonet lug.
+      part(g, cyl(0.014, 0.52), blued(), 0.37, 0.018); // barrel
+      part(g, cyl(0.022, 0.4, 14), worn(), 0.36, 0.022); // heat shield
+      for (let i = 0; i < 7; i++) part(g, plainBox(0.018, 0.012, 0.046), blued(), 0.2 + i * 0.05, 0.022); // vents
+      part(g, cyl(0.012, 0.42), blued(), 0.33, -0.016); // tube mag
+      part(g, cyl(0.024, 0.14, 10), walnut(), 0.24, -0.016); // pump
+      for (let i = 0; i < 5; i++) part(g, cyl(0.0245, 0.006, 10), walnutDark(), 0.19 + i * 0.025, -0.016);
+      part(g, plainBox(0.2, 0.065, 0.048), blued(), -0.02, 0.0); // receiver
+      part(g, plainBox(0.06, 0.012, 0.03), worn(), 0.0, 0.04); // exposed hammer rail
+      part(g, plainBox(0.07, 0.008, 0.03), blued(), -0.06, -0.04); // trigger guard
+      part(g, stockGeo(0.36, 0.055, 0.085, 0.05, 0.042), walnut(), -0.12, -0.012); // stock
+      part(g, plainBox(0.012, 0.14, 0.044), blued(), -0.485, -0.01); // butt plate
+      part(g, plainBox(0.04, 0.02, 0.02), blued(), 0.6, 0.0); // bayonet lug
+      part(g, new THREE.SphereGeometry(0.005, 8, 6), brass(), 0.625, 0.035); // bead
+      muzzle.position.set(0.64, 0.018, 0);
+      grip = new THREE.Vector3(-0.12, -0.045, 0);
+      fore = new THREE.Vector3(0.24, -0.035, 0);
+      sightY = 0.035;
+      break;
+    }
+    case "pistol": {
+      // Webley Mk VI: top-break frame, six-round cylinder, bird's-head grip.
+      part(g, cyl(0.009, 0.15), blued(), 0.1, 0.03); // barrel
+      part(g, plainBox(0.15, 0.012, 0.012), blued(), 0.1, 0.042); // top rib
+      const cylinder = part(g, cyl(0.024, 0.05, 6), worn(), 0.0, 0.02);
+      cylinder.rotation.x = Math.PI / 6;
+      part(g, plainBox(0.08, 0.05, 0.022), blued(), -0.01, 0.015); // frame
+      part(g, plainBox(0.03, 0.03, 0.012), blued(), -0.05, 0.045, 0, -0.5); // hammer
+      part(g, plainBox(0.05, 0.1, 0.028), walnutDark(), -0.05, -0.045, 0, 0.35); // grip
+      part(g, new THREE.TorusGeometry(0.009, 0.0025, 6, 12), brass(), -0.07, -0.1, 0); // lanyard ring
+      part(g, plainBox(0.035, 0.006, 0.02), blued(), -0.005, -0.02); // trigger guard
+      part(g, plainBox(0.01, 0.012, 0.006), blued(), 0.17, 0.048); // front sight
+      muzzle.position.set(0.18, 0.03, 0);
+      grip = new THREE.Vector3(-0.05, -0.05, 0);
+      fore = new THREE.Vector3(-0.04, -0.06, 0);
+      sightY = 0.048;
+      break;
+    }
+  }
+  g.add(muzzle);
+  return { group: g, muzzle, grip, fore, sightY };
+}
+
+/** Mills bomb (No. 5 grenade): segmented iron body, lever and ring. */
+export function buildMillsBomb() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 10).scale(1, 1.3, 1), blued());
+  g.add(body);
+  for (let i = 0; i < 4; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.003, 4, 16), worn());
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = -0.024 + i * 0.016;
+    ring.scale.setScalar(1 - Math.abs(i - 1.5) * 0.12);
+    g.add(ring);
+  }
+  const lever = new THREE.Mesh(plainBox(0.01, 0.07, 0.012), worn());
+  lever.position.set(0.032, 0.005, 0);
+  g.add(lever);
+  const pin = new THREE.Mesh(new THREE.TorusGeometry(0.012, 0.002, 4, 12), brass());
+  pin.position.set(0.0, 0.05, 0.012);
+  g.add(pin);
+  return g;
+}
+
+/** Entrenching tool: short spade with a wooden haft. */
+export function buildSpade() {
+  const g = new THREE.Group();
+  g.add(Object.assign(new THREE.Mesh(cyl(0.013, 0.45), walnut()), {}));
+  const blade = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.004, 0.13, 2, 0.002), worn());
+  blade.position.set(0.3, 0, 0);
+  g.add(blade);
+  const grip = new THREE.Mesh(plainBox(0.02, 0.02, 0.08), walnutDark());
+  grip.position.set(-0.23, 0, 0);
+  g.add(grip);
   return g;
 }

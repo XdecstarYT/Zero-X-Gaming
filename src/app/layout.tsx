@@ -6,6 +6,7 @@ import { Footer } from "@/components/layout/Footer";
 import { Providers } from "@/components/layout/Providers";
 import { Toaster } from "@/components/ui/Toaster";
 import { IntroSplash, introGateScript } from "@/components/layout/IntroSplash";
+import { MegaAd } from "@/components/layout/MegaAd";
 import { SITE_URL } from "@/lib/site";
 import { themeScript } from "@/store/settings";
 import "./globals.css";
@@ -41,6 +42,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="flex min-h-full flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] font-sans md:pb-0">
         <IntroSplash />
+        <MegaAd />
         <Providers>
           <Navbar />
           <main id="main" tabIndex={-1} className="flex-1 focus:outline-none">

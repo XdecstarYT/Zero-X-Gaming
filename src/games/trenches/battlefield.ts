@@ -1,5 +1,6 @@
 import { createRng } from "../engine/rng";
 import { GROUND, SOLID, type Building, type GameMap, type MapDecor } from "../neon-siege/map";
+import { generateFrontline } from "./frontline";
 import { DEFAULT_FRONT, FRONTS, type FrontId } from "./fronts";
 
 /**
@@ -18,6 +19,8 @@ export type Team = 1 | 2;
 
 export interface Flag {
   id: string;
+  /** Objective name (Frontline), e.g. "W Beach". */
+  name?: string;
   x: number;
   y: number;
   /** Capture radius (cells). */
@@ -35,6 +38,7 @@ export interface Battlefield {
 const BASE_W = 10;
 
 export function generateBattlefield(id: FrontId = DEFAULT_FRONT, seed?: number): Battlefield {
+  if (id === "helles") return generateFrontline(seed);
   const def = FRONTS[id];
   const W = def.width;
   const H = def.height;

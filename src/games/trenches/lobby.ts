@@ -1,6 +1,6 @@
 import { electHost, type PeerInfo, type Transport } from "../neon-siege/net";
 import type { Team } from "./battlefield";
-import type { GameMode } from "./conquest";
+import { isGameMode, type GameMode } from "./conquest";
 import { DEFAULT_FRONT, isFrontId, type FrontId } from "./fronts";
 import { cleanChat, type LobbyPlayer, type LobbySnapshot, type TrenchClass, type TrenchMsg } from "./protocol";
 
@@ -120,9 +120,9 @@ export class LobbyRoom {
     this.rebuild();
   }
 
-  /** Host: Conquest or Breakthrough. */
+  /** Host: Classic, Frontline or Breakthrough. */
   setMode(mode: GameMode) {
-    if (!this.isHost || (mode !== "conquest" && mode !== "breakthrough") || this.snapshot?.phase === "match") return;
+    if (!this.isHost || !isGameMode(mode) || this.snapshot?.phase === "match") return;
     this.settings = { ...this.settings, mode };
     this.rebuild();
   }
@@ -182,7 +182,7 @@ export class LobbyRoom {
         // Adopt the host's view of everyone's prefs (used if we become host).
         for (const p of m.s.players) this.prefs.set(p.id, { team: p.team, ready: p.ready, cls: p.cls });
         if (!isFrontId(this.snapshot.front)) this.snapshot = { ...this.snapshot, front: DEFAULT_FRONT };
-        if (this.snapshot.mode !== "breakthrough") this.snapshot = { ...this.snapshot, mode: "conquest" };
+        if (!isGameMode(this.snapshot.mode)) this.snapshot = { ...this.snapshot, mode: "conquest" };
         this.settings = { name: m.s.name, max: m.s.max, bots: m.s.bots, front: this.snapshot.front, mode: this.snapshot.mode };
         this.emitChange();
         this.checkStart();

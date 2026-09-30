@@ -4,8 +4,8 @@ import {
   damageAt,
   rollChestLoot,
   SLOTS,
+  weaponDef,
   weaponStats,
-  WEAPONS,
   type ConsumableItem,
   type Item,
   type WeaponItem,
@@ -77,6 +77,10 @@ export interface Entity {
   stamina?: number;
   /** Trenches: grenades carried. */
   grenades?: number;
+  /** Trenches: world time of the last grenade throw (animation). */
+  thrownAt?: number;
+  /** Trenches: digging right now (animation). */
+  digging?: boolean;
 }
 
 export interface LootDrop {
@@ -208,7 +212,7 @@ export function move(world: World, e: Entity, forward: number, strafe: number, d
   const speed =
     MOVE_SPEED *
     speedMult *
-    (w ? WEAPONS[w.kind].mobility : 1) *
+    (w ? weaponDef(w).mobility : 1) *
     (e.using ? USE_SLOW : 1) *
     (e.aiming ? ADS_SLOW : 1);
   const cos = Math.cos(e.angle);
@@ -236,7 +240,7 @@ export function switchSlot(world: World, e: Entity, slot: number) {
 
 export function startReload(world: World, e: Entity) {
   const w = activeWeapon(e);
-  if (!e.alive || !w || isReloading(world, e) || w.ammo >= WEAPONS[w.kind].mag) return false;
+  if (!e.alive || !w || isReloading(world, e) || w.ammo >= weaponDef(w).mag) return false;
   e.reloadUntil = world.time + weaponStats(w).reload;
   e.reloadSlot = e.active;
   e.aiming = false;
@@ -555,7 +559,7 @@ export function tickWorld(world: World, dt: number) {
   for (const e of world.entities.values()) {
     if (e.reloadSlot >= 0 && e.reloadUntil <= world.time) {
       const w = e.inventory[e.reloadSlot];
-      if (w?.type === "weapon") w.ammo = WEAPONS[w.kind].mag;
+      if (w?.type === "weapon") w.ammo = weaponDef(w).mag;
       e.reloadSlot = -1;
       e.reloadUntil = 0;
     }

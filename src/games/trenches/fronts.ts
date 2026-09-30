@@ -1,11 +1,12 @@
 import type { FrontTheme } from "../neon-siege/map";
 
 /**
- * The five fronts. Each is a large (150–190 m) Conquest battlefield with its
- * own layout feature and look. Distances are metres (1 cell = 1 m).
+ * The fronts. Five large (150–190 m) mirrored battlefields for Classic and
+ * Breakthrough, each with its own layout feature and look, plus Cape Helles:
+ * a 280 m landing corridor built for Frontline. Distances are metres (1 cell = 1 m).
  */
 
-export type FrontId = "gallipoli" | "somme" | "verdun" | "passchendaele" | "vimy";
+export type FrontId = "gallipoli" | "somme" | "verdun" | "passchendaele" | "vimy" | "helles";
 
 export interface FrontDef {
   id: FrontId;
@@ -18,6 +19,8 @@ export interface FrontDef {
   /** Front-line trench x (west side), as a fraction of the half-width. */
   frontLine: number;
   theme: FrontTheme;
+  /** Only used by Frontline (not mirrored, so not in the Classic / Breakthrough picker). */
+  frontlineOnly?: boolean;
 }
 
 export const FRONTS: Record<FrontId, FrontDef> = {
@@ -142,11 +145,39 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       grassColor: "#b9b39a",
     },
   },
+  helles: {
+    id: "helles",
+    name: "Cape Helles",
+    place: "W Beach, 1915",
+    blurb: "Frontline: storm the beach, fight through two villages, cross no-man's-land and take the headquarters.",
+    width: 280,
+    height: 64,
+    frontLine: 0.5,
+    frontlineOnly: true,
+    theme: {
+      id: "helles",
+      soil: "#bda678",
+      soil2: "#8f8a5c",
+      earth: "#9c8460",
+      sky: { turbidity: 8, rayleigh: 1.0, mie: 0.012, elevation: 24, azimuth: 250 },
+      sun: { color: "#ffe2b8", intensity: 2.4 },
+      hemi: { sky: "#c9d8ea", ground: "#7d6e50", intensity: 0.85 },
+      fog: { color: "#cfc6b2", near: 26, far: 150 },
+      exposure: 0.62,
+      clouds: "#f4efe6",
+      weather: "dust",
+      sea: "west",
+      grass: 0.9,
+      grassColor: "#8f8a52",
+    },
+  },
 };
 
-export const FRONT_IDS = Object.keys(FRONTS) as FrontId[];
+export const FRONT_IDS = (Object.keys(FRONTS) as FrontId[]).filter((id) => !FRONTS[id].frontlineOnly);
+export const FRONTLINE_FRONT: FrontId = "helles";
 export const DEFAULT_FRONT: FrontId = "somme";
 
 export function isFrontId(v: unknown): v is FrontId {
   return typeof v === "string" && v in FRONTS;
 }
+

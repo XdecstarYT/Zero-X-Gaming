@@ -10,7 +10,7 @@ test("Trenches quick battle: Conquest vs bots loads with tickets and flags", asy
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await dismissRotate(page);
 
-  await expect(stage.getByText("Conquest · No Man's Land")).toBeVisible();
+  await expect(stage.getByText("Classic · Frontline · Breakthrough")).toBeVisible();
   await stage.getByRole("group", { name: "Class" }).getByRole("button", { name: /Medic/ }).click();
   await stage.getByRole("button", { name: "Quick battle vs bots" }).click();
   const hud = stage.getByTestId("siege-hud");
@@ -80,8 +80,31 @@ test("Trenches Breakthrough: pick the mode, attack in sectors, throw a grenade",
   await stage.getByRole("button", { name: "Quick battle vs bots" }).click();
   const hud = stage.getByTestId("siege-hud");
   await expect(hud).toContainText("ATTACK · SECTOR 1/3", { timeout: 15_000 });
-  await expect(hud).toContainText("GRENADES 2");
+  await expect(hud).toContainText("GRENADES 5");
   await page.keyboard.press("q");
-  await expect(hud).toContainText("GRENADES 1");
+  await expect(hud).toContainText("GRENADES 4");
+  expect(errors).toEqual([]);
+});
+
+test("Trenches Frontline: Cape Helles, objectives in order, 3 redeploys, loadout and support calls", async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => localStorage.setItem("zx-siege-gfx", "2d"));
+  await page.goto("/games/trenches?net=local");
+  const stage = page.getByTestId("game-stage");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
+  await stage.getByRole("group", { name: "Game mode" }).getByRole("button", { name: /Frontline/ }).click();
+  // Frontline always fights at Cape Helles: the front picker is locked.
+  await expect(stage.getByRole("group", { name: "Battlefield" }).getByRole("button").first()).toBeDisabled();
+  await stage.getByLabel("Primary").selectOption("shotgun");
+  await stage.getByLabel("Gadget").selectOption("armour");
+  await stage.getByRole("button", { name: "Quick battle vs bots" }).click();
+  const hud = stage.getByTestId("siege-hud");
+  await expect(hud).toContainText("ATTACK · OBJECTIVE 1/5: W BEACH · REDEPLOYS 3", { timeout: 15_000 });
+  await expect(hud).toContainText("GRENADES 3");
+  await expect(hud).toContainText("M1897 Trench Gun, 6 ammo");
+  await expect(hud).toContainText(/B ARTILLERY \d:\d\d · N SUPPLY DROP/);
   expect(errors).toEqual([]);
 });

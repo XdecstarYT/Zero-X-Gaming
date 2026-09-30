@@ -44,7 +44,7 @@ export const GAMES: Game[] = [
     title: "Trenches",
     tagline: "Hold the line. Take the flags. Bleed their tickets dry.",
     description:
-      "A 3D war shooter across a muddy, shell-cratered front: zigzag trenches, sandbag parapets, barbed wire, pillboxes and a ruined farmhouse under an overcast, smoke-filled sky. Create or join a multiplayer lobby, pick a side (Iron Legion or Crimson Front) and a class, ready up and load in together. Conquest: capture and hold three flags to drain the enemy's 150 tickets. Empty slots fill with AI soldiers, or jump into a quick battle vs bots.",
+      "A realistic 3D Great War shooter. Fight at Gallipoli, the Somme, Verdun, Passchendaele and Vimy Ridge, or storm Cape Helles. Three modes: Classic (hold the flags, bleed their tickets), Breakthrough (attack sector by sector) and Frontline (beach, two villages, no-man's-land, then the HQ, with only 3 redeploys). Build your loadout, dig in, throw Mills bombs and call in artillery, supply drops and recon flares. Play in multiplayer lobbies or vs bots.",
     category: "shooter",
     tags: ["war", "fps", "3d", "multiplayer", "lobbies", "conquest", "bots"],
     status: "live",

@@ -186,6 +186,8 @@ describe("Trenches explosives over the network", () => {
     }
     Object.assign(ma.me, { x: spot.x, y: spot.y, angle: 0 });
     mb.me.hp = 1;
+    const start = ma.me.grenades ?? 0;
+    expect(start).toBe(5); // rifleman 2 + perk 1 + grenade bag 2
     let thrown = false;
     for (let t = 0; t < 5 && mb.me.alive; t += DT) {
       Object.assign(ma.me, { x: spot.x, y: spot.y, angle: 0 });
@@ -195,7 +197,7 @@ describe("Trenches explosives over the network", () => {
       thrown = true;
       mb.step(DT, IDLE);
     }
-    expect(ma.me.grenades).toBe(1);
+    expect(ma.me.grenades).toBe(start - 1);
     expect(mb.me.alive).toBe(false);
     for (let t = 0; t < 0.3; t += DT) {
       ma.step(DT, IDLE);

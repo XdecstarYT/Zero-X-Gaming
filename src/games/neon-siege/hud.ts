@@ -1,4 +1,4 @@
-import { CONSUMABLES, RARITY, SLOTS, WEAPONS, type Item } from "./items";
+import { CONSUMABLES, RARITY, SLOTS, weaponDef, type Item } from "./items";
 import { GROUND, SOLID, type GameMap } from "./map";
 import type { Banner, Marker, ModeController, ScoreRow } from "./mode";
 import type { StormState } from "./storm";
@@ -97,7 +97,7 @@ export class SiegeHud {
   readonly root: HTMLDivElement;
   private status = el("div", "rounded-md bg-black/45 px-2.5 py-1 text-right font-display text-[11px] font-bold tracking-wider sm:text-xs");
   private stormLine = el("div", "mt-1 rounded bg-black/45 px-2 py-0.5 text-[10px] font-semibold sm:text-[11px]");
-  private detailLine = el("div", "mt-1 rounded bg-black/45 px-2 py-0.5 text-[10px] font-semibold sm:text-[11px]");
+  private detailLine = el("div", "mt-1 whitespace-pre-line rounded bg-black/45 px-2 py-0.5 text-[10px] font-semibold sm:text-[11px]");
   private dot = el("div", "absolute top-1/2 left-1/2 hidden h-[3px] w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/80", "box-shadow:0 0 2px rgba(0,0,0,.9)");
   private feed = el("div", "mt-1.5 flex flex-col items-end gap-0.5 text-[10px] font-semibold sm:text-[11px]");
   private mini = el("canvas", "block rounded-md border border-white/25 bg-black/40");
@@ -291,20 +291,20 @@ export class SiegeHud {
       b.style.background = `linear-gradient(180deg, ${color}55, ${color}22)`;
       const count = it.type === "consumable" ? `<span class="absolute right-1 bottom-0 text-[10px] font-bold">${it.count}</span>` : "";
       b.innerHTML = `${icon(it.kind, "#f4f6f8")}${count}`;
-      b.setAttribute("aria-label", `Slot ${i + 1}: ${it.type === "weapon" ? WEAPONS[it.kind].name : CONSUMABLES[it.kind].name}`);
+      b.setAttribute("aria-label", `Slot ${i + 1}: ${it.type === "weapon" ? weaponDef(it).name : CONSUMABLES[it.kind].name}`);
     }
 
     // Ammo / reload / use progress
     const w = activeWeapon(me);
     const reloading = me.reloadUntil > t;
-    const ammoText = !me.alive ? "" : w ? (reloading ? "RELOADING" : `${w.ammo} / ${WEAPONS[w.kind].mag}`) : "";
+    const ammoText = !me.alive ? "" : w ? (reloading ? "RELOADING" : `${w.ammo} / ${weaponDef(w).mag}`) : "";
     this.set("ammo", ammoText, () => {
       this.ammo.textContent = ammoText;
       this.ammo.style.color = w && w.ammo === 0 ? "#ffb321" : "#ffffff";
     });
     const busy = reloading ? "Reloading" : me.using ? (me.inventory[me.using.slot]?.kind === "medkit" ? "Med Kit" : "Shield Potion") : "";
     if (busy) {
-      const total = reloading && w ? (WEAPONS[w.kind].reload * RARITY[w.rarity].reload) : me.using ? CONSUMABLES[me.inventory[me.using.slot]?.kind === "medkit" ? "medkit" : "shield"].useTime : 1;
+      const total = reloading && w ? (weaponDef(w).reload * RARITY[w.rarity].reload) : me.using ? CONSUMABLES[me.inventory[me.using.slot]?.kind === "medkit" ? "medkit" : "shield"].useTime : 1;
       const left = reloading ? me.reloadUntil - t : me.using!.until - t;
       this.progress.classList.remove("hidden");
       this.progressLabel.textContent = busy;
@@ -329,7 +329,7 @@ export class SiegeHud {
     // Crosshair (spread) / scope
     const scoped = !!w && w.kind === "sniper" && f.ads > 0.85 && me.alive;
     this.scope.classList.toggle("hidden", !scoped);
-    const def = w ? WEAPONS[w.kind] : null;
+    const def = w ? weaponDef(w) : null;
     const spread = def ? def.spread + (def.adsSpread - def.spread) * f.ads : 0.03;
     const recoil = Math.max(0, 1 - (t - me.firedAt) / 0.15);
     const gap = Math.round(4 + spread * 180 + recoil * 5);
@@ -424,6 +424,24 @@ export class SiegeHud {
     g.clearRect(0, 0, 144, mh);
     g.drawImage(this.mapImage!, 0, 0, 144, mh);
     for (const m of markers) {
+      if (m.kind === "crate") {
+        g.fillStyle = m.color;
+        g.strokeStyle = "rgba(0,0,0,.8)";
+        g.lineWidth = 1;
+        g.fillRect(m.x * s - 2.5, m.y * s - 2.5, 5, 5);
+        g.strokeRect(m.x * s - 2.5, m.y * s - 2.5, 5, 5);
+        continue;
+      }
+      if (m.kind === "enemy") {
+        g.fillStyle = m.color;
+        g.strokeStyle = "rgba(0,0,0,.85)";
+        g.lineWidth = 1;
+        g.beginPath();
+        g.arc(m.x * s, m.y * s, 2.4, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+        continue;
+      }
       if (m.kind === "ally") {
         g.fillStyle = m.color;
         g.beginPath();

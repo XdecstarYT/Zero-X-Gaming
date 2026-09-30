@@ -1,6 +1,6 @@
 import { createSurface, clearSurface, type Surface } from "../engine/canvas";
 import { outfitOf } from "./cosmetics";
-import { RARITY, WEAPONS } from "./items";
+import { RARITY, weaponDef } from "./items";
 import { castRay, SOLID } from "./map";
 import { activeWeapon, type Entity, type World } from "./world";
 import { FOV_DEG, zoomFor, type ViewFx, type ViewRenderer } from "./view";
@@ -50,7 +50,7 @@ export class CanvasView implements ViewRenderer {
     const H = VIEW_H;
     const horizon = H / 2;
     const w = activeWeapon(me);
-    const zoom = zoomFor(w ? WEAPONS[w.kind].zoom : 1, fx.ads);
+    const zoom = zoomFor(w ? weaponDef(w).zoom : 1, fx.ads);
     const tanHalf = Math.tan((FOV_DEG * Math.PI) / 360) / zoom;
     ctx.save();
     ctx.beginPath();

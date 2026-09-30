@@ -17,6 +17,7 @@ export interface WarRecord {
   bestStreak: number;
   bestKills: number;
   breakthroughWins: number;
+  frontlineWins: number;
   /** Fronts won at least once. */
   frontsWon: string[];
   /** Battles per front. */
@@ -34,6 +35,7 @@ export const EMPTY_RECORD: WarRecord = {
   bestStreak: 0,
   bestKills: 0,
   breakthroughWins: 0,
+  frontlineWins: 0,
   frontsWon: [],
   fronts: {},
 };
@@ -117,12 +119,20 @@ export const MEDALS: Medal[] = [
     progress: (r) => toward(r.breakthroughWins, 1),
   },
   {
+    id: "helles-star",
+    name: "Helles Star",
+    description: "Win a Frontline battle at Cape Helles.",
+    ribbon: ["#c9a24a", "#2a4d7a", "#c9a24a"],
+    earned: (r) => r.frontlineWins >= 1,
+    progress: (r) => toward(r.frontlineWins, 1),
+  },
+  {
     id: "five-fronts",
     name: "Five Fronts",
     description: "Win on Gallipoli, the Somme, Verdun, Passchendaele and Vimy Ridge.",
     ribbon: ["#2a6e3f", "#e0c35a", "#8a1c1c"],
-    earned: (r) => r.frontsWon.length >= 5,
-    progress: (r) => toward(r.frontsWon.length, 5),
+    earned: (r) => fiveFronts(r) >= 5,
+    progress: (r) => toward(fiveFronts(r), 5),
   },
   {
     id: "victoria-cross",
@@ -133,6 +143,11 @@ export const MEDALS: Medal[] = [
     progress: (r) => toward(r.bestKills, 12),
   },
 ];
+
+const FIVE = ["gallipoli", "somme", "verdun", "passchendaele", "vimy"];
+function fiveFronts(r: WarRecord) {
+  return r.frontsWon.filter((f) => FIVE.includes(f)).length;
+}
 
 const key = () => "zx-war-record" + deviceSaveSuffix();
 
@@ -159,6 +174,7 @@ export function withBattle(r: WarRecord, m: TrenchesMatch): WarRecord {
     bestStreak: Math.max(r.bestStreak, m.bestStreak),
     bestKills: Math.max(r.bestKills, m.kills),
     breakthroughWins: r.breakthroughWins + (m.won && m.mode === "breakthrough" ? 1 : 0),
+    frontlineWins: r.frontlineWins + (m.won && m.mode === "frontline" ? 1 : 0),
     frontsWon: m.won && !r.frontsWon.includes(m.front) ? [...r.frontsWon, m.front] : r.frontsWon,
     fronts: { ...r.fronts, [m.front]: (r.fronts[m.front] ?? 0) + 1 },
   };
