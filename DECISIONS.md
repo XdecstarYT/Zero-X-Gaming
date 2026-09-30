@@ -204,4 +204,20 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 61. **Score caps were re-tuned for the battle royale** (`max_score` 5,000, 150 pts/s). Leaderboard entries from
     the earlier wave-survival mode stay in the history. `?siege=quick` speeds the storm up for testing, and those
     matches are unranked.
+62. **Two site themes on one set of tokens.** Classic (dark neon) and X-1+ (light, friendly) share every CSS
+    variable name, so components don't know which is active. X-1+ also swaps type (rounded Nunito, no all-caps
+    headings), radii and shadows via variables. The saved choice is applied by an inline `<head>` script before
+    first paint, so there's no flash. Accent colours were chosen per theme for WCAG AA (axe runs on both).
+    Text drawn over game art keeps fixed light colours in both themes.
+63. **Toward photorealism, still fully procedural.**
+    - Textures double in resolution on High and get tangent-space normal maps derived from each height field.
+    - Trees are built SpeedTree-style from alpha-tested foliage cards (leaf clusters, pine sprays) around bark
+      trunks.
+    - Tens of thousands of wind-swayed grass tufts are instanced.
+    - Roads get sidewalks, curbs and street lamps, and buildings get plinths.
+    - The sky has a drifting cloud layer.
+    - High adds GTAO ambient occlusion, 4K sun shadows, a filmic grade and SMAA. Bloom was tried and removed,
+      because daylight whites blew out.
+    - Characters gained faces, shoulders, tapered limbs, hands, gear and a woven-cloth normal map.
+    - Low (the phone default) keeps grass and cards but skips the post-processing, and uses blob contact shadows.
 

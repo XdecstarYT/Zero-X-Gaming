@@ -76,12 +76,12 @@ html[data-theme="x1"] {
   /* "cyan" = friendly blue, "magenta" = coral pink, "violet" = grape */
   --zx-cyan: #2f5bea;
   --zx-cyan-dim: #2448c4;
-  --zx-magenta: #d9366f;
-  --zx-magenta-dim: #b82a5c;
+  --zx-magenta: #c42a62;
+  --zx-magenta-dim: #a82254;
   --zx-violet: #6d4ae6;
 
   --zx-success: #1f8a4c;
-  --zx-warning: #b85c00;
+  --zx-warning: #9a4d00;
   --zx-danger: #d42a3c;
 
   --zx-font-sans: var(--font-nunito);

@@ -9,6 +9,14 @@ import { createRng, type Rng } from "../../engine/rng";
 export interface TexSet {
   map: THREE.Texture;
   bump?: THREE.Texture;
+  /** Tangent-space normal map derived from the height field. */
+  normal?: THREE.Texture;
+}
+
+/** Texture resolution multiplier: High renders at 2× (512 px base), Low at 1×. */
+let SCALE = 1;
+export function setTextureDetail(detail: "high" | "low") {
+  SCALE = detail === "high" ? 2 : 1;
 }
 
 function canvas(size: number) {
@@ -62,7 +70,8 @@ function fbm(rng: Rng, octaves: number[]) {
 }
 
 /** Paint every pixel with f(u,v) → [r,g,b,height]. */
-function paint(size: number, f: (u: number, v: number, x: number, y: number) => [number, number, number, number]) {
+function paint(size0: number, f: (u: number, v: number, x: number, y: number) => [number, number, number, number]) {
+  const size = size0 * SCALE;
   const color = canvas(size);
   const bump = canvas(size);
   const cc = color.getContext("2d")!;
@@ -83,57 +92,75 @@ function paint(size: number, f: (u: number, v: number, x: number, y: number) => 
     }
   cc.putImageData(ci, 0, 0);
   bc.putImageData(bi, 0, 0);
-  return { color, bump };
+  // Normal map from the height field (central differences, wrapping so it tiles).
+  const normal = canvas(size);
+  const nc = normal.getContext("2d")!;
+  const ni = nc.createImageData(size, size);
+  const h = (x: number, y: number) => bi.data[((((y + size) % size) * size + ((x + size) % size)) * 4)] / 255;
+  const k = 2.2 * SCALE;
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const dx = (h(x + 1, y) - h(x - 1, y)) * k;
+      const dy = (h(x, y + 1) - h(x, y - 1)) * k;
+      const inv = 1 / Math.hypot(dx, dy, 1);
+      const i = (y * size + x) * 4;
+      ni.data[i] = (-dx * inv * 0.5 + 0.5) * 255;
+      ni.data[i + 1] = (dy * inv * 0.5 + 0.5) * 255;
+      ni.data[i + 2] = (inv * 0.5 + 0.5) * 255;
+      ni.data[i + 3] = 255;
+    }
+  nc.putImageData(ni, 0, 0);
+  return { color, bump, normal };
 }
 
 export function grassTexture(size = 256): TexSet {
   const rng = createRng(11);
   const n = fbm(rng, [4, 16, 64]);
-  const { color, bump } = paint(size, (u, v) => {
+  const { color, bump, normal } = paint(size, (u, v) => {
     const k = n(u, v);
     const blade = rng.next();
     const shade = 0.75 + k * 0.5 + (blade - 0.5) * 0.25;
     const dry = Math.max(0, n(v, u) - 0.62) * 2.2;
     return [(62 + dry * 70) * shade, (92 + dry * 35) * shade, (40 + dry * 10) * shade, k * 0.6 + blade * 0.4];
   });
-  return { map: toTexture(color, true), bump: toTexture(bump, false) };
+  return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
 }
 
 export function asphaltTexture(size = 256): TexSet {
   const rng = createRng(12);
   const n = fbm(rng, [4, 32]);
-  const { color, bump } = paint(size, (u, v) => {
+  const { color, bump, normal } = paint(size, (u, v) => {
     const k = n(u, v);
     const grit = rng.next();
     const base = 58 + k * 22 + (grit > 0.93 ? 30 : 0) - (grit < 0.05 ? 14 : 0);
     return [base, base + 1, base + 4, grit * 0.7 + k * 0.3];
   });
-  return { map: toTexture(color, true), bump: toTexture(bump, false) };
+  return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
 }
 
 export function dirtTexture(size = 256): TexSet {
   const rng = createRng(13);
   const n = fbm(rng, [4, 16, 64]);
-  const { color, bump } = paint(size, (u, v) => {
+  const { color, bump, normal } = paint(size, (u, v) => {
     const k = n(u, v);
     const pebble = rng.next() > 0.96 ? 25 : 0;
     return [118 * (0.75 + k * 0.5) + pebble, 96 * (0.75 + k * 0.5) + pebble, 66 * (0.75 + k * 0.5) + pebble, k];
   });
-  return { map: toTexture(color, true), bump: toTexture(bump, false) };
+  return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
 }
 
 export function concreteTexture(size = 256): TexSet {
   const rng = createRng(14);
   const n = fbm(rng, [3, 12, 48]);
   const stain = valueNoise(rng, 3);
-  const { color, bump } = paint(size, (u, v, x, y) => {
+  const { color, bump, normal } = paint(size, (u, v, x, y) => {
     const k = n(u, v);
     const s = Math.max(0, stain(u, v * 0.5) - 0.55) * 1.4;
     const seam = y % (size / 2) < 2 || x % (size / 2) < 1 ? -22 : 0;
     const base = 128 + (k - 0.5) * 36 - s * 50 + seam + (rng.next() - 0.5) * 10;
     return [base, base - 1, base - 5, k * 0.8 + (seam ? 0 : 0.2)];
   });
-  return { map: toTexture(color, true), bump: toTexture(bump, false) };
+  return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
 }
 
 export function brickTexture(size = 256): TexSet {
@@ -144,7 +171,7 @@ export function brickTexture(size = 256): TexSet {
   const bh = size / rows;
   const bw = size / cols;
   const tint = Array.from({ length: rows * cols * 2 }, () => 0.8 + rng.next() * 0.35);
-  const { color, bump } = paint(size, (u, v, x, y) => {
+  const { color, bump, normal } = paint(size, (u, v, x, y) => {
     const row = Math.floor(y / bh);
     const off = row % 2 ? bw / 2 : 0;
     const col = Math.floor((x + off) / bw);
@@ -159,7 +186,7 @@ export function brickTexture(size = 256): TexSet {
     const t = tint[(row * cols + col) % tint.length] * (0.9 + k * 0.2);
     return [150 * t, 72 * t, 52 * t, 0.7 + k * 0.3];
   });
-  return { map: toTexture(color, true), bump: toTexture(bump, false) };
+  return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
 }
 
 export function woodFloorTexture(size = 256): TexSet {
@@ -167,7 +194,7 @@ export function woodFloorTexture(size = 256): TexSet {
   const grain = fbm(rng, [2, 8, 32]);
   const planks = 6;
   const tone = Array.from({ length: planks * 3 }, () => 0.8 + rng.next() * 0.3);
-  const { color, bump } = paint(size, (u, v, x, y) => {
+  const { color, bump, normal } = paint(size, (u, v, x, y) => {
     const p = Math.floor(u * planks);
     const seg = Math.floor(v * 3 + (p % 2) * 0.5);
     const gap = x % (size / planks) < 2 || (y + (p % 2) * (size / 6)) % (size / 3) < 2;
@@ -176,13 +203,13 @@ export function woodFloorTexture(size = 256): TexSet {
     if (gap) return [60, 42, 28, 0];
     return [150 * t, 108 * t, 70 * t, 0.6 + g * 0.4];
   });
-  return { map: toTexture(color, true), bump: toTexture(bump, false) };
+  return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
 }
 
 export function crateTexture(size = 128): TexSet {
   const rng = createRng(17);
   const grain = fbm(rng, [2, 16]);
-  const { color, bump } = paint(size, (u, v, x, y) => {
+  const { color, bump, normal } = paint(size, (u, v, x, y) => {
     const border = x < 10 || y < 10 || x > size - 11 || y > size - 11;
     const brace = Math.abs(x - y) < 7;
     const plank = x % (size / 4) < 2;
@@ -191,26 +218,26 @@ export function crateTexture(size = 128): TexSet {
     if (plank && !border && !brace) return [70, 50, 32, 0.1];
     return [168 * t, 124 * t, 74 * t, border || brace ? 0.9 : 0.5 + g * 0.3];
   });
-  return { map: toTexture(color, true), bump: toTexture(bump, false) };
+  return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
 }
 
 export function barkTexture(size = 128): TexSet {
   const rng = createRng(18);
   const n = fbm(rng, [4, 16]);
-  const { color, bump } = paint(size, (u, v) => {
+  const { color, bump, normal } = paint(size, (u, v) => {
     const k = n(u * 4, v * 0.5);
     const ridge = Math.abs(Math.sin(u * Math.PI * 10 + k * 4));
     const t = 0.55 + ridge * 0.35;
     return [96 * t, 72 * t, 52 * t, ridge];
   });
-  return { map: toTexture(color, true), bump: toTexture(bump, false) };
+  return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
 }
 
 export function roofTexture(size = 128): TexSet {
   const rng = createRng(19);
   const n = fbm(rng, [4, 16]);
   const rows = 8;
-  const { color, bump } = paint(size, (u, v) => {
+  const { color, bump, normal } = paint(size, (u, v) => {
     const row = Math.floor(v * rows);
     const inY = (v * rows) % 1;
     const off = row % 2 ? 0.5 : 0;
@@ -221,19 +248,19 @@ export function roofTexture(size = 128): TexSet {
     if (edge) return [40, 30, 28, 0.2];
     return [120 * t, 58 * t, 46 * t, inY];
   });
-  return { map: toTexture(color, true), bump: toTexture(bump, false) };
+  return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
 }
 
 export function stoneTexture(size = 128): TexSet {
   const rng = createRng(20);
   const n = fbm(rng, [3, 12, 48]);
-  const { color, bump } = paint(size, (u, v) => {
+  const { color, bump, normal } = paint(size, (u, v) => {
     const k = n(u, v);
     const moss = Math.max(0, n(v, u) - 0.6) * 2;
     const b = 110 + (k - 0.5) * 70;
     return [b - moss * 30, b + moss * 10, b - 8 - moss * 30, k];
   });
-  return { map: toTexture(color, true), bump: toTexture(bump, false) };
+  return { map: toTexture(color, true), bump: toTexture(bump, false), normal: toTexture(normal, false) };
 }
 
 /** Animated storm wall: soft vertical streaks, used with additive blending. */
@@ -334,5 +361,138 @@ export function wrapTexture(base: string, alt: string, pattern: "solid" | "strip
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+function alphaTexture(c: HTMLCanvasElement) {
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+/** A tuft of grass blades on transparent background (for crossed-quad billboards). */
+export function grassBladesTexture(size = 128) {
+  const c = canvas(size);
+  const g = c.getContext("2d")!;
+  const rng = createRng(31);
+  for (let i = 0; i < 70; i++) {
+    const x = rng.range(0.08, 0.92) * size;
+    const h = rng.range(0.45, 0.98) * size;
+    const lean = rng.range(-0.18, 0.18) * size;
+    const w = rng.range(1.2, 2.8) * (size / 128);
+    const shade = rng.range(0.7, 1.1);
+    const dry = rng.next() < 0.18;
+    const r = (dry ? 150 : 70) * shade;
+    const gr = (dry ? 140 : 118) * shade;
+    const b = (dry ? 80 : 45) * shade;
+    const grad = g.createLinearGradient(0, size, 0, size - h);
+    grad.addColorStop(0, `rgb(${r * 0.45 | 0},${gr * 0.5 | 0},${b * 0.45 | 0})`);
+    grad.addColorStop(1, `rgb(${r | 0},${gr | 0},${b | 0})`);
+    g.fillStyle = grad;
+    g.beginPath();
+    g.moveTo(x - w, size);
+    g.quadraticCurveTo(x + lean * 0.3, size - h * 0.6, x + lean, size - h);
+    g.quadraticCurveTo(x + lean * 0.3 + w * 0.5, size - h * 0.6, x + w, size);
+    g.closePath();
+    g.fill();
+  }
+  return alphaTexture(c);
+}
+
+/** A cluster of broad leaves on transparent background. */
+export function leafClusterTexture(size = 256) {
+  const c = canvas(size);
+  const g = c.getContext("2d")!;
+  const rng = createRng(32);
+  for (let i = 0; i < 150; i++) {
+    const a = rng.next() * Math.PI * 2;
+    const r = Math.sqrt(rng.next()) * size * 0.42;
+    const x = size / 2 + Math.cos(a) * r;
+    const y = size / 2 + Math.sin(a) * r;
+    const len = rng.range(0.06, 0.11) * size;
+    const light = rng.range(0.55, 1.15) * (1 - (y / size) * 0.35);
+    g.save();
+    g.translate(x, y);
+    g.rotate(rng.next() * Math.PI * 2);
+    g.fillStyle = `rgb(${(58 * light) | 0},${(96 * light) | 0},${(38 * light) | 0})`;
+    g.beginPath();
+    g.ellipse(0, 0, len, len * 0.42, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = `rgba(30,50,20,0.5)`;
+    g.lineWidth = Math.max(1, size / 256);
+    g.beginPath();
+    g.moveTo(-len, 0);
+    g.lineTo(len, 0);
+    g.stroke();
+    g.restore();
+  }
+  return alphaTexture(c);
+}
+
+/** A drooping spray of pine needles on transparent background. */
+export function pineSprayTexture(size = 256) {
+  const c = canvas(size);
+  const g = c.getContext("2d")!;
+  const rng = createRng(33);
+  for (let b = 0; b < 9; b++) {
+    const x0 = size * 0.5;
+    const y0 = size * 0.08;
+    const ang = Math.PI / 2 + rng.range(-0.8, 0.8);
+    const len = size * rng.range(0.55, 0.85);
+    const x1 = x0 + Math.cos(ang) * len;
+    const y1 = y0 + Math.sin(ang) * len;
+    g.strokeStyle = "rgb(60,44,30)";
+    g.lineWidth = Math.max(1, size / 180);
+    g.beginPath();
+    g.moveTo(x0, y0);
+    g.lineTo(x1, y1);
+    g.stroke();
+    for (let i = 0; i < 90; i++) {
+      const t = rng.next();
+      const px = x0 + (x1 - x0) * t;
+      const py = y0 + (y1 - y0) * t;
+      const na = ang + (rng.next() < 0.5 ? 1 : -1) * rng.range(0.5, 1.2);
+      const nl = size * rng.range(0.03, 0.07) * (1 - t * 0.4);
+      const light = rng.range(0.6, 1.1);
+      g.strokeStyle = `rgb(${(34 * light) | 0},${(70 * light) | 0},${(40 * light) | 0})`;
+      g.lineWidth = Math.max(1, size / 200);
+      g.beginPath();
+      g.moveTo(px, py);
+      g.lineTo(px + Math.cos(na) * nl, py + Math.sin(na) * nl);
+      g.stroke();
+    }
+  }
+  return alphaTexture(c);
+}
+
+/** Soft cumulus clouds for the sky dome (white with alpha). */
+export function cloudTexture(w = 1024, h = 256) {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d")!;
+  const img = g.createImageData(w, h);
+  const rng = createRng(34);
+  const n = fbm(rng, [4, 8, 16, 32]);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const u = x / w;
+      const v = y / h;
+      const d = n(u, v * 0.25);
+      // Fade toward the horizon (bottom) and zenith (top).
+      const band = Math.sin(v * Math.PI);
+      const a = Math.max(0, Math.min(1, (d - 0.5) * 3.2)) * band;
+      const shade = 225 + (1 - v) * 30 - (d - 0.5) * 60;
+      const i = (y * w + x) * 4;
+      img.data[i] = shade;
+      img.data[i + 1] = shade;
+      img.data[i + 2] = shade + 6;
+      img.data[i + 3] = a * 235;
+    }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
   return t;
 }

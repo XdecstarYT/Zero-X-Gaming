@@ -59,7 +59,7 @@ export function Locker() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#ffb321]">Neon Siege</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.3em] text-warning">Neon Siege</p>
       <h1 className="font-display text-3xl font-black uppercase tracking-tight sm:text-4xl">Locker</h1>
       <p className="mt-1 text-sm text-muted">
         Equip what you&apos;ve unlocked. Earn more on the{" "}
@@ -132,7 +132,12 @@ export function Locker() {
                       />
                       <span className="px-2 pb-2">
                         <span className="block truncate text-sm font-semibold">{itemName(tab, item)}</span>
-                        <span className="block text-[11px]" style={{ color: owned ? rarityColor(rarity) : undefined }}>
+                        <span className="flex items-center gap-1.5 text-[11px] text-muted">
+                          <span
+                            aria-hidden
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ background: owned ? rarityColor(rarity) : "var(--zx-border-strong)" }}
+                          />
                           {equipped ? (
                             "Equipped"
                           ) : owned ? (

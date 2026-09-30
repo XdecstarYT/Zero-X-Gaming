@@ -115,8 +115,10 @@ sight, hearing, and noticing who shot them). Difficulty changes reaction time, a
 
 **Rendering** (`render3d.ts`, `three/`, lazy-loaded)
 
-- Everything is procedural (no downloaded assets):
-  - PBR-ish textures: brick, concrete, asphalt, grass, wood, bark, roof tiles, stone.
+- Everything is procedural (no downloaded assets). High adds GTAO ambient occlusion, 4K shadows, a filmic grade and
+  SMAA:
+  - Normal-mapped textures: brick, concrete, asphalt, grass, wood, bark, roof tiles, stone.
+  - Foliage-card trees, instanced wind-swayed grass, sidewalks, curbs and street lamps, and a cloud layer.
   - The atmospheric `Sky` with image-based lighting, a sun with soft shadows (High quality), and distance fog.
 - The static town is merged by material into a couple of dozen draw calls.
 - Characters are animated humanoids in their outfit (walk cycle, aiming, recoil, falling on elimination).
@@ -153,6 +155,11 @@ empty slots. The match runs to 15 kills or 5 minutes.
   next-oldest peer adopts the bots from its last snapshot.
 - **Sync:** fighters broadcast state at 15 Hz, and other clients interpolate.
 - **Unranked:** there's no authoritative server, so online scores never reach the leaderboards.
+
+### Themes
+
+Settings → Theme switches between **Classic** (dark neon) and **X-1+** (light and friendly). Both are the same CSS
+tokens in `src/app/globals.css` (`html[data-theme="x1"]` overrides them), applied before paint by `themeScript`.
 
 ### Intro splash
 

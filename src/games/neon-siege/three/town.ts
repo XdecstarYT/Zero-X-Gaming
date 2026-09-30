@@ -9,8 +9,12 @@ import {
   concreteTexture,
   crateTexture,
   dirtTexture,
+  grassBladesTexture,
   grassTexture,
+  leafClusterTexture,
+  pineSprayTexture,
   roofTexture,
+  setTextureDetail,
   stoneTexture,
   woodFloorTexture,
   type TexSet,
@@ -76,8 +80,8 @@ function mat4(x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, ry = 0, r
 function std(t: TexSet | null, opts: THREE.MeshStandardMaterialParameters = {}) {
   return new THREE.MeshStandardMaterial({
     map: t?.map ?? null,
-    bumpMap: t?.bump ?? null,
-    bumpScale: t?.bump ? 1.2 : 0,
+    normalMap: t?.normal ?? null,
+    normalScale: new THREE.Vector2(1, 1),
     roughness: 0.9,
     metalness: 0,
     ...opts,
@@ -140,6 +144,7 @@ export function buildTown(map: GameMap, opts: TownOptions) {
   const ground = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? GROUND.grass : map.ground[y * W + x]);
 
   // ------------------------------------------------------------ materials
+  setTextureDetail(opts.detail);
   const tex = {
     grass: grassTexture(),
     asphalt: asphaltTexture(),
@@ -165,18 +170,37 @@ export function buildTown(map: GameMap, opts: TownOptions) {
     roof: std(tex.roof, { roughness: 0.8 }),
     flatRoof: std(tex.concrete, { color: "#8d8a84" }),
     glass: new THREE.MeshStandardMaterial({ color: "#6f8ea6", roughness: 0.08, metalness: 0.9, envMapIntensity: 1.4 }),
-    frame: std(null, { color: "#f0ece2", roughness: 0.6 }),
+    frame: std(null, { color: "#d9d4c7", roughness: 0.7 }),
     door: std(null, { color: "#5a3b24", roughness: 0.7 }),
     crate: std(tex.crate, { roughness: 0.85 }),
     bark: std(tex.bark),
     leaves: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: false }),
+    leafCards: new THREE.MeshStandardMaterial({
+      map: leafClusterTexture(opts.detail === "high" ? 256 : 128),
+      alphaTest: 0.45,
+      side: THREE.DoubleSide,
+      vertexColors: true,
+      roughness: 0.85,
+    }),
+    pineCards: new THREE.MeshStandardMaterial({
+      map: pineSprayTexture(opts.detail === "high" ? 256 : 128),
+      alphaTest: 0.4,
+      side: THREE.DoubleSide,
+      vertexColors: true,
+      roughness: 0.9,
+    }),
+    sidewalk: std(tex.concrete, { color: "#c9c6bf" }),
+    curb: std(tex.concrete, { color: "#a9a69f" }),
+    plinth: std(tex.concrete, { color: "#77736c" }),
+    lampPole: new THREE.MeshStandardMaterial({ color: "#3a3d40", metalness: 0.7, roughness: 0.45 }),
+    lampGlass: new THREE.MeshStandardMaterial({ color: "#fff4d6", emissive: "#ffe2a8", emissiveIntensity: 0.6, roughness: 0.2 }),
     rock: std(tex.stone, { vertexColors: true }),
     fence: std(null, { color: "#7a5c3e", roughness: 0.9 }),
     paint: std(null, { color: "#e9e4d0", roughness: 0.7 }),
     hill: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }),
   };
   const tile = (t: TexSet, rx: number, ry = rx) => {
-    for (const x of [t.map, t.bump]) x?.repeat.set(rx, ry);
+    for (const x of [t.map, t.bump, t.normal]) x?.repeat.set(rx, ry);
   };
   tile(tex.grass, 1 / 3);
   tile(tex.asphalt, 1 / 4);
@@ -212,6 +236,55 @@ export function buildTown(map: GameMap, opts: TownOptions) {
       else if (g === GROUND.floor) batch.add("floor", mats.wood, quadAt(x, y), mat4(0, 0.02, 0), undefined, false);
       else if (g === GROUND.dirt) batch.add("dirt", mats.dirt, quadAt(x, y), mat4(0, 0.008, 0), undefined, false);
     }
+  // Sidewalks (with a curb on the road side) and street lamps along every road.
+  const slab = metricBox(1, 0.06, 1, 1.5, 1.5);
+  const curbV = metricBox(0.14, 0.13, 1);
+  const curbH = metricBox(1, 0.13, 0.14);
+  const nb: [number, number][] = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+  for (let y = 1; y < H - 1; y++)
+    for (let x = 1; x < W - 1; x++) {
+      if (ground(x, y) === GROUND.road || ground(x, y) === GROUND.floor || cell(x, y) !== 0) continue;
+      const roadSides = nb.filter(([dx, dy]) => ground(x + dx, y + dy) === GROUND.road);
+      if (!roadSides.length) continue;
+      batch.add("sidewalk", mats.sidewalk, slab, mat4(x + 0.5, 0.03, y + 0.5), undefined, false);
+      for (const [dx, dy] of roadSides)
+        batch.add(
+          "curb",
+          mats.curb,
+          dx ? curbV : curbH,
+          mat4(x + 0.5 + dx * 0.43, 0.065, y + 0.5 + dy * 0.43),
+          undefined,
+          false,
+        );
+      if ((x * 7 + y * 13) % 17 === 0) {
+        const [dx, dy] = roadSides[0];
+        const px = x + 0.5 - dx * 0.25;
+        const pz = y + 0.5 - dy * 0.25;
+        batch.add("lampPole", mats.lampPole, new THREE.CylinderGeometry(0.045, 0.07, 4.6, 8), mat4(px, 2.3, pz));
+        const armLen = 1.1;
+        const ang = Math.atan2(dy, dx);
+        batch.add(
+          "lampPole",
+          mats.lampPole,
+          new THREE.BoxGeometry(armLen, 0.06, 0.06),
+          mat4(px + Math.cos(ang) * armLen * 0.5, 4.55, pz + Math.sin(ang) * armLen * 0.5, 1, 1, 1, -ang),
+        );
+        batch.add(
+          "lampGlass",
+          mats.lampGlass,
+          new THREE.BoxGeometry(0.42, 0.1, 0.22),
+          mat4(px + Math.cos(ang) * armLen, 4.48, pz + Math.sin(ang) * armLen, 1, 1, 1, -ang),
+          undefined,
+          false,
+        );
+      }
+    }
+
   // Centre-line dashes on straight road bands (2 or 4 cells wide), skipping junctions.
   const dash = new THREE.BoxGeometry(0.9, 0.01, 0.12);
   const isRoad = (a: number, b: number) => ground(a, b) === GROUND.road;
@@ -299,7 +372,7 @@ export function buildTown(map: GameMap, opts: TownOptions) {
     const x = cx + Math.cos(a) * r;
     const z = cz + Math.sin(a) * r;
     if (x > -1.5 && x < W + 1.5 && z > -1.5 && z < H + 1.5) continue;
-    addTree(batch, mats, x, z, (rng.next() * 1e9) >>> 0, opts.detail);
+    addTree(batch, mats, x, z, (rng.next() * 1e9) >>> 0, opts.detail, true);
   }
   for (let i = 0; i < 26; i++) {
     const a = (i / 26) * Math.PI * 2 + rng.range(-0.1, 0.1);
@@ -311,9 +384,17 @@ export function buildTown(map: GameMap, opts: TownOptions) {
   }
 
   batch.flush(root, opts.shadows);
-  return root;
+  const time = { value: 0 };
+  root.add(buildGrass(map, opts.detail, time));
+  return { root, time };
 }
 
+const cardGeo = new THREE.PlaneGeometry(1, 1);
+
+/**
+ * Trees built SpeedTree-style from alpha-tested foliage cards (leaf clusters or
+ * pine sprays) around a trunk, plus a dark inner mass so canopies read solid.
+ */
 function addTree(
   batch: Batcher,
   mats: Record<string, THREE.Material>,
@@ -321,37 +402,136 @@ function addTree(
   z: number,
   hash: number,
   detail: "high" | "low",
+  far = false,
 ) {
+  const rng = createRng(hash);
   const pine = hash % 3 !== 0;
   const scale = 0.85 + (hash % 13) / 30;
-  const trunkH = pine ? 2.2 * scale : 2.6 * scale;
-  batch.add("bark", mats.bark, new THREE.CylinderGeometry(0.12, 0.2, trunkH, 7), mat4(x, trunkH / 2, z));
   const hue = 0.25 + ((hash >> 4) % 10) / 160;
+  const lod = far ? 0.35 : detail === "high" ? 1 : 0.6;
   if (pine) {
-    const layers = detail === "high" ? 4 : 3;
-    for (let i = 0; i < layers; i++) {
-      const r = (1.6 - i * 0.32) * scale;
-      const h = 1.9 * scale;
-      const y = trunkH * 0.55 + i * 1.05 * scale + h / 2;
-      const col = new THREE.Color().setHSL(hue + 0.05, 0.42, 0.2 + i * 0.025, THREE.SRGBColorSpace);
-      batch.add("leaves", mats.leaves, lumpy(new THREE.ConeGeometry(r, h, 9, 1), hash + i, 0.08), mat4(x, y, z, 1, 1, 1, (hash % 10) * 0.3), col);
+    const height = 7.5 * scale;
+    batch.add("bark", mats.bark, new THREE.CylinderGeometry(0.07, 0.24, height, 8), mat4(x, height / 2, z));
+    const tiers = Math.max(3, Math.round(7 * lod));
+    for (let i = 0; i < tiers; i++) {
+      const t = i / (tiers - 1);
+      const r = (1.9 - t * 1.55) * scale;
+      const top = 1.6 * scale + t * (height - 1.9 * scale) + 0.4;
+      const cards = far ? 2 : detail === "high" ? 5 : 4;
+      const col = new THREE.Color().setHSL(hue + 0.06, 0.25, 0.8 + rng.range(-0.08, 0.06) + t * 0.05, THREE.SRGBColorSpace);
+      for (let k = 0; k < cards; k++) {
+        const ry = (k / cards) * Math.PI + rng.range(0, 0.6);
+        const tilt = far ? 0 : rng.range(-0.28, 0.28);
+        batch.add("pineCards", mats.pineCards, cardGeo, mat4(x, top - r * 0.5, z, r * 2.1, r * 1.05, 1, ry, tilt), col, true);
+      }
     }
-  } else {
-    const blobs = detail === "high" ? 4 : 2;
-    for (let i = 0; i < blobs; i++) {
-      const a = i * 2.1 + (hash % 7);
-      const off = i === 0 ? 0 : 0.7 * scale;
-      const r = (i === 0 ? 1.5 : 1.05) * scale;
-      const col = new THREE.Color().setHSL(hue, 0.45, 0.25 + ((hash >> (i + 2)) % 5) * 0.015, THREE.SRGBColorSpace);
+    if (!far)
       batch.add(
         "leaves",
         mats.leaves,
-        lumpy(new THREE.IcosahedronGeometry(r, 1), hash + i * 17, 0.18),
-        mat4(x + Math.cos(a) * off, trunkH + r * 0.55 + (i ? 0.3 : 0), z + Math.sin(a) * off),
+        lumpy(new THREE.ConeGeometry(0.75 * scale, height * 0.62, 8, 1), hash, 0.06),
+        mat4(x, 1.9 * scale + height * 0.31, z),
+        new THREE.Color().setHSL(hue + 0.06, 0.4, 0.2, THREE.SRGBColorSpace),
+      );
+  } else {
+    const trunkH = 2.8 * scale;
+    batch.add("bark", mats.bark, new THREE.CylinderGeometry(0.13, 0.24, trunkH, 8), mat4(x, trunkH / 2, z));
+    if (!far)
+      for (let b = 0; b < 3; b++) {
+        const a = b * 2.1 + rng.next();
+        batch.add(
+          "bark",
+          mats.bark,
+          new THREE.CylinderGeometry(0.05, 0.09, 1.5 * scale, 6),
+          mat4(x + Math.cos(a) * 0.35, trunkH + 0.45, z + Math.sin(a) * 0.35, 1, 1, 1, -a, 0, 0.6),
+        );
+      }
+    const R = 2.0 * scale;
+    const cy = trunkH + R * 0.7;
+    batch.add(
+      "leaves",
+      mats.leaves,
+      lumpy(new THREE.IcosahedronGeometry(R * 0.72, 1), hash, 0.2),
+      mat4(x, cy, z, 1, 0.82, 1),
+      new THREE.Color().setHSL(hue, 0.4, 0.2, THREE.SRGBColorSpace),
+    );
+    const cards = Math.round(38 * lod);
+    for (let i = 0; i < cards; i++) {
+      // Random point in the canopy ellipsoid, biased to the surface.
+      const u = rng.next() * Math.PI * 2;
+      const v = Math.acos(rng.range(-0.7, 1));
+      const rr = R * (0.55 + 0.45 * Math.sqrt(rng.next()));
+      const px = x + Math.sin(v) * Math.cos(u) * rr;
+      const py = cy + Math.cos(v) * rr * 0.8;
+      const pz = z + Math.sin(v) * Math.sin(u) * rr;
+      const size = rng.range(1.2, 1.8) * scale;
+      const top = (py - cy) / R;
+      const col = new THREE.Color().setHSL(hue + rng.range(-0.02, 0.02), 0.3, 0.8 + top * 0.1 + rng.range(-0.1, 0.06), THREE.SRGBColorSpace);
+      batch.add(
+        "leafCards",
+        mats.leafCards,
+        cardGeo,
+        mat4(px, py, pz, size, size, 1, rng.next() * Math.PI * 2, rng.range(-0.9, 0.9), rng.range(-0.5, 0.5)),
         col,
+        true,
       );
     }
   }
+}
+
+/** Wind-swayed grass tufts scattered over open grass (High / Low detail). */
+function buildGrass(map: GameMap, detail: "high" | "low", time: { value: number }) {
+  const W = map.width;
+  const H = map.height;
+  const count = detail === "high" ? 26000 : 7000;
+  const a = new THREE.PlaneGeometry(0.7, 0.5);
+  a.translate(0, 0.25, 0);
+  const b = a.clone().rotateY(Math.PI / 2);
+  const c = a.clone().rotateY(Math.PI / 4);
+  const geo = mergeGeometries([a, b, c])!;
+  // Point normals up so both faces light like the ground (no dark backsides).
+  const n = geo.attributes.normal as THREE.BufferAttribute;
+  for (let i = 0; i < n.count; i++) n.setXYZ(i, 0, 1, 0);
+  const mat = new THREE.MeshStandardMaterial({
+    map: grassBladesTexture(detail === "high" ? 128 : 64),
+    alphaTest: 0.4,
+    side: THREE.DoubleSide,
+    roughness: 1,
+  });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = time;
+    sh.vertexShader = `uniform float uTime;\n${sh.vertexShader}`.replace(
+      "#include <begin_vertex>",
+      `#include <begin_vertex>
+       vec4 wp0 = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+       float sway = sin(uTime * 1.8 + wp0.x * 0.35 + wp0.z * 0.25) * 0.5 + sin(uTime * 3.1 + wp0.z * 0.9) * 0.2;
+       transformed.x += sway * 0.12 * position.y;
+       transformed.z += sway * 0.06 * position.y;`,
+    );
+  };
+  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  const rng = createRng(77);
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const col = new THREE.Color();
+  let placed = 0;
+  for (let tries = 0; tries < count * 4 && placed < count; tries++) {
+    const x = rng.range(1, W - 1);
+    const y = rng.range(1, H - 1);
+    const i = Math.floor(y) * W + Math.floor(x);
+    if (map.cells[i] !== 0 || (map.ground[i] !== GROUND.grass && !(map.ground[i] === GROUND.dirt && rng.next() < 0.2))) continue;
+    const s = rng.range(0.7, 1.35);
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng.next() * Math.PI);
+    m.compose(new THREE.Vector3(x, 0, y), q, new THREE.Vector3(s, s * rng.range(0.8, 1.3), s));
+    mesh.setMatrixAt(placed, m);
+    col.setHSL(0.24 + rng.range(-0.03, 0.03), 0.35, rng.range(0.42, 0.62), THREE.SRGBColorSpace);
+    mesh.setColorAt(placed, col);
+    placed++;
+  }
+  mesh.count = placed;
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+  return mesh;
 }
 
 function addBuilding(
@@ -442,6 +622,15 @@ function addBuilding(
       const ny = y + dy;
       const inside = nx >= b.x && nx < b.x + b.w && ny >= b.y && ny < b.y + b.h;
       if (inside || cell(nx, ny) !== 0 || ground(nx, ny) === GROUND.floor) continue;
+      // Concrete plinth along the base of the wall.
+      batch.add(
+        "plinth",
+        mats.plinth,
+        new THREE.BoxGeometry(dx ? 0.08 : 1, 0.42, dx ? 1 : 0.08),
+        mat4(px + dx * 0.53, 0.21, pz + dy * 0.53),
+        undefined,
+        false,
+      );
       if ((x + y) % 3 !== 0) continue;
       for (let f = 0; f < b.floors; f++) {
         const wy = f * FLOOR_H + 1.55;

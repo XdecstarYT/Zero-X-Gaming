@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { wrapOf } from "../cosmetics";
 import { RARITY, type ConsumableKind, type Rarity, type WeaponKind } from "../items";
 import { wrapTexture } from "./textures";
@@ -69,7 +70,8 @@ const geoCache = new Map<string, THREE.BufferGeometry>();
 function box(w: number, h: number, d: number) {
   const k = `b${w},${h},${d}`;
   let g = geoCache.get(k);
-  if (!g) geoCache.set(k, (g = new THREE.BoxGeometry(w, h, d)));
+  // Slightly rounded edges read as machined metal / moulded polymer.
+  if (!g) geoCache.set(k, (g = new RoundedBoxGeometry(w, h, d, 2, Math.min(w, h, d) * 0.22)));
   return g;
 }
 function cyl(r: number, len: number, seg = 12) {

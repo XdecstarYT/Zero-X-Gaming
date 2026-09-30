@@ -49,10 +49,12 @@ export function BattlePass() {
               Season {SEASON.number}
               {left ? ` · ${left.days} days left` : ""}
             </p>
-            <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight sm:text-5xl">{SEASON.name}</h1>
+            <h1 className="mt-1 font-display text-3xl font-black uppercase tracking-tight sm:text-5xl">
+              {SEASON.name}
+            </h1>
             <p className="mt-2 max-w-xl text-sm text-muted">
-              Play Neon Siege battle royale to earn Season XP. Every tier unlocks an outfit, weapon wrap or banner. It&apos;s
-              all free: nothing to buy, just play.
+              Play Neon Siege battle royale to earn Season XP. Every tier unlocks an outfit, weapon wrap or banner.
+              It&apos;s all free: nothing to buy, just play.
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -74,7 +76,11 @@ export function BattlePass() {
         </div>
         <div className="relative mt-6">
           <div className="flex justify-between text-xs text-muted">
-            <span>{tier >= SEASON.tiers ? "Battle pass complete!" : `${formatNumber(into)} / ${formatNumber(need)} XP to tier ${tier + 1}`}</span>
+            <span>
+              {tier >= SEASON.tiers
+                ? "Battle pass complete!"
+                : `${formatNumber(into)} / ${formatNumber(need)} XP to tier ${tier + 1}`}
+            </span>
             <span>{formatNumber(xp)} Season XP</span>
           </div>
           <div
@@ -85,7 +91,10 @@ export function BattlePass() {
             aria-valuemax={need}
             aria-valuenow={into}
           >
-            <div className="h-full rounded-full bg-gradient-to-r from-[#ffb321] to-[#ff6a3d]" style={{ width: `${pct * 100}%` }} />
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#ffb321] to-[#ff6a3d]"
+              style={{ width: `${pct * 100}%` }}
+            />
           </div>
           {state && (
             <p className="mt-3 text-xs text-muted">
@@ -97,12 +106,17 @@ export function BattlePass() {
 
       {state && !state.signedIn && (
         <div className="mt-4 flex flex-col items-start gap-3 rounded-lg border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted">Playing as a guest: your battle pass progress is saved on this device only.</p>
+          <p className="text-sm text-muted">
+            Playing as a guest: your battle pass progress is saved on this device only.
+          </p>
           <SignInButton size="sm">Sign in to save progress</SignInButton>
         </div>
       )}
       {error && (
-        <div role="alert" className="mt-4 flex items-center justify-between rounded-lg border border-danger/50 bg-danger/10 p-4 text-sm">
+        <div
+          role="alert"
+          className="mt-4 flex items-center justify-between rounded-lg border border-danger/50 bg-danger/10 p-4 text-sm"
+        >
           Couldn&apos;t load your season progress.
           <button type="button" onClick={reload} className="font-semibold text-cyan hover:underline">
             Retry
@@ -117,7 +131,9 @@ export function BattlePass() {
           return (
             <div key={kind} className="rounded-xl border border-border bg-surface p-4 sm:p-5">
               <div className="flex items-baseline justify-between">
-                <h2 className="font-display text-lg font-bold uppercase tracking-wide">{kind === "daily" ? "Daily" : "Weekly"} challenges</h2>
+                <h2 className="font-display text-lg font-bold uppercase tracking-wide">
+                  {kind === "daily" ? "Daily" : "Weekly"} challenges
+                </h2>
                 {list[0] && now && <p className="text-xs text-muted">Resets in {resetsIn(list[0].endsAt - now)}</p>}
               </div>
               <ul className="mt-3 flex flex-col gap-3">
@@ -163,7 +179,12 @@ export function BattlePass() {
                 <RewardArt kind={r.kind} item={r.item} className="mx-2 mt-1.5 aspect-[4/3]" />
                 <div className="px-2 pt-1.5 pb-2">
                   <p className="truncate text-sm font-semibold">{itemName(r.kind, r.item)}</p>
-                  <p className="text-[11px] capitalize" style={{ color: rarityColor(rarity) }}>
+                  <p className="flex items-center gap-1.5 text-[11px] text-muted capitalize">
+                    <span
+                      aria-hidden
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ background: rarityColor(rarity) }}
+                    />
                     {rarity} {r.kind}
                   </p>
                 </div>
@@ -186,11 +207,16 @@ function ChallengeRow({ c, progress }: { c: ActiveChallenge; progress?: { progre
           {done ? "✓ " : ""}
           {c.title}
         </p>
-        <span className="shrink-0 rounded bg-black/30 px-1.5 py-0.5 text-[11px] font-bold text-[#ffb321]">+{formatNumber(c.xp)} XP</span>
+        <span className="shrink-0 rounded bg-warning/10 px-1.5 py-0.5 text-[11px] font-bold text-warning">
+          +{formatNumber(c.xp)} XP
+        </span>
       </div>
       <div className="mt-2 flex items-center gap-2">
         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-black/40">
-          <div className={cn("h-full rounded-full", done ? "bg-success" : "bg-cyan")} style={{ width: `${Math.min(100, (p / c.goal) * 100)}%` }} />
+          <div
+            className={cn("h-full rounded-full", done ? "bg-success" : "bg-cyan")}
+            style={{ width: `${Math.min(100, (p / c.goal) * 100)}%` }}
+          />
         </div>
         <span className="text-[11px] tabular-nums text-muted">
           {formatNumber(p)} / {formatNumber(c.goal)}

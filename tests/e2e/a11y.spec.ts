@@ -67,7 +67,7 @@ test("no serious accessibility violations in the Neon Siege mission menu", async
   );
 });
 
-for (const path of ["/", "/settings", "/battle-pass", "/games/neon-siege"]) {
+for (const path of ["/", "/games", "/settings", "/battle-pass", "/locker", "/games/neon-siege"]) {
   test(`X-1+ theme: no serious accessibility violations on ${path}`, async ({ page }) => {
     await page.addInitScript(() =>
       localStorage.setItem("zx-settings", JSON.stringify({ state: { theme: "x1" }, version: 2 })),

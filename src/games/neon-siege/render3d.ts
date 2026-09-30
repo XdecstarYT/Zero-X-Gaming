@@ -1,12 +1,18 @@
 import * as THREE from "three";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
 import { outfitOf, wrapOf } from "./cosmetics";
 import { RARITY, WEAPONS, type Item } from "./items";
 import type { GameMap } from "./map";
 import { activeItem, activeWeapon, DRAW_TIME, type Entity, type World } from "./world";
 import { Character } from "./three/character";
 import { buildConsumable, buildGun, type GunModel } from "./three/guns";
-import { flashTexture, glowTexture, stormTexture } from "./three/textures";
+import { cloudTexture, flashTexture, glowTexture, stormTexture } from "./three/textures";
 import { buildTown } from "./three/town";
 import { FOV_DEG, zoomFor, type ViewFx, type ViewRenderer } from "./view";
 
@@ -47,6 +53,12 @@ export class ThreeView implements ViewRenderer {
   private ro: ResizeObserver;
   private map: GameMap | null = null;
   private town: THREE.Group | null = null;
+  private wind: { value: number } = { value: 0 };
+  private composer: EffectComposer | null = null;
+  private clouds: THREE.Mesh;
+  private blobs = new Map<string, THREE.Mesh>();
+  private blobGeo = new THREE.CircleGeometry(0.42, 20).rotateX(-Math.PI / 2);
+  private blobMat: THREE.MeshBasicMaterial;
   private characters = new Map<string, Character>();
   private nameTags = new Map<string, THREE.Sprite>();
   private loot = new Map<string, THREE.Group>();
@@ -105,6 +117,7 @@ export class ThreeView implements ViewRenderer {
       this.camera.updateProjectionMatrix();
       this.vmCamera.aspect = w / h;
       this.vmCamera.updateProjectionMatrix();
+      this.composer?.setSize(w, h);
     };
     resize();
     this.ro = new ResizeObserver(resize);
@@ -133,10 +146,10 @@ export class ThreeView implements ViewRenderer {
     this.sun.position.copy(sunDir).multiplyScalar(60);
     this.sun.castShadow = high;
     if (high) {
-      this.sun.shadow.mapSize.set(2048, 2048);
+      this.sun.shadow.mapSize.set(4096, 4096);
       const c = this.sun.shadow.camera;
-      c.left = c.bottom = -34;
-      c.right = c.top = 34;
+      c.left = c.bottom = -30;
+      c.right = c.top = 30;
       c.near = 1;
       c.far = 160;
       this.sun.shadow.bias = -0.0004;
@@ -144,6 +157,37 @@ export class ThreeView implements ViewRenderer {
     }
     this.scene.add(this.sun, this.sun.target, this.flashLight);
     this.scene.fog = new THREE.Fog(this.fogBase.clone(), high ? 40 : 28, high ? 150 : 90);
+
+    // Drifting cumulus layer on a dome that follows the camera.
+    const cloudTex = cloudTexture(high ? 1024 : 512, high ? 256 : 128);
+    cloudTex.repeat.set(3, 1);
+    this.clouds = new THREE.Mesh(
+      new THREE.SphereGeometry(900, 48, 12, 0, Math.PI * 2, 0, Math.PI / 2.15),
+      new THREE.MeshBasicMaterial({ map: cloudTex, transparent: true, side: THREE.BackSide, depthWrite: false, fog: false }),
+    );
+    this.clouds.renderOrder = -1;
+    this.scene.add(this.clouds);
+
+    // Soft contact shadows under fighters when real shadows are off (Low).
+    this.blobMat = new THREE.MeshBasicMaterial({ color: "#000", transparent: true, opacity: 0.32, depthWrite: false, map: glowTexture() });
+
+    // High: ambient occlusion, a filmic grade, SMAA.
+    if (high) {
+      const r = host.getBoundingClientRect();
+      const w = Math.max(1, r.width);
+      const h = Math.max(1, r.height);
+      const target = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 0 });
+      this.composer = new EffectComposer(this.renderer, target);
+      this.composer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      const ao = new GTAOPass(this.scene, this.camera, w, h);
+      ao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.4, thickness: 1.2, scale: 1.1 });
+      ao.blendIntensity = 0.9;
+      this.composer.addPass(ao);
+      this.composer.addPass(new OutputPass());
+      this.composer.addPass(new ShaderPass(GRADE_SHADER));
+      this.composer.addPass(new SMAAPass());
+    }
 
     // Storm wall.
     this.stormTex = stormTexture();
@@ -189,6 +233,7 @@ export class ThreeView implements ViewRenderer {
 
   destroy() {
     this.ro.disconnect();
+    this.composer?.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.canvas.remove();
@@ -199,7 +244,9 @@ export class ThreeView implements ViewRenderer {
   private buildWorld(world: World) {
     if (this.town) this.scene.remove(this.town);
     this.map = world.map;
-    this.town = buildTown(world.map, { shadows: this.quality === "high", detail: this.quality });
+    const built = buildTown(world.map, { shadows: this.quality === "high", detail: this.quality });
+    this.town = built.root;
+    this.wind = built.time;
     this.scene.add(this.town);
     for (const g of this.loot.values()) this.scene.remove(g);
     this.loot.clear();
@@ -306,8 +353,13 @@ export class ThreeView implements ViewRenderer {
     this.updateStorm(fx, me, t);
     this.updateViewmodel(world, me, fx, t, dt);
 
+    this.wind.value = t;
+    this.clouds.position.set(me.x, -40, me.y);
+    this.clouds.rotation.y = t * 0.002;
+
     this.renderer.clear();
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
     if (this.vm.visible) {
       this.renderer.clearDepth();
       this.renderer.render(this.vmScene, this.vmCamera);
@@ -323,6 +375,8 @@ export class ThreeView implements ViewRenderer {
         this.characters.delete(id);
         this.nameTags.get(id)?.removeFromParent();
         this.nameTags.delete(id);
+        this.blobs.get(id)?.removeFromParent();
+        this.blobs.delete(id);
       }
     }
     for (const e of world.entities.values()) {
@@ -339,6 +393,17 @@ export class ThreeView implements ViewRenderer {
       ch.setItem(activeItem(e));
       ch.root.position.set(e.x, 0, e.y);
       ch.root.rotation.y = -e.angle;
+      if (this.quality !== "high") {
+        let blob = this.blobs.get(e.id);
+        if (!blob) {
+          blob = new THREE.Mesh(this.blobGeo, this.blobMat);
+          blob.renderOrder = 1;
+          this.blobs.set(e.id, blob);
+          this.scene.add(blob);
+        }
+        blob.position.set(e.x, 0.03, e.y);
+        blob.visible = e.alive;
+      }
       ch.update(
         {
           speed: e.speed,
@@ -586,6 +651,25 @@ function aimArm(arm: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3) {
   const glove = arm.children[0];
   glove.scale.set(1, 1 / Math.max(0.01, len), 1);
 }
+
+/** Final display-space grade: a touch of contrast and warmth, and a soft vignette. */
+const GRADE_SHADER = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec3 col = c.rgb;
+      col = mix(vec3(dot(col, vec3(0.299, 0.587, 0.114))), col, 1.06);
+      col = (col - 0.5) * 1.05 + 0.5;
+      col *= vec3(1.02, 1.0, 0.97);
+      float d = distance(vUv, vec2(0.5));
+      col *= mix(1.0, 0.78, smoothstep(0.45, 0.85, d));
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), c.a);
+    }`,
+};
 
 /** Opaque at the bottom, fading out toward the top (storm wall). */
 function fadeUpTexture() {

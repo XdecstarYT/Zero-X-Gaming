@@ -6,7 +6,11 @@ import { cn } from "@/lib/cn";
 export function rarityOf(kind: CosmeticKind, item: string): Rarity {
   if (kind === "outfit") return OUTFITS[item]?.rarity ?? "common";
   if (kind === "wrap") return WRAPS[item]?.rarity ?? "common";
-  return item === "rookie" ? "common" : ["gilded", "victory", "apex", "legend", "zero"].includes(item) ? "legendary" : "rare";
+  return item === "rookie"
+    ? "common"
+    : ["gilded", "victory", "apex", "legend", "zero"].includes(item)
+      ? "legendary"
+      : "rare";
 }
 
 export function itemName(kind: CosmeticKind, item: string) {
