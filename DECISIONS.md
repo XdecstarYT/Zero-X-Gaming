@@ -290,4 +290,18 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     differences between clients change where a grenade lands by centimetres, which is acceptable.
 78. **Breakthrough reuses the Conquest flags.** Sectors are fixed flag groups (A+B, C, D+E) because every front is
     point-mirrored with the flags laid out west to east, so the attack always pushes across the whole map.
+79. **"Classic" is Conquest.** The mode picker shows Classic / Frontline / Breakthrough; internally Classic is still
+    `conquest`, so old lobbies, saves and the database keep working.
+80. **Frontline gets its own map.** The other fronts are point-mirrored for fairness, which doesn't fit a one-way
+    landing, so Frontline always fights at Cape Helles, a 280 m corridor built for it (beach, two villages,
+    no-man's-land, HQ). It isn't offered for Classic or Breakthrough. Redeploys are per soldier: each client
+    tracks its own and shares the count in its state; the host decides when the landing is wiped out.
+81. **The mega ad can't be skipped, but it can't trap anyone either.** It shows once per browser, is marked seen
+    when it starts (a reload mid-ad doesn't replay it), and doesn't show on invite links.
+82. **Code 3 is original.** The request named a well-known police mod for an open-world game; Code 3 takes the
+    genre (patrols, callouts, traffic stops, pursuits) but uses its own city, names, vehicles and art.
+83. **Code 3's score is ranked, with loose limits.** A shift is single-player and simulated on the client, like the
+    arcade games, so the server only checks plausibility (at most 100 000 points and 80 a second). Penalties can
+    take a shift below zero; the submitted score is floored at 0. The `?code3=quick` test mode is unranked.
+84. **Code 3 uses a new "Sim" category.** The games table's category check was widened to include `sim`.
 

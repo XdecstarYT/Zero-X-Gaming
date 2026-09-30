@@ -7,6 +7,7 @@ import type { GameFactory } from "./types";
 export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }>> = {
   "neon-siege": () => import("./neon-siege/entry"),
   trenches: () => import("./trenches/entry"),
+  "code-3": () => import("./code-3/index"),
 };
 
 export function hasGame(slug: string) {

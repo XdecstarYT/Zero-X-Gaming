@@ -5,10 +5,12 @@ A browser gaming hub: discover, play, and compete in original web games. Dark, n
 **Status:** all six phases are complete, plus an intro splash and an arena FPS with bots and online play. The project
 has:
 
-- 2 full 3D shooters: **Trenches**, a realistic Great War shooter (five large fronts, diggable trenches,
-  multiplayer lobbies, Conquest) and **Neon Siege**, a battle royale with AI bots, online rooms and a Season 1
-  battle pass
-- a cinematic intro splash on each visitor's first page load in a session
+- 3 full 3D games: **Trenches**, a realistic Great War shooter (six fronts, diggable trenches, multiplayer
+  lobbies, Classic / Frontline / Breakthrough, loadouts and support calls), **Neon Siege**, a battle royale with
+  AI bots, online rooms and a Season 1 battle pass, and **Code 3**, a police patrol sim (city, traffic, dispatch
+  callouts, traffic stops, pursuits, arrests, careers)
+- a cinematic intro splash on each visitor's first page load in a session, and a one-time "mega ad" for every
+  game right after the very first one
 - ZXG accounts (account name + password, no email): online when Supabase is connected, otherwise saved on the
   device, so sign-up always works
 - server-validated scores
@@ -22,7 +24,8 @@ See [`DECISIONS.md`](./DECISIONS.md) for every deviation from the original brief
 | Game             | Genre          | Controls (keyboard / touch)                                                       |
 | ---------------- | -------------- | --------------------------------------------------------------------------------- |
 | **Neon Siege**   | Battle royale  | WASD + mouse, click fire, right-click aim, E loot, 1–5 switch, R reload · stick, drag look, FIRE/AIM |
-| **Trenches**     | War / Conquest | WASD + mouse, click fire, right-click aim, Shift sprint, C crouch, X prone, Q grenade, hold G dig, 1–5 switch, R reload, Tab scores · stick (push to sprint), drag look, FIRE/AIM/CRCH/PRONE/NADE/DIG |
+| **Trenches**     | War / Conquest | WASD + mouse, click fire, right-click aim, Shift sprint, C crouch, X prone, Q grenade, hold G dig, B artillery, N supplies, T recon, 1–5 switch, R reload, Tab scores · stick (push to sprint), drag look, FIRE/AIM/CRCH/PRONE/NADE/DIG/ARTY/SUP/RCN |
+| **Code 3**       | Police sim     | W/S drive, A/D steer, Space handbrake, Q lights/siren, H yelp, E exit/enter, mouse look, click fire, right-click aim, X taser/sidearm, G shout, 1–9 actions, Y/N dispatch, B backup, Tab MDT · stick, drag look, buttons, tap actions |
 
 Esc (or the pause key from Settings) pauses any game. Games also pause when the tab is hidden.
 
@@ -191,6 +194,20 @@ slug and menu) and optional `ModeController` hooks (`markers`, `tagColor`, `resu
   cell, engineers 3× faster). Digs are broadcast; the host re-sends the full list every 5 s for late joiners.
 - **Conquest** (`conquest.ts`): five flags, 150 tickets a side, 8 s captures (tug-of-war), ticket bleed for the
   side holding more flags, 1 ticket per death, 15-minute limit.
+- **Frontline** (`frontline.ts`, `conquest.ts`): a 280 m landing corridor at **Cape Helles**. Attackers storm W
+  Beach, then Sedd el Bahr, Krithia, the trench line in no-man's-land and finally the concrete HQ, one objective at
+  a time. Every attacker has only 3 redeploys (each objective taken gives one back); defenders win when the
+  25-minute clock runs out or the landing is wiped out.
+- **Loadouts and perks** (`protocol.ts`, `match.ts`): each class picks a primary (Lee-Enfield, scoped
+  Lee-Enfield, Bergmann MP18, M1897 trench gun), a sidearm (Webley, or none to move faster) and a gadget (grenade
+  bag, field dressings, body armour, entrenching tool), remembered per class. Perks: riflemen carry an extra
+  grenade, raiders sprint longer, medics heal over time, snipers' support recharges faster, engineers dig faster.
+- **Support calls:** B calls a 6-shell artillery strike on where you're looking (22–110 m out), N drops a supply
+  crate that restocks your squad, T fires a recon flare that marks enemies within 45 m on the minimap. Each has a
+  cooldown shown under the minimap; player strikes are accepted from their caller only, at most one a minute.
+- **Great War guns and animation** (`neon-siege/three/guns.ts`, `render3d.ts`): walnut-and-blued-steel models
+  of every weapon; the viewmodel cycles the bolt or pump after each shot, reloads with the off hand, lowers and
+  cants when sprinting, sways with breathing, arcs a Mills bomb when throwing and swings a spade when digging.
 - **Breakthrough** (`conquest.ts`): Iron Legion attacks, Crimson Front defends. The flags fall in sectors (A+B,
   then C, then D+E); only the live sector can be fought over. Attackers have 200 tickets (+60 per sector taken),
   defenders never run out; 20-minute limit.
@@ -214,6 +231,43 @@ slug and menu) and optional `ModeController` hooks (`markers`, `tagColor`, `resu
 - **Netcode:** each client owns its soldier (and stance), the oldest peer hosts bots, flags and tickets and
   broadcasts the Conquest state 4× a second. Matches are unranked.
 
+### Code 3: police patrol sim
+
+Code 3 (`src/games/code-3/`) is its own engine: a pure simulation (`sim.ts`, `vehicles.ts`, `city.ts`,
+`people.ts`) that the three.js renderer (`render.ts`, `models.ts`), the DOM HUD (`hud.ts`) and the game module
+(`index.ts`) read. It's inspired by police mods for open-world games, with no borrowed names or assets.
+
+- **Bayview** (`city.ts`): an 8×8 grid of two-lane streets (518 m square) with a downtown of towers, a midtown
+  ring with corner stores, suburbs with houses and trees, an industrial corner with the gas station, a park, the
+  bank, St. Mary's Hospital and the police station. Every intersection has traffic lights on a 20 s cycle.
+- **Driving** (`vehicles.ts`): a bicycle model with tyre grip (handbrake turns slide), damage that slows a car and
+  eventually disables it, circle collisions with buildings and cars, and a PIT spin when you hit a rear quarter.
+  Four units unlock by rank: Patrol Sedan, Interceptor SUV, Slicktop (hidden lights) and Pursuit Coupe.
+- **Traffic AI:** civilian cars follow lanes, stop at red lights, keep their distance, creep on when blocked,
+  pull to the kerb for your siren, and include speeders, drunk and reckless drivers. Pedestrians walk the
+  sidewalks.
+- **Traffic stops, by the book:** follow a car with your lights on (no siren) and it pulls over (or runs); with
+  the siren on you are responding to a call and traffic just clears the way. Walk to the driver's window for the
+  action menu: licence and registration, MDT checks on the driver (licence status, warrants, notes) and the plate
+  (expired, uninsured, stolen), questions, step out, breathalyzer, and a search that needs consent or probable
+  cause (searching after a refusal is unlawful and the evidence is thrown out). Citations need a violation and
+  pay per violation; arrests need charges (a wrongful arrest costs points). The radar shows the speed of the car
+  ahead; speeding, red lights and weaving are recorded as reasons for the stop.
+- **Dispatch callouts** (unlocked by rank): suspicious person, traffic collision, drunk driver, domestic
+  disturbance, stolen vehicle, armed robbery, shots fired, pursuit in progress, street racing and bank robbery.
+  Accept (Y) or decline (N); the GPS route and marker lead you there; response time earns a bonus.
+- **Pursuits and force:** fleeing cars pick escape routes; wreck or box them in and the driver bails, fights or
+  gives up. Tackle runners by sprinting into them, tase them (non-lethal), or use the sidearm, which is only
+  justified against an armed attacker: an unjustified shooting suspends you and ends the shift. B calls backup
+  units that chase and subdue suspects; prisoner transport can collect the cuffed, or you drive them to the
+  station and book them for a bonus.
+- **Shift and career** (`career.ts`): a night (20:00–04:00) or day (08:00–16:00) shift of 15 or 8 minutes with a
+  full day/night cycle. The shift report lists every point earned or lost; the score is submitted (ranked) and
+  added to your career XP, from Cadet to Chief of Police (saved per device account).
+- **Presentation:** lit windows, street lamps and lamp pools at night, flashing light bars (with real lights on
+  your unit), bloom on High graphics, synthesized siren (wail and yelp), engine, radio and gunshots, and a
+  rotating minimap with the GPS route.
+
 ### Themes
 
 Settings → Theme switches between **Classic** (dark neon) and **X-1+** (light and friendly). Both are the same CSS
@@ -225,6 +279,10 @@ tokens in `src/app/globals.css` (`html[data-theme="x1"]` overrides them), applie
 the button, any key, or a tap, auto-dismisses after about 5 s, and is short and static with reduced motion. An inline
 `<head>` script hides it before paint for returning visitors. E2E specs import `test` from `tests/e2e/fixtures.ts`,
 which marks it as seen.
+
+Right after the first intro, `src/components/layout/MegaAd.tsx` plays a one-time cinematic "mega ad" for every
+game (about 18 s). It can't be skipped (a countdown shows what's left), the page behind is inert while it plays,
+and it's marked as seen in `localStorage` as soon as it starts, so it never shows again. Invite links skip it.
 
 ### Adding a game
 

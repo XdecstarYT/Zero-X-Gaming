@@ -6,6 +6,7 @@ const PAGES = [
   "/games",
   "/games/neon-siege",
   "/games/trenches",
+  "/games/code-3",
   "/leaderboards",
   "/battle-pass",
   "/locker",

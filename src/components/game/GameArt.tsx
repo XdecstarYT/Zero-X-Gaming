@@ -41,7 +41,13 @@ export function GameArt({
       </defs>
       <rect width="320" height="200" fill={`url(#${id}-bg)`} />
       <rect width="320" height="200" fill={`url(#${id}-glow)`} />
-      {game.slug === "trenches" ? <Trenches id={id} a={a} b={b} /> : <Motif category={game.category} id={id} a={a} b={b} />}
+      {game.slug === "trenches" ? (
+        <Trenches id={id} a={a} b={b} />
+      ) : game.slug === "code-3" ? (
+        <Code3 id={id} a={a} b={b} />
+      ) : (
+        <Motif category={game.category} id={id} a={a} b={b} />
+      )}
     </svg>
   );
 }
@@ -229,6 +235,52 @@ function Trenches({ id, a, b }: { id: string; a: string; b: string }) {
       {Array.from({ length: 12 }, (_, i) => (
         <ellipse key={i} cx={i * 28 + 12} cy={166 - Math.sin(i / 2) * 3} rx="15" ry="7" fill="#7d6f4c" stroke="#4e4430" />
       ))}
+    </g>
+  );
+}
+
+/** Night street: skyline, wet road, a cruiser with its light bar going. */
+function Code3({ id, a, b }: { id: string; a: string; b: string }) {
+  const towers = [
+    [0, 70, 34], [30, 52, 26], [52, 84, 30], [80, 40, 22], [100, 64, 36], [134, 30, 26], [158, 58, 30], [186, 76, 24],
+    [208, 46, 34], [240, 66, 28], [266, 38, 30], [294, 60, 26],
+  ];
+  return (
+    <g>
+      <rect width="320" height="200" fill="#05070f" />
+      <circle cx="80" cy="120" r="70" fill={b} fillOpacity="0.35" filter={`url(#${id}-blur)`} />
+      <circle cx="220" cy="120" r="70" fill={a} fillOpacity="0.35" filter={`url(#${id}-blur)`} />
+      {towers.map(([x, top, w], i) => (
+        <g key={i}>
+          <rect x={x} y={top} width={w} height={140 - top} fill="#0d1322" />
+          {Array.from({ length: Math.floor((140 - top) / 12) }, (_, r) =>
+            Array.from({ length: Math.floor(w / 9) }, (_, c) =>
+              (r * 7 + c * 3 + i) % 4 === 0 ? (
+                <rect key={`${r}-${c}`} x={x + 3 + c * 9} y={top + 5 + r * 12} width="4" height="5" fill="#ffcf8a" fillOpacity="0.7" />
+              ) : null,
+            ),
+          )}
+        </g>
+      ))}
+      {/* road */}
+      <path d="M0 140h320v60H0z" fill="#10141c" />
+      <path d="M0 168h320" stroke="#e2b83a" strokeWidth="2" strokeDasharray="18 12" opacity="0.7" />
+      {/* cruiser */}
+      <g transform="translate(96 124)">
+        <path d="M6 30h116l-4-14-22-4-14-12H42L26 12 8 16z" fill="#0b0d12" />
+        <path d="M44 3h26l12 10H34z" fill="#1e2a3a" />
+        <rect x="40" y="16" width="44" height="12" fill="#e8ebef" />
+        <rect x="46" y="-4" width="14" height="6" rx="1" fill={b} />
+        <rect x="62" y="-4" width="14" height="6" rx="1" fill={a} />
+        <circle cx="30" cy="31" r="8" fill="#050608" stroke="#555" strokeWidth="2" />
+        <circle cx="98" cy="31" r="8" fill="#050608" stroke="#555" strokeWidth="2" />
+        <rect x="116" y="18" width="6" height="4" fill="#fff4d0" />
+      </g>
+      <ellipse cx="148" cy="120" rx="36" ry="14" fill={b} fillOpacity="0.55" filter={`url(#${id}-blur)`} />
+      <ellipse cx="176" cy="120" rx="36" ry="14" fill={a} fillOpacity="0.55" filter={`url(#${id}-blur)`} />
+      {/* reflections on the wet road */}
+      <rect x="140" y="160" width="14" height="36" fill={b} fillOpacity="0.25" filter={`url(#${id}-blur)`} />
+      <rect x="160" y="160" width="14" height="36" fill={a} fillOpacity="0.25" filter={`url(#${id}-blur)`} />
     </g>
   );
 }

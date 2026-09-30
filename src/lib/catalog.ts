@@ -6,7 +6,10 @@
  */
 import type { BadgeDef, Game, GameCategory, PlayerSummary } from "./types";
 
-export const CATEGORIES: { id: GameCategory; label: string }[] = [{ id: "shooter", label: "Shooter" }];
+export const CATEGORIES: { id: GameCategory; label: string }[] = [
+  { id: "shooter", label: "Shooter" },
+  { id: "sim", label: "Sim" },
+];
 
 export const GAMES: Game[] = [
   {
@@ -66,6 +69,43 @@ export const GAMES: Game[] = [
     orientation: "landscape",
     touchControls:
       "Left thumb drags a virtual stick to move, right thumb drags to look. Hold FIRE to shoot, R to reload.",
+  },
+  {
+    slug: "code-3",
+    title: "Code 3",
+    tagline: "Lights. Sirens. Justice. Work the beat in Bayview.",
+    description:
+      "A police patrol sim in a full 3D city. Suit up, take your cruiser out of the station and work a night or day shift in Bayview: answer dispatch callouts (armed robberies, shots fired, stolen cars, drunk drivers, collisions, domestics, street races and bank jobs), run traffic stops by the book (licence, MDT plate and warrant checks, questions, breathalyzer, consent and probable-cause searches, citations), chase fleeing suspects with PIT manoeuvres and backup, tackle and tase runners, cuff them, and book them at the station. Traffic obeys the lights and pulls over for your siren. Every call is scored: good police work ranks you up from Cadet to Chief and unlocks faster units.",
+    category: "sim",
+    tags: ["police", "driving", "open world", "3d", "pursuits"],
+    status: "live",
+    palette: ["#3b82f6", "#ef4444"],
+    rating: 0,
+    ratingCount: 0,
+    plays: 0,
+    releasedAt: "2026-10-02",
+    controls: [
+      { keys: ["W", "S"], action: "Throttle / brake & reverse (walk on foot)" },
+      { keys: ["A", "D"], action: "Steer (strafe on foot)" },
+      { keys: ["Space"], action: "Handbrake" },
+      { keys: ["Q"], action: "Lights → lights + siren → off" },
+      { keys: ["H"], action: "Siren yelp" },
+      { keys: ["E"], action: "Exit / enter your unit" },
+      { keys: ["Mouse"], action: "Look / aim (click the game to lock the pointer)" },
+      { keys: ["Click", "F"], action: "Fire taser / sidearm" },
+      { keys: ["Right-click"], action: "Aim" },
+      { keys: ["X"], action: "Switch taser / sidearm" },
+      { keys: ["G"], action: "Shout \"Police! Stop!\"" },
+      { keys: ["1–9"], action: "Actions: talk, ID, MDT, search, cite, arrest…" },
+      { keys: ["Y", "N"], action: "Respond to / decline a dispatch call" },
+      { keys: ["B"], action: "Call for backup" },
+      { keys: ["Tab"], action: "Mobile data terminal (MDT)" },
+      { keys: ["C"], action: "Camera distance" },
+      { keys: ["Esc", "P"], action: "Pause" },
+    ],
+    orientation: "landscape",
+    touchControls:
+      "Left thumb drives or walks, right thumb looks around. Buttons for enter/exit, lights, handbrake, fire, aim and backup; tap the action list to talk, search, cite and arrest.",
   },
 ];
 
