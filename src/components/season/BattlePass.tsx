@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { SignInButton } from "@/components/layout/SignInButton";
+import { CoinAmount } from "@/components/shop/Coin";
+import { BATTLE_PASS_PRICE } from "@/lib/economy";
+import { buyBattlePass } from "@/lib/season-client";
+import { toast } from "@/store/toast";
 import { cn } from "@/lib/cn";
 import { formatNumber } from "@/lib/format";
 import { activeChallenges, REWARDS, SEASON, seasonTimeLeft, tierFromXp, type ActiveChallenge } from "@/lib/season";
@@ -29,7 +33,30 @@ function resetsIn(ms: number) {
 }
 
 export function BattlePass() {
-  const { state, error, reload } = useSeason();
+  const { state, error, reload, setState } = useSeason();
+  const [buying, setBuying] = useState<"idle" | "confirm" | "busy">("idle");
+
+  async function purchase() {
+    if (!state) return;
+    if (buying === "idle") return setBuying("confirm");
+    setBuying("busy");
+    try {
+      const r = await buyBattlePass();
+      const owned = new Set(state.owned);
+      r.unlocked.forEach((u) => owned.add(u.item));
+      setState({ ...state, coins: r.coins, hasPass: true, owned });
+      toast("Battle Pass unlocked!", {
+        description: r.unlocked.length
+          ? `${r.unlocked.length} rewards added to your Locker.`
+          : "Rewards unlock as you rank up.",
+        tone: "success",
+      });
+    } catch (e) {
+      toast("Couldn't buy the Battle Pass", { description: (e as Error).message, tone: "error" });
+    } finally {
+      setBuying("idle");
+    }
+  }
   const now = useNow();
   const xp = state?.xp ?? 0;
   const { tier, into, need, pct } = tierFromXp(xp);
@@ -53,8 +80,8 @@ export function BattlePass() {
               {SEASON.name}
             </h1>
             <p className="mt-2 max-w-xl text-sm text-muted">
-              Play Neon Siege battle royale to earn Season XP. Every tier unlocks an outfit, weapon wrap or banner.
-              It&apos;s all free: nothing to buy, just play.
+              Play Neon Siege battle royale to earn Season XP. With the pass (200 coins, won in Cash Cups; never real
+              money), every tier unlocks an outfit, weapon wrap or banner.
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -103,6 +130,59 @@ export function BattlePass() {
           )}
         </div>
       </section>
+
+      {state && (
+        <section
+          aria-labelledby="pass-title"
+          className={cn(
+            "mt-4 flex flex-col gap-3 rounded-xl border-2 p-4 sm:flex-row sm:items-center sm:justify-between",
+            state.hasPass ? "border-success/50 bg-success/5" : "border-[#f2c230]/60 bg-[#f2c230]/10",
+          )}
+        >
+          <div>
+            <h2 id="pass-title" className="font-display text-lg font-bold uppercase">
+              {state.hasPass ? "Battle Pass owned" : "Get the Battle Pass"}
+            </h2>
+            <p className="text-sm text-muted">
+              {state.hasPass
+                ? "Every tier you reach drops its reward straight into your Locker."
+                : `Unlock all ${REWARDS.length} tiers of rewards, including everything you've already reached. You have `}
+              {!state.hasPass && <CoinAmount amount={state.coins} />}
+              {!state.hasPass && "."}
+            </p>
+            {!state.hasPass && state.coins < BATTLE_PASS_PRICE && (
+              <p className="mt-1 text-xs text-muted">
+                Win coins in{" "}
+                <Link href="/shop" className="text-cyan underline underline-offset-2">
+                  Cash Cups
+                </Link>
+                : every third match pays the top 3.
+              </p>
+            )}
+          </div>
+          {!state.hasPass && (
+            <button
+              type="button"
+              onClick={purchase}
+              disabled={buying === "busy" || state.coins < BATTLE_PASS_PRICE}
+              className={cn(
+                "flex shrink-0 items-center justify-center gap-2 rounded-md px-5 py-2.5 font-bold disabled:cursor-not-allowed disabled:opacity-50",
+                buying === "confirm" ? "bg-[#ff7a1a] text-black" : "bg-[#f2c230] text-[#2a1d00] hover:brightness-110",
+              )}
+            >
+              {buying === "busy" ? (
+                "Buying…"
+              ) : buying === "confirm" ? (
+                "Tap again to confirm"
+              ) : (
+                <>
+                  Buy for <CoinAmount amount={BATTLE_PASS_PRICE} />
+                </>
+              )}
+            </button>
+          )}
+        </section>
+      )}
 
       {state && !state.signedIn && (
         <div className="mt-4 flex flex-col items-start gap-3 rounded-lg border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -159,7 +239,8 @@ export function BattlePass() {
         </div>
         <ol className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6">
           {REWARDS.map((r) => {
-            const unlocked = tier >= r.tier;
+            const reached = tier >= r.tier;
+            const unlocked = reached && (state?.owned.has(r.item) ?? false);
             const current = r.tier === tier + 1;
             const rarity = rarityOf(r.kind, r.item);
             return (
@@ -174,7 +255,9 @@ export function BattlePass() {
               >
                 <div className="flex items-center justify-between px-2 pt-1.5 text-[11px] font-bold">
                   <span>Tier {r.tier}</span>
-                  <span className={unlocked ? "text-success" : "text-subtle"}>{unlocked ? "✓ Owned" : "Locked"}</span>
+                  <span className={unlocked ? "text-success" : "text-muted"}>
+                    {unlocked ? "✓ Owned" : reached ? "Needs pass" : "Locked"}
+                  </span>
                 </div>
                 <RewardArt kind={r.kind} item={r.item} className="mx-2 mt-1.5 aspect-[4/3]" />
                 <div className="px-2 pt-1.5 pb-2">

@@ -71,6 +71,7 @@ export interface MatchStats {
   damage: number;
   chests: number;
   survivedS: number;
+  difficulty: Difficulty;
 }
 
 export interface RoyaleState {
@@ -254,5 +255,6 @@ export function matchStats(s: RoyaleState): MatchStats {
     damage: s.player.damageDealt,
     chests: s.chestsOpened,
     survivedS: Math.floor(s.placement ? s.endedAt : s.world.time),
+    difficulty: s.difficulty,
   };
 }

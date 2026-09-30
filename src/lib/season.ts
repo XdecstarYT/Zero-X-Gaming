@@ -47,6 +47,9 @@ export const BANNERS: Record<string, Banner> = {
   apex: { id: "apex", name: "Apex", art: "conic-gradient(from 200deg,#3c9bff,#b25cff,#ff4d6d,#3c9bff)" },
   legend: { id: "legend", name: "Legend", art: "linear-gradient(135deg,#1a1916,#d4a637 45%,#1a1916)" },
   zero: { id: "zero", name: "Zero", art: "linear-gradient(135deg,#22e5ff,#05060b 45%,#ff2bd6)" },
+  // Item Shop · DROP 1
+  "drop-1": { id: "drop-1", name: "DROP 1", art: "repeating-linear-gradient(135deg,#ff7a1a 0 14px,#1b1d22 14px 28px)" },
+  "cash-king": { id: "cash-king", name: "Cash King", art: "radial-gradient(circle at 50% 30%,#fff3b0,#f2c230 35%,#6b4a00)" },
 };
 
 export interface Reward {

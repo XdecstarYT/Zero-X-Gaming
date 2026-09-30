@@ -5,11 +5,13 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { Logo } from "./Logo";
 import { AccountControl } from "./AccountControl";
+import { CoinChip } from "@/components/shop/Coin";
 
 export const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/games", label: "Games" },
   { href: "/battle-pass", label: "Battle Pass" },
+  { href: "/shop", label: "Item Shop" },
   { href: "/leaderboards", label: "Leaderboards" },
   { href: "/profile", label: "Profile" },
 ] as const;
@@ -61,6 +63,7 @@ export function Navbar() {
         </ul>
 
         <div className="ml-auto flex items-center gap-2">
+          <CoinChip />
           <Link
             href="/settings"
             aria-label="Settings"

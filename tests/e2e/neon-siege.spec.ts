@@ -60,3 +60,16 @@ test("Neon Siege 3D view starts and shows the HUD", async ({ page }) => {
   await expect(stage.locator(`[aria-label="Slot 1: Service Pistol"]`)).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("every third match is a Cash Cup, played on Hard", async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 2, wins: 0, kills: 0, coins: 0, challenges: {} })),
+  );
+  await page.goto("/games/neon-siege");
+  const stage = page.getByTestId("game-stage");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
+  await expect(stage.getByTestId("cash-cup")).toContainText("CASH CUP NEXT");
+  await expect(stage.getByRole("button", { name: "Easy" })).toBeDisabled();
+  await expect(stage.getByRole("button", { name: "Hard" })).toHaveAttribute("aria-pressed", "true");
+});

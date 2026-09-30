@@ -220,4 +220,16 @@ Deviations from, or interpretations of, the master prompt. Newest last.
       because daylight whites blew out.
     - Characters gained faces, shoulders, tapered limbs, hands, gear and a woven-cloth normal map.
     - Low (the phone default) keeps grass and cards but skips the post-processing, and uses blob contact shadows.
+64. **Coins, Cash Cups and the Item Shop are an earn-only economy.**
+    - Coins come only from Cash Cups: every third ranked match, played on Hard, pays 50 / 20 / 5 to the top 3.
+    - They're spent on the battle pass (200) or Item Shop drops.
+    - There is no real-money purchase anywhere.
+    - For signed-in players the server owns everything. It decides whether a match is a Cash Cup from its own
+      match count, and a wallet plus append-only ledger is changed only by `SECURITY DEFINER` functions.
+      `buy_battle_pass` and `buy_shop_item` check the balance, ownership and the live drop window.
+    - Guests run the same rules on-device.
+    - The battle pass now gates tier rewards. XP and tiers still progress without it, and buying it grants
+      every tier already reached. Rewards earned before the pass existed stay owned.
+    - The shop is organised as timed "drops" (DROP 1: 30 Sep – 14 Oct), mirrored in `shop_items`, and a unit
+      test keeps the TypeScript and SQL catalogues in sync.
 

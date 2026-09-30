@@ -39,8 +39,10 @@ export type OnlineMenuBuilder = (ctx: {
   container: HTMLElement;
 }) => void;
 
-/** Called when a match ends with stats (season XP / challenges). */
+/** Called when a match ends with stats (season XP / challenges / coins). */
 export type MatchEndHook = (stats: MatchStats, info: { won: boolean; ranked: boolean }) => void;
+/** Tells the menu how many ranked matches were played (Cash Cup every third). */
+export type MatchesPlayedLoader = () => Promise<number>;
 
 export class NeonSiege implements GameModule {
   readonly slug = "neon-siege";
@@ -90,9 +92,12 @@ export class NeonSiege implements GameModule {
   private ads = 0;
   private lastHp = 100;
 
+  private cashCupNext = false;
+
   constructor(
     private onlineMenu?: OnlineMenuBuilder,
     private onMatchEnd?: MatchEndHook,
+    private loadMatchesPlayed?: MatchesPlayedLoader,
   ) {}
 
   init(opts: GameInitOptions) {
@@ -216,6 +221,36 @@ export class NeonSiege implements GameModule {
     };
 
     const diffButtons = pressedGroup(["easy", "normal", "hard"] as const, this.difficulty, (d) => d, (d) => (this.difficulty = d));
+    const fast = new URLSearchParams(window.location.search).get("siege") === "quick";
+    // Cash Cup status: every third ranked match. Filled in once progress loads.
+    const cup = el("div", "w-full rounded-md border border-[#f2c230]/40 bg-[#f2c230]/10 px-3 py-2 text-xs text-muted");
+    cup.dataset.testid = "cash-cup";
+    cup.hidden = true;
+    this.cashCupNext = false;
+    if (this.loadMatchesPlayed && !fast) {
+      void this.loadMatchesPlayed()
+        .then((played) => {
+          const until = (3 - ((played + 1) % 3)) % 3;
+          this.cashCupNext = until === 0;
+          cup.hidden = false;
+          if (this.cashCupNext) {
+            cup.replaceChildren(
+              el("strong", "font-display text-sm text-[#f2c230]", "CASH CUP NEXT! "),
+              "Finish 1st / 2nd / 3rd for 50 / 20 / 5 coins. Cash Cups are played on Hard.",
+            );
+            diffButtons.forEach((b) => {
+              b.disabled = true;
+              const on = b.dataset.value === "hard";
+              b.setAttribute("aria-pressed", String(on));
+              b.classList.toggle("!border-cyan", on);
+              b.classList.toggle("!text-cyan", on);
+            });
+          } else {
+            cup.textContent = `Cash Cup in ${until} match${until === 1 ? "" : "es"}: every third match pays coins to the top 3.`;
+          }
+        })
+        .catch(() => {});
+    }
     const gfxButtons = pressedGroup(
       ["high", "low", "2d"] as const,
       this.viewKind,
@@ -232,12 +267,13 @@ export class NeonSiege implements GameModule {
     );
     deploy.type = "button";
     deploy.addEventListener("click", () => {
-      const fast = new URLSearchParams(window.location.search).get("siege") === "quick";
+      const cashCup = this.cashCupNext && !fast;
       void this.startMode(
-        new RoyaleController(this.difficulty, Date.now(), {
+        new RoyaleController(cashCup ? "hard" : this.difficulty, Date.now(), {
           outfit: loadout.outfit,
           name: this.opts.playerName ?? "You",
           stormScale: fast ? 12 : 1,
+          cashCup,
         }),
       );
     });
@@ -271,6 +307,7 @@ export class NeonSiege implements GameModule {
           "flex w-full max-w-md flex-col items-center gap-2 rounded-lg border border-border bg-surface/80 p-3",
           el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-cyan", "Battle Royale · Solo"),
           el("p", "text-xs text-muted", "16 fighters, one town, a closing storm. Loot, survive, win. Ranked + season XP."),
+          cup,
           el("div", "flex gap-2", ...diffButtons),
           deploy,
           locker,
@@ -314,6 +351,7 @@ export class NeonSiege implements GameModule {
     this.ended = false;
     this.menu.hidden = true;
     this.lastHp = controller.me.hp;
+    this.srHudAcc = 0.5; // announce the match state on the very first tick
     await this.ensureView();
     if (this.destroyed || this.mode !== controller) return;
     this.hud?.destroy();
@@ -717,14 +755,16 @@ export class NeonSiege implements GameModule {
 
 let onlineBuilder: OnlineMenuBuilder | undefined;
 let matchEndHook: MatchEndHook | undefined;
+let matchesPlayedLoader: MatchesPlayedLoader | undefined;
 /** Called by the online module (same chunk) to add the "Online match" menu section. */
 export function registerOnlineMenu(builder: OnlineMenuBuilder) {
   onlineBuilder = builder;
 }
-/** Called by the season module to receive match stats. */
-export function registerMatchEnd(hook: MatchEndHook) {
+/** Called by the season module to receive match stats and report progress for Cash Cups. */
+export function registerMatchEnd(hook: MatchEndHook, loader?: MatchesPlayedLoader) {
   matchEndHook = hook;
+  matchesPlayedLoader = loader;
 }
 
-const factory: GameFactory = () => new NeonSiege(onlineBuilder, matchEndHook);
+const factory: GameFactory = () => new NeonSiege(onlineBuilder, matchEndHook, matchesPlayedLoader);
 export default factory;

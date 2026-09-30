@@ -7,6 +7,7 @@ import type { Preview } from "@/games/neon-siege/three/preview";
 import { cn } from "@/lib/cn";
 import { BANNERS, rewardFor, type CosmeticKind } from "@/lib/season";
 import { saveLoadout } from "@/lib/season-client";
+import { shopItemFor } from "@/lib/economy";
 import { useSettings } from "@/store/settings";
 import { toast } from "@/store/toast";
 import { RewardArt, itemName, rarityColor, rarityOf } from "./RewardArt";
@@ -63,7 +64,7 @@ export function Locker() {
       <h1 className="font-display text-3xl font-black uppercase tracking-tight sm:text-4xl">Locker</h1>
       <p className="mt-1 text-sm text-muted">
         Equip what you&apos;ve unlocked. Earn more on the{" "}
-        <Link href="/battle-pass" className="text-cyan hover:underline">
+        <Link href="/battle-pass" className="text-cyan underline underline-offset-2">
           Battle Pass
         </Link>
         .
@@ -144,6 +145,8 @@ export function Locker() {
                             <span className="capitalize">{rarity}</span>
                           ) : reward ? (
                             `Battle Pass tier ${reward.tier}`
+                          ) : shopItemFor(tab, item) ? (
+                            `Item Shop · ${shopItemFor(tab, item)!.price} coins`
                           ) : (
                             "Locked"
                           )}

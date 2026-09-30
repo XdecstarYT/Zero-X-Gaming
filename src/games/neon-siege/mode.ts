@@ -67,9 +67,19 @@ export class RoyaleController implements ModeController {
   private lastPhase = 0;
   private wasShrinking = false;
 
-  constructor(difficulty: Difficulty, seed = Date.now(), opts: { outfit?: string; name?: string; stormScale?: number } = {}) {
+  /** A Cash Cup round: coins for the top 3 (the server decides; this drives the HUD). */
+  readonly cashCup: boolean;
+
+  constructor(
+    difficulty: Difficulty,
+    seed = Date.now(),
+    opts: { outfit?: string; name?: string; stormScale?: number; cashCup?: boolean } = {},
+  ) {
     this.s = createRoyale(difficulty, seed, opts);
     this.ranked = this.s.stormScale === 1;
+    this.cashCup = !!opts.cashCup && this.ranked;
+    if (this.cashCup)
+      this.bannerMsg = { text: "CASH CUP", sub: "Top 3 win coins: 50 · 20 · 5", color: "#f2c230" };
   }
 
   get world() {
@@ -113,7 +123,7 @@ export class RoyaleController implements ModeController {
     const storm = this.s.storm;
     const shrinking = isShrinking(storm);
     return {
-      primary: `${this.s.alive} ALIVE`,
+      primary: `${this.cashCup ? "CASH CUP · " : ""}${this.s.alive} ALIVE`,
       kills: this.s.player.kills,
       storm: storm.done ? "Final circle" : shrinking ? "Storm shrinking" : `Storm in ${clock(stormCountdown(storm))}`,
       stormUrgent: shrinking,

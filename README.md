@@ -131,6 +131,15 @@ sight, hearing, and noticing who shot them). Difficulty changes reaction time, a
 - Graphics: High, Low, or Classic 2D, remembered per device.
 - Gunfire audio is synthesised per weapon and muffled with distance (`sfx.ts`).
 
+**Coins, Cash Cups and the Item Shop** (`src/lib/economy.ts`, `supabase/migrations/20260930150000_coins_shop.sql`)
+
+- Every third ranked match is a **Cash Cup** on Hard: 1st/2nd/3rd win 50/20/5 coins. The game menu shows when
+  one is next.
+- The **battle pass** costs 200 coins. XP always counts, and buying the pass unlocks every tier already reached.
+- The **Item Shop** (`/shop`) sells timed drops. **DROP 1** has 4 outfits, 3 wraps and 2 banners. Purchases land
+  in the Locker.
+- Coins are earn-only (no real money). They're server-validated for accounts and on-device for guests.
+
 **Season 1 · Battle pass** (`src/lib/season.ts`, `supabase/migrations/20260930120000_season_one.sql`)
 
 - Tiers: 30 tiers × 1,000 XP, each unlocking an outfit, weapon wrap, or banner. Everything is free to earn.

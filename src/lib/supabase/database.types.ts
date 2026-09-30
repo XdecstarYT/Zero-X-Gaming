@@ -10,6 +10,81 @@ export type Database = {
   };
   public: {
     Tables: {
+      player_wallet: {
+        Row: {
+          coins: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          coins?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          coins?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      coin_ledger: {
+        Row: {
+          amount: number
+          created_at: string
+          id: number
+          reason: string
+          ref: string | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: number
+          reason: string
+          ref?: string | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: number
+          reason?: string
+          ref?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      shop_items: {
+        Row: {
+          drop_id: string
+          drop_name: string
+          ends_at: string
+          item_id: string
+          kind: string
+          price: number
+          starts_at: string
+        }
+        Insert: {
+          drop_id: string
+          drop_name: string
+          ends_at: string
+          item_id: string
+          kind: string
+          price: number
+          starts_at: string
+        }
+        Update: {
+          drop_id?: string
+          drop_name?: string
+          ends_at?: string
+          item_id?: string
+          kind?: string
+          price?: number
+          starts_at?: string
+        }
+        Relationships: []
+      }
       challenge_pool: {
         Row: {
           goal: number
@@ -120,6 +195,7 @@ export type Database = {
       }
       season_progress: {
         Row: {
+          has_pass: boolean
           kills: number
           last_match_at: string | null
           matches: number
@@ -129,6 +205,7 @@ export type Database = {
           xp: number
         }
         Insert: {
+          has_pass?: boolean
           kills?: number
           last_match_at?: string | null
           matches?: number
@@ -138,6 +215,7 @@ export type Database = {
           xp?: number
         }
         Update: {
+          has_pass?: boolean
           kills?: number
           last_match_at?: string | null
           matches?: number
@@ -510,7 +588,16 @@ export type Database = {
           p_placement: number
           p_players: number
           p_survived_s: number
+          p_difficulty?: string
         }
+        Returns: Json
+      }
+      buy_battle_pass: {
+        Args: never
+        Returns: Json
+      }
+      buy_shop_item: {
+        Args: { p_item: string; p_kind: string }
         Returns: Json
       }
       set_loadout: {
