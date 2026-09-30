@@ -133,6 +133,7 @@ export interface TownOptions {
 }
 
 export function buildTown(map: GameMap, opts: TownOptions) {
+  const war = map.theme === "battlefield";
   const root = new THREE.Group();
   const batch = new Batcher();
   const rng = createRng(map.width * 131 + map.height);
@@ -190,6 +191,13 @@ export function buildTown(map: GameMap, opts: TownOptions) {
       roughness: 0.9,
     }),
     sidewalk: std(tex.concrete, { color: "#c9c6bf" }),
+    // Battlefield
+    mud: std(tex.dirt, { color: "#7a6a58", roughness: 0.78 }),
+    gravel: std(tex.concrete, { color: "#8a8174" }),
+    berm: std(tex.dirt, { color: "#6d604f" }),
+    sandbag: new THREE.MeshStandardMaterial({ color: "#a38f68", roughness: 0.95, vertexColors: true }),
+    wire: new THREE.MeshStandardMaterial({ color: "#3a3632", roughness: 0.5, metalness: 0.7 }),
+    crater: new THREE.MeshStandardMaterial({ color: "#3b3128", roughness: 0.6, transparent: true, opacity: 0.85, depthWrite: false }),
     curb: std(tex.concrete, { color: "#a9a69f" }),
     plinth: std(tex.concrete, { color: "#77736c" }),
     lampPole: new THREE.MeshStandardMaterial({ color: "#3a3d40", metalness: 0.7, roughness: 0.45 }),
@@ -212,7 +220,7 @@ export function buildTown(map: GameMap, opts: TownOptions) {
   const field = new THREE.PlaneGeometry(700, 700);
   const fuv = field.attributes.uv as THREE.BufferAttribute;
   for (let i = 0; i < fuv.count; i++) fuv.setXY(i, fuv.getX(i) * 700, fuv.getY(i) * 700);
-  const grassMesh = new THREE.Mesh(field, mats.grass);
+  const grassMesh = new THREE.Mesh(field, war ? mats.mud : mats.grass);
   grassMesh.rotation.x = -Math.PI / 2;
   grassMesh.position.set(cx, 0, cz);
   grassMesh.receiveShadow = opts.shadows;
@@ -232,9 +240,11 @@ export function buildTown(map: GameMap, opts: TownOptions) {
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       const g = ground(x, y);
-      if (g === GROUND.road) batch.add("road", mats.asphalt, quadAt(x, y), mat4(0, 0.012, 0), undefined, false);
+      if (g === GROUND.road)
+        batch.add(war ? "gravel" : "road", war ? mats.gravel : mats.asphalt, quadAt(x, y), mat4(0, 0.012, 0), undefined, false);
       else if (g === GROUND.floor) batch.add("floor", mats.wood, quadAt(x, y), mat4(0, 0.02, 0), undefined, false);
-      else if (g === GROUND.dirt) batch.add("dirt", mats.dirt, quadAt(x, y), mat4(0, 0.008, 0), undefined, false);
+      else if (g === GROUND.dirt && !war) batch.add("dirt", mats.dirt, quadAt(x, y), mat4(0, 0.008, 0), undefined, false);
+      else if (g === GROUND.grass && war) batch.add("grass", mats.grass, quadAt(x, y), mat4(0, 0.006, 0), undefined, false);
     }
   // Sidewalks (with a curb on the road side) and street lamps along every road.
   const slab = metricBox(1, 0.06, 1, 1.5, 1.5);
@@ -248,7 +258,7 @@ export function buildTown(map: GameMap, opts: TownOptions) {
   ];
   for (let y = 1; y < H - 1; y++)
     for (let x = 1; x < W - 1; x++) {
-      if (ground(x, y) === GROUND.road || ground(x, y) === GROUND.floor || cell(x, y) !== 0) continue;
+      if (war || ground(x, y) === GROUND.road || ground(x, y) === GROUND.floor || cell(x, y) !== 0) continue;
       const roadSides = nb.filter(([dx, dy]) => ground(x + dx, y + dy) === GROUND.road);
       if (!roadSides.length) continue;
       batch.add("sidewalk", mats.sidewalk, slab, mat4(x + 0.5, 0.03, y + 0.5), undefined, false);
@@ -291,6 +301,7 @@ export function buildTown(map: GameMap, opts: TownOptions) {
   const band = (get: (d: number) => boolean) => (get(-1) && get(0) && !get(-2) && !get(1)) || (get(-2) && get(-1) && get(0) && get(1) && !get(-3) && !get(2));
   for (let y = 1; y < H - 1; y++)
     for (let x = 1; x < W - 1; x++) {
+      if (war) continue;
       // East-west road: centre line at z = y, dash along x.
       if (x % 3 === 0 && band((d) => isRoad(x, y + d)) && band((d) => isRoad(x + 1, y + d)) && !isRoad(x, y - 5) && !isRoad(x, y + 4))
         batch.add("paint", mats.paint, dash, mat4(x + 0.5, 0.02, y), undefined, false);
@@ -335,7 +346,39 @@ export function buildTown(map: GameMap, opts: TownOptions) {
           break;
         }
         case SOLID.perimeter: {
-          batch.add("perimeter", mats.perimeter, wallBox(2.6, 1.3), mat4(px, 1.3, pz));
+          if (war) {
+            const g = lumpy(new THREE.IcosahedronGeometry(1, 1), hash, 0.25);
+            batch.add("berm", mats.berm, g, mat4(px, 0.3, pz, 1.1, 1.3 + (hash % 5) * 0.1, 1.1, hash % 7));
+          } else batch.add("perimeter", mats.perimeter, wallBox(2.6, 1.3), mat4(px, 1.3, pz));
+          break;
+        }
+        case SOLID.sandbag: {
+          // Three courses of sacks, staggered, slightly irregular.
+          const horiz = cell(x - 1, y) === SOLID.sandbag || cell(x + 1, y) === SOLID.sandbag;
+          const ry = horiz ? 0 : Math.PI / 2;
+          const r2 = createRng(hash);
+          for (let row = 0; row < 4; row++)
+            for (let i = 0; i < 2; i++) {
+              const off = (i - 0.5) * 0.5 + (row % 2 ? 0.25 : 0) - 0.12;
+              const tint = 0.85 + r2.next() * 0.25;
+              batch.add(
+                "sandbag",
+                mats.sandbag,
+                sackGeo,
+                mat4(
+                  px + (horiz ? off : r2.range(-0.05, 0.05)),
+                  0.13 + row * 0.24,
+                  pz + (horiz ? r2.range(-0.05, 0.05) : off),
+                  1,
+                  1,
+                  1,
+                  ry + r2.range(-0.12, 0.12),
+                  0,
+                  r2.range(-0.05, 0.05),
+                ),
+                new THREE.Color().setRGB(tint, tint * 0.97, tint * 0.9, THREE.SRGBColorSpace),
+              );
+            }
           break;
         }
         case SOLID.crate: {
@@ -351,9 +394,31 @@ export function buildTown(map: GameMap, opts: TownOptions) {
           break;
         }
         case SOLID.tree:
-          addTree(batch, mats, px, pz, hash, opts.detail);
+          if (war) addDeadTree(batch, mats, px, pz, hash);
+          else addTree(batch, mats, px, pz, hash, opts.detail);
           break;
         case SOLID.fence: {
+          if (war) {
+            // Barbed wire: X-shaped stakes and coils.
+            for (const k of [-0.35, 0.35]) {
+              const horiz = cell(x - 1, y) === SOLID.fence || cell(x + 1, y) === SOLID.fence;
+              const ox = horiz ? k : 0;
+              const oz = horiz ? 0 : k;
+              batch.add("stake", mats.fence, wallBox(1.2, 1), mat4(px + ox, 0.5, pz + oz, 0.06, 1, 0.06, 0, 0, 0.45));
+              batch.add("stake", mats.fence, wallBox(1.2, 1), mat4(px + ox, 0.5, pz + oz, 0.06, 1, 0.06, 0, 0, -0.45));
+            }
+            const horiz = cell(x - 1, y) === SOLID.fence || cell(x + 1, y) === SOLID.fence;
+            for (let c = 0; c < 3; c++)
+              batch.add(
+                "wire",
+                mats.wire,
+                coilGeo,
+                mat4(px + (horiz ? (c - 1) * 0.33 : 0), 0.42, pz + (horiz ? 0 : (c - 1) * 0.33), 1, 1, 1, horiz ? Math.PI / 2 : 0, 0.15 * c),
+                undefined,
+                false,
+              );
+            break;
+          }
           const horiz = cell(x - 1, y) === SOLID.fence || cell(x + 1, y) === SOLID.fence;
           const ry = horiz ? 0 : Math.PI / 2;
           batch.add("fence", mats.fence, wallBox(1.1, 1), mat4(px, 0.55, pz, 0.1, 1, 0.1));
@@ -363,7 +428,18 @@ export function buildTown(map: GameMap, opts: TownOptions) {
       }
     }
 
-  for (const b of map.buildings) addBuilding(batch, mats, b, cell, ground, rng);
+  for (const b of map.buildings) addBuilding(batch, mats, b, cell, ground, rng, war);
+
+  // Shell craters: dark churned rings scattered over no-man's-land.
+  if (war)
+    for (let i = 0; i < 46; i++) {
+      const x = rng.range(10, W - 10);
+      const z = rng.range(2, H - 2);
+      if (ground(Math.floor(x), Math.floor(z)) !== GROUND.dirt) continue;
+      const r = rng.range(0.8, 2.2);
+      batch.add("crater", mats.crater, new THREE.CircleGeometry(r, 18).rotateX(-Math.PI / 2), mat4(x, 0.015 + i * 0.0002, z), undefined, false);
+      batch.add("craterRim", mats.mud, lumpy(new THREE.TorusGeometry(r, r * 0.22, 5, 16).rotateX(Math.PI / 2), i, 0.2), mat4(x, 0.02, z, 1, 0.35, 1), undefined, false);
+    }
 
   // Countryside beyond the wall: tree belt + distant hills (hazy in the fog).
   for (let i = 0; i < (opts.detail === "high" ? 520 : 260); i++) {
@@ -372,24 +448,58 @@ export function buildTown(map: GameMap, opts: TownOptions) {
     const x = cx + Math.cos(a) * r;
     const z = cz + Math.sin(a) * r;
     if (x > -1.5 && x < W + 1.5 && z > -1.5 && z < H + 1.5) continue;
-    addTree(batch, mats, x, z, (rng.next() * 1e9) >>> 0, opts.detail, true);
+    const h = (rng.next() * 1e9) >>> 0;
+    if (war) {
+      if (i % 3 === 0) addDeadTree(batch, mats, x, z, h);
+    } else addTree(batch, mats, x, z, h, opts.detail, true);
   }
   for (let i = 0; i < 26; i++) {
     const a = (i / 26) * Math.PI * 2 + rng.range(-0.1, 0.1);
     const r = rng.range(170, 260);
     const s = rng.range(40, 90);
     const g = lumpy(new THREE.IcosahedronGeometry(1, 2), i * 7 + 3, 0.18);
-    const col = new THREE.Color().setHSL(0.27 + rng.range(-0.04, 0.03), 0.25, 0.28 + rng.range(0, 0.08), THREE.SRGBColorSpace);
+    const col = war
+      ? new THREE.Color().setHSL(0.1 + rng.range(-0.02, 0.02), 0.15, 0.22 + rng.range(0, 0.06), THREE.SRGBColorSpace)
+      : new THREE.Color().setHSL(0.27 + rng.range(-0.04, 0.03), 0.25, 0.28 + rng.range(0, 0.08), THREE.SRGBColorSpace);
     batch.add("hill", mats.hill, g, mat4(cx + Math.cos(a) * r, -s * 0.35, cz + Math.sin(a) * r, s * 1.6, s * rng.range(0.45, 0.75), s * 1.3), col, false);
   }
 
   batch.flush(root, opts.shadows);
   const time = { value: 0 };
-  root.add(buildGrass(map, opts.detail, time));
+  root.add(buildGrass(map, opts.detail, time, war));
   return { root, time };
 }
 
 const cardGeo = new THREE.PlaneGeometry(1, 1);
+/** A slumped sandbag. */
+const sackGeo = (() => {
+  const g = new THREE.CapsuleGeometry(0.11, 0.3, 3, 8);
+  g.rotateZ(Math.PI / 2);
+  g.scale(1, 0.8, 1.35);
+  return g;
+})();
+/** One loop of a barbed-wire coil. */
+const coilGeo = new THREE.TorusGeometry(0.4, 0.012, 4, 22);
+
+/** A shell-shattered tree: bare, split trunk with a few broken limbs. */
+function addDeadTree(batch: Batcher, mats: Record<string, THREE.Material>, x: number, z: number, hash: number) {
+  const rng = createRng(hash);
+  const h = rng.range(2.5, 5.5);
+  batch.add("bark", mats.bark, new THREE.CylinderGeometry(0.06, 0.22, h, 7), mat4(x, h / 2, z, 1, 1, 1, 0, rng.range(-0.08, 0.08), rng.range(-0.08, 0.08)));
+  // Splintered top
+  batch.add("bark", mats.bark, new THREE.ConeGeometry(0.1, 0.5, 5), mat4(x, h + 0.1, z, 1, 1, 1, 0, 0.4, 0.2));
+  for (let i = 0; i < 3; i++) {
+    const a = rng.next() * Math.PI * 2;
+    const y = rng.range(h * 0.45, h * 0.9);
+    const len = rng.range(0.6, 1.4);
+    batch.add(
+      "bark",
+      mats.bark,
+      new THREE.CylinderGeometry(0.02, 0.05, len, 5),
+      mat4(x + Math.cos(a) * len * 0.35, y, z + Math.sin(a) * len * 0.35, 1, 1, 1, -a, 0, rng.range(0.7, 1.2)),
+    );
+  }
+}
 
 /**
  * Trees built SpeedTree-style from alpha-tested foliage cards (leaf clusters or
@@ -480,10 +590,10 @@ function addTree(
 }
 
 /** Wind-swayed grass tufts scattered over open grass (High / Low detail). */
-function buildGrass(map: GameMap, detail: "high" | "low", time: { value: number }) {
+function buildGrass(map: GameMap, detail: "high" | "low", time: { value: number }, war = false) {
   const W = map.width;
   const H = map.height;
-  const count = detail === "high" ? 26000 : 7000;
+  const count = (detail === "high" ? 26000 : 7000) / (war ? 4 : 1);
   const a = new THREE.PlaneGeometry(0.7, 0.5);
   a.translate(0, 0.25, 0);
   const b = a.clone().rotateY(Math.PI / 2);
@@ -519,12 +629,14 @@ function buildGrass(map: GameMap, detail: "high" | "low", time: { value: number 
     const x = rng.range(1, W - 1);
     const y = rng.range(1, H - 1);
     const i = Math.floor(y) * W + Math.floor(x);
-    if (map.cells[i] !== 0 || (map.ground[i] !== GROUND.grass && !(map.ground[i] === GROUND.dirt && rng.next() < 0.2))) continue;
+    const onDirt = map.ground[i] === GROUND.dirt;
+    if (map.cells[i] !== 0 || (map.ground[i] !== GROUND.grass && !(onDirt && rng.next() < (war ? 0.35 : 0.2)))) continue;
     const s = rng.range(0.7, 1.35);
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng.next() * Math.PI);
     m.compose(new THREE.Vector3(x, 0, y), q, new THREE.Vector3(s, s * rng.range(0.8, 1.3), s));
     mesh.setMatrixAt(placed, m);
-    col.setHSL(0.24 + rng.range(-0.03, 0.03), 0.35, rng.range(0.42, 0.62), THREE.SRGBColorSpace);
+    if (war) col.setHSL(0.11 + rng.range(-0.02, 0.03), 0.3, rng.range(0.38, 0.55), THREE.SRGBColorSpace);
+    else col.setHSL(0.24 + rng.range(-0.03, 0.03), 0.35, rng.range(0.42, 0.62), THREE.SRGBColorSpace);
     mesh.setColorAt(placed, col);
     placed++;
   }
@@ -541,18 +653,24 @@ function addBuilding(
   cell: (x: number, y: number) => number,
   ground: (x: number, y: number) => number,
   rng: ReturnType<typeof createRng>,
+  war = false,
 ) {
   const H = b.floors * FLOOR_H;
+  const ruin = war && b.material === "brick";
   const wallMat = b.material === "brick" ? SOLID.brick : SOLID.concrete;
   const cx = b.x + b.w / 2;
   const cz = b.y + b.h / 2;
 
-  // Ceiling over the interior (seen from inside).
-  batch.add("ceiling", mats.ceiling, new THREE.BoxGeometry(b.w - 1, 0.18, b.h - 1), mat4(cx, FLOOR_H + 0.09, cz), undefined, false);
+  // Ceiling over the interior (seen from inside). Ruins are open to the sky.
+  if (!ruin) batch.add("ceiling", mats.ceiling, new THREE.BoxGeometry(b.w - 1, 0.18, b.h - 1), mat4(cx, FLOOR_H + 0.09, cz), undefined, false);
   if (b.floors > 1) batch.add("trim", mats.trim, new THREE.BoxGeometry(b.w + 0.12, 0.16, b.h + 0.12), mat4(cx, FLOOR_H + 0.1, cz));
 
   // Roof.
-  if (b.material === "concrete") {
+  if (ruin) {
+    // Broken rafters over the shell of the farmhouse.
+    for (let i = 0; i < 5; i++)
+      batch.add("rafter", mats.fence, new THREE.BoxGeometry(0.12, 0.12, b.h * rng.range(0.4, 0.95)), mat4(b.x + 1 + i * ((b.w - 2) / 4), H - 0.2, cz, 1, 1, 1, 0, rng.range(-0.15, 0.15), rng.range(-0.1, 0.1)));
+  } else if (b.material === "concrete") {
     batch.add("flatRoof", mats.flatRoof, new THREE.BoxGeometry(b.w + 0.3, 0.25, b.h + 0.3), mat4(cx, H + 0.12, cz));
     const pw = 0.18;
     const ph = 0.5;
@@ -631,7 +749,7 @@ function addBuilding(
         undefined,
         false,
       );
-      if ((x + y) % 3 !== 0) continue;
+      if (war || (x + y) % 3 !== 0) continue;
       for (let f = 0; f < b.floors; f++) {
         const wy = f * FLOOR_H + 1.55;
         const ox = px + dx * 0.505;

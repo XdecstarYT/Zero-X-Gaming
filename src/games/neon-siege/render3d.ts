@@ -15,6 +15,7 @@ import { buildConsumable, buildGun, type GunModel } from "./three/guns";
 import { cloudTexture, flashTexture, glowTexture, stormTexture } from "./three/textures";
 import { buildTown } from "./three/town";
 import { FOV_DEG, zoomFor, type ViewFx, type ViewRenderer } from "./view";
+import type { Marker } from "./mode";
 
 /**
  * The realistic three.js view: sunlit town with PBR materials, soft shadows,
@@ -71,6 +72,14 @@ export class ThreeView implements ViewRenderer {
   private storm: THREE.Mesh;
   private stormTex: THREE.Texture;
   private fogBase = new THREE.Color("#c3d3df");
+  private sky!: Sky;
+  private hemi!: THREE.HemisphereLight;
+  private sunOffset = SUN_OFFSET.clone();
+  private war = false;
+  private flags = new Map<string, { group: THREE.Group; cloth: THREE.Mesh; ring: THREE.Mesh }>();
+  private smoke: { sprite: THREE.Sprite; vx: number; vy: number; base: THREE.Vector3; phase: number }[] = [];
+  private artillery: { sprite: THREE.Sprite; born: number } | null = null;
+  private nextShell = 4;
   private fogStorm = new THREE.Color("#5b3a8f");
   private glow = glowTexture();
   private flashTex = flashTexture();
@@ -125,6 +134,7 @@ export class ThreeView implements ViewRenderer {
 
     // Sky, sun, ambient.
     const sky = new Sky();
+    this.sky = sky;
     sky.scale.setScalar(1200);
     const u = sky.material.uniforms;
     u.turbidity.value = 5;
@@ -142,7 +152,8 @@ export class ThreeView implements ViewRenderer {
     this.scene.environmentIntensity = 0.18;
     pmrem.dispose();
 
-    this.scene.add(new THREE.HemisphereLight("#cfe3ff", "#4d5a37", 0.7));
+    this.hemi = new THREE.HemisphereLight("#cfe3ff", "#4d5a37", 0.7);
+    this.scene.add(this.hemi);
     this.sun.position.copy(sunDir).multiplyScalar(60);
     this.sun.castShadow = high;
     if (high) {
@@ -248,6 +259,7 @@ export class ThreeView implements ViewRenderer {
     this.town = built.root;
     this.wind = built.time;
     this.scene.add(this.town);
+    this.applyTheme(world.map.theme === "battlefield", world);
     for (const g of this.loot.values()) this.scene.remove(g);
     this.loot.clear();
     for (const c of this.chests.values()) this.scene.remove(c.lid.parent!);
@@ -336,7 +348,7 @@ export class ThreeView implements ViewRenderer {
     this.camera.rotation.set(-deadK * 0.3, -me.angle - Math.PI / 2, deadK * 0.5 + Math.sin(fx.bob) * 0.004 * bobAmt);
 
     // Sun shadow follows the player.
-    const sd = SUN_OFFSET;
+    const sd = this.sunOffset;
     this.sun.position.set(me.x + sd.x, sd.y, me.y + sd.z);
     this.sun.target.position.set(me.x, 0, me.y);
 
@@ -351,6 +363,8 @@ export class ThreeView implements ViewRenderer {
     }
     this.syncTracers(world, me, fx, t);
     this.updateStorm(fx, me, t);
+    this.updateFlags(fx.markers ?? [], t);
+    if (this.war) this.updateBattle(me, t, dt);
     this.updateViewmodel(world, me, fx, t, dt);
 
     this.wind.value = t;
@@ -417,14 +431,18 @@ export class ThreeView implements ViewRenderer {
         dt,
       );
       if (fx.showNames) {
+        const color = fx.tagColor?.(e.id) ?? "#ffffff";
         let tag = this.nameTags.get(e.id);
-        if (!tag) {
-          tag = nameSprite(e.name);
+        if (!tag || tag.userData.color !== color || tag.userData.name !== e.name) {
+          tag?.removeFromParent();
+          tag = nameSprite(e.name, color);
           this.nameTags.set(e.id, tag);
           this.scene.add(tag);
         }
         tag.position.set(e.x, 2.15, e.y);
-        tag.visible = e.alive;
+        // Team games: teammates always tagged, enemies only up close.
+        const enemy = e.team !== me.team;
+        tag.visible = e.alive && (!fx.tagColor || !enemy || Math.hypot(e.x - me.x, e.y - me.y) < 14);
       }
     }
   }
@@ -536,6 +554,131 @@ export class ThreeView implements ViewRenderer {
       this.fxPool.push(f.sprite);
       return false;
     });
+  }
+
+  /** Overcast dusk, haze and drifting battle smoke for the battlefield; clear day for the town. */
+  private applyTheme(war: boolean, world: World) {
+    this.war = war;
+    const u = this.sky.material.uniforms;
+    const high = this.quality === "high";
+    const fog = this.scene.fog as THREE.Fog;
+    for (const s of this.smoke) s.sprite.removeFromParent();
+    this.smoke = [];
+    if (war) {
+      const dir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 11), THREE.MathUtils.degToRad(250));
+      // Low Rayleigh + high turbidity washes the blue out into a grey, smoky overcast.
+      u.turbidity.value = 20;
+      u.rayleigh.value = 0.35;
+      u.mieCoefficient.value = 0.03;
+      u.sunPosition.value.copy(dir);
+      this.sunOffset = dir.clone().multiplyScalar(70);
+      this.sun.color.set("#ffc28a");
+      this.sun.intensity = 1.7;
+      this.hemi.color.set("#b9b4a8");
+      this.hemi.groundColor.set("#4a3e30");
+      this.hemi.intensity = 0.85;
+      this.fogBase.set("#9d978a");
+      fog.color.copy(this.fogBase);
+      fog.near = 12;
+      fog.far = high ? 95 : 70;
+      this.renderer.toneMappingExposure = 0.72;
+      (this.clouds.material as THREE.MeshBasicMaterial).color.set("#9a958c");
+      const tex = glowTexture();
+      const W = world.map.width;
+      const H = world.map.height;
+      for (let i = 0; i < (high ? 14 : 8); i++) {
+        const sprite = new THREE.Sprite(
+          new THREE.SpriteMaterial({ map: tex, color: "#8c8579", transparent: true, opacity: 0.22, depthWrite: false }),
+        );
+        const base = new THREE.Vector3(12 + Math.random() * (W - 24), 1 + Math.random() * 3, 3 + Math.random() * (H - 6));
+        sprite.position.copy(base);
+        const size = 8 + Math.random() * 10;
+        sprite.scale.set(size, size * 0.7, 1);
+        this.scene.add(sprite);
+        this.smoke.push({ sprite, base, vx: 0.2 + Math.random() * 0.3, vy: 0.15 + Math.random() * 0.2, phase: Math.random() * 30 });
+      }
+    } else {
+      u.turbidity.value = 5;
+      u.rayleigh.value = 1.4;
+      u.mieCoefficient.value = 0.004;
+      u.sunPosition.value.copy(SUN_DIR);
+      this.sunOffset = SUN_OFFSET.clone();
+      this.sun.color.set("#fff0d8");
+      this.sun.intensity = 2.8;
+      this.hemi.color.set("#cfe3ff");
+      this.hemi.groundColor.set("#4d5a37");
+      this.hemi.intensity = 0.7;
+      this.fogBase.set("#c3d3df");
+      fog.near = high ? 40 : 28;
+      fog.far = high ? 150 : 90;
+      this.renderer.toneMappingExposure = 0.62;
+    }
+  }
+
+  /** Drifting smoke and distant artillery flashes on the horizon. */
+  private updateBattle(me: Entity, t: number, dt: number) {
+    for (const s of this.smoke) {
+      const k = ((t + s.phase) % 30) / 30;
+      s.sprite.position.set(s.base.x + k * 30 * s.vx, s.base.y + k * 30 * s.vy, s.base.z);
+      (s.sprite.material as THREE.SpriteMaterial).opacity = 0.22 * Math.sin(k * Math.PI);
+    }
+    if (t >= this.nextShell) {
+      this.nextShell = t + 3 + Math.random() * 6;
+      const a = Math.random() * Math.PI * 2;
+      const flash = this.artillery?.sprite ?? this.takeSprite(this.glow, "#ffb068", THREE.AdditiveBlending);
+      flash.position.set(me.x + Math.cos(a) * 140, 4, me.y + Math.sin(a) * 140);
+      flash.scale.set(60, 30, 1);
+      this.artillery = { sprite: flash, born: t };
+    }
+    if (this.artillery) {
+      const k = (t - this.artillery.born) / 0.6;
+      (this.artillery.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, 1 - k) * 0.8;
+      this.artillery.sprite.visible = k < 1;
+    }
+    void dt;
+  }
+
+  /** Conquest flags: pole, team-coloured cloth that rises with capture, and a ground ring. */
+  private updateFlags(markers: Marker[], t: number) {
+    const live = new Set<string>();
+    for (const m of markers) {
+      if (m.kind !== "flag") continue;
+      live.add(m.id);
+      let f = this.flags.get(m.id);
+      if (!f) {
+        const group = new THREE.Group();
+        const pole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.05, 0.07, 7, 8),
+          new THREE.MeshStandardMaterial({ color: "#5a4a38", roughness: 0.8 }),
+        );
+        pole.position.y = 3.5;
+        pole.castShadow = true;
+        const cloth = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.8, 1.1, 8, 1).translate(0.9, 0, 0),
+          new THREE.MeshStandardMaterial({ color: "#ffffff", side: THREE.DoubleSide, roughness: 0.9 }),
+        );
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(Math.max(0.2, (m.r ?? 3) - 0.15), m.r ?? 3, 64).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.45, depthWrite: false }),
+        );
+        ring.position.y = 0.04;
+        group.add(pole, cloth, ring);
+        this.scene.add(group);
+        f = { group, cloth, ring };
+        this.flags.set(m.id, f);
+      }
+      f.group.position.set(m.x, 0, m.y);
+      const color = m.color.slice(0, 7);
+      (f.cloth.material as THREE.MeshStandardMaterial).color.set(color);
+      (f.ring.material as THREE.MeshBasicMaterial).color.set(color);
+      f.cloth.position.y = 1.4 + (m.raise ?? 0) * 5;
+      f.cloth.rotation.y = Math.sin(t * 1.3 + m.x) * 0.25;
+    }
+    for (const [id, f] of this.flags)
+      if (!live.has(id)) {
+        f.group.removeFromParent();
+        this.flags.delete(id);
+      }
   }
 
   private updateStorm(fx: ViewFx, me: Entity, t: number) {
@@ -686,7 +829,7 @@ function fadeUpTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-function nameSprite(name: string) {
+function nameSprite(name: string, color = "#ffffff") {
   const c = document.createElement("canvas");
   c.width = 256;
   c.height = 48;
@@ -697,11 +840,12 @@ function nameSprite(name: string) {
   g.fillStyle = "rgba(0,0,0,.45)";
   const w = Math.min(250, g.measureText(name).width + 20);
   g.fillRect(128 - w / 2, 4, w, 40);
-  g.fillStyle = "#ffffff";
+  g.fillStyle = color;
   g.fillText(name, 128, 25);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }));
   s.scale.set(1.3, 0.24, 1);
+  s.userData = { color, name };
   return s;
 }

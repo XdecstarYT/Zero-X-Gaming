@@ -34,6 +34,21 @@ export interface ModeStatus {
   stormUrgent?: boolean;
 }
 
+/** A point of interest drawn on the minimap and in 3D (e.g. a Conquest flag). */
+export interface Marker {
+  id: string;
+  x: number;
+  y: number;
+  /** Owner colour (CSS). */
+  color: string;
+  label?: string;
+  /** Capture radius in cells (draws a ring). */
+  r?: number;
+  /** 0..1 how raised the flag is (3D). */
+  raise?: number;
+  kind: "flag" | "ally";
+}
+
 /** What the Neon Siege shell needs from a game mode (battle royale vs bots, or an online match). */
 export interface ModeController {
   readonly world: World;
@@ -54,6 +69,14 @@ export interface ModeController {
   stats(): MatchStats | null;
   nameOf(id: string): string;
   destroy(): void;
+  /** Optional: minimap / world markers (flags, teammates). */
+  markers?(): Marker[];
+  /** Optional: headline for the results screen (e.g. "Victory"). */
+  resultTitle?(): string;
+  /** Optional: called after the results screen; return true to go back to the menu instead of ending the run. */
+  afterResults?(): boolean;
+  /** Optional: name-tag colour for an entity (team games). */
+  tagColor?(id: string): string;
 }
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;

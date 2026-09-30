@@ -19,6 +19,8 @@ export const SOLID = {
   crate: 5,
   rock: 6,
   fence: 7,
+  /** Sandbag parapet (Trenches). */
+  sandbag: 8,
 } as const;
 
 export const GROUND = { grass: 0, road: 1, floor: 2, dirt: 3 } as const;
@@ -48,6 +50,8 @@ export interface GameMap {
   chests: { x: number; y: number }[];
   /** Window openings in building walls (visual only: walls stay solid). */
   windows: { x: number; y: number }[];
+  /** Visual theme for the 3D view (default "town"). */
+  theme?: "town" | "battlefield";
 }
 
 export function wallAt(map: GameMap, cx: number, cy: number): number {

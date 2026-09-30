@@ -7,6 +7,7 @@ const PAGES = [
   "/games/zero-dash",
   "/games/blitz-trivia",
   "/games/neon-siege",
+  "/games/trenches",
   "/leaderboards",
   "/battle-pass",
   "/locker",
@@ -62,6 +63,17 @@ test("no serious accessibility violations in the Neon Siege mission menu", async
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await dismissRotate(page);
   await expect(page.getByRole("button", { name: "Join room" })).toBeVisible();
+  const results = await new AxeBuilder({ page }).include('[data-testid="game-stage"]').analyze();
+  expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual(
+    [],
+  );
+});
+
+test("no serious accessibility violations in the Trenches menu", async ({ page }) => {
+  await page.goto("/games/trenches?net=local");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
+  await expect(page.getByRole("button", { name: "Create lobby" })).toBeVisible();
   const results = await new AxeBuilder({ page }).include('[data-testid="game-stage"]').analyze();
   expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual(
     [],

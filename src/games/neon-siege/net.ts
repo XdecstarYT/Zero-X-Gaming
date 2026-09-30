@@ -50,11 +50,12 @@ export type NetMessage =
   /** Host heartbeat: seconds left, kill limit, and whether the match is over. */
   | { t: "match"; left: number; limit: number; over: boolean };
 
-export interface Transport {
+/** A room. Generic over the message type so other games (Trenches) can reuse the transports. */
+export interface Transport<M = NetMessage> {
   readonly selfId: string;
   connect(): Promise<void>;
-  send(msg: NetMessage): void;
-  onMessage(cb: (msg: NetMessage, from: string) => void): () => void;
+  send(msg: M): void;
+  onMessage(cb: (msg: M, from: string) => void): () => void;
   /** Roster including self, whenever it changes. */
   onPeers(cb: (peers: PeerInfo[]) => void): () => void;
   close(): void;
@@ -103,15 +104,12 @@ class Listeners<T extends unknown[]> {
 // ---------------------------------------------------------------- in-memory
 
 /** Synchronous in-process room for tests. `hub.join()` returns a Transport. */
-export class MemoryHub {
-  private peers = new Map<
-    string,
-    { info: PeerInfo; msg: Listeners<[NetMessage, string]>; roster: Listeners<[PeerInfo[]]> }
-  >();
+export class MemoryHub<M = NetMessage> {
+  private peers = new Map<string, { info: PeerInfo; msg: Listeners<[M, string]>; roster: Listeners<[PeerInfo[]]> }>();
   private clock = 0;
 
-  join(id: string, name: string): Transport {
-    const msg = new Listeners<[NetMessage, string]>();
+  join(id: string, name: string): Transport<M> {
+    const msg = new Listeners<[M, string]>();
     const roster = new Listeners<[PeerInfo[]]>();
     return {
       selfId: id,
@@ -120,7 +118,7 @@ export class MemoryHub {
         this.broadcastRoster();
       },
       send: (m) => {
-        const copy = JSON.parse(JSON.stringify(m)) as NetMessage;
+        const copy = JSON.parse(JSON.stringify(m)) as M;
         for (const [pid, p] of this.peers) if (pid !== id) p.msg.emit(copy, id);
       },
       onMessage: (cb) => msg.add(cb),
@@ -142,14 +140,16 @@ export class MemoryHub {
 
 // ------------------------------------------------------- BroadcastChannel
 
-type LocalEnvelope =
-  { kind: "hello"; peer: PeerInfo } | { kind: "bye"; id: string } | { kind: "msg"; from: string; msg: NetMessage };
+type LocalEnvelope<M> =
+  | { kind: "hello"; peer: PeerInfo }
+  | { kind: "bye"; id: string }
+  | { kind: "msg"; from: string; msg: M };
 
 /** Same-browser rooms (multiple tabs), with presence via heartbeats. */
-export class BroadcastChannelTransport implements Transport {
+export class BroadcastChannelTransport<M = NetMessage> implements Transport<M> {
   readonly selfId: string;
   private channel: BroadcastChannel | null = null;
-  private msg = new Listeners<[NetMessage, string]>();
+  private msg = new Listeners<[M, string]>();
   private roster = new Listeners<[PeerInfo[]]>();
   private peers = new Map<string, { info: PeerInfo; seen: number }>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -159,14 +159,15 @@ export class BroadcastChannelTransport implements Transport {
     private room: string,
     name: string,
     id = randomId(),
+    private namespace = "siege",
   ) {
     this.selfId = id;
     this.me = { id, name, joinedAt: Date.now() };
   }
 
   async connect() {
-    this.channel = new BroadcastChannel(`zx-siege:${this.room}`);
-    this.channel.onmessage = (e: MessageEvent<LocalEnvelope>) => this.receive(e.data);
+    this.channel = new BroadcastChannel(`zx-${this.namespace}:${this.room}`);
+    this.channel.onmessage = (e: MessageEvent<LocalEnvelope<M>>) => this.receive(e.data);
     this.peers.set(this.selfId, { info: this.me, seen: Date.now() });
     this.hello();
     this.timer = setInterval(() => this.heartbeat(), 700);
@@ -174,7 +175,7 @@ export class BroadcastChannelTransport implements Transport {
   }
 
   private hello() {
-    this.channel?.postMessage({ kind: "hello", peer: this.me } satisfies LocalEnvelope);
+    this.channel?.postMessage({ kind: "hello", peer: this.me } satisfies LocalEnvelope<M>);
   }
 
   private heartbeat() {
@@ -190,7 +191,7 @@ export class BroadcastChannelTransport implements Transport {
     if (changed) this.emitRoster();
   }
 
-  private receive(env: LocalEnvelope) {
+  private receive(env: LocalEnvelope<M>) {
     if (env.kind === "hello") {
       const known = this.peers.has(env.peer.id);
       this.peers.set(env.peer.id, { info: env.peer, seen: Date.now() });
@@ -209,11 +210,11 @@ export class BroadcastChannelTransport implements Transport {
     this.roster.emit([...this.peers.values()].map((p) => p.info));
   }
 
-  send(msg: NetMessage) {
-    this.channel?.postMessage({ kind: "msg", from: this.selfId, msg } satisfies LocalEnvelope);
+  send(msg: M) {
+    this.channel?.postMessage({ kind: "msg", from: this.selfId, msg } satisfies LocalEnvelope<M>);
   }
 
-  onMessage(cb: (msg: NetMessage, from: string) => void) {
+  onMessage(cb: (msg: M, from: string) => void) {
     return this.msg.add(cb);
   }
 
@@ -223,7 +224,7 @@ export class BroadcastChannelTransport implements Transport {
 
   close() {
     if (this.timer) clearInterval(this.timer);
-    this.channel?.postMessage({ kind: "bye", id: this.selfId } satisfies LocalEnvelope);
+    this.channel?.postMessage({ kind: "bye", id: this.selfId } satisfies LocalEnvelope<M>);
     this.channel?.close();
     this.channel = null;
     this.msg.clear();

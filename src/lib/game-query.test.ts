@@ -26,7 +26,7 @@ describe("queryGames", () => {
   });
 
   it("sorts newest first", () => {
-    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("neon-siege");
+    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("trenches");
   });
 
   it("sorts by rating", () => {

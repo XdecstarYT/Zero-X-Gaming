@@ -1,4 +1,5 @@
 import type { WeaponKind } from "./items";
+import type { Marker } from "./mode";
 import type { Circle } from "./storm";
 import type { Entity, World } from "./world";
 
@@ -25,6 +26,10 @@ export interface ViewFx {
   storm: Circle | null;
   /** 0..1 ADS blend (smoothed). */
   ads: number;
+  /** World markers (Conquest flags) to draw. */
+  markers?: Marker[];
+  /** Name-tag colour per entity (team games). */
+  tagColor?: (id: string) => string;
 }
 
 /** The first-person view. The HUD is DOM (see hud.ts) and shared by both. */

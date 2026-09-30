@@ -5,9 +5,10 @@ A browser gaming hub: discover, play, and compete in original web games. Dark, n
 **Status:** all six phases are complete, plus an intro splash and an arena FPS with bots and online play. The project
 has:
 
-- 5 games, including **Neon Siege**, a 3D battle royale with AI bots, online rooms, and a Season 1 battle pass
+- 6 games, including **Neon Siege**, a 3D battle royale with AI bots, online rooms, and a Season 1 battle pass, and
+  **Trenches**, a 3D war shooter with multiplayer lobbies and Conquest
 - a cinematic intro splash on each visitor's first page load in a session
-- accounts
+- ZXG accounts (account name + password, no email)
 - server-validated scores
 - XP, levels, badges, and streaks
 - live leaderboards
@@ -23,6 +24,7 @@ See [`DECISIONS.md`](./DECISIONS.md) for every deviation from the original brief
 | **Orbit**        | Gravity arcade | ← → steer, Space boost · drag to steer, second finger to boost                    |
 | **Blitz Trivia** | 60 s quiz      | 1–4 or Tab + Enter · tap an answer                                                |
 | **Neon Siege**   | Battle royale  | WASD + mouse, click fire, right-click aim, E loot, 1–5 switch, R reload · stick, drag look, FIRE/AIM |
+| **Trenches**     | War / Conquest | WASD + mouse, click fire, right-click aim, 1–5 switch, R reload, Tab scores · stick, drag look, FIRE/AIM |
 
 Esc (or the pause key from Settings) pauses any game. Games also pause when the tab is hidden.
 
@@ -53,7 +55,7 @@ plays, and settings stay on the device. Leaderboards show an "accounts not enabl
 | `npm run lint`                | ESLint (flat config)                                                                  |
 | `npm run typecheck`           | `next typegen` + `tsc --noEmit`                                                       |
 | `npm test`                    | Vitest: XP curve, game rules (with bot simulations), auth helpers, stores, components |
-| `npm run test:e2e`            | Playwright on desktop Chrome + Pixel 7: user flows, all 4 games, axe a11y scans       |
+| `npm run test:e2e`            | Playwright on desktop Chrome + Pixel 7: user flows, all games, Trenches lobbies, axe a11y scans       |
 | `npm run format`              | Prettier                                                                              |
 
 ## Environment variables
@@ -169,6 +171,27 @@ empty slots. The match runs to 15 kills or 5 minutes.
 - **Sync:** fighters broadcast state at 15 Hz, and other clients interpolate.
 - **Unranked:** there's no authoritative server, so online scores never reach the leaderboards.
 
+### Trenches: war shooter with lobbies
+
+Trenches (`src/games/trenches/`) reuses the Neon Siege engine, 3D renderer, HUD and netcode through a
+`ShellConfig` (its own slug and menu) and the `ModeController` hooks (`markers`, `tagColor`, `resultTitle`,
+`afterResults`).
+
+- **Battlefield** (`battlefield.ts`): an 84×48 point-mirrored front: zigzag trenches with sandbag parapets,
+  communication trenches, barbed wire, pillboxes, shell craters, dead trees and a ruined farmhouse. The 3D
+  renderer switches to the `battlefield` theme: mud and gravel, earth berms, roofless ruins, an overcast smoky
+  dusk, drifting smoke and distant artillery.
+- **Conquest** (`conquest.ts`): three flags (A, B, C), 150 tickets a side, 8 s captures (tug-of-war),
+  ticket bleed every 3 s (doubled when one side holds all three), 1 ticket per death, 15-minute limit.
+- **Classes:** Rifleman, Assault, Medic, Marksman. Teams are Iron Legion and Crimson Front, each in its own uniform.
+- **Lobbies** (`lobby.ts`, `directory.ts`, `menu.ts`): create a lobby (name, 2v2 to 8v8, bot fill), browse the
+  live list or join by code or invite link (`?lobby=CODE`). Inside: auto-balanced teams, switch team, class,
+  ready up, chat. The host starts the battle for everyone; late joiners drop straight in, and after the match
+  everyone returns to the lobby. The lobby list is a Supabase presence channel (`trenches:directory`), rooms
+  are `trenches:<code>` broadcast channels, and `?net=local` runs both over BroadcastChannel between tabs.
+- **Netcode:** as Neon Siege: each client owns its soldier, the oldest peer hosts (bots, flags, tickets) and
+  broadcasts the Conquest state 4× a second. Matches are unranked.
+
 ### Themes
 
 Settings → Theme switches between **Classic** (dark neon) and **X-1+** (light and friendly). Both are the same CSS
@@ -248,11 +271,13 @@ other). To moderate, review `public.reports` in the Supabase dashboard (filter `
 
 One-time dashboard setup, which can't be done from code:
 
-1. **Auth → URL Configuration:** set the Site URL to the production URL. Add redirect URLs for
+1. **Auth → Sign In / Providers → Email:** turn **off** "Confirm email". ZXG accounts sign in with an account
+   name and password (stored as `<name>@zxg-acc.invalid`), so no confirmation email can ever arrive.
+2. **Auth → URL Configuration:** set the Site URL to the production URL. Add redirect URLs for
    `http://localhost:3000/auth/callback`, `https://<prod-domain>/auth/callback`, and the Vercel preview pattern.
-2. **Auth → Providers → Google / Discord:** create OAuth apps with the redirect URI
+3. **Auth → Providers → Google / Discord (optional, not used by the sign-in dialog):** create OAuth apps with the redirect URI
    `https://tbvaqinnbicxhlaqltik.supabase.co/auth/v1/callback`, then paste each client ID and secret.
-3. **Auth → SMTP (before launch):** configure a custom SMTP provider, because the built-in mailer is heavily
+4. **Auth → SMTP (optional):** configure a custom SMTP provider, because the built-in mailer is heavily
    rate-limited.
 
 **Schema changes:** add a new migration file (never edit an applied one), apply it with `supabase db push`, then

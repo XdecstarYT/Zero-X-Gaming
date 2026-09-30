@@ -245,4 +245,16 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     URLs, then used by the shop, Locker and battle pass, with the flat illustrations as fallback. The shop adds a
     3D inspect dialog with a turntable and blurb, confirm-to-buy, and a full-screen rarity burst with confetti
     and "Equip now". Motion respects the reduce-motion settings.
-
+68. **Accounts are "ZXG accounts": an account name and a password, no email.** Supabase Auth still needs an
+    email, so the name maps to `<name>@zxg-acc.invalid` (a reserved, undeliverable domain). The profile shows a
+    `ZXG-ACC-XXXXXXXX` tag derived from the user id. This needs "Confirm email" off in Supabase, and there's no
+    password reset (there's nowhere to send one). OAuth buttons were removed from the dialog to keep it simple.
+69. **Trenches reuses the Neon Siege engine instead of forking it.** The shell takes a `ShellConfig` (slug and
+    custom menu), transports became generic over the message type with a channel namespace, and the mode
+    interface gained optional hooks (map markers, name-tag colours, result title, return-to-lobby). Everything is
+    opt-in, so Neon Siege is unchanged.
+70. **Trenches lobbies are host-authoritative snapshots over the same P2P channels.** The oldest peer owns the
+    lobby state (teams auto-balanced, ready, class, phase, seed, match id) and rebroadcasts it every 1.5 s;
+    others send requests. Starting flips the phase and bumps the match id, which every client (and anyone who
+    joins mid-battle) treats as "load in". The public lobby list is Supabase presence, so it needs no table.
+    With no authoritative server, matches are unranked and don't reach the leaderboards.

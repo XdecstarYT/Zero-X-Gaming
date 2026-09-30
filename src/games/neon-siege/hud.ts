@@ -1,6 +1,6 @@
 import { CONSUMABLES, RARITY, SLOTS, WEAPONS, type Item } from "./items";
 import { GROUND, SOLID, type GameMap } from "./map";
-import type { Banner, ModeController, ScoreRow } from "./mode";
+import type { Banner, Marker, ModeController, ScoreRow } from "./mode";
 import type { StormState } from "./storm";
 import { MAX_SHIELD, activeWeapon, type Entity, type World } from "./world";
 
@@ -72,6 +72,7 @@ export function paintMapImage(map: GameMap, scale = 2) {
       else if (cell === SOLID.rock) color = "#7d7a72";
       else if (cell === SOLID.crate) color = "#8a6a3e";
       else if (cell === SOLID.fence) color = "#6b5640";
+      else if (cell === SOLID.sandbag) color = "#9a8a62";
       g.fillStyle = color;
       g.fillRect(x * scale, y * scale, scale, scale);
     }
@@ -339,7 +340,7 @@ export class SiegeHud {
     this.miniAcc += dt;
     if (this.miniAcc >= 1 / 15) {
       this.miniAcc = 0;
-      this.drawMinimap(world, me, mode.storm, f.pings);
+      this.drawMinimap(world, me, mode.storm, f.pings, mode.markers?.() ?? []);
     }
   }
 
@@ -365,23 +366,62 @@ export class SiegeHud {
     });
   }
 
-  private drawMinimap(world: World, me: Entity, storm: StormState | null, pings: { x: number; y: number; at: number }[]) {
+  private drawMinimap(
+    world: World,
+    me: Entity,
+    storm: StormState | null,
+    pings: { x: number; y: number; at: number }[],
+    markers: Marker[] = [],
+  ) {
     const g = this.miniCtx;
     const map = world.map;
+    // Non-square maps (battlefields) keep their aspect ratio.
+    const aspect = map.height / map.width;
+    if (this.mini.height !== Math.round(144 * aspect)) {
+      this.mini.height = Math.round(144 * aspect);
+      this.mini.style.height = `calc(min(22vmin,8.5rem) * ${aspect})`;
+    }
     if (this.mapFor !== map) {
       this.mapImage = paintMapImage(map, 2);
       this.mapFor = map;
     }
     const s = 144 / map.width;
-    g.clearRect(0, 0, 144, 144);
-    g.drawImage(this.mapImage!, 0, 0, 144, 144);
+    const mh = map.height * s;
+    g.clearRect(0, 0, 144, mh);
+    g.drawImage(this.mapImage!, 0, 0, 144, mh);
+    for (const m of markers) {
+      if (m.kind === "ally") {
+        g.fillStyle = m.color;
+        g.beginPath();
+        g.arc(m.x * s, m.y * s, 2.2, 0, Math.PI * 2);
+        g.fill();
+        continue;
+      }
+      if (m.r) {
+        g.strokeStyle = m.color;
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.arc(m.x * s, m.y * s, m.r * s, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.fillStyle = m.color;
+      g.font = "bold 10px system-ui, sans-serif";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.strokeStyle = "rgba(0,0,0,.8)";
+      g.lineWidth = 3;
+      if (m.label) {
+        g.strokeText(m.label, m.x * s, m.y * s);
+        g.fillText(m.label, m.x * s, m.y * s);
+      }
+    }
     // Opened chests stay; unopened ones glint.
     g.fillStyle = "#f2c230";
     for (const c of world.chests) if (!c.opened) g.fillRect(c.x * s - 1.5, c.y * s - 1.5, 3, 3);
     if (storm) {
       g.save();
       g.beginPath();
-      g.rect(0, 0, 144, 144);
+      g.rect(0, 0, 144, mh);
       g.arc(storm.current.x * s, storm.current.y * s, storm.current.r * s, 0, Math.PI * 2, true);
       g.fillStyle = "rgba(110,50,200,.45)";
       g.fill("evenodd");

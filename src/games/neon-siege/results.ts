@@ -31,6 +31,8 @@ export interface ResultsInput {
   reduceMotion: boolean;
   /** Final score shown for modes without placement (online). */
   score: number;
+  /** Headline override (e.g. "Victory" / "Defeat" in team modes). */
+  title?: string;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text?: string) {
@@ -82,10 +84,10 @@ export function showResults(root: HTMLElement, input: ResultsInput): Promise<voi
   const title = el(
     "h2",
     "font-display text-3xl font-black uppercase italic sm:text-5xl",
-    won ? "#1 Victory Royale" : place ? `#${place} of ${stats?.players}` : "Match over",
+    input.title ?? (won ? "#1 Victory Royale" : place ? `#${place} of ${stats?.players}` : "Match over"),
   );
   title.id = "siege-results-title";
-  title.style.color = won ? "#ffb321" : "#ffffff";
+  title.style.color = won ? "#ffb321" : input.title === "Defeat" ? "#ff5a4f" : "#ffffff";
   head.append(title);
   if (!ranked) head.append(el("p", "mt-1 text-xs text-white/60", "Unranked match: no XP, coins or leaderboard score."));
   card.append(head);

@@ -40,13 +40,33 @@ export type OnlineMenuBuilder = (ctx: {
   container: HTMLElement;
 }) => void;
 
+/**
+ * Lets another game (Trenches) reuse this shell: renderer, HUD, input, audio,
+ * results screen. It supplies its own slug and menu.
+ */
+export interface ShellConfig {
+  slug: string;
+  /** Replaces the Neon Siege menu. May return a cleanup (called on destroy). */
+  menu?: (ctx: {
+    container: HTMLElement;
+    playerName: string;
+    coarse: boolean;
+    /** The shared graphics-quality picker, to place in the custom menu. */
+    graphics: HTMLElement;
+    start: (controller: ModeController) => void;
+  }) => void | (() => void);
+}
+
 /** Called when a match ends with stats (season XP / challenges / coins). */
 export type MatchEndHook = (stats: MatchStats, info: { won: boolean; ranked: boolean }) => Promise<MatchReward | null>;
 /** Tells the menu how many ranked matches were played (Cash Cup every third). */
 export type MatchesPlayedLoader = () => Promise<number>;
 
 export class NeonSiege implements GameModule {
-  readonly slug = "neon-siege";
+  get slug() {
+    return this.config.slug;
+  }
+  private menuCleanup: (() => void) | null = null;
   private opts!: GameInitOptions;
   private host!: HTMLDivElement;
   private view: ViewRenderer | null = null;
@@ -99,6 +119,7 @@ export class NeonSiege implements GameModule {
     private onlineMenu?: OnlineMenuBuilder,
     private onMatchEnd?: MatchEndHook,
     private loadMatchesPlayed?: MatchesPlayedLoader,
+    private config: ShellConfig = { slug: "neon-siege" },
   ) {}
 
   init(opts: GameInitOptions) {
@@ -175,6 +196,7 @@ export class NeonSiege implements GameModule {
     window.removeEventListener("pointercancel", this.onPointerUp);
     document.removeEventListener("pointerlockchange", this.onLockChange);
     if (document.pointerLockElement === this.host) document.exitPointerLock();
+    this.menuCleanup?.();
     this.menu.remove();
     this.srHud.remove();
     this.touchLayer?.remove();
@@ -271,6 +293,22 @@ export class NeonSiege implements GameModule {
         writeGraphics(g);
       },
     );
+    if (this.config.menu) {
+      // Custom menu (e.g. Trenches). Built once; it keeps its own state (lobbies) between battles.
+      if (!this.menuCleanup) {
+        const box = el("div", "m-auto flex w-full flex-col items-center gap-3");
+        this.menu.replaceChildren(box);
+        this.menuCleanup =
+          this.config.menu({
+            container: box,
+            playerName: this.opts.playerName ?? "Guest",
+            coarse: this.coarse,
+            graphics: el("div", "flex flex-wrap items-center justify-center gap-2 text-xs text-muted", el("span", "", "Graphics:"), ...gfxButtons),
+            start: (c) => void this.startMode(c),
+          }) ?? (() => {});
+      }
+      return;
+    }
     const deploy = el(
       "button",
       "rounded-md bg-[#ffb321] px-6 py-2.5 font-display text-sm font-bold uppercase tracking-wider text-[#1b1406] hover:brightness-110",
@@ -368,6 +406,9 @@ export class NeonSiege implements GameModule {
   private async startMode(controller: ModeController) {
     this.mode = controller;
     this.ended = false;
+    this.killFeed = [];
+    this.pings = [];
+    this.tracers = [];
     this.menu.hidden = true;
     this.lastHp = controller.me.hp;
     this.srHudAcc = 0.5; // announce the match state on the very first tick
@@ -700,6 +741,9 @@ export class NeonSiege implements GameModule {
       }
     }
     this.tracers = this.tracers.filter((tr) => t - tr.at < 0.25);
+    // The battlefield rumbles: distant artillery every few seconds.
+    if (mode.world.map.theme === "battlefield" && Math.random() < dt / 5)
+      this.audio.shot(Math.random() < 0.5 ? "sniper" : "shotgun", 60 + Math.random() * 40, Math.random() * 2 - 1);
     this.pings = this.pings.filter((p) => t - p.at < 1.2);
     const wantAds = me.aiming ? 1 : 0;
     this.ads += (wantAds - this.ads) * Math.min(1, dt * 12);
@@ -743,8 +787,19 @@ export class NeonSiege implements GameModule {
       reward,
       reduceMotion: this.opts.settings.reduceMotion,
       score,
+      title: mode.resultTitle?.(),
     }).then(() => {
       if (this.destroyed) return;
+      // Lobby games go back to their lobby instead of ending the run.
+      if (mode.afterResults?.()) {
+        mode.destroy();
+        this.mode = null;
+        this.ended = false;
+        this.hud?.destroy();
+        this.hud = null;
+        this.showMenu();
+        return;
+      }
       this.emitter.emit({ kind: "final", score, durationMs, ranked: mode.ranked });
     });
   }
@@ -771,6 +826,8 @@ export class NeonSiege implements GameModule {
       showNames: mode.showNames,
       storm: mode.storm?.current ?? null,
       ads: this.ads,
+      markers: mode.markers?.().filter((m) => m.kind === "flag"),
+      tagColor: mode.tagColor ? (id) => mode.tagColor!(id) : undefined,
     };
     this.view.render(mode.world, mode.me, fx);
     const prompt = this.promptFor();

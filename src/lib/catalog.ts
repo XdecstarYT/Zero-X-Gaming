@@ -130,6 +130,34 @@ export const GAMES: Game[] = [
     touchControls:
       "Left thumb drags a virtual stick to move, right thumb drags to look. Hold FIRE to shoot, R to reload.",
   },
+  {
+    slug: "trenches",
+    title: "Trenches",
+    tagline: "Hold the line. Take the flags. Bleed their tickets dry.",
+    description:
+      "A 3D war shooter across a muddy, shell-cratered front: zigzag trenches, sandbag parapets, barbed wire, pillboxes and a ruined farmhouse under an overcast, smoke-filled sky. Create or join a multiplayer lobby, pick a side (Iron Legion or Crimson Front) and a class, ready up and load in together. Conquest: capture and hold three flags to drain the enemy's 150 tickets. Empty slots fill with AI soldiers, or jump into a quick battle vs bots.",
+    category: "shooter",
+    tags: ["war", "fps", "3d", "multiplayer", "lobbies", "conquest", "bots"],
+    status: "live",
+    palette: ["#c9a24a", "#6b6a45"],
+    rating: 0,
+    ratingCount: 0,
+    plays: 0,
+    releasedAt: "2026-09-30",
+    controls: [
+      { keys: ["W", "A", "S", "D"], action: "Move / strafe" },
+      { keys: ["Mouse"], action: "Look (click the game to lock the pointer)" },
+      { keys: ["Click", "Space"], action: "Fire / use item" },
+      { keys: ["Right-click", "Z"], action: "Aim down sights" },
+      { keys: ["1–5", "Wheel"], action: "Switch weapon / item" },
+      { keys: ["R"], action: "Reload" },
+      { keys: ["Tab"], action: "Scoreboard" },
+      { keys: ["Esc", "P"], action: "Pause" },
+    ],
+    orientation: "landscape",
+    touchControls:
+      "Left thumb drags a virtual stick to move, right thumb drags to look. Hold FIRE to shoot, R to reload.",
+  },
 ];
 
 export const FEATURED_SLUG = "zero-dash";

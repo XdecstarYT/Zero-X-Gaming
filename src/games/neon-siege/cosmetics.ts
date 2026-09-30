@@ -278,8 +278,41 @@ export const WRAPS: Record<string, Wrap> = {
 export const DEFAULT_OUTFIT = "recruit";
 export const DEFAULT_WRAP = "factory";
 
+/**
+ * Team uniforms for Trenches (not cosmetics: never sold or unlocked, so kept
+ * out of OUTFITS and the Locker). Blue-grey greatcoats vs olive with red trim.
+ */
+export const UNIFORM_OUTFITS: Record<string, Outfit> = {
+  legion: {
+    id: "legion",
+    name: "Iron Legion",
+    rarity: "common",
+    skin: "#d2a07e",
+    top: "#4a5a70",
+    bottom: "#3a4658",
+    accent: "#2a3140",
+    boots: "#1b1e24",
+    headgear: "helmet",
+    headColor: "#56657a",
+    glow: null,
+  },
+  front: {
+    id: "front",
+    name: "Crimson Front",
+    rarity: "common",
+    skin: "#b98563",
+    top: "#6b6a45",
+    bottom: "#55553a",
+    accent: "#8e2a24",
+    boots: "#2a2118",
+    headgear: "helmet",
+    headColor: "#5d5c3c",
+    glow: null,
+  },
+};
+
 export function outfitOf(id: string | undefined): Outfit {
-  return (id && OUTFITS[id]) || OUTFITS[DEFAULT_OUTFIT];
+  return (id && (OUTFITS[id] ?? UNIFORM_OUTFITS[id])) || OUTFITS[DEFAULT_OUTFIT];
 }
 
 export function wrapOf(id: string | undefined): Wrap {

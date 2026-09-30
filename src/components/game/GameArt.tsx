@@ -41,7 +41,7 @@ export function GameArt({
       </defs>
       <rect width="320" height="200" fill={`url(#${id}-bg)`} />
       <rect width="320" height="200" fill={`url(#${id}-glow)`} />
-      <Motif category={game.category} id={id} a={a} b={b} />
+      {game.slug === "trenches" ? <Trenches id={id} a={a} b={b} /> : <Motif category={game.category} id={id} a={a} b={b} />}
     </svg>
   );
 }
@@ -195,4 +195,40 @@ function Motif({ category, id, a, b }: { category: Game["category"]; id: string;
         </g>
       );
   }
+}
+
+/** Trenches: a war-torn skyline at dusk, a trench parapet with wire and a flag. */
+function Trenches({ id, a, b }: { id: string; a: string; b: string }) {
+  return (
+    <g>
+      <rect width="320" height="200" fill={b} fillOpacity="0.25" />
+      <circle cx="236" cy="72" r="26" fill={a} fillOpacity="0.55" filter={`url(#${id}-blur)`} />
+      {/* distant smoke and artillery flashes */}
+      <ellipse cx="70" cy="96" rx="60" ry="18" fill="#8a8578" fillOpacity="0.25" />
+      <ellipse cx="190" cy="104" rx="80" ry="14" fill="#8a8578" fillOpacity="0.2" />
+      <circle cx="120" cy="112" r="5" fill={a} opacity="0.8" filter={`url(#${id}-blur)`} />
+      <circle cx="280" cy="116" r="4" fill={a} opacity="0.6" filter={`url(#${id}-blur)`} />
+      {/* ruined farmhouse + dead trees */}
+      <path d="M40 124 V100 L56 88 L64 96 V92 H70 V124 Z" fill="#1c1a16" />
+      <path d="M262 124 V96 M262 104 L252 94 M262 100 L272 90" stroke="#1c1a16" strokeWidth="3" />
+      <path d="M92 124 V106 M92 112 L86 104" stroke="#1c1a16" strokeWidth="2.5" />
+      {/* no-man's land */}
+      <path d="M0 124 Q80 118 160 124 T320 122 V200 H0 Z" fill="#2b2619" />
+      {/* wire */}
+      {Array.from({ length: 8 }, (_, i) => (
+        <g key={i} stroke="#6d6a60" strokeWidth="1.4" fill="none">
+          <path d={`M${i * 42 + 6} 150 l10 -14 M${i * 42 + 16} 150 l-10 -14`} />
+          <ellipse cx={i * 42 + 27} cy="142" rx="11" ry="5" />
+        </g>
+      ))}
+      {/* flag */}
+      <line x1="200" y1="150" x2="200" y2="92" stroke="#d8d2c0" strokeWidth="2" />
+      <path d="M201 94 Q214 90 226 96 Q214 102 201 100 Z" fill={a} />
+      {/* sandbag parapet */}
+      <path d="M0 200 V168 Q160 150 320 166 V200 Z" fill="#3a3322" />
+      {Array.from({ length: 12 }, (_, i) => (
+        <ellipse key={i} cx={i * 28 + 12} cy={166 - Math.sin(i / 2) * 3} rx="15" ry="7" fill="#7d6f4c" stroke="#4e4430" />
+      ))}
+    </g>
+  );
 }
