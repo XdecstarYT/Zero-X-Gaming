@@ -87,7 +87,6 @@ export class ThreeView implements ViewRenderer {
   private charY = new Map<string, number>();
   private weather: { obj: THREE.Points | THREE.LineSegments; pos: Float32Array; kind: "rain" | "snow" | "dust" } | null = null;
   private flags = new Map<string, { group: THREE.Group; cloth: THREE.Mesh; ring: THREE.Mesh }>();
-  private smoke: { sprite: THREE.Sprite; vx: number; vy: number; base: THREE.Vector3; phase: number }[] = [];
   private artillery: { sprite: THREE.Sprite; born: number } | null = null;
   private nextShell = 4;
   private fogStorm = new THREE.Color("#5b3a8f");
@@ -364,7 +363,7 @@ export class ThreeView implements ViewRenderer {
     this.syncTracers(world, me, fx, t);
     this.updateStorm(fx, me, t);
     this.updateFlags(fx.markers ?? [], t);
-    if (this.war) this.updateBattle(me, t, dt);
+    if (this.war) this.updateBattle(me, t);
     this.updateWeather(dt);
     this.updateViewmodel(world, me, fx, t, dt);
 
@@ -561,14 +560,12 @@ export class ThreeView implements ViewRenderer {
     });
   }
 
-  /** Each Trenches front brings its own sky, light, haze, smoke and weather; the town is a clear day. */
+  /** Each Trenches front brings its own sky, light, haze and weather; the town is a clear day. */
   private applyTheme(war: boolean, world: World) {
     this.war = war;
     const u = this.sky.material.uniforms;
     const high = this.quality === "high";
     const fog = this.scene.fog as THREE.Fog;
-    for (const s of this.smoke) s.sprite.removeFromParent();
-    this.smoke = [];
     this.setWeather("none");
     const th = world.map.front;
     if (war && th) {
@@ -589,21 +586,6 @@ export class ThreeView implements ViewRenderer {
       fog.far = high ? th.fog.far : th.fog.far * 0.8;
       this.renderer.toneMappingExposure = th.exposure;
       (this.clouds.material as THREE.MeshBasicMaterial).color.set(th.clouds);
-      const tex = glowTexture();
-      const W = world.map.width;
-      const H = world.map.height;
-      const n = Math.round((high ? 24 : 12) * th.smoke);
-      for (let i = 0; i < n; i++) {
-        const sprite = new THREE.Sprite(
-          new THREE.SpriteMaterial({ map: tex, color: "#8c8579", transparent: true, opacity: 0.22, depthWrite: false }),
-        );
-        const base = new THREE.Vector3(12 + Math.random() * (W - 24), 1 + Math.random() * 3, 3 + Math.random() * (H - 6));
-        sprite.position.copy(base);
-        const size = 8 + Math.random() * 12;
-        sprite.scale.set(size, size * 0.7, 1);
-        this.scene.add(sprite);
-        this.smoke.push({ sprite, base, vx: 0.2 + Math.random() * 0.3, vy: 0.15 + Math.random() * 0.2, phase: Math.random() * 30 });
-      }
       if (th.weather !== "none") this.setWeather(th.weather);
     } else {
       u.turbidity.value = 5;
@@ -694,13 +676,8 @@ export class ThreeView implements ViewRenderer {
     (w.obj.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
   }
 
-  /** Drifting smoke and distant artillery flashes on the horizon. */
-  private updateBattle(me: Entity, t: number, dt: number) {
-    for (const s of this.smoke) {
-      const k = ((t + s.phase) % 30) / 30;
-      s.sprite.position.set(s.base.x + k * 30 * s.vx, s.base.y + k * 30 * s.vy, s.base.z);
-      (s.sprite.material as THREE.SpriteMaterial).opacity = 0.22 * Math.sin(k * Math.PI);
-    }
+  /** Distant artillery flashes on the horizon. */
+  private updateBattle(me: Entity, t: number) {
     if (t >= this.nextShell) {
       this.nextShell = t + 3 + Math.random() * 6;
       const a = Math.random() * Math.PI * 2;
@@ -714,7 +691,6 @@ export class ThreeView implements ViewRenderer {
       (this.artillery.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, 1 - k) * 0.35;
       this.artillery.sprite.visible = k < 1;
     }
-    void dt;
   }
 
   /** Conquest flags: pole, team-coloured cloth that rises with capture, and a ground ring. */

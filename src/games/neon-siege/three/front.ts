@@ -412,7 +412,7 @@ export function buildFront(map: GameMap, opts: TownOptions): FrontScene {
         }
         case SOLID.concrete: {
           const o = owner[y * W + x];
-          const h = o >= 0 ? map.buildings[o].floors * FLOOR_H * 0.8 : FLOOR_H * 0.8;
+          const h = o >= 0 ? map.buildings[o].floors * FLOOR_H : FLOOR_H;
           batch.add("concrete", mats.concrete, wallBox(h, 1.5), mat4(px, h / 2, pz));
           break;
         }
@@ -557,16 +557,18 @@ export function buildFront(map: GameMap, opts: TownOptions): FrontScene {
     if (seaWest && x < westEdge) continue;
     addDeadTree(batch, mats, x, z, (rng.next() * 1e9) >>> 0);
   }
-  const hillHue = new THREE.Color(theme.soil).getHSL({ h: 0, s: 0, l: 0 });
+  // Distant hills: far enough that their nearest face is always deep in the haze, tinted toward the fog.
+  const hillBase = new THREE.Color(theme.soil).lerp(new THREE.Color(theme.fog.color), 0.45);
+  const reach = Math.hypot(W, H) / 2;
   for (let i = 0; i < 26; i++) {
     const a = (i / 26) * Math.PI * 2 + rng.range(-0.1, 0.1);
-    const x = W / 2 + Math.cos(a) * rng.range(200, 300);
-    if (seaWest && x < -60) continue;
-    const r = rng.range(200, 300);
     const s = rng.range(40, 90);
+    const r = reach + theme.fog.far + s * 1.6 + rng.range(0, 60);
+    const x = W / 2 + Math.cos(a) * r;
+    if (seaWest && x < 0) continue;
     const g = lumpy(new THREE.IcosahedronGeometry(1, 2), i * 7 + 3, 0.18);
-    const col = new THREE.Color().setHSL(hillHue.h + rng.range(-0.02, 0.02), hillHue.s * 0.6, Math.min(0.85, hillHue.l * 0.55 + rng.range(0, 0.06)), THREE.SRGBColorSpace);
-    batch.add("hill", mats.hill, g, mat4(W / 2 + Math.cos(a) * r, -s * 0.35, H / 2 + Math.sin(a) * r, s * 1.6, s * rng.range(0.45, 0.75), s * 1.3), col, false);
+    const col = hillBase.clone().offsetHSL(rng.range(-0.02, 0.02), 0, rng.range(-0.06, 0.03));
+    batch.add("hill", mats.hill, g, mat4(x, -s * 0.35, H / 2 + Math.sin(a) * r, s * 1.6, s * rng.range(0.45, 0.75), s * 1.3), col, false);
   }
 
   batch.flush(root, opts.shadows);

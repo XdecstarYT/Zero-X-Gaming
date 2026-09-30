@@ -269,7 +269,8 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     becomes trench. Digs are peer-to-peer like everything else, validated on receipt, capped at 4,000 per battle,
     and re-sent by the host every 5 s. Each battle gets its own copy of the ground, so digs never leak between
     matches.
-74. **The "weird light" in the FPS was the glowing effects.** Loot beams, chest glows and the unlit storm wall
-    read as lights in the middle of the map; loot and chests no longer glow, the storm wall is a dim fogged haze,
-    and the screen vignette is softer.
-
+74. **The "weird light" in the middle of the map was a set of rendering artefacts.** In Neon Siege, the glowing
+    loot beams, chest glows and the unlit storm wall read as lights; loot and chests no longer glow, the storm
+    wall is a dim fogged haze, and the screen vignette is softer. On the battlefields, the drifting smoke sprites
+    rendered as hard dark slabs over the sky (found by hiding scene layers one at a time), so they were removed
+    (each front's fog provides the haze), and the distant hills were pushed beyond the fog.

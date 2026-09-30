@@ -72,8 +72,6 @@ export interface FrontTheme {
   /** Grass tufts per 100 m² of open ground. */
   grass: number;
   grassColor: string;
-  /** Smoke drifting over no-man's-land (0..1). */
-  smoke: number;
 }
 
 export interface Building {

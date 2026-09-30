@@ -44,7 +44,6 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       sea: "west",
       grass: 1.2,
       grassColor: "#9a9458",
-      smoke: 0.3,
     },
   },
   somme: {
@@ -69,7 +68,6 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       weather: "none",
       grass: 0.6,
       grassColor: "#8f8a5a",
-      smoke: 0.8,
     },
   },
   verdun: {
@@ -94,7 +92,6 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       weather: "none",
       grass: 0.3,
       grassColor: "#7b7248",
-      smoke: 1,
     },
   },
   passchendaele: {
@@ -119,7 +116,6 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       weather: "rain",
       grass: 0.2,
       grassColor: "#6e6a44",
-      smoke: 0.5,
     },
   },
   vimy: {
@@ -144,7 +140,6 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       weather: "snow",
       grass: 0.3,
       grassColor: "#b9b39a",
-      smoke: 0.4,
     },
   },
 };
