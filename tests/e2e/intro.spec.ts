@@ -39,3 +39,9 @@ test("reduced motion gets a short static intro", async ({ browser }) => {
   expect(Date.now() - t0).toBeLessThan(4000);
   await ctx.close();
 });
+
+test("invite links (?room=) skip the intro so friends land straight in the game", async ({ page }) => {
+  await page.goto("/games/neon-siege?room=ABCD&net=local");
+  await expect(page.locator("#zx-intro")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toBeEnabled();
+});

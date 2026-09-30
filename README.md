@@ -229,12 +229,13 @@ permissions policy) set in `next.config.ts`.
   - Reduce motion (OS setting or in-app toggle) is honoured by the UI and the games.
 - **Lighthouse (mobile, production build):**
 
-  | Page            | Performance | Accessibility |
-  | --------------- | ----------- | ------------- |
-  | `/`             | 96          | 100           |
-  | `/games`        | 96          | 100           |
-  | `/games/orbit`  | 97          | 100           |
-  | `/leaderboards` | 97          | 100           |
+  | Page                | Performance | Accessibility |
+  | ------------------- | ----------- | ------------- |
+  | `/` (intro playing) | 91–95       | 100           |
+  | `/games`            | 96          | 100           |
+  | `/games/orbit`      | 97          | 100           |
+  | `/games/neon-siege` | 97          | 100           |
+  | `/leaderboards`     | 97          | 100           |
 
   CLS is ≤ 0.06 on every page.
 

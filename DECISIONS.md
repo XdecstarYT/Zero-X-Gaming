@@ -169,3 +169,7 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     match end, damage clamping).
 53. **Neon Siege mirrors its canvas HUD into a visually hidden status region**: score, room, player count, health,
     ammo, and fighters. Screen reader users can follow the match, and tests can assert on it.
+54. **The intro's animations are compositor-only.** The grid floor scrolls via `transform` on a tiled layer (not
+    `background-position`), there's no full-screen `mix-blend-mode`, no animated `filter`, and no fade-in from
+    opacity 0. The first version cost about 1.4 s of blocking time and dropped Lighthouse on `/` to 61; after the
+    fix it scores 91–95 with the intro playing. Invite links (`?room=`) skip the intro.

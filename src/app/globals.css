@@ -182,16 +182,9 @@ html[data-intro="done"] #zx-intro {
   display: none;
 }
 
-.zx-intro {
-  animation: zx-intro-in 300ms ease-out both;
-}
+/* No fade-in: the intro is its own first frame (and fading from 0 would delay LCP). */
 .zx-intro-exit {
   animation: zx-intro-out 450ms var(--zx-ease-out) forwards;
-}
-@keyframes zx-intro-in {
-  from {
-    opacity: 0;
-  }
 }
 @keyframes zx-intro-out {
   to {
@@ -202,22 +195,34 @@ html[data-intro="done"] #zx-intro {
 }
 
 .zx-intro-floor {
+  transform: perspective(400px) rotateX(62deg);
+  transform-origin: center top;
+  mask-image: linear-gradient(to bottom, transparent, black 40%);
+  overflow: hidden;
+}
+/* The grid tile scrolls via transform (compositor-only), not background-position (repaints every frame). */
+.zx-intro-floor::before {
+  content: "";
+  position: absolute;
+  inset: -60px 0 0 0;
   background-image:
     linear-gradient(rgb(34 229 255 / 0.35) 1px, transparent 1px),
     linear-gradient(90deg, rgb(34 229 255 / 0.35) 1px, transparent 1px);
   background-size: 60px 60px;
-  transform: perspective(400px) rotateX(62deg);
-  transform-origin: center top;
-  mask-image: linear-gradient(to bottom, transparent, black 40%);
+  will-change: transform;
   animation: zx-intro-floor 1.2s linear infinite;
 }
 @keyframes zx-intro-floor {
+  from {
+    transform: translateY(0);
+  }
   to {
-    background-position: 0 60px;
+    transform: translateY(60px);
   }
 }
 
 .zx-intro-glow {
+  will-change: opacity;
   background:
     radial-gradient(600px 300px at 50% 45%, rgb(255 43 214 / 0.25), transparent 70%),
     radial-gradient(800px 400px at 50% 60%, rgb(34 229 255 / 0.15), transparent 70%);
@@ -225,8 +230,7 @@ html[data-intro="done"] #zx-intro {
 }
 
 .zx-intro-scanlines {
-  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 0.03) 0 1px, transparent 1px 3px);
-  mix-blend-mode: overlay;
+  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 0.025) 0 1px, transparent 1px 3px);
 }
 
 .zx-intro-draw {
@@ -262,7 +266,6 @@ html[data-intro="done"] #zx-intro {
   }
   40% {
     transform: scale(1.12);
-    filter: drop-shadow(0 0 30px var(--zx-cyan));
   }
   100% {
     transform: scale(1);
@@ -271,10 +274,7 @@ html[data-intro="done"] #zx-intro {
 
 .zx-intro-title {
   position: relative;
-  opacity: 0;
-  animation:
-    zx-intro-fade 0.01s 1.3s forwards,
-    zx-intro-glitch 0.6s 1.3s steps(2) 2;
+  animation: zx-intro-glitch 0.6s 0.2s steps(2) 2;
   text-shadow:
     2px 0 rgb(255 43 214 / 0.8),
     -2px 0 rgb(34 229 255 / 0.8);
