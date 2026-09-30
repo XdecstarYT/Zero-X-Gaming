@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { generateCity, HALF_STREET, LINES, lightFor, nodeId, onRoad, route, SIZE, SPEED_LIMIT } from "./city";
+import { generateCity, HALF_STREET, line, LINES, lightFor, locationOf, nodeId, onRoad, route, SIZE, SPEED_LIMIT, STREETS_EW, STREETS_NS } from "./city";
+import { hipRoofGeometry, isLawn, wallGeometry } from "./scenery";
 import { makePerson } from "./people";
 import { createRng } from "../engine/rng";
 import { Code3Sim, NO_INPUT, type Code3Input, type Ped } from "./sim";
@@ -517,5 +518,221 @@ describe("checkpoints and road tools", () => {
     run(s, 2);
     expect(p.state).toBe("panic");
     expect(["A+", "A", "B", "C", "D", "F"]).toContain(s.grade());
+  });
+});
+
+describe("new callouts and procedures", () => {
+  it("sets up every new call kind with the people and vehicles it needs", () => {
+    const s = new Code3Sim({ seed: 31, firstCall: 1e9, rank: 5 });
+    for (const kind of ["assist", "vandalism", "fugitive", "abandoned", "roadrage", "noise"] as const) {
+      const call = s.offerCall(kind);
+      expect(call.kind).toBe(kind);
+      expect(call.note.length, kind).toBeGreaterThan(10);
+      if (kind === "abandoned") {
+        expect(call.cars).toHaveLength(1);
+        expect(s.car(call.cars[0])!.driver).toBeFalsy();
+      } else expect(call.suspects.length, kind).toBeGreaterThan(0);
+      if (kind === "assist") {
+        const cop = s.ped(call.victims[0])!;
+        expect(cop.role).toBe("officer");
+        expect(cop.drawn).toBe(true);
+      }
+      if (kind === "roadrage") expect(call.suspects.map((id) => s.ped(id)!.state)).toEqual(["fight", "fight"]);
+      if (kind === "vandalism") expect(s.ped(call.suspects[0])!.task).toBe("spray");
+      if (kind === "fugitive") expect(call.trackPed).toBe(call.suspects[0]);
+      call.state = "declined";
+    }
+  });
+
+  it("felony stop: driver ordered out from cover, walked back, knelt and cuffed by the book", () => {
+    const s = new Code3Sim({ seed: 12, firstCall: 1e9, traffic: 2, peds: 4 });
+    run(s, 2);
+    const { c, d, k } = pullOver(s);
+    c.reg!.status = "stolen";
+    // Back off behind the car: no walking up to a stolen car's window.
+    const f = forward(c.h);
+    s.player.x = c.x - f.x * 14;
+    s.player.z = c.z - f.z * 14;
+    expect(has(s, "felony-out")).toBe(true);
+    expect(s.options()[0].group).toBe("command");
+    s.choose("felony-out");
+    expect(k.felony).toBe(true);
+    expect(d.state).toBe("handsup");
+    expect(c.driver).toBeNull();
+    expect(has(s, "cmd-back")).toBe(true);
+    s.choose("cmd-back");
+    expect(d.state).toBe("backing");
+    for (let t = 0; t < 20 && d.state === "backing"; t += 0.5) run(s, 0.5);
+    expect(d.state).toBe("handsup");
+    expect(Math.hypot(d.x - s.player.x, d.z - s.player.z)).toBeLessThan(5.5);
+    s.choose("cmd-kneel");
+    expect(d.state).toBe("kneel");
+    // Walk up, confirm the car is stolen, cuff.
+    s.player.x = d.x + 1;
+    s.player.z = d.z;
+    s.choose("plate");
+    expect(k.offences.has("stolen vehicle")).toBe(true);
+    s.choose("arrest");
+    expect(d.state).toBe("cuffed");
+    expect(d.kneeling).toBe(true);
+    expect(s.stats.report.some((r) => r.text === "Felony stop by the book")).toBe(true);
+    expect(has(s, "stand")).toBe(true);
+    s.choose("stand");
+    expect(d.kneeling).toBe(false);
+  });
+
+  it("verbal commands from a distance: a suspect proned out is cuffed on the ground", () => {
+    const s = new Code3Sim({ seed: 41, firstCall: 1e9, traffic: 2 });
+    run(s, 0.5);
+    run(s, 0.05, { enter: true });
+    const p = s.peds.find((q) => q.state === "walk")!;
+    Object.assign(p, { walk: undefined, state: "handsup", role: "suspect", x: s.player.x + 9, z: s.player.z });
+    p.person.fight = 0;
+    p.person.flee = 0;
+    expect(s.commandTarget()?.id).toBe(p.id);
+    s.choose("cmd-prone");
+    expect(p.state).toBe("prone");
+    run(s, 1);
+    expect(p.state).toBe("prone");
+    s.player.x = p.x - 1.2;
+    s.player.z = p.z;
+    s.choose("arrest");
+    expect(p.state).toBe("cuffed");
+    expect(p.kneeling).toBe(true);
+  });
+
+  it("paperwork: an arrest needs a report filed from the parked unit; unfiled reports cost points at end of watch", () => {
+    const s = new Code3Sim({ seed: 12, firstCall: 1e9 });
+    run(s, 2);
+    const { d } = pullOver(s);
+    d.person.warrants = ["Burglary"];
+    s.choose("id");
+    s.choose("person");
+    s.choose("out");
+    s.player.x = d.x + 1;
+    s.player.z = d.z;
+    s.choose("arrest");
+    const rep = s.reports.find((r) => r.kind === "arrest")!;
+    expect(rep.lines[0]).toContain("outstanding warrant");
+    // Not from the sidewalk.
+    s.choose(`report:${rep.id}`);
+    expect(rep.filed).toBe(false);
+    s.player.inCar = true;
+    s.unit.vx = s.unit.vz = 0;
+    expect(s.options().some((o) => o.id === `report:${rep.id}` && o.group === "unit")).toBe(true);
+    const before = s.stats.score;
+    s.choose(`report:${rep.id}`);
+    expect(rep.filed).toBe(true);
+    expect(s.stats.score).toBe(before + 25);
+    s.reports.push({ id: "x", kind: "incident", title: "incident report: test", lines: [], at: 0, filed: false });
+    const b2 = s.stats.score;
+    s.end("End of shift");
+    expect(s.stats.score).toBe(b2 - 10);
+  });
+
+  it("abandoned vehicle: run the plate on scene, a stolen one is recovered, the tow closes the call", () => {
+    const s = new Code3Sim({ seed: 51, firstCall: 1e9, traffic: 2 });
+    const call = s.offerCall("abandoned");
+    s.acceptCall(call);
+    const car = s.car(call.cars[0])!;
+    car.reg!.status = "stolen";
+    run(s, 0.05, { enter: true });
+    s.player.x = car.x + 2;
+    s.player.z = car.z;
+    run(s, 0.1);
+    expect(call.state).toBe("onscene");
+    expect(has(s, "ab-plate")).toBe(true);
+    s.choose("ab-plate");
+    expect(s.mdt[0].title).toBe(`PLATE: ${car.reg!.plate}`);
+    s.choose("ab-tow");
+    expect(s.stats.report.some((r) => r.text === "Stolen vehicle recovered")).toBe(true);
+    run(s, 11);
+    expect(call.state).toBe("done");
+    expect(s.car(car.id)).toBeUndefined();
+  });
+
+  it("noise complaint: talk to the resident, a warning closes it", () => {
+    const s = new Code3Sim({ seed: 52, firstCall: 1e9, traffic: 2 });
+    const call = s.offerCall("noise");
+    s.acceptCall(call);
+    const r = s.ped(call.suspects[0])!;
+    Object.assign(r.person, { attitude: "polite", fight: 0, flee: 0 });
+    run(s, 0.05, { enter: true });
+    s.player.x = r.x + 1.5;
+    s.player.z = r.z;
+    run(s, 0.1);
+    s.choose("talk");
+    const k = s.contactFor(r.id)!;
+    expect(k.violations.has("noise ordinance")).toBe(true);
+    s.choose("warn");
+    run(s, 0.1);
+    expect(call.state).toBe("done");
+    expect(s.reports.some((x) => x.kind === "incident")).toBe(true);
+  });
+
+  it("the taser locks the target up for a moment (render: tased)", () => {
+    const s = new Code3Sim({ seed: 53, firstCall: 1e9, traffic: 2 });
+    run(s, 0.05, { enter: true });
+    const p = s.peds.find((q) => q.state === "walk")!;
+    Object.assign(p, { walk: undefined, state: "flee", role: "suspect", x: s.player.x + 5, z: s.player.z });
+    s.player.h = 0;
+    s.step(DT, { ...NO_INPUT, yaw: 0, fire: true });
+    expect(p.state).toBe("down");
+    expect(p.tasedUntil).toBeGreaterThan(s.time);
+    expect(s.reports.some((r) => r.kind === "force")).toBe(true);
+  });
+});
+
+describe("HUD helpers", () => {
+  it("names the street, the cross street and the district", () => {
+    const city = generateCity();
+    const loc = locationOf(city, line(4), line(2) + 30);
+    expect(loc.street).toBe(STREETS_NS[4]);
+    expect(loc.cross).toBe(STREETS_EW[2]);
+    expect(locationOf(city, line(3), line(3)).street).toBe(`${STREETS_NS[3]} & ${STREETS_EW[3]}`);
+    expect(locationOf(city, line(3) + 20, line(3) + 20).district).toBe("Downtown");
+  });
+
+  it("orders actions by kind: commands first, unit last", () => {
+    const s = new Code3Sim({ seed: 12, firstCall: 1e9 });
+    run(s, 2);
+    pullOver(s);
+    const groups = s.options().map((o) => o.group);
+    const order = ["command", "talk", "check", "enforce", "custody", "scene", "unit"];
+    const idx = groups.map((g) => order.indexOf(g!));
+    expect(idx).toEqual([...idx].sort((a, b) => a - b));
+    expect(groups).toContain("talk");
+    expect(groups).toContain("check");
+  });
+});
+
+describe("scenery geometry", () => {
+  const city = generateCity();
+  it("fits whole bays and floors on every wall, with a ground-floor strip", () => {
+    const tower = city.buildings.find((b) => b.kind === "tower")!;
+    const walls = wallGeometry(city, [tower]);
+    const keys = [...walls.keys()];
+    expect(keys.some((k) => k.startsWith("b:tower"))).toBe(true);
+    expect(keys.some((k) => k.startsWith("u:tower"))).toBe(true);
+    const up = walls.get(keys.find((k) => k.startsWith("u:"))!)!;
+    const uv = up.attributes.uv as import("three").BufferAttribute;
+    let maxU = 0;
+    for (let i = 0; i < uv.count; i++) maxU = Math.max(maxU, uv.getX(i));
+    // A whole number of 4 m bays per wall, 4 bays per texture tile.
+    expect((maxU * 4) % 1).toBeCloseTo(0, 5);
+  });
+
+  it("hip roofs face up and out; lawns avoid houses, driveways and park paths", () => {
+    const houses = city.buildings.filter((b) => b.kind === "house").slice(0, 6);
+    const roof = hipRoofGeometry(houses)!;
+    const n = roof.attributes.normal as import("three").BufferAttribute;
+    for (let i = 0; i < n.count; i++) expect(n.getY(i)).toBeGreaterThan(0.3);
+    const park = city.blocks.find((b) => b.district === "park")!;
+    expect(isLawn(city, park.x0 + 10, park.z0 + 30)).toBe(true);
+    expect(isLawn(city, (park.x0 + park.x1) / 2, (park.z0 + park.z1) / 2)).toBe(false);
+    const h = houses[0];
+    expect(isLawn(city, h.x, h.z)).toBe(false);
+    const down = city.blocks.find((b) => b.district === "downtown")!;
+    expect(isLawn(city, down.x0 + 2, down.z0 + 2)).toBe(false);
   });
 });

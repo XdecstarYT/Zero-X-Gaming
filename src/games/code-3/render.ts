@@ -37,10 +37,14 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
+import { Sky } from "three/examples/jsm/objects/Sky.js";
+import { asphaltTexture, concreteTexture, grassTexture, setTextureDetail } from "../neon-siege/three/textures";
+import { baseFacade, shingleTexture, upperFacade } from "./facades";
+import { flatRoofGeometry, GrassField, hipRoofGeometry, streetTrees, TreeKit, treePitGeometry, trimGeometry, wallGeometry, type TreeSpot } from "./scenery";
 import { HALF_ROAD, HALF_STREET, LINES, lightFor, nodePos, onSidewalk, SIZE, type Building, type City, type PropKind } from "./city";
 import { buildCar, buildPed, glowTexture, posePed, type CarModel, type PedModel, type Pose } from "./models";
 import type { Code3Sim, Ped, SimEvent, Weather } from "./sim";
-import { asphaltDetail, cloudTexture, concrete, facade, paintGround, radialTexture, signTexture } from "./textures";
+import { asphaltDetail, cloudTexture, concrete, paintGround, radialTexture, signTexture } from "./textures";
 import { forward, right, signalOf, speedOf } from "./vehicles";
 import type { Deployable } from "./sim";
 
@@ -89,7 +93,11 @@ const GRADE_SHADER = {
     }`,
 };
 
-/** Sky dome: gradient + sun/moon disc; also rendered into the reflection map. */
+/**
+ * Night / storm dome: gradient + moon disc, blended over the physically based
+ * sky by `alpha` (0 on a clear day, 1 at night); also rendered into the
+ * reflection map.
+ */
 function skyMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -100,10 +108,11 @@ function skyMaterial() {
       sunColor: { value: new THREE.Color("#fff3d0") },
       sunSize: { value: 0.9995 },
       glow: { value: 0.4 },
+      alpha: { value: 1 },
     },
     vertexShader: "varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
     fragmentShader: `
-      uniform vec3 top; uniform vec3 horizon; uniform vec3 bottom; uniform vec3 sunDir; uniform vec3 sunColor; uniform float sunSize; uniform float glow;
+      uniform vec3 top; uniform vec3 horizon; uniform vec3 bottom; uniform vec3 sunDir; uniform vec3 sunColor; uniform float sunSize; uniform float glow; uniform float alpha;
       varying vec3 vDir;
       void main(){
         vec3 d = normalize(vDir);
@@ -112,12 +121,66 @@ function skyMaterial() {
         float s = dot(d, normalize(sunDir));
         c += sunColor * glow * pow(max(s, 0.0), 8.0) * 0.6;
         c += sunColor * smoothstep(sunSize, sunSize + 0.0004, s) * 6.0;
-        gl_FragColor = vec4(c, 1.0);
+        // Below the horizon the dome is always opaque ground.
+        gl_FragColor = vec4(c, h < 0.0 ? max(alpha, smoothstep(0.0, -0.04, h)) : alpha);
       }`,
     side: THREE.BackSide,
     depthWrite: false,
+    transparent: true,
     fog: false,
   });
+}
+
+/** Preetham sky with drifting clouds; `skyGain` sets its brightness against the scene's exposure. */
+function physicalSky() {
+  const sky = new Sky();
+  const mat = sky.material as THREE.ShaderMaterial;
+  mat.uniforms.skyGain = { value: 0.075 };
+  mat.fragmentShader = mat.fragmentShader
+    .replace("uniform float time;", "uniform float time;\nuniform float skyGain;")
+    .replace("gl_FragColor = vec4( texColor, 1.0 );", "gl_FragColor = vec4( texColor * skyGain, 1.0 );");
+  return sky;
+}
+
+/** A spray-painted tag with drips, on a transparent canvas. */
+function graffitiTexture(seed: number) {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  let r = seed * 9301 + 49297;
+  const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+  const words = ["BAYV", "KRZ", "NOVA", "SKE", "RYOT", "ZERO", "MEKA", "DUSK"];
+  const word = words[Math.floor(rnd() * words.length)];
+  const hue = Math.floor(rnd() * 360);
+  g.font = "italic 900 150px Impact, Arial Black, sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.lineJoin = "round";
+  g.save();
+  g.translate(256, 130);
+  g.rotate((rnd() - 0.5) * 0.25);
+  g.lineWidth = 22;
+  g.strokeStyle = "#111";
+  g.strokeText(word, 0, 0);
+  const grad = g.createLinearGradient(0, -60, 0, 60);
+  grad.addColorStop(0, `hsl(${hue},90%,65%)`);
+  grad.addColorStop(1, `hsl(${(hue + 60) % 360},85%,45%)`);
+  g.fillStyle = grad;
+  g.fillText(word, 0, 0);
+  g.lineWidth = 4;
+  g.strokeStyle = "#fff";
+  g.strokeText(word, 0, 0);
+  g.restore();
+  // Drips.
+  g.fillStyle = `hsl(${hue},80%,50%)`;
+  for (let k = 0; k < 14; k++) {
+    const x = 60 + rnd() * 390;
+    g.fillRect(x, 175 + rnd() * 10, 3, 20 + rnd() * 60);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 let stripeTex: THREE.Texture | null = null;
@@ -166,50 +229,6 @@ function textPanel(a: string, b: string, bg: string) {
   return t;
 }
 
-/** Walls (UV'd in facade tiles) and a flat roof for a list of buildings. */
-function buildingGeometry(list: Building[]) {
-  const pos: number[] = [];
-  const uv: number[] = [];
-  const nor: number[] = [];
-  const idx: number[] = [];
-  const roofPos: number[] = [];
-  const roofIdx: number[] = [];
-  const quad = (a: number[], b: number[], c: number[], d: number[], n: number[], w: number, h: number) => {
-    const base = pos.length / 3;
-    pos.push(...a, ...b, ...c, ...d);
-    nor.push(...n, ...n, ...n, ...n);
-    uv.push(0, 0, w / 16, 0, w / 16, h / 14, 0, h / 14);
-    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-  };
-  for (const b of list) {
-    const x0 = b.x - b.hw;
-    const x1 = b.x + b.hw;
-    const z0 = b.z - b.hd;
-    const z1 = b.z + b.hd;
-    const h = b.h;
-    quad([x1, 0, z0], [x0, 0, z0], [x0, h, z0], [x1, h, z0], [0, 0, -1], x1 - x0, h);
-    quad([x1, 0, z1], [x1, 0, z0], [x1, h, z0], [x1, h, z1], [1, 0, 0], z1 - z0, h);
-    quad([x0, 0, z1], [x1, 0, z1], [x1, h, z1], [x0, h, z1], [0, 0, 1], x1 - x0, h);
-    quad([x0, 0, z0], [x0, 0, z1], [x0, h, z1], [x0, h, z0], [-1, 0, 0], z1 - z0, h);
-    if (b.kind !== "house") {
-      const base = roofPos.length / 3;
-      roofPos.push(x0, h, z0, x0, h, z1, x1, h, z1, x1, h, z0);
-      roofIdx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    }
-  }
-  const walls = new THREE.BufferGeometry();
-  walls.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  walls.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
-  walls.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
-  walls.setIndex(idx);
-  walls.computeTangents?.();
-  const roofs = new THREE.BufferGeometry();
-  roofs.setAttribute("position", new THREE.Float32BufferAttribute(roofPos, 3));
-  roofs.setIndex(roofIdx);
-  roofs.computeVertexNormals();
-  return { walls, roofs };
-}
-
 /** Planar world-space UVs (u = x / tile, v = z / tile). */
 function planarUV(g: THREE.BufferGeometry, tile: number) {
   const p = g.attributes.position as THREE.BufferAttribute;
@@ -234,15 +253,17 @@ export class Code3View {
   readonly canvas: HTMLCanvasElement;
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(62, 1, 0.1, 1400);
+  private camera = new THREE.PerspectiveCamera(62, 1, 0.2, 1400);
   private composer: EffectComposer | null = null;
   private grade: ShaderPass | null = null;
+  private bloom: UnrealBloomPass | null = null;
   private hemi = new THREE.HemisphereLight("#bcd4ff", "#3a3228", 0.6);
   private sun = new THREE.DirectionalLight("#ffffff", 1);
   private pmrem: THREE.PMREMGenerator;
   private envScene = new THREE.Scene();
   private envRT: THREE.WebGLRenderTarget | null = null;
   private envKey = "";
+  private envAt = 0;
   private sky: THREE.Mesh;
   private skyMat = skyMaterial();
   private stars: THREE.Points;
@@ -256,7 +277,7 @@ export class Code3View {
   private lampMat = new THREE.MeshStandardMaterial({ color: "#fff4d0", emissive: "#ffc98a", emissiveIntensity: 0 });
   private pools: THREE.InstancedMesh;
   private lampSpots: { x: number; z: number; ry: number }[] = [];
-  private lampLights: THREE.PointLight[] = [];
+  private lampLights: THREE.SpotLight[] = [];
   private lampAt = 0;
   private signals: { mats: [THREE.MeshStandardMaterial, THREE.MeshStandardMaterial, THREE.MeshStandardMaterial]; parity: number; axis: "ns" | "ew" }[] = [];
   private signMats: THREE.MeshBasicMaterial[] = [];
@@ -281,10 +302,12 @@ export class Code3View {
   private shake = 0;
   private night = 1;
   private officerStep = 0;
+  private frameDt = 1 / 60;
   private ro: ResizeObserver;
   private resolved = false;
   private readonly weather: Weather;
   private deployMeshes = new Map<string, THREE.Group>();
+  private tags = new Map<string, THREE.Mesh>();
   private coneGeo = mergeGeometries([new THREE.ConeGeometry(0.17, 0.62, 12).translate(0, 0.33, 0), new THREE.BoxGeometry(0.42, 0.04, 0.42).translate(0, 0.02, 0)]);
   private coneMat = new THREE.MeshStandardMaterial({ color: "#ff5a0a", roughness: 0.5, emissive: "#ff3a00", emissiveIntensity: 0.05 });
   private heli: THREE.Group;
@@ -293,38 +316,16 @@ export class Code3View {
   private torch: THREE.SpotLight;
   // Streaming.
   private CN = 1;
-  private chunkData: { buildings: Building[]; trees: City["trees"]; props: City["props"]; parked: City["parked"] }[] = [];
+  private chunkData: { buildings: Building[]; trees: TreeSpot[]; pits: TreeSpot[]; props: City["props"]; parked: City["parked"] }[] = [];
   private chunks = new Map<number, THREE.Group>();
   private loadRadius = 300;
   private facadeMats = new Map<string, THREE.MeshStandardMaterial>();
   private kindsCache: Record<PropKind, { geo: THREE.BufferGeometry; mat: THREE.Material }> | null = null;
-  private mats = {
-    roof: new THREE.MeshStandardMaterial({ color: "#4a4a48", roughness: 1 }),
-    houseRoof: new THREE.MeshStandardMaterial({ color: "#4f3a31", roughness: 0.85, flatShading: true }),
-    kit: new THREE.MeshStandardMaterial({ color: "#8f9295", roughness: 0.6, metalness: 0.4 }),
-    parapet: new THREE.MeshStandardMaterial({ color: "#6d6a64", roughness: 0.9 }),
-    awning: new THREE.MeshStandardMaterial({ color: "#7a1f24", roughness: 0.8, side: THREE.DoubleSide }),
-    trunk: new THREE.MeshStandardMaterial({ color: "#4b3526", roughness: 1 }),
-    crown: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.95, flatShading: true }),
-    shelterGlass: new THREE.MeshPhysicalMaterial({ color: "#9fb4c4", transparent: true, opacity: 0.3, roughness: 0.05 }),
-  };
-  private treeGeo = (() => {
-    const crown = mergeGeometries([
-      new THREE.IcosahedronGeometry(1.7, 1).translate(0, 4.2, 0),
-      new THREE.IcosahedronGeometry(1.3, 1).translate(0.9, 3.7, 0.4),
-      new THREE.IcosahedronGeometry(1.25, 1).translate(-0.7, 3.8, -0.6),
-      new THREE.IcosahedronGeometry(1.1, 1).translate(0.1, 5.2, -0.2),
-    ]);
-    const pos = crown.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < pos.count; i++) {
-      const k = 1 + Math.sin(pos.getX(i) * 7.1) * Math.cos(pos.getZ(i) * 6.3) * 0.08;
-      pos.setXYZ(i, pos.getX(i) * k, pos.getY(i) * k, pos.getZ(i) * k);
-    }
-    crown.computeVertexNormals();
-    const trunk = new THREE.CylinderGeometry(0.14, 0.24, 3, 7).translate(0, 1.5, 0);
-    crown.userData.shared = trunk.userData.shared = true;
-    return { crown, trunk };
-  })();
+  private mats: Record<"roof" | "houseRoof" | "kit" | "parapet" | "awning" | "trim" | "pit" | "shelterGlass", THREE.Material>;
+  private phys: Sky;
+  private envGround: THREE.Mesh;
+  private trees: TreeKit;
+  private grass: GrassField | null = null;
 
   constructor(
     private host: HTMLElement,
@@ -358,11 +359,40 @@ export class Code3View {
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.03;
 
-    // Sky dome, stars, moon, clouds (follow the camera).
+    // Materials shared by the streamed chunks (PBR tiles from the shared texture set).
+    setTextureDetail(high ? "high" : "low");
+    const tar = concreteTexture();
+    tar.map.repeat.set(1, 1);
+    const shingles = shingleTexture(high ? 64 : 32);
+    const trimTex = concreteTexture();
+    this.mats = {
+      roof: new THREE.MeshStandardMaterial({ map: tar.map, normalMap: high ? (tar.normal ?? null) : null, color: "#77746f", roughness: 0.95, vertexColors: true }),
+      houseRoof: new THREE.MeshStandardMaterial({ map: shingles.map, normalMap: high ? shingles.normal : null, roughnessMap: shingles.rm, aoMap: shingles.rm, roughness: 1, vertexColors: true, side: THREE.DoubleSide }),
+      kit: new THREE.MeshStandardMaterial({ color: "#8f9295", roughness: 0.6, metalness: 0.4 }),
+      parapet: new THREE.MeshStandardMaterial({ map: trimTex.map, color: "#9a968e", roughness: 0.9 }),
+      awning: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.85, side: THREE.DoubleSide, vertexColors: true }),
+      trim: new THREE.MeshStandardMaterial({ map: trimTex.map, normalMap: high ? (trimTex.normal ?? null) : null, color: "#ffffff", roughness: 0.85, vertexColors: true }),
+      pit: new THREE.MeshStandardMaterial({ color: "#2e2721", roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+      shelterGlass: new THREE.MeshPhysicalMaterial({ color: "#9fb4c4", transparent: true, opacity: 0.3, roughness: 0.05 }),
+    };
+    this.trees = new TreeKit(quality);
+
+    // Sky: a physically based (Preetham) sky with drifting clouds by day, the
+    // night / storm dome blended over it, stars and a moon; all follow the camera.
+    this.phys = physicalSky();
+    this.phys.scale.setScalar(1500);
+    this.phys.renderOrder = -3;
+    this.phys.frustumCulled = false;
+    this.scene.add(this.phys);
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(1000, 32, 16), this.skyMat);
     this.sky.renderOrder = -2;
     this.scene.add(this.sky);
-    this.envScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), this.skyMat));
+    // Reflection capture: the same sky, the dome and a dark ground below the horizon.
+    const envSky = new THREE.Mesh(this.phys.geometry, this.phys.material);
+    envSky.scale.setScalar(100);
+    this.envScene.add(envSky, new THREE.Mesh(new THREE.SphereGeometry(60, 32, 16), this.skyMat));
+    this.envGround = new THREE.Mesh(new THREE.CircleGeometry(90, 24).rotateX(-Math.PI / 2).translate(0, -4, 0), new THREE.MeshBasicMaterial({ color: "#3a3936" }));
+    this.envScene.add(this.envGround);
     const starPos = new Float32Array(1800 * 3);
     for (let i = 0; i < 1800; i++) {
       const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 + 0.1, Math.random() - 0.5).normalize().multiplyScalar(950);
@@ -375,6 +405,7 @@ export class Code3View {
     this.moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: "#e8eeff", fog: false, depthWrite: false, transparent: true }));
     this.moon.scale.set(70, 70, 1);
     this.scene.add(this.moon);
+    // Low detail skips the sky's ray-marched clouds for a painted cloud band.
     const ct = cloudTexture();
     ct.repeat.set(3, 1);
     this.clouds = new THREE.Mesh(
@@ -382,7 +413,7 @@ export class Code3View {
       new THREE.MeshBasicMaterial({ map: ct, transparent: true, side: THREE.BackSide, depthWrite: false, fog: false, opacity: 0.5 }),
     );
     this.clouds.renderOrder = -1;
-    this.clouds.visible = high;
+    this.clouds.visible = !high;
     this.scene.add(this.clouds);
 
     // Ground: the painted plan, with tiled asphalt micro-detail on a second UV set.
@@ -400,13 +431,42 @@ export class Code3View {
     this.groundMat = high
       ? new THREE.MeshStandardMaterial({ map: paintGround(city), normalMap: detail.normal, roughnessMap: detail.rough, roughness: 0.95, normalScale: new THREE.Vector2(0.6, 0.6) })
       : new THREE.MeshStandardMaterial({ map: paintGround(city), roughness: 0.95 });
+    if (high) {
+      // Close-up detail on the painted plan: blades on the lawns, grit on the asphalt.
+      const grassD = grassTexture().bump!;
+      const gritD = asphaltTexture().bump!;
+      this.groundMat.onBeforeCompile = (sh) => {
+        sh.uniforms.grassD = { value: grassD };
+        sh.uniforms.gritD = { value: gritD };
+        sh.fragmentShader = `uniform sampler2D grassD;\nuniform sampler2D gritD;\n${sh.fragmentShader}`.replace(
+          "#include <map_fragment>",
+          `#include <map_fragment>
+          #ifdef USE_NORMALMAP
+            float grassy = smoothstep(0.012, 0.045, diffuseColor.g - max(diffuseColor.r, diffuseColor.b));
+            float gl = texture2D(grassD, vNormalMapUv * 2.3).r;
+            float al = texture2D(gritD, vNormalMapUv * 1.1).r;
+            diffuseColor.rgb *= mix(0.72 + al * 0.56, 0.4 + gl * 1.2, grassy);
+          #endif`,
+        );
+      };
+      this.groundMat.customProgramCacheKey = () => "code3-ground";
+    }
     const ground = new THREE.Mesh(groundGeo, this.groundMat);
     ground.receiveShadow = true;
     this.scene.add(ground);
+    // Fields beyond the city limits: four strips around it (never under it, so
+    // nothing z-fights with the street plan).
+    const E = SIZE * 1.5;
     const outer = new THREE.Mesh(
-      new THREE.PlaneGeometry(SIZE * 4, SIZE * 4).rotateX(-Math.PI / 2).translate(SIZE / 2, -0.05, SIZE / 2),
-      new THREE.MeshStandardMaterial({ color: "#39452f", roughness: 1 }),
+      mergeGeometries([
+        new THREE.PlaneGeometry(SIZE + 2 * E, E).rotateX(-Math.PI / 2).translate(SIZE / 2, -0.02, -E / 2),
+        new THREE.PlaneGeometry(SIZE + 2 * E, E).rotateX(-Math.PI / 2).translate(SIZE / 2, -0.02, SIZE + E / 2),
+        new THREE.PlaneGeometry(E, SIZE).rotateX(-Math.PI / 2).translate(-E / 2, -0.02, SIZE / 2),
+        new THREE.PlaneGeometry(E, SIZE).rotateX(-Math.PI / 2).translate(SIZE + E / 2, -0.02, SIZE / 2),
+      ]),
+      new THREE.MeshStandardMaterial({ color: "#46553a", roughness: 1 }),
     );
+    outer.receiveShadow = true;
     this.scene.add(outer);
 
     // Raised sidewalks with kerbs.
@@ -431,7 +491,7 @@ export class Code3View {
     // The city is streamed in chunks (buildings, rooftops, signs, trees, street
     // furniture, parked cars) around the camera; far chunks are freed.
     this.CN = Math.ceil(SIZE / CHUNK);
-    this.chunkData = Array.from({ length: this.CN * this.CN }, () => ({ buildings: [] as Building[], trees: [] as City["trees"], props: [] as City["props"], parked: [] as City["parked"] }));
+    this.chunkData = Array.from({ length: this.CN * this.CN }, () => ({ buildings: [] as Building[], trees: [] as TreeSpot[], pits: [] as TreeSpot[], props: [] as City["props"], parked: [] as City["parked"] }));
     const at = (x: number, z: number) => this.chunkData[Math.min(this.CN - 1, Math.floor(z / CHUNK)) * this.CN + Math.min(this.CN - 1, Math.floor(x / CHUNK))];
     for (const b of city.buildings) if (b.kind !== "parked") at(b.x, b.z).buildings.push(b);
     for (const t of city.trees) at(t.x, t.z).trees.push(t);
@@ -439,20 +499,29 @@ export class Code3View {
     for (const p of city.parked) at(p.x, p.z).parked.push(p);
     this.loadRadius = high ? 360 : 250;
     this.lampSpots = this.buildStreetFurniture(city);
+    for (const t of streetTrees(city, [...this.lampSpots, ...city.props])) {
+      at(t.x, t.z).trees.push(t);
+      at(t.x, t.z).pits.push(t);
+    }
     this.pools = this.buildPools(this.lampSpots);
     this.buildManholes(city);
+    if (high) {
+      this.grass = new GrassField(city, 6000, 36);
+      this.scene.add(this.grass.mesh);
+    }
     this.streamChunks(true);
+    // The nearest street lamps cast real light: down onto the road, like the fittings do.
     for (let i = 0; i < (high ? 6 : 0); i++) {
-      const l = new THREE.PointLight("#ffc98a", 0, 26, 1.5);
+      const l = new THREE.SpotLight("#ffc98a", 0, 30, 1.05, 0.65, 1.4);
       this.lampLights.push(l);
-      this.scene.add(l);
+      this.scene.add(l, l.target);
     }
 
     // Puddles (rain only).
     const puddleCount = 160;
     this.puddles = new THREE.InstancedMesh(
       new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: "#07090c", roughness: 0.02, metalness: 0.2, envMapIntensity: 2 }),
+      new THREE.MeshStandardMaterial({ color: "#07090c", roughness: 0.02, metalness: 0.2, envMapIntensity: 2, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
       puddleCount,
     );
     const m4 = new THREE.Matrix4();
@@ -483,7 +552,7 @@ export class Code3View {
     // Skid marks.
     this.skids = new THREE.InstancedMesh(
       new THREE.PlaneGeometry(0.6, 0.26).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: "#050505", transparent: true, opacity: 0.45, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: "#050505", transparent: true, opacity: 0.45, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
       900,
     );
     this.skids.count = 0;
@@ -499,7 +568,7 @@ export class Code3View {
     this.scene.add(this.spikes);
 
     // The officer on foot.
-    this.officer = buildPed({ skin: "#d8a47f", shirt: "#1f2b44", pants: "#1a2233", officer: true });
+    this.officer = buildPed({ skin: "#d8a47f", shirt: "#1f2b44", pants: "#1a2233", officer: true, lod: quality });
     this.scene.add(this.officer.group);
     this.torch = new THREE.SpotLight("#fff6e0", 0, 30, 0.35, 0.5, 1.2);
     this.torch.position.set(0.3, 1.4, 0.2);
@@ -559,7 +628,8 @@ export class Code3View {
       ao.updateGtaoMaterial({ radius: 0.8, distanceExponent: 1.4, thickness: 1.4, scale: 1.2 });
       ao.blendIntensity = 0.85;
       this.composer.addPass(ao);
-      this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.45, 0.55, 0.88));
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.4, 0.5, 0.9);
+      this.composer.addPass(this.bloom);
       this.composer.addPass(new OutputPass());
       this.grade = new ShaderPass(GRADE_SHADER);
       this.composer.addPass(this.grade);
@@ -619,7 +689,7 @@ export class Code3View {
     const g = new THREE.Group();
     g.name = `chunk-${i}`;
     const data = this.chunkData[i];
-    this.buildBuildings(g, data.buildings, data.trees);
+    this.buildBuildings(g, data.buildings, data.trees, data.pits);
     this.buildProps(g, data.props);
     if (data.parked.length) {
       const parked = data.parked.map((p) => {
@@ -666,69 +736,79 @@ export class Code3View {
     return this.chunks.size;
   }
 
+  /** Facade material by key: `u:<kind>:<style>[:front]` (upper floors) or `b:<kind>:<style>` (ground floor). */
   private facadeMat(key: string) {
     let mat = this.facadeMats.get(key);
     if (!mat) {
-      let seed = 1;
-      for (const ch of key) seed = (seed * 31 + ch.charCodeAt(0)) % 1000;
-      const tex = facade(key, seed);
+      const [part, kind, style, front] = key.split(":");
+      const P = this.quality === "high" ? 32 : 16;
+      const k = kind as Parameters<typeof upperFacade>[0];
+      const tex = part === "b" ? baseFacade(k, Number(style), P) : upperFacade(k, Number(style), P, front === "front");
       mat = new THREE.MeshStandardMaterial({
         map: tex.map,
         emissiveMap: tex.lit,
         emissive: "#ffffff",
         emissiveIntensity: this.night * 1.4,
-        roughnessMap: tex.rough,
+        // One texture carries AO (R), roughness (G) and metalness (B).
+        roughnessMap: tex.rm,
+        metalnessMap: tex.rm,
+        aoMap: tex.rm,
         roughness: 1,
+        metalness: 1,
         normalMap: this.quality === "high" ? tex.normal : null,
-        normalScale: new THREE.Vector2(0.8, 0.8),
-        metalness: key.startsWith("tower") ? 0.25 : 0.05,
-        envMapIntensity: 1.3,
+        normalScale: new THREE.Vector2(0.9, 0.9),
+        envMapIntensity: 1.25,
+        vertexColors: true,
       });
+      mat.userData.shopfront = part === "b";
       this.facadeMats.set(key, mat);
       this.windowMats.push(mat);
     }
     return mat;
   }
 
-  private buildBuildings(target: THREE.Object3D, buildings: Building[], trees: City["trees"]) {
-    const groups = new Map<string, Building[]>();
-    for (const b of buildings) {
-      const key = b.kind === "tower" || b.kind === "office" ? `${b.kind}${b.style}` : b.kind;
-      (groups.get(key) ?? groups.set(key, []).get(key)!).push(b);
-    }
-    const roofs: THREE.BufferGeometry[] = [];
-    for (const [key, list] of groups) {
-      // Towers get a setback crown (visual only).
-      const crowns = key.startsWith("tower")
-        ? list.filter((b) => b.h > 55).map((b) => ({ ...b, hw: b.hw * 0.7, hd: b.hd * 0.7, h: b.h + 9 }))
-        : [];
-      const { walls, roofs: r } = buildingGeometry([...list, ...crowns]);
-      roofs.push(r);
-      const mesh = new THREE.Mesh(walls, this.facadeMat(key));
+  private buildBuildings(target: THREE.Object3D, buildings: Building[], trees: TreeSpot[], pits: TreeSpot[]) {
+    const city = this.sim.city;
+    const high = this.quality === "high";
+    // Towers over 55 m get a setback crown (visual only).
+    const crowns = buildings.filter((b) => b.kind === "tower" && b.h > 55).map((b) => ({ ...b, hw: b.hw * 0.7, hd: b.hd * 0.7, h: b.h + 9, from: b.h }));
+    for (const [key, geo] of wallGeometry(city, buildings, crowns)) {
+      const mesh = new THREE.Mesh(geo, this.facadeMat(key));
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       target.add(mesh);
     }
-    if (roofs.length) {
-      const roofMesh = new THREE.Mesh(mergeGeometries(roofs), this.mats.roof);
-      roofMesh.receiveShadow = true;
-      target.add(roofMesh);
+    const flat = flatRoofGeometry(buildings, crowns);
+    if (flat) {
+      const m = new THREE.Mesh(flat, this.mats.roof);
+      m.receiveShadow = true;
+      target.add(m);
     }
+    const hips = hipRoofGeometry(buildings);
+    if (hips) {
+      const m = new THREE.Mesh(hips, this.mats.houseRoof);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      target.add(m);
+    }
+    const trims = trimGeometry(city, buildings, crowns);
+    if (trims) {
+      const m = new THREE.Mesh(trims, this.mats.trim);
+      m.castShadow = high;
+      m.receiveShadow = true;
+      target.add(m);
+    }
+    const pitGeo = treePitGeometry(pits);
+    if (pitGeo) target.add(new THREE.Mesh(pitGeo, this.mats.pit));
+    if (trees.length) this.trees.build(target, trees, high);
 
-    // Pitched roofs; parapets, AC units, water tanks; shop awnings.
-    const houseRoofs: THREE.BufferGeometry[] = [];
+    // Parapets, AC units, water tanks; shop awnings.
     const roofKit: THREE.BufferGeometry[] = [];
     const parapets: THREE.BufferGeometry[] = [];
     const awnings: THREE.BufferGeometry[] = [];
+    const AWNING = ["#7a1f24", "#1f3b2a", "#1c2a4a", "#2a2a2a", "#6b3a1a", "#2d4f5c"];
     for (const b of buildings) {
-      if (b.kind === "house") {
-        const g = new THREE.CylinderGeometry(0.01, b.hd * 1.18, 3, 4, 1).rotateY(Math.PI / 4);
-        g.scale(b.hw / b.hd, 1, 1);
-        houseRoofs.push(g.translate(b.x, b.h + 1.5, b.z));
-        // Porch and chimney.
-        roofKit.push(new THREE.BoxGeometry(0.8, 2, 0.8).translate(b.x + b.hw * 0.5, b.h + 2, b.z + b.hd * 0.3));
-        continue;
-      }
+      if (b.kind === "house") continue;
       if (b.kind === "tower" || b.kind === "office" || b.kind === "hospital" || b.kind === "station" || b.kind === "warehouse") {
         const pt = 0.35;
         const ph = b.kind === "warehouse" ? 0.5 : 0.9;
@@ -748,19 +828,22 @@ export class Code3View {
         if (b.kind === "tower") roofKit.push(new THREE.CylinderGeometry(0.1, 0.12, 12, 6).translate(b.x, b.h + (b.h > 55 ? 15 : 6), b.z));
       }
       if (b.kind === "store" || (b.kind === "office" && b.style % 2 === 0)) {
-        // Awning over the street-side ground floor (north face).
-        const aw = new THREE.BoxGeometry(b.hw * 1.8, 0.08, 1.6).rotateX(-0.35).translate(b.x, 3.3, b.z - b.hd - 0.7);
-        awnings.push(aw);
+        // Canvas awnings over the street-side shopfronts (north face), one per shop.
+        const shops = Math.max(1, Math.round((b.hw * 2) / 8));
+        const sw = (b.hw * 2) / shops;
+        for (let k = 0; k < shops; k++) {
+          const aw = new THREE.BoxGeometry(sw - 0.9, 0.06, 1.5).rotateX(-0.38).translate(b.x - b.hw + sw * (k + 0.5), 3.15, b.z - b.hd - 0.68);
+          const c = new THREE.Color(AWNING[Math.floor(((b.x * 7 + k * 13) % AWNING.length + AWNING.length) % AWNING.length)]);
+          const cols = new Float32Array((aw.attributes.position as THREE.BufferAttribute).count * 3);
+          for (let i = 0; i < cols.length; i += 3) cols.set([c.r, c.g, c.b], i);
+          aw.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+          awnings.push(aw);
+        }
       }
-    }
-    if (houseRoofs.length) {
-      const m = new THREE.Mesh(mergeGeometries(houseRoofs), this.mats.houseRoof);
-      m.castShadow = true;
-      target.add(m);
     }
     if (roofKit.length) target.add(new THREE.Mesh(mergeGeometries(roofKit), this.mats.kit));
     if (parapets.length) {
-      const pm = new THREE.Mesh(mergeGeometries(parapets), this.mats.parapet);
+      const pm = new THREE.Mesh(planarUV(mergeGeometries(parapets), 2), this.mats.parapet);
       pm.castShadow = true;
       target.add(pm);
     }
@@ -770,7 +853,7 @@ export class Code3View {
       target.add(am);
     }
 
-    // Signs (lit at night).
+    // Signs (lit at night), proud of the cornice.
     for (const b of buildings) {
       if (!b.sign) continue;
       const colors: Record<string, [string, string]> = {
@@ -785,29 +868,10 @@ export class Code3View {
       mat.color.setScalar(0.55 + this.night * 0.9);
       this.signMats.push(mat);
       const sign = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 0.19), mat);
-      sign.position.set(b.x, Math.min(b.h - 0.8, b.kind === "store" ? 4.2 : b.h - 1.5), b.z - b.hd - 0.08);
+      sign.position.set(b.x, Math.min(b.h - 0.8, b.kind === "store" ? 4.2 : b.h - 1.5), b.z - b.hd - 0.34);
       sign.rotation.y = Math.PI;
       target.add(sign);
     }
-    if (!trees.length) return;
-
-    // Trees: trunk + three-lobed crowns, varied tints.
-    const n = trees.length;
-    const trunk = new THREE.InstancedMesh(this.treeGeo.trunk, this.mats.trunk, n);
-    const crown = new THREE.InstancedMesh(this.treeGeo.crown, this.mats.crown, n);
-    const m4 = new THREE.Matrix4();
-    const col = new THREE.Color();
-    const q = new THREE.Quaternion();
-    trees.forEach((t, k) => {
-      q.setFromAxisAngle(up, k * 1.7);
-      m4.compose(new THREE.Vector3(t.x, 0, t.z), q, new THREE.Vector3(t.s, t.s, t.s));
-      trunk.setMatrixAt(k, m4);
-      crown.setMatrixAt(k, m4);
-      crown.setColorAt(k, col.set(["#3f6a2f", "#557f36", "#2f5a2a", "#4a6d2c", "#61803a"][k % 5]));
-    });
-    crown.castShadow = true;
-    trunk.castShadow = true;
-    target.add(trunk, crown);
   }
 
   private buildStreetFurniture(city: City) {
@@ -895,7 +959,7 @@ export class Code3View {
   /** Pools of lamplight on the pavement (night only). */
   private buildPools(spots: { x: number; z: number; ry: number }[]) {
     const tex = radialTexture("rgba(255,200,140,0.5)", "rgba(255,200,140,0)");
-    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(15, 15).rotateX(-Math.PI / 2), mat, spots.length);
     const m4 = new THREE.Matrix4();
     spots.forEach((s, k) => {
@@ -991,7 +1055,7 @@ export class Code3View {
       for (let v = 30; v < SIZE; v += 72) {
         mh.push(new THREE.Matrix4().makeTranslation(L + 2, 0.01, v), new THREE.Matrix4().makeTranslation(v + 20, 0.01, L - 2));
       }
-    const man = new THREE.InstancedMesh(new THREE.CircleGeometry(0.45, 18).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: "#2a2a2a", roughness: 0.4, metalness: 0.7 }), mh.length);
+    const man = new THREE.InstancedMesh(new THREE.CircleGeometry(0.45, 18).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: "#2a2a2a", roughness: 0.4, metalness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), mh.length);
     mh.forEach((m, i) => man.setMatrixAt(i, m));
     this.scene.add(man);
   }
@@ -1000,6 +1064,7 @@ export class Code3View {
 
   render(cam: CamState, frameDt: number) {
     const sim = this.sim;
+    this.frameDt = frameDt;
     const t = sim.time;
     this.timeOfDay();
     this.streamChunks();
@@ -1031,10 +1096,17 @@ export class Code3View {
     this.sun.target.position.set(focus.x, 0, focus.z);
     const sd = this.skyMat.uniforms.sunDir.value as THREE.Vector3;
     this.sun.position.set(focus.x + sd.x * 200, Math.max(40, sd.y * 200), focus.z + sd.z * 200);
+    this.phys.position.copy(this.camera.position);
     this.sky.position.copy(this.camera.position);
     this.stars.position.copy(this.camera.position);
     this.clouds.position.copy(this.camera.position);
     this.clouds.rotation.y += frameDt * 0.002;
+    const wall = performance.now() / 1000;
+    this.trees.time.value = wall;
+    if (this.grass) {
+      this.grass.time.value = wall;
+      this.grass.update(this.camera.position.x, this.camera.position.z);
+    }
     if (this.grade) {
       this.grade.uniforms.time.value = t;
       this.grade.uniforms.night.value = this.night;
@@ -1068,6 +1140,25 @@ export class Code3View {
     (u.sunColor.value as THREE.Color).set(this.night > 0.5 ? "#9fb0d8" : dusk > 0.3 ? "#ffb070" : "#fff3d0");
     u.sunSize.value = this.night > 0.5 ? 0.99985 : 0.9996;
     u.glow.value = (1 - gloom) * (this.night > 0.5 ? 0.15 : 0.5);
+    // The dome only shows at night and under cloud; a clear day is all physical sky.
+    // Low detail keeps the cheap gradient dome all day (no per-pixel scattering).
+    const domeAlpha = this.quality === "low" ? 1 : Math.min(1, Math.max(Math.min(1, this.night * 1.25), gloom * 0.8));
+    u.alpha.value = domeAlpha;
+    this.sky.visible = domeAlpha > 0.01;
+    const su = (this.phys.material as THREE.ShaderMaterial).uniforms;
+    (su.sunPosition.value as THREE.Vector3).set(Math.cos(a), Math.sin(a), 0.35).normalize();
+    su.turbidity.value = w === "clear" ? 2.6 : w === "fog" ? 14 : 9;
+    su.rayleigh.value = w === "clear" ? 1.5 + dusk * 1.2 : 2.6;
+    su.mieCoefficient.value = w === "clear" ? 0.0045 : 0.012;
+    su.mieDirectionalG.value = 0.82;
+    const high = this.quality === "high";
+    su.cloudCoverage.value = high ? (w === "clear" ? 0.32 : w === "fog" ? 0.7 : w === "rain" ? 0.97 : 0.88) : 0;
+    su.cloudDensity.value = w === "clear" ? 0.5 : 0.95;
+    su.cloudElevation.value = 0.55;
+    su.time.value = this.sim.time;
+    su.skyGain.value = 0.075 + dusk * 0.05;
+    this.phys.visible = domeAlpha < 0.99;
+    (this.envGround.material as THREE.MeshBasicMaterial).color.set("#3b3a37").multiplyScalar(0.12 + day * 0.88 * (1 - gloom * 0.4));
     this.scene.background = null;
 
     const fog = this.scene.fog as THREE.Fog;
@@ -1075,13 +1166,19 @@ export class Code3View {
     fog.near = w === "fog" ? 4 : 40;
     fog.far = w === "fog" ? 95 : w === "rain" ? 230 : w === "overcast" ? 330 : 280 + day * 260;
     fog.far = Math.min(fog.far, this.loadRadius - 10);
-    this.hemi.intensity = (0.18 + day * 1.3) * (1 - gloom * 0.2);
+    this.hemi.intensity = (0.1 + day * 1.63) * (1 - gloom * 0.2);
     this.hemi.color.set(this.night > 0.5 ? "#51638f" : "#cfe2ff");
     this.hemi.groundColor.set(this.night > 0.5 ? "#2b2118" : "#4a4032");
     this.sun.intensity = (0.08 + day * 2.6 * (1 - dusk * 0.4)) * (1 - gloom * 0.75);
     this.sun.color.copy(u.sunColor.value as THREE.Color);
-    this.renderer.toneMappingExposure = 1.05 - this.night * 0.05;
-    for (const m of this.windowMats) m.emissiveIntensity = this.night * 1.4 + gloom * 0.25 * day;
+    this.renderer.toneMappingExposure = 1.12 - this.night * 0.12;
+    // Lit windows at night; shopfronts stay a little brighter than offices, but not blinding.
+    for (const m of this.windowMats) m.emissiveIntensity = (this.night + gloom * 0.18 * day) * (m.userData.shopfront ? 0.85 : 1.15);
+    if (this.bloom) {
+      // Night is full of bright points: raise the bar so only lamps and lights bloom.
+      this.bloom.threshold = 0.9 + this.night * 0.06;
+      this.bloom.strength = 0.4 - this.night * 0.1;
+    }
     for (const m of this.signMats) m.color.setScalar(0.55 + (this.night + gloom * 0.3) * 0.9);
     this.lampMat.emissiveIntensity = this.night * 4 + gloom * 0.6;
     (this.pools.material as THREE.MeshBasicMaterial).opacity = this.night;
@@ -1093,6 +1190,7 @@ export class Code3View {
     const cm = this.clouds.material as THREE.MeshBasicMaterial;
     cm.opacity = gloom > 0 ? 0.95 : 0.45;
     cm.color.set(this.night > 0.5 ? "#2a3040" : gloom > 0 ? "#9aa0a8" : "#ffffff");
+    this.clouds.visible = !high || this.night > 0.5;
     // Wet streets.
     const wet = w === "rain";
     this.groundMat.roughness = wet ? 0.38 : 0.95;
@@ -1102,11 +1200,18 @@ export class Code3View {
     this.walkMat.color.setScalar(wet ? 0.75 : 1);
 
     // Reflections: re-render the sky into a PMREM when it changes enough.
-    const key = `${Math.round(this.night * 12)}|${Math.round(dusk * 6)}|${w}`;
-    if (key !== this.envKey) {
+    // The sun's position only shows in the physical sky (High, by day); capture at most every few seconds.
+    const sunKey = high && this.night < 0.5 ? Math.round(hour) : 0;
+    const key = `${Math.round(this.night * 12)}|${Math.round(dusk * 6)}|${sunKey}|${w}`;
+    const nowMs = performance.now();
+    if (key !== this.envKey && (!this.envRT || nowMs - this.envAt > 4000)) {
+      this.envAt = nowMs;
       this.envKey = key;
       this.envRT?.dispose();
+      // No sun disc in the capture: it would sparkle as a hot pixel in every reflection.
+      su.showSunDisc.value = 0;
       this.envRT = this.pmrem.fromScene(this.envScene, 0.03);
+      su.showSunDisc.value = 1;
       this.scene.environment = this.envRT.texture;
       this.scene.environmentIntensity = 0.35 + day * 0.65;
     }
@@ -1133,8 +1238,13 @@ export class Code3View {
       .slice(0, this.lampLights.length);
     this.lampLights.forEach((l, i) => {
       const s = near[i]?.s;
-      l.intensity = s ? this.night * 60 : 0;
-      if (s) l.position.set(s.x + Math.cos(-s.ry) * 2.2, 7.6, s.z + Math.sin(-s.ry) * 2.2);
+      l.intensity = s ? this.night * 110 : 0;
+      if (s) {
+        const hx = s.x + Math.cos(-s.ry) * 2.2;
+        const hz = s.z + Math.sin(-s.ry) * 2.2;
+        l.position.set(hx, 7.9, hz);
+        l.target.position.set(hx + Math.cos(-s.ry) * 1.5, 0, hz + Math.sin(-s.ry) * 1.5);
+      }
     });
   }
 
@@ -1257,21 +1367,32 @@ export class Code3View {
   }
 
   private pose(p: Ped): Pose {
+    const t = this.sim.time;
     switch (p.state) {
       case "handsup":
         return "handsup";
+      case "kneel":
+        return "kneel";
+      case "prone":
+        return "prone";
       case "cuffed":
+        return p.kneeling ? "cuffedKneel" : "cuffed";
       case "escort":
         return "cuffed";
       case "down":
-        return "down";
+        return (p.tasedUntil ?? 0) > t ? "tased" : "down";
       case "dead":
         return "dead";
       case "attack":
-        return p.drawn ? "aim" : "walk";
+        return p.drawn ? "aim" : "fight";
+      case "fight":
+        return "fight";
+      case "panic":
+        return "panic";
       case "stand":
+        return p.drawn ? "aim" : p.task === "spray" ? "point" : p.task === "music" ? "talk" : "stand";
       case "talk":
-        return "stand";
+        return "talk";
       default:
         return "walk";
     }
@@ -1292,13 +1413,13 @@ export class Code3View {
       if (!m || m.key !== key) {
         m?.group.removeFromParent();
         const n = p.id.length + p.id.charCodeAt(p.id.length - 1);
-        m = Object.assign(buildPed({ skin: p.skin, shirt: p.shirt, pants: p.pants, officer: p.role === "officer", hair: HAIR[n % HAIR.length], long: n % 3 === 0 }), { key });
+        m = Object.assign(buildPed({ skin: p.skin, shirt: p.shirt, pants: p.pants, officer: p.role === "officer", hair: HAIR[n % HAIR.length], seed: n * 7919 + p.skin.charCodeAt(1), lod: this.quality }), { key });
         this.peds.set(p.id, m);
         this.scene.add(m.group);
       }
       m.group.position.set(p.x, onSidewalk(p.x, p.z) ? KERB : 0, p.z);
       m.group.rotation.set(0, -p.h, 0);
-      posePed(m, this.pose(p), p.step, p.state === "walk" ? 1.4 : p.speed, t + p.x);
+      posePed(m, this.pose(p), p.step, p.state === "walk" ? 1.4 : p.speed, t, this.frameDt);
       m.gun.visible = p.drawn;
       if (p.state === "dead" && !this.blood.has(p.id)) {
         const b = new THREE.Mesh(new THREE.CircleGeometry(0.9, 20).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: "#3a0505", roughness: 0.1, transparent: true, opacity: 0.85, depthWrite: false }));
@@ -1306,6 +1427,27 @@ export class Code3View {
         this.scene.add(b);
         this.blood.set(p.id, b);
       }
+    }
+    // Taggers leave their mark on the wall they face.
+    for (const p of sim.peds) {
+      if (p.task !== "spray" || this.tags.has(p.id)) continue;
+      const f = forward(p.h);
+      const rc = new THREE.Raycaster(new THREE.Vector3(p.x, 1.6, p.z), new THREE.Vector3(f.x, 0, f.z), 0.2, 9);
+      const hit = rc.intersectObjects([...this.chunks.values()], true).find((h) => h.face && Math.abs(h.face.normal.y) < 0.2);
+      if (!hit?.face) {
+        this.tags.set(p.id, new THREE.Mesh());
+        continue;
+      }
+      const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+      const tag = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.6, 1.3),
+        new THREE.MeshStandardMaterial({ map: graffitiTexture(p.id.length * 31 + p.id.charCodeAt(p.id.length - 1)), transparent: true, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false }),
+      );
+      tag.position.copy(hit.point).addScaledVector(n, 0.03);
+      tag.position.y = 1.7;
+      tag.lookAt(tag.position.clone().add(n));
+      this.scene.add(tag);
+      this.tags.set(p.id, tag);
     }
     for (const [id, m] of this.peds)
       if (!live.has(id)) {
@@ -1324,8 +1466,8 @@ export class Code3View {
       om.group.position.set(pl.x, onSidewalk(pl.x, pl.z) ? KERB : 0, pl.z);
       om.group.rotation.set(0, -pl.h, 0);
       const moving = pl.moving ? (pl.sprinting ? 6.5 : 3.2) : 0;
-      this.officerStep += moving / 60;
-      posePed(om, cam.aiming ? "aim" : "walk", this.officerStep, moving, t);
+      this.officerStep += moving * this.frameDt;
+      posePed(om, cam.aiming ? "aim" : sim.radioUntil > t ? "radio" : sim.talking ? "talk" : "walk", this.officerStep, moving, t, this.frameDt);
       this.torch.intensity = sim.flashlight ? 60 : 0;
       om.gun.visible = pl.weapon === "pistol" && cam.aiming;
       om.taser.visible = pl.weapon === "taser" && cam.aiming;

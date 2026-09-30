@@ -131,7 +131,8 @@ export type Violation =
   | "expired licence"
   | "no licence"
   | "reckless driving"
-  | "jaywalking";
+  | "jaywalking"
+  | "noise ordinance";
 
 /** Things that justify an arrest. */
 export type Offence =
@@ -150,7 +151,9 @@ export type Offence =
   | "burglary"
   | "public intoxication"
   | "disorderly conduct"
-  | "driving while suspended";
+  | "driving while suspended"
+  | "vandalism"
+  | "assault";
 
 /** What a driver says when asked a question, by attitude. */
 export const LINES_WHY: Record<Attitude, string[]> = {

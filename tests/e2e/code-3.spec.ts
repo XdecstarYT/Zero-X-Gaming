@@ -8,7 +8,7 @@ test.use({ viewport: { width: 900, height: 506 } });
  * out of the unit, answer dispatch, and the shift report at the end.
  */
 test("Code 3: start a shift, run lights and siren, get out, answer dispatch, finish the shift", async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(360_000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript(() => localStorage.setItem("zx-code3-gfx", "low"));
@@ -38,9 +38,9 @@ test("Code 3: start a shift, run lights and siren, get out, answer dispatch, fin
   await page.keyboard.press("y");
   await expect(hud).toContainText("CALL:", { timeout: 20_000 });
 
-  // The quick shift (60 s at 10× speed) ends with the shift report, then the platform's game-over screen.
+  // The quick shift (60 s, sped up once a call is taken) ends with the shift report, then the platform's game-over screen.
   const results = stage.getByTestId("code3-results");
-  await expect(results).toBeVisible({ timeout: 180_000 });
+  await expect(results).toBeVisible({ timeout: 280_000 });
   await expect(results).toContainText("End of shift");
   await expect(results).toContainText("Career:");
   await results.getByRole("button", { name: "Continue" }).click();

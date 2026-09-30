@@ -305,6 +305,35 @@ Code 3 (`src/games/code-3/`) is its own engine: a pure simulation (`sim.ts`, `ve
   grain). C cycles chase, far and hood cameras.
 - **Sound:** synthesized siren (wail and yelp), engine, radio, gunshots, taser and cuffs, and a rotating minimap
   with the GPS route.
+- **Photoreal pass (`facades.ts`, `scenery.ts`, `people3d.ts`):** a physically based sky (Rayleigh / Mie
+  scattering with drifting volumetric clouds) lights the city and its reflections by day, with the night dome
+  blended over it after dusk. Facades are painted per style at startup with albedo, night-lit windows, one
+  AO / roughness / metalness texture (glass mirrors the sky, reveals sit in shadow) and normals: brick and
+  ashlar offices with sills and lintels, curtain-wall towers, clapboard houses with shutters and front doors,
+  corrugated warehouses. Ground floors are their own strip (shopfronts with names, lit interiors and doors,
+  tower lobbies with revolving doors, loading bays), and every wall fits a whole number of bays and floors so no
+  window is cut at a corner. Buildings get cornices, band courses and plinths; houses get hip roofs with
+  shingles, porches and chimneys; downtown sidewalks get street trees in pits. Trees are leaf-card canopies over
+  a dark core that sway in the wind; lawns get detail and wind-blown grass near the camera; the asphalt gets
+  grit. Street lamps are downward spotlights, so light pools on the road instead of washing whole facades.
+- **People:** one skinned mesh per person (a single draw call) with knees, elbows, a waist and a neck that bend
+  smoothly, and outfits (tees, long sleeves, jackets, hoodies, suits, skirts, shorts, caps, beanies, backpacks,
+  beards and five hairstyles). Officers wear the uniform with vest, duty belt, holster, radio and cap. Around
+  twenty blended animations: walk to run, idle breathing, talking gestures, hands up, kneeling with hands on head,
+  prone, cuffed (standing or on their knees), tased, injured, fighting, two-handed aiming, radio, phone,
+  pointing, frisking and panicking.
+- **Procedures:** a **felony stop** for stolen, flagged or wanted cars (order the driver out from cover, walk
+  them backwards to you, kneel them, cuff: "by the book" pays best); **verbal commands** at a distance (on your
+  knees, get down on the ground) to anyone with their hands up; and **paperwork**: arrests, closed calls and every
+  use of force create a report you file from the parked unit's MDT (unfiled reports cost points at end of watch).
+- **Six more callouts:** officer needs assistance (another unit holding combative suspects at gunpoint),
+  vandalism in progress (a tagger, and fresh graffiti on the wall), wanted fugitive (find them from the
+  description; they bolt when they spot you), abandoned vehicle (run the plate, recover it if stolen, tow it),
+  road rage (two drivers fighting at the kerb) and a noise complaint (talk to the resident; warn or cite).
+- **HUD:** a compass with the call's bearing and a location bar (street, cross street, district), a speedometer
+  dial with the limit marked and light-bar lamps, an active-call card with the next step, a score feed, and the
+  action list grouped by kind (commands, talk, checks, enforcement, custody, scene, unit) with icons. The MDT
+  (Tab) has tabs: Call, Contact, Queries, Reports and Shift. The menu has a field guide.
 
 ### Themes
 

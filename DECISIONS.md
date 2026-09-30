@@ -315,3 +315,21 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 87. **Checkpoints act on one lane.** A checkpoint is a stop line that traffic travelling that way treats like a
     red light until the officer waves the driver on, so queues form naturally with the existing car-following
     logic; the officer's side of the road picks the lane.
+88. **The sky is physical by day and painted by night.** Code 3 uses three's Preetham sky (with its volumetric
+    clouds) for daylight and the reflection map, scaled by a gain so its radiance matches the existing lighting;
+    the old gradient dome fades in over it after dusk and under heavy cloud, where the physical model goes black.
+    Low graphics keeps just the dome (the scattering shader is expensive on software renderers).
+89. **Facades are painted per style, not photographed.** No texture downloads: each style is drawn on canvases at
+    startup (32 px per metre on High, 16 on Low) with one AO / roughness / metalness texture shared by three
+    material slots. Walls stretch a tile by a few percent so every wall holds whole bays and floors.
+90. **People are skinned.** A person used to be about fifteen meshes; now it's one skinned mesh with vertex-colour
+    clothing, sharing geometry per outfit and blending weights across the joints. That's fewer draw calls and
+    smooth knees and elbows. Poses are procedural targets blended over a quarter of a second when they change.
+91. **Street lamps are spotlights.** Six real lights follow the camera; as point lights they lit whole facades up
+    to the roofline at night, so they now point down at the road like real fittings.
+92. **Reports cost points only when ignored.** Filing is quick (from the parked unit) and pays a little; leaving
+    reports unfiled at end of watch costs 10 each. The goal is a reason to stop and write up, not busywork.
+93. **Felony stops need a reason.** The option only appears for high-risk cars (stolen, flagged by the plate
+    reader, tied to a call, or with known offences); walking up to such a car's window still works, it's just
+    riskier.
+

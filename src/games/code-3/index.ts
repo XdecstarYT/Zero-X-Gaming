@@ -56,8 +56,10 @@ class Code3Game implements GameModule {
   private weather: Weather | "random" = "random";
   private ended = false;
   private lastFrame = 0;
-  /** ?code3=quick: a 60 s test shift at 10× speed (unranked). */
+  /** ?code3=quick: a 60 s test shift at 3–20× speed (unranked). */
   private quick = false;
+  /** Any ?code3= test shift is unranked. */
+  private unranked = false;
 
   // Input.
   private keys = new Set<string>();
@@ -296,6 +298,7 @@ class Code3Game implements GameModule {
           ),
         ),
         start,
+        this.howToPlay(),
         el("p", "max-w-xl text-center text-[11px] text-white/50", controls),
         el(
           "p",
@@ -306,6 +309,29 @@ class Code3Game implements GameModule {
     );
   }
 
+  /** A collapsible field guide: how the procedures and the scoring work. */
+  private howToPlay() {
+    const item = (title: string, text: string) => el("li", "", el("strong", "text-white", `${title}: `), text);
+    const details = el(
+      "details",
+      "w-full rounded-xl border border-white/10 bg-white/[0.04] p-3 text-left text-xs text-white/75 [&[open]>summary]:mb-2",
+      el("summary", "cursor-pointer text-[11px] font-bold uppercase tracking-[0.25em] text-[#60a5fa]", "How to play · field guide"),
+      el(
+        "ul",
+        "flex flex-col gap-1.5",
+        item("Patrol", "Drive with the flow, answer dispatch (Y/N), follow the purple GPS route. The compass shows where the call is."),
+        item("Traffic stops", "Lights only (no siren) behind a car for a moment and it pulls over. Walk to the driver's window: ID, run them and the plate on the MDT, ask questions, search with consent or probable cause, then cite, warn, arrest or release."),
+        item("Felony stops", "Stolen, flagged or wanted car? Stay back and order the driver out from cover, walk them backwards to you, put them on their knees or prone, then cuff. By the book pays best."),
+        item("Commands", "Suspects with hands up can be ordered to kneel or lie prone from a distance: safer cuffing, and bonus points."),
+        item("Force", "Taser for runners and fighters, the sidearm only for armed attackers. Excessive force costs points, an unjustified shooting ends your shift."),
+        item("Arrests", "Charges first: arresting someone without cause is a wrongful arrest. Read Miranda, put them in the back, book them at the station (or call transport)."),
+        item("Paperwork", "Arrests, closed calls and uses of force create reports. Park and file them from the MDT's Reports tab (Tab); unfiled reports cost points at end of watch."),
+        item("Tools", "Spike strips, roadblocks and cones stop pursuits; checkpoints screen drivers; Air-1 tracks runners; K9 sniffs cars; backup comes Code 3."),
+      ),
+    );
+    return details;
+  }
+
   // ---------------------------------------------------------------- shift
 
   private async beginShift() {
@@ -314,12 +340,17 @@ class Code3Game implements GameModule {
     this.teardownShift();
     this.ended = false;
     const rank = rankOf(readCareer().xp);
-    const quick = new URLSearchParams(window.location.search).get("code3") === "quick";
+    const params = new URLSearchParams(window.location.search);
+    const quick = params.get("code3") === "quick";
+    // Test hooks (?code3=quick|shot): an optional start hour, and the sim on window for scripts.
+    const test = params.has("code3");
+    const hour = test && params.has("hour") ? Number(params.get("hour")) : NaN;
     this.quick = quick;
+    this.unranked = test;
     this.sim = new Code3Sim({
       seed: Date.now() & 0x7fffffff,
       unit: this.unit,
-      startHour: this.shift === "night" ? 20 : 8,
+      startHour: Number.isFinite(hour) ? hour : this.shift === "night" ? 20 : 8,
       shiftSeconds: quick ? 60 : this.length === "full" ? 900 : 480,
       rank,
       traffic: this.quality === "low" ? 20 : 26,
@@ -328,6 +359,7 @@ class Code3Game implements GameModule {
       offerSeconds: quick ? 1e9 : 25,
       weather: this.weather === "random" ? (["clear", "clear", "overcast", "rain", "fog"] as const)[Math.floor(Math.random() * 5)] : this.weather,
     });
+    if (test) (window as unknown as { __code3?: Code3Sim }).__code3 = this.sim;
     this.yaw = this.sim.unit.h;
     this.pitch = 0;
     this.wasInCar = true;
@@ -339,8 +371,10 @@ class Code3Game implements GameModule {
       this.sim = null;
       return;
     }
+    if (test) (window as unknown as { __code3view?: Code3View }).__code3view = this.view;
     this.hud = new Code3Hud(this.host, this.sim, this.coarse);
     this.hud.onChoose = (i) => (this.pressed.choose = i);
+    this.hud.onChooseId = (id) => (this.pressed.chooseId = id);
     this.hud.onAccept = (yes) => {
       if (yes) this.pressed.accept = true;
       else this.pressed.decline = true;
@@ -404,10 +438,10 @@ class Code3Game implements GameModule {
     if (!sim || this.ended) return;
     const input = this.input();
     sim.step(dt, input);
-    // The unranked ?code3=quick test shift runs at 10× (held controls only; presses count once).
+    // The unranked ?code3=quick test shift runs at 3×, then 20× once a call is taken (held controls only; presses count once).
     if (this.quick)
-      for (let i = 0; i < 9 && !sim.over; i++)
-        sim.step(dt, { ...input, enter: false, lights: false, backup: false, accept: false, decline: false, choose: null, weapon: null, shout: false, spikes: false, checkpoint: false, roadblock: false, cones: false, air: false, flashlight: false, sirenTone: false });
+      for (let i = 0, n = sim.calls.some((c) => c.acceptedAt > 0) ? 19 : 2; i < n && !sim.over; i++)
+        sim.step(dt, { ...input, enter: false, lights: false, backup: false, accept: false, decline: false, choose: null, chooseId: null, weapon: null, shout: false, spikes: false, checkpoint: false, roadblock: false, cones: false, air: false, flashlight: false, sirenTone: false });
     // In the car the camera swings back behind after a moment.
     if (sim.player.inCar && performance.now() - this.orbitAt > 1500) this.orbit *= 1 - Math.min(1, dt * 3);
     if (sim.over && !this.ended) this.endShift();
@@ -434,6 +468,7 @@ class Code3Game implements GameModule {
       else if (e.type === "score") {
         if (e.points >= 100) this.hud.flash(`+${e.points}`, "#86efac");
         else if (e.points <= -100) this.hud.flash(`${e.points}`, "#fca5a5");
+        this.hud.feed(e.points, e.text);
         if (e.points > 0) this.audio.good();
         else this.audio.bad();
       }
@@ -474,7 +509,7 @@ class Code3Game implements GameModule {
     if (document.pointerLockElement === this.host) document.exitPointerLock();
     const s = sim.stats;
     const { before, after, promoted } = saveShift({ score: s.score, arrests: s.arrests, calls: s.calls, pursuits: s.pursuits });
-    const final = { kind: "final" as const, score: Math.max(0, Math.min(100000, s.score)), durationMs: this.loop.activeMs, ranked: !this.quick };
+    const final = { kind: "final" as const, score: Math.max(0, Math.min(100000, s.score)), durationMs: this.loop.activeMs, ranked: !this.unranked };
     const good = sim.over?.reason === "End of shift";
     const stat = (k: string, v: string | number) => el("div", "rounded bg-white/5 px-2 py-1.5", el("p", "text-[10px] uppercase tracking-wider text-white/50", k), el("p", "text-lg font-black", String(v)));
     // Shift report first; the platform's game-over (score submit, play again) follows.

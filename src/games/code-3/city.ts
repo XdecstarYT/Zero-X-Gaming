@@ -118,6 +118,30 @@ export function describe(x: number, z: number) {
   return `${STREETS_NS[id % LINES]} & ${STREETS_EW[Math.floor(id / LINES)]}`;
 }
 
+export const DISTRICT_NAMES: Record<District, string> = {
+  downtown: "Downtown",
+  midtown: "Midtown",
+  suburbs: "Bayview Heights",
+  industrial: "Harbor Industrial",
+  park: "Bayview Park",
+  station: "Police HQ",
+};
+
+/** Street, cross street and district at a point (for the location bar). */
+export function locationOf(city: City, x: number, z: number) {
+  const i = Math.max(0, Math.min(LINES - 1, Math.round((x - HALF_STREET) / PITCH)));
+  const j = Math.max(0, Math.min(LINES - 1, Math.round((z - HALF_STREET) / PITCH)));
+  const onNS = Math.abs(x - line(i)) <= HALF_STREET;
+  const onEW = Math.abs(z - line(j)) <= HALF_STREET;
+  const bi = blockAt(city, x, z);
+  const near = bi >= 0 ? city.blocks[bi] : city.blocks[Math.min(city.blocks.length - 1, Math.max(0, Math.min(LINES - 2, Math.floor((z - HALF_STREET) / PITCH)) * (LINES - 1) + Math.max(0, Math.min(LINES - 2, Math.floor((x - HALF_STREET) / PITCH)))))];
+  const district = DISTRICT_NAMES[near?.district ?? "midtown"];
+  if (onNS && onEW) return { street: `${STREETS_NS[i]} & ${STREETS_EW[j]}`, cross: "", district };
+  if (onNS) return { street: STREETS_NS[i], cross: STREETS_EW[j], district };
+  if (onEW) return { street: STREETS_EW[j], cross: STREETS_NS[i], district };
+  return { street: describe(x, z), cross: "", district };
+}
+
 /** Is the point on a carriageway (not sidewalk, not a block)? */
 export function onRoad(x: number, z: number) {
   const dx = Math.abs(((x - HALF_STREET + PITCH / 2) % PITCH + PITCH) % PITCH - PITCH / 2);
