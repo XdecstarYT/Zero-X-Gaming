@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { XPBar } from "@/components/ui/XPBar";
 import { AchievementBadge } from "@/components/ui/Badge";
-import { SignInButton } from "@/components/layout/SignInButton";
+import { GuestIdentity } from "@/components/layout/GuestIdentity";
 import { Avatar } from "@/components/layout/AccountControl";
 import { UsernameForm } from "@/components/layout/UsernameForm";
 import { FavoritesList } from "@/components/game/FavoritesList";
@@ -89,27 +89,24 @@ export default async function ProfilePage() {
     <div className="mx-auto max-w-5xl space-y-10 px-4 py-10 sm:px-6">
       <section aria-labelledby="profile-name" className="rounded-xl border border-border bg-surface p-6 sm:p-8">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-          <Avatar name={p.username} url={p.avatarUrl} className="h-20 w-20 shrink-0 text-3xl" />
-          <div className="flex-1">
-            <h1 id="profile-name" className="font-display text-2xl font-black uppercase tracking-wide">
-              {p.username}
-            </h1>
-            {!isGuest && p.userId && (
-              <p className="font-mono text-xs font-semibold tracking-wider text-cyan" data-testid="account-tag">
-                {accountTag(p.userId)}
-              </p>
-            )}
-            <p className="text-sm text-muted">
-              {isGuest
-                ? "Playing as a guest. Progress is saved on this device only."
-                : "Your progress is saved to your ZXG account."}
-            </p>
-            <XPBar xp={p.xp} className="mt-4 max-w-md" />
-          </div>
-          {isGuest && (
-            <SignInButton variant="accent" className="self-start sm:self-center" initialMode="sign_up">
-              Create ZXG account
-            </SignInButton>
+          {isGuest ? (
+            <GuestIdentity guestName={p.username} />
+          ) : (
+            <>
+              <Avatar name={p.username} url={p.avatarUrl} className="h-20 w-20 shrink-0 text-3xl" />
+              <div className="flex-1">
+                <h1 id="profile-name" className="font-display text-2xl font-black uppercase tracking-wide">
+                  {p.username}
+                </h1>
+                {p.userId && (
+                  <p className="font-mono text-xs font-semibold tracking-wider text-cyan" data-testid="account-tag">
+                    {accountTag(p.userId)}
+                  </p>
+                )}
+                <p className="text-sm text-muted">Your progress is saved to your ZXG account.</p>
+                <XPBar xp={p.xp} className="mt-4 max-w-md" />
+              </div>
+            </>
           )}
         </div>
         <dl className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">

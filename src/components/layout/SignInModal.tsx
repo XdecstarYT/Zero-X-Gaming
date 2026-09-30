@@ -8,6 +8,9 @@ import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { validatePassword } from "@/lib/auth";
 import { ACTIVATION_HINT, accountEmail, accountError, validateAccountName } from "@/lib/zxg-account";
 import { toast } from "@/store/toast";
+import { createDeviceAccount, signInDeviceAccount } from "@/lib/device-accounts";
+import { adoptGuestSave } from "@/lib/season-client";
+import { refreshDeviceAuth } from "./AuthProvider";
 import { cn } from "@/lib/cn";
 
 type Mode = "sign_in" | "sign_up";
@@ -48,7 +51,6 @@ export function SignInModal({
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!supabase) return;
     const problem =
       validateAccountName(name) ??
       validatePassword(password) ??
@@ -56,6 +58,22 @@ export function SignInModal({
     if (problem) return setError(problem);
     setBusy(true);
     setError(null);
+
+    if (!supabase) {
+      // No online service: the account lives in this browser.
+      const res = mode === "sign_in" ? await signInDeviceAccount(name, password) : await createDeviceAccount(name, password);
+      setBusy(false);
+      if (!res.ok) return setError(res.error);
+      if (mode === "sign_up") adoptGuestSave();
+      refreshDeviceAuth();
+      toast(mode === "sign_in" ? `Welcome back, ${res.account.username}!` : `Welcome to Zero X, ${res.account.username}!`, {
+        description: mode === "sign_in" ? undefined : "Your ZXG account is ready.",
+        tone: "success",
+      });
+      close();
+      router.refresh();
+      return;
+    }
     const email = accountEmail(name);
 
     if (mode === "sign_in") {
@@ -87,29 +105,13 @@ export function SignInModal({
     router.refresh();
   }
 
-  if (!supabase) {
-    return (
-      <Modal open={open} onClose={close} title="ZXG Account">
-        <p className="text-sm text-muted">
-          Accounts aren&apos;t switched on for this site yet. You can still play as a guest: your progress is saved on
-          this device.
-        </p>
-        <p className="mt-3 rounded-md bg-surface-2 p-3 text-xs text-muted">
-          Site owner: add <code className="font-mono text-text">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-          <code className="font-mono text-text">NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code> to your hosting environment
-          variables, then redeploy.
-        </p>
-        <Button onClick={close} className="mt-5 w-full">
-          Play as guest
-        </Button>
-      </Modal>
-    );
-  }
-
   return (
     <Modal open={open} onClose={close} title={mode === "sign_in" ? "Sign in to ZXG" : "Create a ZXG Account"}>
       <p className="text-sm text-muted">
-        No email needed. Just an account name and a password. Save progress, coins and your Locker across devices.
+        No email needed. Just an account name and a password.{" "}
+        {supabase
+          ? "Save progress, coins and your Locker across devices."
+          : "Your account, progress, coins and Locker are saved on this device."}
       </p>
 
       <form onSubmit={onSubmit} noValidate className="mt-5 grid gap-3">

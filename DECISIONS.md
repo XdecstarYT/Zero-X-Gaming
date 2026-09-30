@@ -274,3 +274,10 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     wall is a dim fogged haze, and the screen vignette is softer. On the battlefields, the drifting smoke sprites
     rendered as hard dark slabs over the sky (found by hiding scene layers one at a time), so they were removed
     (each front's fog provides the haze), and the distant hills were pushed beyond the fog.
+75. **Accounts work even when the site isn't connected to Supabase.** Without the two environment variables the
+    sign-in dialog creates *device accounts*: the account lives in the browser, the password is salted and
+    hashed with PBKDF2 (150k rounds, Web Crypto) and never stored, and each account gets its own save slot for
+    season progress, coins, the battle pass and banner. A new account adopts the guest progress already on the
+    device. Device accounts can't follow a player to another device and don't appear on the online leaderboards;
+    once Supabase is connected the same dialog creates online accounts instead.
+

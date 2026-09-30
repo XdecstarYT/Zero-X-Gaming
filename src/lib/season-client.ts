@@ -5,6 +5,7 @@ import { readLoadout, writeLoadout, type Loadout } from "@/games/neon-siege/load
 import { useAuth } from "@/store/auth";
 import { useWallet } from "@/store/wallet";
 import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup } from "./economy";
+import { deviceSaveSuffix } from "./device-accounts";
 import { getSupabaseBrowser } from "./supabase/client";
 import {
   activeChallenges,
@@ -60,8 +61,10 @@ export interface MatchSummary {
 /** A match with the difficulty it was played on (Cash Cups require Hard). */
 export type RecordedMatch = SiegeMatch & { difficulty: "easy" | "normal" | "hard" };
 
-const GUEST_KEY = `zx-season-${SEASON.id}`;
-const BANNER_KEY = "zx-banner";
+const GUEST_BASE = `zx-season-${SEASON.id}`;
+/** Guests share one save per device; each device account gets its own. */
+const guestKey = () => GUEST_BASE + deviceSaveSuffix();
+const bannerKey = () => "zx-banner" + deviceSaveSuffix();
 
 interface GuestSave {
   xp: number;
@@ -78,7 +81,7 @@ interface GuestSave {
 function readGuest(): GuestSave {
   const empty: GuestSave = { xp: 0, matches: 0, wins: 0, kills: 0, coins: 0, hasPass: false, purchases: [], challenges: {} };
   try {
-    const raw = JSON.parse(localStorage.getItem(GUEST_KEY) ?? "null") as Partial<GuestSave> | null;
+    const raw = JSON.parse(localStorage.getItem(guestKey()) ?? "null") as Partial<GuestSave> | null;
     if (raw && typeof raw.xp === "number") return { ...empty, ...raw, challenges: raw.challenges ?? {}, purchases: raw.purchases ?? [] };
   } catch {
     // fall through
@@ -88,11 +91,13 @@ function readGuest(): GuestSave {
 
 function writeGuest(s: GuestSave) {
   try {
-    localStorage.setItem(GUEST_KEY, JSON.stringify(s));
+    localStorage.setItem(guestKey(), JSON.stringify(s));
   } catch {
     // storage blocked: progress lasts for this page only
   }
   useWallet.getState().set(s.coins);
+  const { status, profile, set } = useAuth.getState();
+  if (status === "device" && profile && profile.xp !== s.xp) set({ profile: { ...profile, xp: s.xp } });
 }
 
 function guestOwned(g: GuestSave) {
@@ -104,7 +109,7 @@ function guestOwned(g: GuestSave) {
 
 function readBanner() {
   try {
-    return localStorage.getItem(BANNER_KEY) ?? "rookie";
+    return localStorage.getItem(bannerKey()) ?? "rookie";
   } catch {
     return "rookie";
   }
@@ -337,7 +342,7 @@ export async function buyShopItem(kind: CosmeticKind, item: string): Promise<{ c
 export async function saveLoadout(l: Loadout & { banner: string }) {
   writeLoadout({ outfit: l.outfit, wrap: l.wrap });
   try {
-    localStorage.setItem(BANNER_KEY, l.banner);
+    localStorage.setItem(bannerKey(), l.banner);
   } catch {
     // ignore
   }
@@ -353,3 +358,24 @@ export function rewardLabel(r: { kind: CosmeticKind; item: string }) {
   const kind = r.kind === "outfit" ? "Outfit" : r.kind === "wrap" ? "Wrap" : "Banner";
   return `${name ?? r.item} ${kind}`;
 }
+
+/**
+ * A new device account starts with the guest progress played on this device
+ * (so nobody loses what they earned before signing up), then keeps its own.
+ */
+export function adoptGuestSave() {
+  try {
+    const key = guestKey();
+    if (key === GUEST_BASE || localStorage.getItem(key)) return;
+    const guest = localStorage.getItem(GUEST_BASE);
+    if (guest) localStorage.setItem(key, guest);
+  } catch {
+    // storage blocked
+  }
+}
+
+/** Season XP saved on this device for the current guest / device account. */
+export function localSeasonXp() {
+  return readGuest().xp;
+}
+

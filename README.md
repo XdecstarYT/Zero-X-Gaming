@@ -9,7 +9,8 @@ has:
   multiplayer lobbies, Conquest) and **Neon Siege**, a battle royale with AI bots, online rooms and a Season 1
   battle pass
 - a cinematic intro splash on each visitor's first page load in a session
-- ZXG accounts (account name + password, no email)
+- ZXG accounts (account name + password, no email): online when Supabase is connected, otherwise saved on the
+  device, so sign-up always works
 - server-validated scores
 - XP, levels, badges, and streaks
 - live leaderboards

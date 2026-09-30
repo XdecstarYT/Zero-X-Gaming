@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { cn } from "@/lib/cn";
 import { levelFromXp } from "@/lib/xp";
 import { SignInButton } from "./SignInButton";
+import { signOutDeviceAccount } from "@/lib/device-accounts";
+import { refreshDeviceAuth } from "./AuthProvider";
 
 export function Avatar({ name, url, className }: { name: string; url?: string | null; className?: string }) {
   return url ? (
@@ -31,7 +33,10 @@ export function Avatar({ name, url, className }: { name: string; url?: string | 
 export function useSignOut() {
   const router = useRouter();
   return async () => {
-    await getSupabaseBrowser()?.auth.signOut();
+    if (useAuth.getState().status === "device") {
+      signOutDeviceAccount();
+      refreshDeviceAuth();
+    } else await getSupabaseBrowser()?.auth.signOut();
     toast("Signed out");
     router.refresh();
   };
@@ -49,7 +54,7 @@ export function AccountControl({ variant = "bar" }: { variant?: "bar" | "menu" |
       />
     );
 
-  if (status !== "signed_in") {
+  if (status !== "signed_in" && status !== "device") {
     return (
       <SignInButton size={variant === "menu" ? "md" : "sm"} className={variant === "menu" ? "w-full" : undefined}>
         Sign in

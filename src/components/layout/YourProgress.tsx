@@ -14,7 +14,7 @@ export function YourProgress() {
       </div>
     );
   }
-  const signedIn = status === "signed_in" && profile;
+  const signedIn = (status === "signed_in" || status === "device") && profile;
   return (
     <div>
       <p className="mb-2 flex justify-between text-xs uppercase tracking-wider text-muted">

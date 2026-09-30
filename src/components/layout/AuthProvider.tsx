@@ -7,6 +7,18 @@ import { useAuth } from "@/store/auth";
 import { useLibrary } from "@/store/library";
 import { toast } from "@/store/toast";
 import { applyProgress } from "@/lib/progress";
+import { currentDeviceAccount } from "@/lib/device-accounts";
+import { localSeasonXp } from "@/lib/season-client";
+
+/** No online service: mirror the device account (if any) into the auth store. */
+export function refreshDeviceAuth() {
+  const a = currentDeviceAccount();
+  useAuth.getState().set(
+    a
+      ? { status: "device", userId: null, email: null, streak: 0, profile: { id: a.id, username: a.username, avatar_url: null, xp: localSeasonXp() } }
+      : { status: "guest", userId: null, email: null, profile: null, streak: 0 },
+  );
+}
 
 async function loadAccount(supabase: BrowserSupabase, userId: string) {
   // Streak first: the first visit of the day grants XP, so the profile read below sees it.
@@ -30,7 +42,7 @@ export function AuthProvider() {
     const supabase = getSupabaseBrowser();
     const { set } = useAuth.getState();
     if (!supabase) {
-      set({ status: "disabled" });
+      refreshDeviceAuth();
       return;
     }
 

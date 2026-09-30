@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import type { Tables } from "@/lib/supabase/database.types";
 
-export type AuthStatus = "loading" | "guest" | "signed_in" | "disabled";
+/**
+ * "signed_in": an online ZXG account (Supabase). "device": a ZXG account saved in
+ * this browser (used when the site isn't connected to the online service).
+ */
+export type AuthStatus = "loading" | "guest" | "signed_in" | "device" | "disabled";
 
 export type Profile = Pick<Tables<"profiles">, "id" | "username" | "avatar_url" | "xp">;
 
