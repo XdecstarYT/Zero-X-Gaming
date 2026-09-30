@@ -325,3 +325,81 @@ describe("people", () => {
     expect(SPEED_LIMIT).toBeCloseTo(15.6);
   });
 });
+
+describe("patrol tools", () => {
+  it("a spike strip blows a fleeing car's tyres and slows it right down", () => {
+    const s = new Code3Sim({ seed: 41, firstCall: 1e9 });
+    run(s, 1);
+    const c = s.cars.find((x) => x.ai && !x.spec.police && x.driver)!;
+    s.startPursuit(c);
+    run(s, 0.05, { enter: true });
+    // Lay the strip across the car's path, just ahead of it.
+    const f = forward(c.h);
+    s.player.x = c.x + f.x * 6;
+    s.player.z = c.z + f.z * 6;
+    s.step(DT, { ...NO_INPUT, spikes: true, yaw: c.h + Math.PI / 2 });
+    expect(s.spikes).not.toBeNull();
+    Object.assign(s.spikes!, { x: c.x + f.x * 5, z: c.z + f.z * 5, h: c.h + Math.PI / 2 });
+    Object.assign(c, { vx: f.x * 20, vz: f.z * 20 });
+    for (let t = 0; t < 1 && !c.spiked; t += DT) s.step(DT, NO_INPUT);
+    expect(c.spiked).toBe(true);
+    expect(s.stats.report.some((r) => r.text.startsWith("Spike strip"))).toBe(true);
+    for (let t = 0; t < 6; t += DT) stepCar(c, { throttle: 1, brake: 0, steer: 0, handbrake: false }, DT);
+    expect(speedOf(c)).toBeLessThan(c.spec.top * 0.45);
+  });
+
+  it("a verbal warning is a lighter outcome than a citation", () => {
+    const s = new Code3Sim({ seed: 42, firstCall: 1e9 });
+    run(s, 2);
+    const { c, d, k } = pullOver(s);
+    Object.assign(d.person, { warrants: [], licence: "valid" });
+    c.brokenLight = true;
+    k.violations.add("broken tail light");
+    const before = s.stats.score;
+    s.choose("warn");
+    expect(s.stats.score - before).toBe(25);
+    expect(k.resolved).toBe("cited");
+  });
+
+  it("EMS takes an injured pedestrian to hospital; an arrested driver's car can be towed", () => {
+    const s = new Code3Sim({ seed: 43, firstCall: 1e9 });
+    run(s, 0.5, { enter: true });
+    const p = s.peds.find((x) => x.state === "walk")!;
+    p.walk = undefined;
+    Object.assign(p, { state: "down", downUntil: 1e12, role: "civilian" });
+    s.player.x = p.x + 1;
+    s.player.z = p.z;
+    expect(s.options().map((o) => o.id)).toEqual(["ems"]);
+    s.choose("ems");
+    const amb = s.cars.find((c) => c.kind === "ambulance");
+    expect(amb).toBeTruthy();
+    Object.assign(amb!, { x: p.x + 3, z: p.z });
+    run(s, 0.1);
+    expect(s.ped(p.id)).toBeUndefined();
+    expect(s.stats.report.some((r) => r.text === "Injured person taken to St. Mary's")).toBe(true);
+  });
+
+  it("rain means less grip", () => {
+    const dry = makeCar("d", "cruiser", 100, 100, 0, "#000");
+    const wet = makeCar("w", "cruiser", 100, 100, 0, "#000");
+    for (const [c, surf] of [[dry, 1], [wet, 0.72]] as const) {
+      for (let t = 0; t < 3; t += DT) stepCar(c, { throttle: 1, brake: 0, steer: 0, handbrake: false }, DT, surf);
+      for (let t = 0; t < 0.5; t += DT) stepCar(c, { throttle: 0.5, brake: 0, steer: 1, handbrake: false }, DT, surf);
+    }
+    const slip = (c: typeof dry) => Math.abs(c.vx * -Math.sin(c.h) + c.vz * Math.cos(c.h));
+    expect(slip(wet)).toBeGreaterThan(slip(dry));
+    expect(new Code3Sim({ weather: "rain", firstCall: 1e9 }).surface).toBeLessThan(1);
+  });
+
+  it("new callouts: a shoplifter and a hit and run", () => {
+    const s = new Code3Sim({ seed: 44, firstCall: 1e9, rank: 5 });
+    const a = s.offerCall("shoplift");
+    expect(a.suspects).toHaveLength(1);
+    run(s, 0.05, { decline: true });
+    const b = s.offerCall("hitrun");
+    expect(b.victims).toHaveLength(1);
+    expect(s.ped(b.victims[0])!.state).toBe("down");
+    expect(b.cars).toHaveLength(1);
+    expect(b.note).toMatch(/plate/);
+  });
+});

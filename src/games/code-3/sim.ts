@@ -147,7 +147,9 @@ export type CallKind =
   | "dui"
   | "collision"
   | "suspicious"
-  | "domestic";
+  | "domestic"
+  | "hitrun"
+  | "shoplift";
 
 export interface Call {
   id: string;
@@ -213,6 +215,8 @@ export interface Code3Input {
   weapon: "taser" | "pistol" | null;
   /** "Police! Stop!" */
   shout: boolean;
+  /** Lay (or pick up) a spike strip. */
+  spikes?: boolean;
 }
 
 export const NO_INPUT: Code3Input = {
@@ -261,7 +265,12 @@ export interface SimOptions {
   peds?: number;
   /** First callout after this many seconds. */
   firstCall?: number;
+  weather?: Weather;
+  /** Seconds a dispatch offer stays open (default 25). */
+  offerSeconds?: number;
 }
+
+export type Weather = "clear" | "overcast" | "rain" | "fog";
 
 const SKINS = ["#f1d0b5", "#e0b28f", "#c68b62", "#9a6440", "#6b4328", "#4a2e1d"];
 const SHIRTS = ["#3f6fb5", "#b53f3f", "#e0e0e0", "#2f2f35", "#6b8e4e", "#d9a441", "#7a4fa3", "#3aa6a0", "#c77d4a", "#555c66"];
@@ -290,6 +299,8 @@ export const CALLS: CallDef[] = [
   { kind: "collision", title: "Traffic collision", code: 2, weight: 3, minRank: 0, points: 150 },
   { kind: "dui", title: "Possible drunk driver", code: 2, weight: 3, minRank: 0, points: 150 },
   { kind: "domestic", title: "Domestic disturbance", code: 3, weight: 2, minRank: 0, points: 180 },
+  { kind: "shoplift", title: "Shoplifter fleeing a store", code: 2, weight: 2, minRank: 0, points: 120 },
+  { kind: "hitrun", title: "Hit and run", code: 3, weight: 1.5, minRank: 1, points: 220 },
   { kind: "stolen", title: "Stolen vehicle spotted", code: 3, weight: 2.5, minRank: 0, points: 200 },
   { kind: "robbery", title: "Armed robbery in progress", code: 3, weight: 2, minRank: 1, points: 300 },
   { kind: "shots", title: "Shots fired", code: 3, weight: 1.5, minRank: 1, points: 300 },
@@ -337,6 +348,12 @@ export class Code3Sim {
   /** MDT results for the current contact. */
   mdt: { title: string; lines: string[]; flag: boolean; at: number }[] = [];
   backupReadyAt = 0;
+  readonly weather: Weather;
+  private readonly offerSeconds: number;
+  /** Tyre grip multiplier from the weather. */
+  readonly surface: number;
+  /** Deployed spike strip (one at a time). */
+  spikes: { x: number; z: number; h: number; until: number } | null = null;
   private nextCallAt: number;
   private seq = 0;
   private readonly rankIdx: number;
@@ -354,6 +371,9 @@ export class Code3Sim {
     this.trafficN = o.traffic ?? 26;
     this.pedN = o.peds ?? 34;
     this.nextCallAt = o.firstCall ?? 25;
+    this.weather = o.weather ?? "clear";
+    this.offerSeconds = o.offerSeconds ?? 25;
+    this.surface = this.weather === "rain" ? 0.72 : 1;
     const st = this.city.station;
     this.unit = makeCar("unit", o.unit ?? "cruiser", st.x, st.z, -Math.PI / 2, "#101216");
     this.cars.push(this.unit);
@@ -579,7 +599,7 @@ export class Code3Sim {
     }
 
     if (pl.inCar) {
-      stepCar(u, { throttle: input.throttle, brake: 0, steer: input.steer, handbrake: input.handbrake }, dt);
+      stepCar(u, { throttle: input.throttle, brake: 0, steer: input.steer, handbrake: input.handbrake }, dt, this.surface);
       pl.x = u.x;
       pl.z = u.z;
       pl.h = u.h;
@@ -606,6 +626,7 @@ export class Code3Sim {
       // Walk into the unit? push out of it.
       for (const c of this.cars) this.pushOutOfCar(pl, c);
       if (input.enter) this.tryEnter();
+      if (input.spikes) this.toggleSpikes();
       if (input.fire) this.fire();
       if (input.shout) this.shout();
       // Tackle: sprint into a fleeing suspect.
@@ -805,6 +826,38 @@ export class Code3Sim {
     }
   }
 
+  private toggleSpikes() {
+    const pl = this.player;
+    if (this.spikes && Math.hypot(this.spikes.x - pl.x, this.spikes.z - pl.z) < 6) {
+      this.spikes = null;
+      this.info("Spike strip picked up.", "info");
+      return;
+    }
+    const f = forward(pl.h);
+    this.spikes = { x: pl.x + f.x * 2.5, z: pl.z + f.z * 2.5, h: pl.h + Math.PI / 2, until: this.time + 90 };
+    this.info("Spike strip deployed. Stay clear of it.", "info");
+  }
+
+  /** Did this car just drive over the spike strip? */
+  private checkSpikes(c: Car) {
+    const st = this.spikes;
+    if (!st || c.spiked || Math.abs(speedOf(c)) < 2) return;
+    if (Math.abs(c.x - st.x) > 6 || Math.abs(c.z - st.z) > 6) return;
+    // Distance from the car to the 6 m strip segment.
+    const dx = Math.cos(st.h);
+    const dz = Math.sin(st.h);
+    const t = Math.max(-3, Math.min(3, (c.x - st.x) * dx + (c.z - st.z) * dz));
+    const d = Math.hypot(c.x - (st.x + dx * t), c.z - (st.z + dz * t));
+    if (d > 1.3) return;
+    c.spiked = true;
+    c.health = Math.max(0, c.health - 15);
+    this.events.push({ type: "crash", x: c.x, z: c.z, speed: 6, player: c === this.unit });
+    if (c.ai?.mode === "flee") {
+      this.award(60, "Spike strip: suspect's tyres blown");
+      this.radio(`You: "Spikes deployed, got him! Tyres are shredded."`);
+    } else if (c === this.unit) this.info("You drove over your own spike strip!", "bad");
+  }
+
   // --------------------------------------------------------------- traffic
 
   private stepTraffic(dt: number) {
@@ -814,7 +867,8 @@ export class Code3Sim {
       const vf = speedOf(c);
       const prevS = c.ai ? this.segProgress(c) : 0;
       const ctl = drive(w, c, dt);
-      stepCar(c, ctl, dt);
+      stepCar(c, ctl, dt, this.surface);
+      this.checkSpikes(c);
       // Saw it run a red light?
       if (c.ai.reckless && c.ai.mode === "cruise") {
         const seg = laneStart(c.ai.from, c.ai.to);
@@ -1140,7 +1194,7 @@ export class Code3Sim {
     let best: { ped: Ped; k: Contact | null } | null = null;
     let bestD = Infinity;
     for (const p of this.peds) {
-      if (p.state === "gone" || p.state === "dead" || p.state === "incar" || p.state === "flee" || p.state === "attack") continue;
+      if (p.state === "gone" || p.state === "incar" || p.state === "flee" || p.state === "attack") continue;
       let x = p.x;
       let z = p.z;
       if (p.state === "driving") {
@@ -1156,7 +1210,7 @@ export class Code3Sim {
       if (d > TALK_RANGE || d >= bestD) continue;
       const k = this.contacts.find((x) => x.ped === p.id && !x.resolved) ?? null;
       if (p.state === "driving" && !k) continue;
-      if (p.state === "walk" || p.state === "down" || k || p.state === "stand" || p.state === "handsup" || p.state === "cuffed" || p.state === "escort" || p.state === "talk") {
+      if (p.state === "walk" || p.state === "down" || p.state === "dead" || k || p.state === "stand" || p.state === "handsup" || p.state === "cuffed" || p.state === "escort" || p.state === "talk") {
         best = { ped: p, k };
         bestD = d;
       }
@@ -1198,7 +1252,17 @@ export class Code3Sim {
       if (k && !k.searched) out.push({ id: "search", label: "Search (incident to arrest)" });
       if (Math.hypot(u.x - p.x, u.z - p.z) < 5 && u.back.length < 2) out.push({ id: "load", label: "Put in the back of the unit" });
       if (!p.pickup) out.push({ id: "transport", label: "Request prisoner transport" });
+      const pc = this.car(p.carId);
+      if (pc && !pc.towAt && pc !== u) out.push({ id: "tow", label: "Have their vehicle towed and impounded" });
       if (k && !k.ranPerson && k.idShown) out.push({ id: "person", label: `MDT: run ${name}` });
+      return out;
+    }
+    if (p.state === "dead") {
+      if (!p.pickup) out.push({ id: "ems", label: "Call the coroner" });
+      return out;
+    }
+    if (p.state === "down" && p.role !== "suspect" && p.downUntil > this.time + 1e6) {
+      if (!p.pickup) out.push({ id: "ems", label: "Call EMS: injured person" });
       return out;
     }
     if (p.state === "handsup" || p.state === "down") {
@@ -1222,7 +1286,10 @@ export class Code3Sim {
     if (inCar) out.push({ id: "out", label: "Step out of the vehicle, please" });
     if (!inCar && !k.breath) out.push({ id: "breath", label: "Breathalyzer" });
     if (!k.searched) out.push({ id: "search", label: car ? "Search the vehicle" : "Search / frisk" });
-    if (k.violations.size && !k.cited) out.push({ id: "cite", label: `Write a citation (${[...k.violations].join(", ")})` });
+    if (k.violations.size && !k.cited) {
+      out.push({ id: "cite", label: `Write a citation (${[...k.violations].join(", ")})` });
+      out.push({ id: "warn", label: "Let them off with a verbal warning" });
+    }
     out.push({ id: "arrest", label: "Place under arrest" });
     out.push({ id: "release", label: "You're free to go" });
     return out;
@@ -1445,6 +1512,35 @@ export class Code3Sim {
         this.info(`${fullName(P)} is in the back of your unit. Drive to the station to book them, or call transport.`, "info");
         return;
       }
+      case "warn": {
+        k!.cited = true;
+        this.award(25, `Verbal warning: ${[...k!.violations].join(", ")}`);
+        this.say(p, "Thank you, officer. It won't happen again.");
+        if (!k!.offences.size) this.release(p, k!, true);
+        return;
+      }
+      case "ems": {
+        const amb = this.spawnPolice("ambulance", p.x, p.z);
+        if (amb) {
+          p.pickup = amb.id;
+          amb.siren = p.state !== "dead";
+          this.radio(
+            p.state === "dead"
+              ? `You: "Dispatch, I need the coroner at ${describe(p.x, p.z)}." Dispatch: "10-4."`
+              : `You: "Dispatch, roll EMS Code 3, injured pedestrian, ${describe(p.x, p.z)}." Dispatch: "10-4, medics en route."`,
+          );
+        }
+        return;
+      }
+      case "tow": {
+        const pc = this.car(p.carId);
+        if (pc) {
+          pc.towAt = this.time + 12;
+          this.award(15, "Vehicle impounded");
+          this.radio(`You: "Dispatch, requesting a tow, ${pc.reg?.plate ?? "vehicle"} to impound." Dispatch: "10-4."`);
+        }
+        return;
+      }
       case "transport": {
         p.pickup = "pending";
         const van = this.spawnPolice("transport", p.x, p.z);
@@ -1615,16 +1711,18 @@ export class Code3Sim {
     for (const c of this.cars) {
       if (!c.spec.police || c === this.unit || !c.ai) continue;
       const ai = c.ai;
-      if (c.kind === "transport") {
+      if (c.kind === "transport" || c.kind === "ambulance") {
         const prisoner = this.peds.find((p) => p.pickup === c.id);
         if (prisoner) {
           ai.tx = prisoner.x;
           ai.tz = prisoner.z;
           if (Math.hypot(c.x - prisoner.x, c.z - prisoner.z) < 12) {
             if (prisoner.state !== "gone") {
+              const hurt = c.kind === "ambulance";
+              if (hurt && prisoner.state !== "dead") this.award(30, "Injured person taken to St. Mary's");
               prisoner.state = "gone";
               if (this.player.escort === prisoner.id) this.player.escort = null;
-              this.radio(`Transport: "We've got your prisoner. Transporting to county."`);
+              this.radio(hurt ? `Medic: "We've got them. Transporting to St. Mary's."` : `Transport: "We've got your prisoner. Transporting to county."`);
             }
             ai.mode = "cruise";
             c.lights = false;
@@ -1727,6 +1825,7 @@ export class Code3Sim {
     };
     switch (kind) {
       case "robbery":
+      case "shoplift":
         return pick(["store", "gas"]);
       case "bank":
         return pick(["bank"]);
@@ -1770,6 +1869,31 @@ export class Code3Sim {
         const s = P({ shady: 0.9, armed: true, hostile: true }, "suspect", place.x, place.z);
         call.suspects.push(s.id);
         call.note = "Caller reports a man firing a handgun in the street.";
+        break;
+      }
+      case "shoplift": {
+        const s = P({ shady: 0.7 }, "suspect", place.x, place.z + 1);
+        call.suspects.push(s.id);
+        call.note = "Clerk reports a male took merchandise without paying. Last seen outside.";
+        break;
+      }
+      case "hitrun": {
+        const v = P({ shady: 0 }, "victim", place.x, place.z);
+        v.state = "down";
+        v.downUntil = 1e12;
+        v.hp = 40;
+        call.victims.push(v.id);
+        const car = this.spawnTraffic(false, { person: { shady: 0.75 }, near: { minD: 60, maxD: 200 } });
+        if (car) {
+          car.health = 55;
+          car.ai!.reckless = true;
+          car.ai!.cruise = 20;
+          car.seen.add("reckless driving");
+          call.cars.push(car.id);
+          call.suspects.push(car.driver!);
+          this.addOffence(this.ped(car.driver)!, "evading police");
+          call.note = `Pedestrian struck. Suspect vehicle: ${COLOR_NAMES[car.color] ?? "dark"} ${car.reg?.make}, front damage, plate ${car.reg?.plate}.`;
+        }
         break;
       }
       case "suspicious": {
@@ -1871,8 +1995,9 @@ export class Code3Sim {
 
   private stepCalls(dt: number) {
     this.stepBackup(dt);
+    if (this.spikes && this.time > this.spikes.until) this.spikes = null;
     const offered = this.offeredCall();
-    if (offered && this.time - offered.offeredAt > 25) {
+    if (offered && this.time - offered.offeredAt > this.offerSeconds) {
       offered.state = "expired";
       this.cleanupCall(offered);
       this.radio(`Dispatch: "Disregard, another unit is handling."`);
@@ -1922,6 +2047,9 @@ export class Code3Sim {
           p.attackAt = this.time + 1.5;
         } else p.state = "handsup";
         this.addOffence(p, "armed robbery");
+      } else if (call.kind === "shoplift") {
+        if (this.rng.next() < 0.65) p.state = "flee";
+        this.addOffence(p, "shoplifting");
       } else if (call.kind === "shots") {
         p.state = this.rng.next() < 0.7 ? "attack" : "flee";
         p.attackAt = this.time + 1.2;
@@ -1999,6 +2127,7 @@ export class Code3Sim {
     }
     if (this.stopCar) busy.add(this.stopCar);
     this.cars = this.cars.filter((c) => {
+      if (c.towAt !== undefined && this.time >= c.towAt && c !== this.unit) return false;
       if (c === this.unit || busy.has(c.id) || c.back.length) return true;
       if (c.ai?.mode === "flee") return true;
       const d = Math.hypot(c.x - o.x, c.z - o.z);

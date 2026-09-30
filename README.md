@@ -25,7 +25,7 @@ See [`DECISIONS.md`](./DECISIONS.md) for every deviation from the original brief
 | ---------------- | -------------- | --------------------------------------------------------------------------------- |
 | **Neon Siege**   | Battle royale  | WASD + mouse, click fire, right-click aim, E loot, 1–5 switch, R reload · stick, drag look, FIRE/AIM |
 | **Trenches**     | War / Conquest | WASD + mouse, click fire, right-click aim, Shift sprint, C crouch, X prone, Q grenade, hold G dig, B artillery, N supplies, T recon, 1–5 switch, R reload, Tab scores · stick (push to sprint), drag look, FIRE/AIM/CRCH/PRONE/NADE/DIG/ARTY/SUP/RCN |
-| **Code 3**       | Police sim     | W/S drive, A/D steer, Space handbrake, Q lights/siren, H yelp, E exit/enter, mouse look, click fire, right-click aim, X taser/sidearm, G shout, 1–9 actions, Y/N dispatch, B backup, Tab MDT · stick, drag look, buttons, tap actions |
+| **Code 3**       | Police sim     | W/S drive, A/D steer, Space handbrake, Q lights/siren, H yelp, E exit/enter, mouse look, click fire, right-click aim, X taser/sidearm, G shout, K spike strip, 1–9 actions, Y/N dispatch, B backup, Tab MDT, C camera · stick, drag look, buttons, tap actions |
 
 Esc (or the pause key from Settings) pauses any game. Games also pause when the tab is hidden.
 
@@ -264,9 +264,24 @@ Code 3 (`src/games/code-3/`) is its own engine: a pure simulation (`sim.ts`, `ve
 - **Shift and career** (`career.ts`): a night (20:00–04:00) or day (08:00–16:00) shift of 15 or 8 minutes with a
   full day/night cycle. The shift report lists every point earned or lost; the score is submitted (ranked) and
   added to your career XP, from Cadet to Chief of Police (saved per device account).
-- **Presentation:** lit windows, street lamps and lamp pools at night, flashing light bars (with real lights on
-  your unit), bloom on High graphics, synthesized siren (wail and yelp), engine, radio and gunshots, and a
-  rotating minimap with the GPS route.
+- **More police work:** K lays a spike strip (blows a fleeing car's tyres; it limps along at 40 % speed), verbal
+  warnings as an alternative to a ticket, EMS for injured people (an ambulance comes to collect them) and the
+  coroner for the dead, towing and impounding an arrestee's car, and two more callouts: a fleeing shoplifter and a
+  hit and run.
+- **Weather:** clear, overcast, rain or fog (or random). Rain wets the streets (reflective asphalt and puddles,
+  falling rain) and cuts tyre grip and braking for everyone; fog closes the view down to ~90 m.
+- **Presentation (`render.ts`, `models.ts`, `textures.ts`):** clear-coated car paint, tinted reflective glass,
+  chrome, spoked rims that spin and steer, door seams, mirrors and number plates; full police, unmarked and
+  ambulance liveries with multi-segment LED light bars (and real flashing lights on your unit). A sky dome with a
+  moving sun, dusk colours, stars and moon feeds image-based reflections for every material. Facades have
+  recessed, glossy windows that light up at night; roofs have parapets, plant and water tanks; shops have
+  awnings and signs. Streets have raised kerbs, worn lanes, cracks, manholes, hydrants, bins, benches, meters,
+  news boxes and bus shelters; lamps cast real light near the camera; parked cars fill driveways and the station
+  lot. Headlights throw pools on the road, sliding tyres leave skid marks, crashes and gunfire shake the camera.
+  High graphics adds soft shadows, ambient occlusion, bloom, SMAA and a filmic grade (split tone, vignette,
+  grain). C cycles chase, far and hood cameras.
+- **Sound:** synthesized siren (wail and yelp), engine, radio, gunshots, taser and cuffs, and a rotating minimap
+  with the GPS route.
 
 ### Themes
 

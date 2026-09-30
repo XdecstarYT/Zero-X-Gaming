@@ -304,4 +304,9 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     arcade games, so the server only checks plausibility (at most 100 000 points and 80 a second). Penalties can
     take a shift below zero; the submitted score is floored at 0. The `?code3=quick` test mode is unranked.
 84. **Code 3 uses a new "Sim" category.** The games table's category check was widened to include `sim`.
+85. **"Photorealistic" is as far as a download-free browser game can take it.** Everything is still procedural
+    (no multi-gigabyte scanned assets), so realism comes from rendering instead: physically based materials with
+    image-based reflections from a live sky, clear-coat paint, glossy glass, wet-road reflections, soft shadows,
+    ambient occlusion, bloom and a filmic grade, plus a lot more modelled detail. Parked cars are baked into a
+    handful of static meshes, and far cars, people and effects are culled, to keep draw calls in check on phones.
 

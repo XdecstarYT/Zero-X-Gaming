@@ -1,7 +1,10 @@
 import { dismissRotate, expect, test } from "./fixtures";
 
+// Software-rendered CI browsers are slow at full HD; a smaller canvas keeps the shift moving.
+test.use({ viewport: { width: 900, height: 506 } });
+
 /**
- * Code 3 end to end: menu, start a (quick, 30 s) shift, lights and siren,
+ * Code 3 end to end: menu, start a quick test shift, lights and siren,
  * out of the unit, answer dispatch, and the shift report at the end.
  */
 test("Code 3: start a shift, run lights and siren, get out, answer dispatch, finish the shift", async ({ page }) => {
@@ -35,7 +38,7 @@ test("Code 3: start a shift, run lights and siren, get out, answer dispatch, fin
   await page.keyboard.press("y");
   await expect(hud).toContainText("CALL:", { timeout: 20_000 });
 
-  // The 30 s quick shift ends with the shift report, then the platform's game-over screen.
+  // The quick shift (60 s at 10× speed) ends with the shift report, then the platform's game-over screen.
   const results = stage.getByTestId("code3-results");
   await expect(results).toBeVisible({ timeout: 180_000 });
   await expect(results).toContainText("End of shift");

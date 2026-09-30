@@ -145,6 +145,7 @@ export type Offence =
   | "armed robbery"
   | "discharging a firearm"
   | "domestic assault"
+  | "shoplifting"
   | "driving while suspended";
 
 /** What a driver says when asked a question, by attitude. */

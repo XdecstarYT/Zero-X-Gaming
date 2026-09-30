@@ -4,8 +4,8 @@ import { ScoreEmitter } from "../engine/emitter";
 import { Code3Audio } from "./audio";
 import { rankOf, RANKS, readCareer, saveShift, UNITS } from "./career";
 import { Code3Hud } from "./hud";
-import { Code3View, type CamState, type Quality } from "./render";
-import { Code3Sim, NO_INPUT, type Code3Input } from "./sim";
+import { Code3View, type CamState, type CamView, type Quality } from "./render";
+import { Code3Sim, NO_INPUT, type Code3Input, type Weather } from "./sim";
 import { SPECS, speedOf, type CarKind } from "./vehicles";
 
 const MOUSE = 0.0024;
@@ -53,9 +53,10 @@ class Code3Game implements GameModule {
   private unit: CarKind = "cruiser";
   private shift: "night" | "day" = "night";
   private length: "full" | "short" = "full";
+  private weather: Weather | "random" = "random";
   private ended = false;
   private lastFrame = 0;
-  /** ?code3=quick: a 30 s test shift (unranked). */
+  /** ?code3=quick: a 60 s test shift at 10× speed (unranked). */
   private quick = false;
 
   // Input.
@@ -65,7 +66,7 @@ class Code3Game implements GameModule {
   private pitch = 0;
   private orbit = 0;
   private orbitAt = 0;
-  private far = false;
+  private camView: CamView = "chase";
   private mouseDown = false;
   private rightDown = false;
   private aimToggle = false;
@@ -195,7 +196,7 @@ class Code3Game implements GameModule {
     const start = button("Start shift", PRIMARY, () => void this.beginShift());
     const controls = this.coarse
       ? "Left thumb: drive / walk · Right thumb: look · EXIT/ENTER · LIGHTS · FIRE · Tap the action list to talk, search, cite and arrest"
-      : "W/S throttle & brake · A/D steer · Space handbrake · Q lights/siren · H yelp · E exit/enter · Mouse look · Click fire · Right-click aim · X taser/sidearm · G shout · B backup · Y/N answer dispatch · 1–9 actions · Tab MDT · C camera";
+      : "W/S throttle & brake · A/D steer · Space handbrake · Q lights/siren · H yelp · E exit/enter · Mouse look · Click fire · Right-click aim · X taser/sidearm · G shout · K spike strip · B backup · Y/N answer dispatch · 1–9 actions · Tab MDT · C camera (chase / far / hood)";
 
     this.menu.replaceChildren(
       el(
@@ -245,6 +246,18 @@ class Code3Game implements GameModule {
             ],
             this.shift,
             (v) => (this.shift = v),
+          ),
+          group(
+            "Weather",
+            [
+              { value: "random" as const, title: "Random", sub: "Whatever the sky brings" },
+              { value: "clear" as const, title: "Clear", sub: "Dry roads, long views" },
+              { value: "overcast" as const, title: "Overcast", sub: "Grey and flat" },
+              { value: "rain" as const, title: "Rain", sub: "Wet reflective streets, less grip" },
+              { value: "fog" as const, title: "Fog", sub: "Low visibility" },
+            ],
+            this.weather,
+            (v) => (this.weather = v),
           ),
           group(
             "Length",
@@ -297,11 +310,13 @@ class Code3Game implements GameModule {
       seed: Date.now() & 0x7fffffff,
       unit: this.unit,
       startHour: this.shift === "night" ? 20 : 8,
-      shiftSeconds: quick ? 30 : this.length === "full" ? 900 : 480,
+      shiftSeconds: quick ? 60 : this.length === "full" ? 900 : 480,
       rank,
       traffic: this.quality === "low" ? 20 : 26,
       peds: this.quality === "low" ? 24 : 34,
-      firstCall: quick ? 4 : 25,
+      firstCall: quick ? 1.5 : 25,
+      offerSeconds: quick ? 1e9 : 25,
+      weather: this.weather === "random" ? (["clear", "clear", "overcast", "rain", "fog"] as const)[Math.floor(Math.random() * 5)] : this.weather,
     });
     this.yaw = this.sim.unit.h;
     this.pitch = 0;
@@ -376,7 +391,12 @@ class Code3Game implements GameModule {
   private update(dt: number) {
     const sim = this.sim;
     if (!sim || this.ended) return;
-    sim.step(dt, this.input());
+    const input = this.input();
+    sim.step(dt, input);
+    // The unranked ?code3=quick test shift runs at 10× (held controls only; presses count once).
+    if (this.quick)
+      for (let i = 0; i < 9 && !sim.over; i++)
+        sim.step(dt, { ...input, enter: false, lights: false, backup: false, accept: false, decline: false, choose: null, weapon: null, shout: false, spikes: false });
     // In the car the camera swings back behind after a moment.
     if (sim.player.inCar && performance.now() - this.orbitAt > 1500) this.orbit *= 1 - Math.min(1, dt * 3);
     if (sim.over && !this.ended) this.endShift();
@@ -389,7 +409,7 @@ class Code3Game implements GameModule {
     const frameDt = Math.min(0.1, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
     const aiming = !sim.player.inCar && (this.rightDown || this.aimToggle);
-    const cam: CamState = { yaw: this.yaw, pitch: this.pitch, orbit: this.orbit, far: this.far, aiming };
+    const cam: CamState = { yaw: this.yaw, pitch: this.pitch, orbit: this.orbit, view: this.camView, aiming };
     // Sounds and toasts for this frame's events.
     for (const e of sim.events) {
       if (e.type === "radio") this.audio.radio();
@@ -495,7 +515,7 @@ class Code3Game implements GameModule {
     if (!this.loop.isRunning || !this.sim) return;
     const handled = [
       "KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "ShiftLeft", "ShiftRight",
-      "KeyE", "KeyQ", "KeyH", "KeyB", "KeyY", "KeyN", "KeyX", "KeyG", "KeyF", "KeyC", "Tab",
+      "KeyE", "KeyQ", "KeyH", "KeyB", "KeyY", "KeyN", "KeyX", "KeyG", "KeyF", "KeyC", "KeyK", "Tab",
       "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
     ];
     if (!handled.includes(e.code)) return;
@@ -525,8 +545,11 @@ class Code3Game implements GameModule {
       case "KeyG":
         p.shout = true;
         break;
+      case "KeyK":
+        p.spikes = true;
+        break;
       case "KeyC":
-        this.far = !this.far;
+        this.camView = this.camView === "chase" ? "far" : this.camView === "far" ? "hood" : "chase";
         break;
       case "Tab": {
         const open = this.hud?.toggleMdt();
@@ -634,12 +657,16 @@ class Code3Game implements GameModule {
     hold(yelp, (v) => (this.touchYelp = v));
     const shout = round("SHOUT", "right-56 bottom-[32%]", "Shout: police, stop!");
     tap(shout, () => (this.pressed.shout = true));
+    const spikes = round("SPIKES", "right-56 bottom-[44%]", "Lay or pick up a spike strip");
+    tap(spikes, () => (this.pressed.spikes = true));
+    const camBtn = round("CAM", "right-36 top-[40%]", "Change camera");
+    tap(camBtn, () => (this.camView = this.camView === "chase" ? "far" : this.camView === "far" ? "hood" : "chase"));
     const backup = round("BACKUP", "right-4 top-[40%]", "Call backup");
     tap(backup, () => (this.pressed.backup = true));
     const mdt = round("MDT", "right-20 top-[40%]", "Open the MDT");
     tap(mdt, () => this.hud?.toggleMdt());
     this.knob = el("div", "pointer-events-none absolute hidden h-20 w-20 rounded-full border-2 border-white/40 bg-white/10");
-    this.touch = el("div", "pointer-events-none absolute inset-0 z-[6]", this.knob, enter, lights, fire, brake, aim, wpn, yelp, shout, backup, mdt);
+    this.touch = el("div", "pointer-events-none absolute inset-0 z-[6]", this.knob, enter, lights, fire, brake, aim, wpn, yelp, shout, spikes, camBtn, backup, mdt);
     this.host.append(this.touch);
   }
 }

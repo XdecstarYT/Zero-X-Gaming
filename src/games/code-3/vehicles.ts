@@ -8,7 +8,7 @@ import type { Registration } from "./people";
  * sirens, flees in pursuits, or responds lights-and-sirens.
  */
 
-export type CarKind = "sedan" | "suv" | "van" | "pickup" | "sports" | "cruiser" | "interceptor" | "slicktop" | "pursuit" | "transport";
+export type CarKind = "sedan" | "suv" | "van" | "pickup" | "sports" | "cruiser" | "interceptor" | "slicktop" | "pursuit" | "transport" | "ambulance";
 
 export interface CarSpec {
   name: string;
@@ -35,6 +35,7 @@ export const SPECS: Record<CarKind, CarSpec> = {
   interceptor: { name: "Interceptor SUV", len: 5.05, wid: 2, height: 1.75, top: 52, accel: 8.6, brake: 12.5, grip: 10, mass: 2.2, police: true },
   slicktop: { name: "Slicktop (unmarked)", len: 5, wid: 1.9, height: 1.45, top: 56, accel: 9.4, brake: 13, grip: 10.5, mass: 1.8, police: true },
   pursuit: { name: "Pursuit Coupe", len: 4.7, wid: 1.95, height: 1.3, top: 64, accel: 11, brake: 14, grip: 11.5, mass: 1.6, police: true },
+  ambulance: { name: "Ambulance", len: 6.2, wid: 2.2, height: 2.7, top: 40, accel: 5.2, brake: 9, grip: 7, mass: 3.2, police: true },
   transport: { name: "Prisoner Transport", len: 5.9, wid: 2.1, height: 2.5, top: 38, accel: 5, brake: 9, grip: 7, mass: 3, police: true },
 };
 
@@ -110,6 +111,10 @@ export interface Car {
   siren: boolean;
   ai: Ai | null;
   brokenLight?: boolean;
+  /** Ran over a spike strip: flat tyres. */
+  spiked?: boolean;
+  /** Tow truck collects it at this time. */
+  towAt?: number;
   /** What the player has seen this car do (reasons to stop it). */
   seen: Set<"speeding" | "red light" | "reckless driving">;
   /** Wheel spin (render). */
@@ -159,8 +164,11 @@ export function makeCar(id: string, kind: CarKind, x: number, z: number, h: numb
 }
 
 /** Integrate one step of driving physics. */
-export function stepCar(c: Car, ctl: Controls, dt: number) {
-  const s = c.spec;
+export function stepCar(c: Car, ctl: Controls, dt: number, surface = 1) {
+  const base = c.spec;
+  // Wet roads and flat tyres cut grip and braking.
+  const tyres = c.spiked ? 0.5 : 1;
+  const s = { ...base, grip: base.grip * surface * tyres, brake: base.brake * (0.6 + 0.4 * surface) * (c.spiked ? 0.8 : 1), top: base.top * (c.spiked ? 0.4 : 1) };
   const f = forward(c.h);
   const r = right(c.h);
   let vf = c.vx * f.x + c.vz * f.z;

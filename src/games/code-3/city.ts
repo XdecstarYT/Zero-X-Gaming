@@ -28,7 +28,7 @@ export const STREETS_NS = ["Harbor Ave", "1st St", "2nd St", "3rd St", "Main St"
 export const STREETS_EW = ["Ocean Blvd", "Pine St", "Oak St", "Maple St", "Elm St", "Cedar St", "Birch St", "Summit Blvd"];
 
 export type District = "downtown" | "midtown" | "suburbs" | "industrial" | "park" | "station";
-export type BuildingKind = "tower" | "office" | "house" | "warehouse" | "store" | "station" | "hospital";
+export type BuildingKind = "tower" | "office" | "house" | "warehouse" | "store" | "station" | "hospital" | "parked";
 
 export interface Building {
   x: number;
@@ -78,7 +78,13 @@ export interface City {
   places: Place[];
   trees: { x: number; z: number; s: number }[];
   station: Place;
+  /** Parked cars (also in `buildings` as kind "parked" for collisions). */
+  parked: { x: number; z: number; h: number; kind: "sedan" | "suv" | "pickup" | "van" | "cruiser" | "interceptor"; color: string }[];
+  /** Street furniture on the sidewalks (render only). */
+  props: { kind: PropKind; x: number; z: number; h: number }[];
 }
+
+export type PropKind = "hydrant" | "bin" | "bench" | "news" | "meter" | "shelter" | "mailbox";
 
 export const line = (i: number) => HALF_STREET + i * PITCH;
 
@@ -118,6 +124,14 @@ export function onRoad(x: number, z: number) {
   const dz = Math.abs(((z - HALF_STREET + PITCH / 2) % PITCH + PITCH) % PITCH - PITCH / 2);
   const inside = x > 0 && z > 0 && x < SIZE && z < SIZE;
   return inside && (dx <= HALF_ROAD || dz <= HALF_ROAD);
+}
+
+/** On a sidewalk (between the kerb and the property line)? */
+export function onSidewalk(x: number, z: number) {
+  if (onRoad(x, z)) return false;
+  const dx = Math.abs((((x - HALF_STREET + PITCH / 2) % PITCH) + PITCH) % PITCH - PITCH / 2);
+  const dz = Math.abs((((z - HALF_STREET + PITCH / 2) % PITCH) + PITCH) % PITCH - PITCH / 2);
+  return dx <= HALF_STREET || dz <= HALF_STREET;
 }
 
 /** Block index containing the point, or -1 on a street. */
@@ -298,7 +312,62 @@ export function generateCity(seed = 1987): City {
     kept.push(bl);
   }
 
-  return { size: SIZE, lines, blocks, buildings: kept, byBlock: index, places, trees, station };
+  // Parked cars: police cruisers in the station lot, cars in suburban driveways, vans in the yards.
+  const parked: City["parked"] = [];
+  const PARK_COLORS = ["#1c1f24", "#e8e8e6", "#8a8f96", "#7a1d1d", "#1d3f7a", "#b8c4cf", "#2f5a3a", "#c9b27a"];
+  for (const b of blocks) {
+    if (b.district === "station")
+      for (let k = 0; k < 16; k++)
+        if (k % 2 === 0 || rng.next() < 0.3) parked.push({ x: b.x0 + 4 + k * 3.1 + 1.55, z: b.z0 + 6.5, h: Math.PI / 2, kind: k % 4 === 0 ? "interceptor" : "cruiser", color: "#0c0e12" });
+    if (b.district === "suburbs") {
+      const lw = (b.x1 - b.x0) / 3;
+      for (let a = 0; a < 3; a++)
+        for (const north of [true, false])
+          if (rng.next() < 0.45)
+            parked.push({
+              x: b.x0 + lw * (a + 0.5) + 4.3,
+              z: north ? b.z0 + 3.2 : b.z1 - 3.2,
+              h: north ? -Math.PI / 2 : Math.PI / 2,
+              kind: rng.pick(["sedan", "suv", "pickup"] as const),
+              color: rng.pick(PARK_COLORS),
+            });
+    }
+    if (b.district === "industrial") parked.push({ x: b.x0 + 6, z: b.z1 - 6, h: 0, kind: "van", color: "#e8e8e6" });
+  }
+  for (const pc of parked) {
+    const along = Math.abs(Math.cos(pc.h)) > 0.5;
+    const len = pc.kind === "van" ? 5.3 : 4.8;
+    const bi = Math.floor((pc.x - HALF_STREET) / PITCH);
+    const bj = Math.floor((pc.z - HALF_STREET) / PITCH);
+    index[bj * (LINES - 1) + bi].push(kept.length);
+    kept.push({ x: pc.x, z: pc.z, hw: along ? len / 2 : 1, hd: along ? 1 : len / 2, h: 1.45, kind: "parked", style: 0, color: pc.color });
+  }
+
+  // Street furniture along the sidewalks (kerb side at 4.7 m from the centre line).
+  const props: City["props"] = [];
+  for (const b of blocks) {
+    const busy = b.district === "downtown" || b.district === "midtown";
+    const edges = [
+      { x0: b.x0, z0: b.z0 - 2.3, x1: b.x1, z1: b.z0 - 2.3, h: 0 },
+      { x0: b.x0, z0: b.z1 + 2.3, x1: b.x1, z1: b.z1 + 2.3, h: Math.PI },
+      { x0: b.x0 - 2.3, z0: b.z0, x1: b.x0 - 2.3, z1: b.z1, h: -Math.PI / 2 },
+      { x0: b.x1 + 2.3, z0: b.z0, x1: b.x1 + 2.3, z1: b.z1, h: Math.PI / 2 },
+    ];
+    for (const e of edges) {
+      const len = Math.hypot(e.x1 - e.x0, e.z1 - e.z0);
+      const at = (t: number) => ({ x: e.x0 + ((e.x1 - e.x0) * t) / len, z: e.z0 + ((e.z1 - e.z0) * t) / len });
+      props.push({ kind: "hydrant", ...at(4 + rng.next() * 3), h: e.h });
+      if (rng.next() < 0.8) props.push({ kind: "bin", ...at(len * 0.5 + rng.range(-6, 6)), h: e.h });
+      if (busy) {
+        for (let t = 12; t < len - 8; t += 9) props.push({ kind: "meter", ...at(t), h: e.h });
+        if (rng.next() < 0.5) props.push({ kind: "news", ...at(len * 0.3), h: e.h });
+        if (rng.next() < 0.35) props.push({ kind: "shelter", ...at(len * 0.7), h: e.h });
+      } else if (rng.next() < 0.5) props.push({ kind: "bench", ...at(len * 0.35), h: e.h });
+      if (rng.next() < 0.15) props.push({ kind: "mailbox", ...at(len - 5), h: e.h });
+    }
+  }
+
+  return { size: SIZE, lines, blocks, buildings: kept, byBlock: index, places, trees, station, parked, props };
 }
 
 function capital(s: string) {
