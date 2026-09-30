@@ -28,7 +28,7 @@ function makeTransport(room: string, name: string): Transport {
   return isLocalMode() ? new BroadcastChannelTransport(room, name) : new SupabaseTransport(room, name);
 }
 
-registerOnlineMenu(({ playerName, start, container }) => {
+registerOnlineMenu(({ playerName, outfit, start, container }) => {
   const params = new URLSearchParams(window.location.search);
   const initial = normalizeRoom(params.get("room") ?? "") || randomRoom();
   const local = isLocalMode();
@@ -89,6 +89,7 @@ registerOnlineMenu(({ playerName, start, container }) => {
     const transport = makeTransport(code, playerName);
     try {
       const controller = await OnlineController.join(transport, playerName, code);
+      controller.me.outfit = outfit;
       status.textContent = "";
       start(controller);
     } catch (e) {

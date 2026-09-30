@@ -1,35 +1,75 @@
-import type { HudState } from "./render";
-import type { PlayerInput } from "./solo";
-import type { Entity, World, WorldEvent } from "./world";
-import { createSolo, stepSolo, type SoloState } from "./solo";
 import type { Difficulty } from "./bots";
+import {
+  createRoyale,
+  matchStats,
+  royaleScore,
+  stepRoyale,
+  type MatchStats,
+  type PlayerInput,
+  type RoyaleState,
+} from "./royale";
+import { isShrinking, stormCountdown, type StormState } from "./storm";
+import type { Entity, World, WorldEvent } from "./world";
 
-/** What the Neon Siege shell needs from a game mode (solo waves or an online match). */
+export interface Banner {
+  text: string;
+  sub?: string;
+  color?: string;
+}
+
+export interface ScoreRow {
+  name: string;
+  kills: number;
+  deaths: number;
+  me: boolean;
+}
+
+/** Top-bar facts the HUD shows (each mode fills what applies). */
+export interface ModeStatus {
+  /** e.g. "12 ALIVE" or "3:41". */
+  primary: string;
+  kills: number;
+  /** Storm line, e.g. "Storm shrinking" / "Storm in 0:24". */
+  storm?: string;
+  stormUrgent?: boolean;
+}
+
+/** What the Neon Siege shell needs from a game mode (battle royale vs bots, or an online match). */
 export interface ModeController {
   readonly world: World;
   readonly me: Entity;
   /** Only verifiable modes submit scores to the leaderboards. */
   readonly ranked: boolean;
   readonly showNames: boolean;
+  readonly storm: StormState | null;
   step(dt: number, input: PlayerInput): WorldEvent[];
-  topLeft(): string[];
-  banner(): HudState["banner"];
-  scoreboard(showAll: boolean): HudState["scoreboard"];
+  status(): ModeStatus;
+  banner(): Banner | null;
+  scoreboard(showAll: boolean): ScoreRow[] | null;
   isOver(): boolean;
+  /** True when the player won (Victory Royale!). */
+  won(): boolean;
   score(): number;
+  /** Stats for season XP / challenges; null for modes that don't award progress. */
+  stats(): MatchStats | null;
   nameOf(id: string): string;
   destroy(): void;
 }
 
-export class SoloController implements ModeController {
-  readonly ranked = true;
-  readonly showNames = false;
-  private s: SoloState;
-  private waveBannerUntil = 0;
-  private waveBanner: HudState["banner"] = null;
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-  constructor(difficulty: Difficulty, seed = Date.now()) {
-    this.s = createSolo(difficulty, seed);
+export class RoyaleController implements ModeController {
+  readonly ranked: boolean;
+  readonly showNames = false;
+  private s: RoyaleState;
+  private bannerUntil = 3;
+  private bannerMsg: Banner | null = { text: "DROPPING IN", sub: "Loot up. Outlast the storm. Be the last one standing." };
+  private lastPhase = 0;
+  private wasShrinking = false;
+
+  constructor(difficulty: Difficulty, seed = Date.now(), opts: { outfit?: string; name?: string; stormScale?: number } = {}) {
+    this.s = createRoyale(difficulty, seed, opts);
+    this.ranked = this.s.stormScale === 1;
   }
 
   get world() {
@@ -38,29 +78,55 @@ export class SoloController implements ModeController {
   get me() {
     return this.s.player;
   }
+  get storm() {
+    return this.s.storm;
+  }
+  /** For tests. */
+  get state() {
+    return this.s;
+  }
 
   step(dt: number, input: PlayerInput) {
-    const events = stepSolo(this.s, dt, input);
-    for (const e of events) {
-      if (e.type === "wave") {
-        this.waveBanner = e.cleared
-          ? { text: `WAVE ${e.wave} CLEARED`, sub: "+35 HP · ammo refilled", color: "#3dffa2" }
-          : { text: `WAVE ${e.wave}`, sub: "Hostile drones inbound", color: "#ff2bd6" };
-        this.waveBannerUntil = this.s.world.time + 2.2;
+    const events = stepRoyale(this.s, dt, input);
+    const storm = this.s.storm;
+    const shrinking = isShrinking(storm);
+    if (shrinking && !this.wasShrinking) this.flash({ text: "THE STORM IS SHRINKING", color: "#b25cff" }, 2.5);
+    else if (storm.phase !== this.lastPhase)
+      this.flash({ text: "STORM EYE FORMING", sub: "Get inside the white circle on the map", color: "#b25cff" }, 2.5);
+    this.wasShrinking = shrinking;
+    this.lastPhase = storm.phase;
+    for (const ev of events) {
+      if (ev.type === "kill" && ev.killer === this.s.player.id && this.s.phase === "playing") {
+        const alive = this.s.alive;
+        this.flash({ text: `ELIMINATED ${this.nameOf(ev.victim).toUpperCase()}`, sub: `${alive} left`, color: "#ffb321" }, 1.6);
       }
     }
     return events;
   }
 
-  topLeft() {
-    const s = this.s;
-    const left = [...s.world.entities.values()].filter((e) => e.kind === "bot" && e.alive).length + s.toSpawn;
-    return [String(s.score).padStart(6, "0"), `WAVE ${Math.max(1, s.wave)} · ${left} LEFT · ${s.kills} KILLS`];
+  private flash(b: Banner, seconds: number) {
+    this.bannerMsg = b;
+    this.bannerUntil = this.s.world.time + seconds;
+  }
+
+  status(): ModeStatus {
+    const storm = this.s.storm;
+    const shrinking = isShrinking(storm);
+    return {
+      primary: `${this.s.alive} ALIVE`,
+      kills: this.s.player.kills,
+      storm: storm.done ? "Final circle" : shrinking ? "Storm shrinking" : `Storm in ${clock(stormCountdown(storm))}`,
+      stormUrgent: shrinking,
+    };
   }
 
   banner() {
-    if (this.s.phase === "intermission" && this.s.wave === 0) return { text: "GET READY", sub: "Survive the waves" };
-    return this.s.world.time < this.waveBannerUntil ? this.waveBanner : null;
+    if (this.s.phase === "over") {
+      return this.s.placement === 1
+        ? { text: "#1 VICTORY ROYALE", color: "#ffb321" }
+        : { text: `#${this.s.placement} ELIMINATED`, sub: `${this.s.player.kills} eliminations`, color: "#ff4d6d" };
+    }
+    return this.s.world.time < this.bannerUntil ? this.bannerMsg : null;
   }
 
   scoreboard() {
@@ -71,12 +137,21 @@ export class SoloController implements ModeController {
     return this.s.phase === "over";
   }
 
+  won() {
+    return this.s.placement === 1;
+  }
+
   score() {
-    return this.s.score;
+    return royaleScore(this.s);
+  }
+
+  stats() {
+    return matchStats(this.s);
   }
 
   nameOf(id: string) {
-    return this.s.world.entities.get(id)?.name ?? (id === "you" ? "You" : id);
+    if (id === "storm") return "The Storm";
+    return this.s.world.entities.get(id)?.name ?? id;
   }
 
   destroy() {}

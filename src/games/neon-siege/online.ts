@@ -1,18 +1,17 @@
 import { createRng, type Rng } from "../engine/rng";
-import { createBrain, hintPosition, SKILLS, updateBot, type BotBrain } from "./bots";
-import type { ModeController } from "./mode";
+import { applySkill, createBrain, hintPosition, SKILLS, updateBot, type BotBrain } from "./bots";
+import { makeConsumable, makeWeapon, SLOTS } from "./items";
+import { seasonMap } from "./map";
+import type { Banner, ModeController, ModeStatus } from "./mode";
 import { electHost, type EntState, type NetMessage, type PeerInfo, type Transport } from "./net";
-import type { HudState } from "./render";
-import type { PlayerInput } from "./solo";
+import { applyPlayerInput, type PlayerInput } from "./royale";
 import {
+  activeWeapon,
   createEntity,
   createWorld,
   damage,
   drainEvents,
-  fire,
-  move,
   respawn,
-  startReload,
   tickWorld,
   type Entity,
   type World,
@@ -40,10 +39,24 @@ const SEND_INTERVAL = 1 / 15;
 const MATCH_BEAT = 1;
 const BOT_NAMES = ["Vex", "Nyx", "Kilo", "Rook", "Axon", "Echo", "Onyx", "Flux"];
 const BOT_PULSE_S = 6;
+/** Largest single legitimate hit (legendary sniper / point-blank legendary shotgun). */
+const MAX_HIT = 130;
+
+/** Online deathmatch loadout, restocked on every respawn (no floor loot to sync). */
+function equip(e: Entity) {
+  e.inventory = Array.from({ length: SLOTS }, () => null);
+  e.inventory[0] = makeWeapon("ar", "rare");
+  e.inventory[1] = makeWeapon("shotgun", "uncommon");
+  e.inventory[2] = makeWeapon("smg", "common");
+  e.inventory[3] = makeWeapon("sniper", "common");
+  e.inventory[4] = makeConsumable("shield", 2);
+  e.active = 0;
+}
 
 export class OnlineController implements ModeController {
   readonly ranked = false;
   readonly showNames = true;
+  readonly storm = null;
   readonly world: World;
   readonly me: Entity;
   private rng: Rng;
@@ -67,7 +80,8 @@ export class OnlineController implements ModeController {
     seed = Date.now(),
   ) {
     this.rng = createRng(seed);
-    this.world = createWorld();
+    this.world = createWorld(seasonMap());
+    this.world.chests = [];
     this.me = createEntity({
       id: transport.selfId,
       name,
@@ -77,11 +91,11 @@ export class OnlineController implements ModeController {
       y: 0,
     });
     this.world.entities.set(this.me.id, this.me);
-    respawn(this.world, this.me, this.rng);
+    this.spawn(this.me);
     this.world.events = [];
-    this.world.onHit = (shooter, target, amount) => {
+    this.world.onHit = (shooter, target, amount, weapon) => {
       if (this.owns(target.id)) return false; // apply locally
-      this.transport.send({ t: "hit", a: shooter.id, v: target.id, d: amount });
+      this.transport.send({ t: "hit", a: shooter.id, v: target.id, d: amount, w: weapon });
       return true;
     };
     this.unsubscribe.push(
@@ -96,6 +110,11 @@ export class OnlineController implements ModeController {
     await transport.connect();
     c.sendState();
     return c;
+  }
+
+  private spawn(e: Entity) {
+    respawn(this.world, e, this.rng);
+    equip(e);
   }
 
   get isHost() {
@@ -145,7 +164,8 @@ export class OnlineController implements ModeController {
   }
 
   private adoptBot(b: Entity) {
-    b.weapon = SKILLS.normal.weapon;
+    applySkill(b, SKILLS.normal);
+    if (!b.inventory.some(Boolean)) equip(b);
     this.targets.delete(b.id);
     if (!this.brains.has(b.id)) this.brains.set(b.id, createBrain(SKILLS.normal, this.rng));
   }
@@ -158,7 +178,7 @@ export class OnlineController implements ModeController {
       const name = `${BOT_NAMES[(this.botSeq - 1) % BOT_NAMES.length]} [BOT]`;
       const b = createEntity({ id, name, kind: "bot", team: this.teamOf(id), x: 0, y: 0 });
       this.world.entities.set(id, b);
-      respawn(this.world, b, this.rng);
+      this.spawn(b);
       this.adoptBot(b);
     }
     for (const b of bots.slice(want)) {
@@ -185,30 +205,34 @@ export class OnlineController implements ModeController {
         }
         break;
       }
-      case "shot":
-        if (!this.owns(msg.s))
-          this.world.events.push({
-            type: "shot",
-            shooter: msg.s,
-            hit: null,
+      case "shot": {
+        if (this.owns(msg.s)) break;
+        const shooter = this.world.entities.get(msg.s);
+        if (shooter) shooter.firedAt = this.world.time;
+        this.world.events.push({
+          type: "shot",
+          shooter: msg.s,
+          weapon: msg.w,
+          hit: null,
             fromX: msg.fx,
             fromY: msg.fy,
             toX: msg.tx,
-            toY: msg.ty,
-          });
+          toY: msg.ty,
+        });
         break;
+      }
       case "hit": {
         const victim = this.world.entities.get(msg.v);
         if (!victim || !this.owns(victim.id) || this.over) return;
         const attacker = this.world.entities.get(msg.a) ?? { id: msg.a };
-        damage(this.world, victim, attacker, Math.max(0, Math.min(40, msg.d)));
+        damage(this.world, victim, attacker, Math.max(0, Math.min(MAX_HIT, msg.d)), msg.w);
         break;
       }
       case "kill": {
         // Kills are credited by the killer's owner (the victim's owner already logged it).
         const killer = this.world.entities.get(msg.k);
         if (killer && this.owns(killer.id)) killer.kills++;
-        this.world.events.push({ type: "kill", killer: msg.k, victim: msg.v });
+        this.world.events.push({ type: "kill", killer: msg.k, victim: msg.v, weapon: msg.w });
         break;
       }
       case "match":
@@ -233,7 +257,16 @@ export class OnlineController implements ModeController {
     e.deaths = es.de;
     if (es.hp < e.hp) e.hurtAt = this.world.time;
     e.hp = es.hp;
+    e.shield = es.sh;
     e.alive = es.al;
+    e.outfit = es.o;
+    e.aiming = es.ad;
+    // Remote fighters only need their held weapon for rendering.
+    const held = e.inventory[0];
+    if (!es.w) e.inventory[0] = null;
+    else if (held?.type !== "weapon" || held.kind !== es.w || held.rarity !== es.r)
+      e.inventory[0] = makeWeapon(es.w, es.r ?? "common");
+    e.active = 0;
     if (!wasAlive && es.al) {
       // Respawned: snap instead of sliding across the map.
       e.x = es.x;
@@ -246,6 +279,7 @@ export class OnlineController implements ModeController {
 
   private snapshot(e: Entity): EntState {
     const r = (v: number) => Math.round(v * 100) / 100;
+    const w = activeWeapon(e);
     return {
       id: e.id,
       n: e.name,
@@ -257,6 +291,11 @@ export class OnlineController implements ModeController {
       al: e.alive,
       ki: e.kills,
       de: e.deaths,
+      sh: e.shield,
+      w: w?.kind ?? null,
+      r: w?.rarity ?? null,
+      o: e.outfit,
+      ad: e.aiming,
     };
   }
 
@@ -274,11 +313,8 @@ export class OnlineController implements ModeController {
 
     if (!this.over) {
       const me = this.me;
-      me.angle += input.turn;
-      move(w, me, input.forward, input.strafe, dt);
-      if (input.reload) startReload(w, me);
-      if (input.fire) fire(w, me, this.rng);
-      if (!me.alive && w.time >= me.respawnAt) respawn(w, me, this.rng);
+      applyPlayerInput({ world: w, rng: this.rng }, me, { ...input, interact: false }, dt);
+      if (!me.alive && w.time >= me.respawnAt) this.spawn(me);
     }
 
     // Interpolate remote entities toward their latest snapshot.
@@ -289,8 +325,11 @@ export class OnlineController implements ModeController {
         this.targets.delete(id);
         continue;
       }
-      e.x += (t.x - e.x) * k;
-      e.y += (t.y - e.y) * k;
+      const nx = e.x + (t.x - e.x) * k;
+      const ny = e.y + (t.y - e.y) * k;
+      e.speed = Math.hypot(nx - e.x, ny - e.y) / Math.max(dt, 1e-6);
+      e.x = nx;
+      e.y = ny;
       e.angle += Math.atan2(Math.sin(t.a - e.angle), Math.cos(t.a - e.angle)) * k;
     }
 
@@ -300,9 +339,18 @@ export class OnlineController implements ModeController {
     const events = drainEvents(w);
     for (const ev of events) {
       if (ev.type === "shot" && this.owns(ev.shooter)) {
-        this.transport.send({ t: "shot", s: ev.shooter, fx: ev.fromX, fy: ev.fromY, tx: ev.toX, ty: ev.toY });
+        const r = (v: number) => Math.round(v * 100) / 100;
+        this.transport.send({
+          t: "shot",
+          s: ev.shooter,
+          w: ev.weapon,
+          fx: r(ev.fromX),
+          fy: r(ev.fromY),
+          tx: r(ev.toX),
+          ty: r(ev.toY),
+        });
       } else if (ev.type === "kill" && this.owns(ev.victim)) {
-        this.transport.send({ t: "kill", k: ev.killer, v: ev.victim });
+        this.transport.send({ t: "kill", k: ev.killer, v: ev.victim, w: ev.weapon });
         this.sendAcc = SEND_INTERVAL; // push the death out right away
       }
     }
@@ -321,7 +369,7 @@ export class OnlineController implements ModeController {
       if (!this.brains.has(b.id)) this.adoptBot(b);
       const brain = this.brains.get(b.id)!;
       if (!b.alive) {
-        if (w.time >= b.respawnAt) respawn(w, b, this.rng);
+        if (w.time >= b.respawnAt) this.spawn(b);
         continue;
       }
       // Occasional noisy fix on the nearest human so bots find the action.
@@ -350,18 +398,19 @@ export class OnlineController implements ModeController {
 
   // ------------------------------------------------------------------ HUD
 
-  topLeft() {
+  status(): ModeStatus {
     const m = Math.floor(this.matchLeft / 60);
     const s = Math.floor(this.matchLeft % 60)
       .toString()
       .padStart(2, "0");
-    return [
-      `${this.me.kills} KILLS · ${this.me.deaths} DEATHS`,
-      `${m}:${s} · FIRST TO ${KILL_LIMIT} · ROOM ${this.room} · ${this.peers.length} ONLINE`,
-    ];
+    return {
+      primary: `${m}:${s}`,
+      kills: this.me.kills,
+      storm: `First to ${KILL_LIMIT} · Room ${this.room} · ${this.peers.length} online`,
+    };
   }
 
-  banner(): HudState["banner"] {
+  banner(): Banner | null {
     if (this.over) {
       const winner = this.standings()[0];
       return {
@@ -396,8 +445,16 @@ export class OnlineController implements ModeController {
     return this.over;
   }
 
+  won() {
+    return this.over && this.standings()[0]?.me === true;
+  }
+
   score() {
     return this.me.kills * 100;
+  }
+
+  stats() {
+    return null;
   }
 
   nameOf(id: string) {

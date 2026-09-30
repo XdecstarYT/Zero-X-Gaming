@@ -13,6 +13,8 @@ test("Neon Siege online: two players meet in a room, bots fill the rest, leaving
   const url = "/games/neon-siege?net=local&room=E2E01";
   const second = await context.newPage();
   await second.addInitScript(() => sessionStorage.setItem("zx-intro-seen", "1"));
+  // The 2D view keeps two software-rendered tabs responsive.
+  for (const p of [page, second]) await p.addInitScript(() => localStorage.setItem("zx-siege-gfx", "2d"));
 
   async function joinRoom(p: typeof page) {
     await p.goto(url);
@@ -28,13 +30,13 @@ test("Neon Siege online: two players meet in a room, bots fill the rest, leaving
   }
 
   const hudA = await joinRoom(page);
-  await expect(hudA).toContainText("ROOM E2E01");
-  await expect(hudA).toContainText("1 ONLINE");
+  await expect(hudA).toContainText("Room E2E01");
+  await expect(hudA).toContainText("1 online");
   await expect(hudA).toContainText("[BOT]");
 
   const hudB = await joinRoom(second);
-  await expect(hudA).toContainText("2 ONLINE", { timeout: 10_000 });
-  await expect(hudB).toContainText("2 ONLINE", { timeout: 10_000 });
+  await expect(hudA).toContainText("2 online", { timeout: 10_000 });
+  await expect(hudB).toContainText("2 online", { timeout: 10_000 });
 
   // Both see each other and the same two bots (room of 4).
   const nameA = await page.evaluate(() => sessionStorage.getItem("zx-guest-name"));
@@ -45,7 +47,7 @@ test("Neon Siege online: two players meet in a room, bots fill the rest, leaving
 
   // B leaves: A's roster drops back to 1 and a bot refills the slot.
   await second.close();
-  await expect(hudA).toContainText("1 ONLINE", { timeout: 10_000 });
+  await expect(hudA).toContainText("1 online", { timeout: 10_000 });
   await expect
     .poll(async () => ((await hudA.textContent()) ?? "").match(/\[BOT\]/g)?.length ?? 0, { timeout: 10_000 })
     .toBe(3);
@@ -60,5 +62,5 @@ test("room codes are validated", async ({ page }) => {
   await stage.getByRole("button", { name: "Join room" }).click();
   await expect(stage.getByRole("status").filter({ hasText: "Room codes are 4–8 letters or numbers." })).toBeVisible();
   await expect(stage).toHaveAttribute("data-phase", "playing"); // still on the menu inside the running stage
-  await expect(stage.getByRole("button", { name: "Deploy vs bots" })).toBeVisible();
+  await expect(stage.getByRole("button", { name: "Drop in" })).toBeVisible();
 });

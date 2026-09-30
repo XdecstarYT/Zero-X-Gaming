@@ -8,6 +8,8 @@ const PAGES = [
   "/games/blitz-trivia",
   "/games/neon-siege",
   "/leaderboards",
+  "/battle-pass",
+  "/locker",
   "/profile",
   "/settings",
 ];

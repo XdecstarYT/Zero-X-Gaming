@@ -10,6 +10,237 @@ export type Database = {
   };
   public: {
     Tables: {
+      challenge_pool: {
+        Row: {
+          goal: number
+          id: string
+          idx: number
+          kind: string
+          metric: string
+          season_id: string
+          title: string
+          xp: number
+        }
+        Insert: {
+          goal: number
+          id: string
+          idx: number
+          kind: string
+          metric: string
+          season_id: string
+          title: string
+          xp: number
+        }
+        Update: {
+          goal?: number
+          id?: string
+          idx?: number
+          kind?: string
+          metric?: string
+          season_id?: string
+          title?: string
+          xp?: number
+        }
+        Relationships: []
+      }
+      challenge_progress: {
+        Row: {
+          challenge_id: string
+          completed_at: string | null
+          period: string
+          progress: number
+          season_id: string
+          user_id: string
+        }
+        Insert: {
+          challenge_id: string
+          completed_at?: string | null
+          period: string
+          progress?: number
+          season_id: string
+          user_id: string
+        }
+        Update: {
+          challenge_id?: string
+          completed_at?: string | null
+          period?: string
+          progress?: number
+          season_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      player_cosmetics: {
+        Row: {
+          acquired_at: string
+          item_id: string
+          kind: string
+          source: string
+          user_id: string
+        }
+        Insert: {
+          acquired_at?: string
+          item_id: string
+          kind: string
+          source: string
+          user_id: string
+        }
+        Update: {
+          acquired_at?: string
+          item_id?: string
+          kind?: string
+          source?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      player_loadout: {
+        Row: {
+          banner: string
+          outfit: string
+          updated_at: string
+          user_id: string
+          wrap: string
+        }
+        Insert: {
+          banner?: string
+          outfit?: string
+          updated_at?: string
+          user_id: string
+          wrap?: string
+        }
+        Update: {
+          banner?: string
+          outfit?: string
+          updated_at?: string
+          user_id?: string
+          wrap?: string
+        }
+        Relationships: []
+      }
+      season_progress: {
+        Row: {
+          kills: number
+          last_match_at: string | null
+          matches: number
+          season_id: string
+          user_id: string
+          wins: number
+          xp: number
+        }
+        Insert: {
+          kills?: number
+          last_match_at?: string | null
+          matches?: number
+          season_id: string
+          user_id: string
+          wins?: number
+          xp?: number
+        }
+        Update: {
+          kills?: number
+          last_match_at?: string | null
+          matches?: number
+          season_id?: string
+          user_id?: string
+          wins?: number
+          xp?: number
+        }
+        Relationships: []
+      }
+      season_rewards: {
+        Row: {
+          item_id: string
+          kind: string
+          season_id: string
+          tier: number
+        }
+        Insert: {
+          item_id: string
+          kind: string
+          season_id: string
+          tier: number
+        }
+        Update: {
+          item_id?: string
+          kind?: string
+          season_id?: string
+          tier?: number
+        }
+        Relationships: []
+      }
+      seasons: {
+        Row: {
+          ends_at: string
+          id: string
+          name: string
+          number: number
+          starts_at: string
+          tier_xp: number
+          tiers: number
+        }
+        Insert: {
+          ends_at: string
+          id: string
+          name: string
+          number: number
+          starts_at: string
+          tier_xp: number
+          tiers: number
+        }
+        Update: {
+          ends_at?: string
+          id?: string
+          name?: string
+          number?: number
+          starts_at?: string
+          tier_xp?: number
+          tiers?: number
+        }
+        Relationships: []
+      }
+      siege_matches: {
+        Row: {
+          chests: number
+          created_at: string
+          damage: number
+          id: number
+          kills: number
+          placement: number
+          players: number
+          season_id: string
+          survived_s: number
+          user_id: string
+          xp: number
+        }
+        Insert: {
+          chests: number
+          created_at?: string
+          damage: number
+          id?: number
+          kills: number
+          placement: number
+          players: number
+          season_id: string
+          survived_s: number
+          user_id: string
+          xp: number
+        }
+        Update: {
+          chests?: number
+          created_at?: string
+          damage?: number
+          id?: number
+          kills?: number
+          placement?: number
+          players?: number
+          season_id?: string
+          survived_s?: number
+          user_id?: string
+          xp?: number
+        }
+        Relationships: []
+      }
       achievements: {
         Row: { created_at: string; description: string; id: string; name: string; tier: string; xp_reward: number };
         Insert: {
@@ -271,6 +502,31 @@ export type Database = {
     };
     Views: { [_ in never]: never };
     Functions: {
+      record_siege_match: {
+        Args: {
+          p_chests: number
+          p_damage: number
+          p_kills: number
+          p_placement: number
+          p_players: number
+          p_survived_s: number
+        }
+        Returns: Json
+      }
+      set_loadout: {
+        Args: { p_banner: string; p_outfit: string; p_wrap: string }
+        Returns: undefined
+      }
+      siege_match_xp: {
+        Args: {
+          p_chests: number
+          p_damage: number
+          p_kills: number
+          p_placement: number
+          p_survived_s: number
+        }
+        Returns: number
+      }
       get_leaderboard: {
         Args: { p_game_slug?: string; p_limit?: number; p_period?: string };
         Returns: {

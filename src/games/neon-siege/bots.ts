@@ -1,17 +1,36 @@
 import type { Rng } from "../engine/rng";
+import { CONSUMABLES, itemValue, WEAPONS, type Item } from "./items";
 import { floorCells, lineOfSight } from "./map";
 import { findPath } from "./path";
-import { fire, isEnemy, isReloading, move, startReload, type Entity, type Weapon, type World } from "./world";
+import { outside, type Circle } from "./storm";
+import {
+  activeItem,
+  activeWeapon,
+  fire,
+  interact,
+  isEnemy,
+  isReloading,
+  MAX_SHIELD,
+  move,
+  nearestChest,
+  startReload,
+  switchSlot,
+  type Entity,
+  type World,
+} from "./world";
 
 /**
- * Bot AI. A small state machine per bot:
- *   patrol  → wander between random reachable cells (A* paths)
- *   hunt    → go to where an enemy was last seen / heard
- *   engage  → face, strafe, keep range, fire in bursts once "reacted"
- *   retreat → when hurt, path to a cell the attacker can't see
- * Perception is fair: a vision cone + line of sight (plus hearing up close and
- * noticing who shot them). Skill comes only from reaction time, aim error,
- * turn speed and burst discipline, never from knowing hidden positions.
+ * Bot AI: a state machine per bot.
+ *   loot    → walk to a visible item / chest that improves the kit, grab it
+ *   rotate  → the storm is coming: path into the safe circle
+ *   heal    → out of danger and hurt: use a med kit / shield potion
+ *   patrol  → wander between reachable cells (inside the safe zone)
+ *   hunt    → go where an enemy was last seen / heard / signalled
+ *   engage  → pick the right gun for the range, strafe, fire once "reacted"
+ *   retreat → badly hurt: break line of sight
+ * Perception is fair: a vision cone + line of sight, hearing up close, and
+ * noticing who shot them. Difficulty changes reaction, aim, and a damage /
+ * spread handicap only, never what the bot can know.
  */
 
 export type Difficulty = "easy" | "normal" | "hard";
@@ -23,8 +42,8 @@ export interface BotSkill {
   burst: [number, number];
   burstPause: [number, number];
   viewDist: number;
-  /** Bot rifle: bots trade raw power for numbers, so a fair fight lasts a few seconds. */
-  weapon: Weapon;
+  damageMult: number;
+  spreadMult: number;
 }
 
 export const SKILLS: Record<Difficulty, BotSkill> = {
@@ -34,82 +53,90 @@ export const SKILLS: Record<Difficulty, BotSkill> = {
     turnSpeed: 2.4,
     burst: [2, 3],
     burstPause: [0.8, 1.3],
-    viewDist: 11,
-    weapon: { damage: 6, farDamage: 4, interval: 0.26, spread: 0.1 },
+    viewDist: 14,
+    damageMult: 0.35,
+    spreadMult: 2.4,
   },
   normal: {
-    reaction: 0.45,
+    reaction: 0.5,
     aimError: 0.055,
     turnSpeed: 3.6,
     burst: [3, 4],
     burstPause: [0.55, 0.9],
-    viewDist: 14,
-    weapon: { damage: 8, farDamage: 5, interval: 0.22, spread: 0.07 },
+    viewDist: 18,
+    damageMult: 0.5,
+    spreadMult: 1.8,
   },
   hard: {
-    reaction: 0.25,
-    aimError: 0.028,
-    turnSpeed: 5.2,
+    reaction: 0.3,
+    aimError: 0.03,
+    turnSpeed: 5,
     burst: [3, 5],
     burstPause: [0.35, 0.6],
-    viewDist: 18,
-    weapon: { damage: 11, farDamage: 7, interval: 0.18, spread: 0.045 },
+    viewDist: 24,
+    damageMult: 0.68,
+    spreadMult: 1.35,
   },
 };
 
-/**
- * Fold a noisy "signal" of a target's position into the bot's memory, so idle bots
- * converge on the fight (used by modes as a periodic radar pulse, never exact).
- */
-export function hintPosition(world: World, brain: BotBrain, x: number, y: number, noise: number, rng: Rng) {
-  if (brain.state === "engage" || brain.state === "retreat") return;
-  const hx = Math.min(world.map.width - 1.5, Math.max(1.5, x + (rng.next() - 0.5) * 2 * noise));
-  const hy = Math.min(world.map.height - 1.5, Math.max(1.5, y + (rng.next() - 0.5) * 2 * noise));
-  brain.lastSeen = { x: hx, y: hy, t: world.time };
-  brain.state = "hunt";
-  brain.path = [];
-}
-
 const FOV = (110 * Math.PI) / 180;
-const HEAR_DIST = 2.5;
-const MEMORY_S = 4;
-const PREFERRED_RANGE: [number, number] = [3.5, 7.5];
+const HEAR_DIST = 3;
+const MEMORY_S = 5;
+const LOOT_SIGHT = 14;
 
-export type BotState = "patrol" | "hunt" | "engage" | "retreat";
+export type BotState = "loot" | "rotate" | "heal" | "patrol" | "hunt" | "engage" | "retreat";
 
 export interface BotBrain {
   state: BotState;
   skill: BotSkill;
   targetId: string | null;
   lastSeen: { x: number; y: number; t: number } | null;
-  /** When the current target was first acquired (reaction timer). */
   acquiredAt: number;
   aimOffset: number;
   path: { x: number; y: number }[];
+  goal: { x: number; y: number } | null;
+  lootId: string | null;
   strafeDir: number;
   strafeUntil: number;
   burstLeft: number;
   burstResumeAt: number;
   retreatUntil: number;
+  nextThink: number;
   stuckCheck: { x: number; y: number; t: number };
+}
+
+export interface BotEnv {
+  /** The circle the storm is closing to (bots head inside it). */
+  safe?: Circle;
+  /** The storm's current edge (outside = taking damage). */
+  storm?: Circle;
 }
 
 export function createBrain(skill: BotSkill, rng: Rng): BotBrain {
   return {
-    state: "patrol",
+    state: "loot",
     skill,
     targetId: null,
     lastSeen: null,
     acquiredAt: 0,
     aimOffset: 0,
     path: [],
+    goal: null,
+    lootId: null,
     strafeDir: rng.next() < 0.5 ? -1 : 1,
     strafeUntil: 0,
     burstLeft: 0,
     burstResumeAt: 0,
     retreatUntil: 0,
+    nextThink: 0,
     stuckCheck: { x: 0, y: 0, t: 0 },
   };
+}
+
+/** Apply a skill's handicaps to a bot entity. */
+export function applySkill(bot: Entity, skill: BotSkill) {
+  bot.damageMult = skill.damageMult;
+  bot.spreadMult = skill.spreadMult;
 }
 
 const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -125,6 +152,20 @@ export function canSee(world: World, bot: Entity, target: Entity, viewDist: numb
   return lineOfSight(world.map, bot.x, bot.y, target.x, target.y);
 }
 
+/**
+ * Fold a noisy "signal" of a target's position into the bot's memory, so idle
+ * bots converge on the action (modes call this periodically; never exact).
+ */
+export function hintPosition(world: World, brain: BotBrain, x: number, y: number, noise: number, rng: Rng) {
+  if (brain.state === "engage" || brain.state === "retreat" || brain.state === "heal") return;
+  const hx = Math.min(world.map.width - 1.5, Math.max(1.5, x + (rng.next() - 0.5) * 2 * noise));
+  const hy = Math.min(world.map.height - 1.5, Math.max(1.5, y + (rng.next() - 0.5) * 2 * noise));
+  brain.lastSeen = { x: hx, y: hy, t: world.time };
+  brain.state = "hunt";
+  brain.path = [];
+  brain.goal = null;
+}
+
 function turnToward(bot: Entity, angle: number, rate: number, dt: number) {
   const diff = wrapAngle(angle - bot.angle);
   const step = rate * dt;
@@ -137,37 +178,40 @@ function followPath(world: World, bot: Entity, brain: BotBrain, dt: number, face
   if (!next) return;
   const dx = next.x - bot.x;
   const dy = next.y - bot.y;
-  if (Math.hypot(dx, dy) < 0.2) {
+  if (Math.hypot(dx, dy) < 0.25) {
     brain.path.shift();
     return;
   }
   const heading = Math.atan2(dy, dx);
   if (face) turnToward(bot, heading, brain.skill.turnSpeed * 1.5, dt);
-  // Move in world space toward the waypoint regardless of facing.
   const rel = wrapAngle(heading - bot.angle);
-  move(world, bot, Math.cos(rel), Math.sin(rel), dt, 2.8);
+  move(world, bot, Math.cos(rel), Math.sin(rel), dt, 0.9);
 }
 
 function goTo(world: World, bot: Entity, brain: BotBrain, x: number, y: number) {
+  brain.goal = { x, y };
   brain.path = findPath(world.map, bot.x, bot.y, x, y) ?? [];
+  return brain.path.length > 0;
 }
 
-function pickPatrolGoal(world: World, bot: Entity, brain: BotBrain, rng: Rng) {
+function randomCellIn(world: World, rng: Rng, circle?: Circle, avoid?: { x: number; y: number }) {
   const cells = floorCells(world.map);
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 30; i++) {
     const c = rng.pick(cells);
-    if (Math.hypot(c.x - bot.x, c.y - bot.y) > 5) {
-      goTo(world, bot, brain, c.x + 0.5, c.y + 0.5);
-      if (brain.path.length) return;
-    }
+    const x = c.x + 0.5;
+    const y = c.y + 0.5;
+    if (circle && outside({ ...circle, r: circle.r * 0.8 }, x, y)) continue;
+    if (avoid && Math.hypot(x - avoid.x, y - avoid.y) < 5) continue;
+    return { x, y };
   }
+  return circle ? { x: circle.x, y: circle.y } : rng.pick(cells);
 }
 
 function pickCover(world: World, bot: Entity, brain: BotBrain, threat: { x: number; y: number }, rng: Rng) {
   const cells = floorCells(world.map);
   let best: { x: number; y: number } | null = null;
   let bestD = Infinity;
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 40; i++) {
     const c = rng.pick(cells);
     const cx = c.x + 0.5;
     const cy = c.y + 0.5;
@@ -182,7 +226,52 @@ function pickCover(world: World, bot: Entity, brain: BotBrain, threat: { x: numb
   if (best) goTo(world, bot, brain, best.x, best.y);
 }
 
-/** Choose the closest visible enemy, or the one that just shot us. */
+/** Best slot for a fight at this distance. */
+export function chooseSlot(bot: Entity, dist: number): number {
+  let best = -1;
+  let bestScore = -Infinity;
+  bot.inventory.forEach((it, i) => {
+    if (it?.type !== "weapon") return;
+    let s: number;
+    switch (it.kind) {
+      case "shotgun":
+        s = dist < 5 ? 10 : dist < 8 ? 4 : 0;
+        break;
+      case "smg":
+        s = dist < 10 ? 8 : 4;
+        break;
+      case "ar":
+        s = dist < 22 ? 7 : 6;
+        break;
+      case "sniper":
+        s = dist > 14 ? 9 : 2;
+        break;
+      default:
+        s = 3;
+    }
+    s += itemValue(it) * 0.1;
+    if (it.ammo === 0) s -= 3;
+    if (s > bestScore) {
+      bestScore = s;
+      best = i;
+    }
+  });
+  return best;
+}
+
+function consumableSlot(bot: Entity, kind: "medkit" | "shield") {
+  return bot.inventory.findIndex((it) => it?.type === "consumable" && it.kind === kind);
+}
+
+function wantsItem(bot: Entity, item: Item) {
+  if (bot.inventory.some((s) => s === null)) return true;
+  const worst = Math.min(...bot.inventory.map((s) => (s ? itemValue(s) : 0)));
+  if (item.type === "consumable")
+    return bot.inventory.some((s) => s?.type === "consumable" && s.kind === item.kind && s.count < CONSUMABLES[item.kind].stack);
+  return itemValue(item) > worst + 0.5;
+}
+
+/** Choose the closest visible enemy. Getting shot reveals the shooter's position. */
 function perceive(world: World, bot: Entity, brain: BotBrain) {
   let best: Entity | null = null;
   let bestD = Infinity;
@@ -195,7 +284,6 @@ function perceive(world: World, bot: Entity, brain: BotBrain) {
       best = e;
     }
   }
-  // Getting shot reveals the attacker's position (not a wallhack: they just fired at us).
   if (!best && bot.lastAttacker && world.time - bot.hurtAt < 0.2) {
     const a = world.entities.get(bot.lastAttacker);
     if (a?.alive) brain.lastSeen = { x: a.x, y: a.y, t: world.time };
@@ -204,9 +292,9 @@ function perceive(world: World, bot: Entity, brain: BotBrain) {
 }
 
 /** Advance one bot by dt. Returns whether it fired (for sounds / netcode). */
-export function updateBot(world: World, bot: Entity, brain: BotBrain, dt: number, rng: Rng): boolean {
+export function updateBot(world: World, bot: Entity, brain: BotBrain, dt: number, rng: Rng, env: BotEnv = {}): boolean {
   if (!bot.alive) {
-    brain.state = "patrol";
+    brain.state = "loot";
     brain.path = [];
     brain.targetId = null;
     return false;
@@ -214,6 +302,8 @@ export function updateBot(world: World, bot: Entity, brain: BotBrain, dt: number
   const s = brain.skill;
   const target = perceive(world, bot, brain);
   let fired = false;
+  const inStorm = env.storm ? outside(env.storm, bot.x, bot.y) : false;
+  const outOfSafe = env.safe ? outside({ ...env.safe, r: Math.max(1, env.safe.r - 1.5) }, bot.x, bot.y) : false;
 
   if (target) {
     if (brain.targetId !== target.id) {
@@ -222,24 +312,76 @@ export function updateBot(world: World, bot: Entity, brain: BotBrain, dt: number
       brain.aimOffset = (rng.next() - 0.5) * 2 * s.aimError * 2;
     }
     brain.lastSeen = { x: target.x, y: target.y, t: world.time };
-    if (brain.state !== "retreat") brain.state = "engage";
+    if (brain.state !== "retreat" && !(inStorm && bot.hp < 40)) brain.state = "engage";
+    bot.using = null;
   } else if (brain.targetId) {
     brain.targetId = null;
+    bot.aiming = false;
     if (brain.state === "engage") brain.state = "hunt";
   }
 
-  // Hurt and outgunned: fall back to cover for a bit.
-  if (bot.hp < bot.maxHp * 0.3 && brain.state !== "retreat" && brain.lastSeen && rng.next() < 0.6 * dt * 10) {
+  // Badly hurt in a fight: break line of sight.
+  const ehp = bot.hp + bot.shield;
+  if (ehp < 45 && brain.state === "engage" && brain.lastSeen && rng.next() < dt * 4) {
     brain.state = "retreat";
     brain.retreatUntil = world.time + 3;
     pickCover(world, bot, brain, brain.lastSeen, rng);
   }
 
+  // Periodic re-planning for the non-combat states.
+  if (!target && brain.state !== "retreat" && brain.state !== "heal" && world.time >= brain.nextThink) {
+    brain.nextThink = world.time + 0.6 + rng.next() * 0.4;
+    const hurt =
+      (bot.hp < 75 && consumableSlot(bot, "medkit") >= 0) || (bot.shield < MAX_SHIELD - 45 && consumableSlot(bot, "shield") >= 0);
+    if (inStorm || outOfSafe) {
+      if (brain.state !== "rotate" || brain.path.length === 0) {
+        brain.state = "rotate";
+        const p = randomCellIn(world, rng, env.safe);
+        goTo(world, bot, brain, p.x, p.y);
+      }
+    } else if (hurt && !(brain.lastSeen && world.time - brain.lastSeen.t < 2)) {
+      brain.state = "heal";
+      brain.path = [];
+    } else if (brain.lastSeen && world.time - brain.lastSeen.t < MEMORY_S && brain.state === "hunt") {
+      // keep hunting
+    } else {
+      // Loot anything worthwhile in sight, else wander.
+      const chest = nearestChest(world, bot, LOOT_SIGHT);
+      let goal: { x: number; y: number; id: string } | null = chest ? { x: chest.x, y: chest.y, id: chest.id } : null;
+      if (!goal) {
+        let bestV = 0;
+        for (const l of world.loot.values()) {
+          const d = Math.hypot(l.x - bot.x, l.y - bot.y);
+          if (d > LOOT_SIGHT || !wantsItem(bot, l.item)) continue;
+          if (env.safe && outside(env.safe, l.x, l.y)) continue;
+          if (!lineOfSight(world.map, bot.x, bot.y, l.x, l.y)) continue;
+          const v = itemValue(l.item) - d * 0.15;
+          if (v > bestV) {
+            bestV = v;
+            goal = { x: l.x, y: l.y, id: l.id };
+          }
+        }
+      }
+      if (goal) {
+        if (brain.lootId !== goal.id || brain.path.length === 0) {
+          brain.state = "loot";
+          brain.lootId = goal.id;
+          goTo(world, bot, brain, goal.x, goal.y);
+        }
+      } else if (brain.state !== "patrol" || brain.path.length === 0) {
+        brain.state = "patrol";
+        brain.lootId = null;
+        const p = randomCellIn(world, rng, env.safe, bot);
+        goTo(world, bot, brain, p.x, p.y);
+      }
+    }
+  }
+
   switch (brain.state) {
     case "retreat": {
       if (world.time > brain.retreatUntil || brain.path.length === 0) {
-        brain.state = target ? "engage" : "hunt";
-        if (isReloading(world, bot) === false && bot.ammo < 12) startReload(world, bot);
+        brain.state = target ? "engage" : "heal";
+        if (!isReloading(world, bot)) startReload(world, bot);
       }
       followPath(world, bot, brain, dt, !target);
       if (target) turnToward(bot, Math.atan2(target.y - bot.y, target.x - bot.x), s.turnSpeed, dt);
@@ -250,7 +392,11 @@ export function updateBot(world: World, bot: Entity, brain: BotBrain, dt: number
       const dx = target.x - bot.x;
       const dy = target.y - bot.y;
       const dist = Math.hypot(dx, dy);
-      // Aim drifts around the true angle; error shrinks the longer we track the target.
+      const slot = chooseSlot(bot, dist);
+      if (slot >= 0 && slot !== bot.active && world.time - bot.firedAt > 0.4) switchSlot(world, bot, slot);
+      const w = activeWeapon(bot);
+      bot.aiming = !!w && w.kind === "sniper" && dist > 10;
+
       const tracking = Math.min(1, (world.time - brain.acquiredAt) / 1.5);
       brain.aimOffset += (rng.next() - 0.5) * s.aimError * dt * 8;
       brain.aimOffset *= 1 - 0.5 * dt * (0.5 + tracking);
@@ -261,18 +407,51 @@ export function updateBot(world: World, bot: Entity, brain: BotBrain, dt: number
         brain.strafeDir = rng.next() < 0.5 ? -1 : 1;
         brain.strafeUntil = world.time + rng.range(0.5, 1.2);
       }
-      const fwd = dist > PREFERRED_RANGE[1] ? 1 : dist < PREFERRED_RANGE[0] ? -0.8 : 0;
-      move(world, bot, fwd, brain.strafeDir * 0.8, dt, 2.4);
+      const ideal: [number, number] =
+        w?.kind === "shotgun" ? [1.5, 4] : w?.kind === "sniper" ? [12, 30] : w?.kind === "smg" ? [3, 8] : [4, 12];
+      const fwd = dist > ideal[1] ? 1 : dist < ideal[0] ? -0.8 : 0;
+      move(world, bot, fwd, bot.aiming ? 0 : brain.strafeDir * 0.8, dt, 0.85);
 
-      const reacted = world.time - brain.acquiredAt >= s.reaction;
+      if (!w) break;
+      if (w.ammo === 0) {
+        startReload(world, bot);
+        break;
+      }
+      const reacted = world.time - brain.acquiredAt >= s.reaction + (bot.aiming ? 0.35 : 0);
       const onTarget = aimErr < 0.06 + Math.atan2(0.3, Math.max(dist, 0.5));
-      if (reacted && onTarget && world.time >= brain.burstResumeAt) {
-        if (brain.burstLeft <= 0) brain.burstLeft = rng.int(s.burst[0], s.burst[1]);
+      if (reacted && onTarget && world.time >= brain.burstResumeAt && dist < (WEAPONS[w.kind].range * 2.5 + 4)) {
+        if (brain.burstLeft <= 0) brain.burstLeft = WEAPONS[w.kind].auto ? rng.int(s.burst[0], s.burst[1]) : 1;
         if (fire(world, bot, rng)) {
           fired = true;
           brain.burstLeft--;
-          if (brain.burstLeft <= 0) brain.burstResumeAt = world.time + rng.range(s.burstPause[0], s.burstPause[1]);
+          if (brain.burstLeft <= 0)
+            brain.burstResumeAt =
+              world.time + (WEAPONS[w.kind].auto ? rng.range(s.burstPause[0], s.burstPause[1]) : rng.range(0.1, 0.4));
         }
+      }
+      break;
+    }
+    case "heal": {
+      if (bot.using) break;
+      const needMed = bot.hp < bot.maxHp - 20 ? consumableSlot(bot, "medkit") : -1;
+      const needShield = bot.shield < MAX_SHIELD - 20 ? consumableSlot(bot, "shield") : -1;
+      const slot = needShield >= 0 ? needShield : needMed;
+      if (slot < 0) {
+        brain.state = "patrol";
+        brain.path = [];
+        brain.nextThink = 0;
+        break;
+      }
+      if (bot.active !== slot) switchSlot(world, bot, slot);
+      else if (activeItem(bot)?.type === "consumable") fire(world, bot, rng);
+      break;
+    }
+    case "loot": {
+      if (brain.path.length > 0) followPath(world, bot, brain, dt);
+      else if (brain.lootId) {
+        interact(world, bot, rng);
+        brain.lootId = null;
+        brain.nextThink = 0;
       }
       break;
     }
@@ -281,12 +460,12 @@ export function updateBot(world: World, bot: Entity, brain: BotBrain, dt: number
       if (!ls || world.time - ls.t > MEMORY_S) {
         brain.state = "patrol";
         brain.path = [];
+        brain.nextThink = 0;
         break;
       }
       if (brain.path.length === 0) {
         goTo(world, bot, brain, ls.x, ls.y);
         if (brain.path.length === 0) {
-          // Arrived: look around, then give up.
           bot.angle += s.turnSpeed * 0.5 * dt;
           if (world.time - ls.t > MEMORY_S * 0.6) brain.lastSeen = null;
         }
@@ -294,23 +473,26 @@ export function updateBot(world: World, bot: Entity, brain: BotBrain, dt: number
       followPath(world, bot, brain, dt);
       break;
     }
+    case "rotate":
     case "patrol": {
-      if (bot.ammo < 12 && !isReloading(world, bot)) startReload(world, bot);
-      if (brain.lastSeen && world.time - brain.lastSeen.t < MEMORY_S) {
-        brain.state = "hunt";
-        brain.path = [];
-        break;
+      if (bot.active >= 0 && !activeWeapon(bot)) {
+        const slot = chooseSlot(bot, 10);
+        if (slot >= 0) switchSlot(world, bot, slot);
       }
-      if (brain.path.length === 0) pickPatrolGoal(world, bot, brain, rng);
+      const w = activeWeapon(bot);
+      if (w && w.ammo < WEAPONS[w.kind].mag * 0.5 && !isReloading(world, bot)) startReload(world, bot);
       followPath(world, bot, brain, dt);
+      if (brain.path.length === 0) brain.nextThink = 0;
       break;
     }
   }
 
-  // Unstick: if we meant to move but haven't for a second, pick a new route.
+  // Unstick: meant to move but haven't for a second → re-plan.
   if (world.time - brain.stuckCheck.t > 1) {
-    if (Math.hypot(bot.x - brain.stuckCheck.x, bot.y - brain.stuckCheck.y) < 0.1 && brain.state !== "engage")
+    if (Math.hypot(bot.x - brain.stuckCheck.x, bot.y - brain.stuckCheck.y) < 0.1 && brain.state !== "engage" && brain.state !== "heal") {
       brain.path = [];
+      brain.nextThink = 0;
+    }
     brain.stuckCheck = { x: bot.x, y: bot.y, t: world.time };
   }
   return fired;

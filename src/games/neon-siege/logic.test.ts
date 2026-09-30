@@ -1,212 +1,342 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../engine/rng";
-import { ARENA, castRay, floorCells, isWall, lineOfSight, moveWithCollision, parseMap } from "./map";
+import { applySkill, chooseSlot, createBrain, SKILLS, updateBot, type Difficulty } from "./bots";
+import { damageAt, makeConsumable, makeWeapon, RARITY, rollRarity, weaponStats, WEAPONS } from "./items";
+import { castRay, floorCells, generateTown, isWall, lineOfSight, moveWithCollision, parseMap, SOLID } from "./map";
 import { findPath } from "./path";
-import { createBrain, SKILLS, updateBot, type Difficulty } from "./bots";
-import { createEntity, createWorld, damage, fire, MAG_SIZE, RELOAD_TIME, tickWorld, traceShot } from "./world";
-import { createSolo, killPoints, PLAYER_ID, stepSolo, waveBonus, type PlayerInput, type SoloState } from "./solo";
+import { createRoyale, IDLE, matchStats, placementBonus, royaleScore, stepRoyale, type PlayerInput, type RoyaleState } from "./royale";
+import { createStorm, outside, STORM_PHASES, stepStorm } from "./storm";
+import {
+  activeWeapon,
+  createEntity,
+  createWorld,
+  damage,
+  fire,
+  giveItem,
+  interact,
+  MAX_SHIELD,
+  spawnLoot,
+  startUse,
+  switchSlot,
+  tickWorld,
+  traceShot,
+} from "./world";
 
-const map = parseMap();
 const DT = 1 / 60;
+const town = generateTown();
 
-describe("arena map", () => {
-  it("is enclosed, has 8 spawns, and every floor cell is reachable", () => {
-    expect(ARENA.every((r) => r.length === map.width)).toBe(true);
-    for (let x = 0; x < map.width; x++) expect(isWall(map, x, 0) && isWall(map, x, map.height - 1)).toBe(true);
-    expect(map.spawns).toHaveLength(8);
-    const cells = floorCells(map);
-    const start = cells[0];
-    for (const c of cells.filter((_, i) => i % 7 === 0)) {
-      expect(findPath(map, start.x + 0.5, start.y + 0.5, c.x + 0.5, c.y + 0.5), `${c.x},${c.y}`).not.toBeNull();
+describe("Ground Zero map", () => {
+  it("is deterministic, enclosed, and every floor cell is reachable", () => {
+    const again = generateTown();
+    expect(Buffer.from(again.cells).equals(Buffer.from(town.cells))).toBe(true);
+    for (let i = 0; i < town.width; i++) {
+      expect(isWall(town, i, 0) && isWall(town, 0, i) && isWall(town, i, town.height - 1)).toBe(true);
+    }
+    const cells = floorCells(town);
+    const start = town.spawns[0];
+    for (const c of cells.filter((_, i) => i % 97 === 0)) {
+      expect(findPath(town, start.x, start.y, c.x + 0.5, c.y + 0.5), `${c.x},${c.y}`).not.toBeNull();
     }
   });
 
-  it("raycasts to the nearest wall", () => {
-    // From (1.5, 1.5) looking +x, the wall at column 7 is 5.5 cells away.
-    const hit = castRay(map, 1.5, 1.5, 0);
-    expect(hit.dist).toBeCloseTo(5.5, 5);
-    expect(hit.side).toBe(0);
-    expect(castRay(map, 1.5, 1.5, Math.PI / 2).side).toBe(1);
+  it("has a town: buildings with interiors and chests, roads, trees, rocks, crates, spawns", () => {
+    expect(town.buildings.length).toBeGreaterThanOrEqual(10);
+    expect(town.chests.length).toBeGreaterThanOrEqual(8);
+    expect(town.spawns).toHaveLength(24);
+    const counts = new Map<number, number>();
+    for (const c of town.cells) counts.set(c, (counts.get(c) ?? 0) + 1);
+    for (const t of [SOLID.tree, SOLID.rock, SOLID.crate, SOLID.brick, SOLID.concrete]) expect(counts.get(t) ?? 0).toBeGreaterThan(5);
+    for (const s of town.spawns) expect(isWall(town, s.x, s.y)).toBe(false);
   });
 
-  it("line of sight is blocked by walls", () => {
-    expect(lineOfSight(map, 1.5, 1.5, 5.5, 1.5)).toBe(true);
-    expect(lineOfSight(map, 1.5, 1.5, 10.5, 1.5)).toBe(false);
+  it("raycasts, blocks line of sight, and collides", () => {
+    const small = parseMap(["#######", "#S....#", "#..#..#", "#######"]);
+    expect(castRay(small, 1.5, 1.5, 0).dist).toBeCloseTo(4.5, 5);
+    expect(lineOfSight(small, 1.5, 2.5, 5.5, 2.5)).toBe(false);
+    expect(moveWithCollision(small, 1.5, 1.5, -2, 0, 0.25).x).toBe(1.5);
   });
 
-  it("collision keeps bodies out of walls", () => {
-    const p = moveWithCollision(map, 1.5, 1.5, -2, 0, 0.25);
-    expect(p.x).toBe(1.5);
-    const q = moveWithCollision(map, 1.5, 1.5, 0.3, 0.3, 0.25);
-    expect(q).toEqual({ x: 1.8, y: 1.8 });
-  });
-
-  it("A* finds short paths and never cuts wall corners", () => {
-    const path = findPath(map, 1.5, 1.5, 22.5, 22.5)!;
-    expect(path.length).toBeGreaterThan(20);
+  it("A* never cuts wall corners", () => {
+    const path = findPath(town, town.spawns[0].x, town.spawns[0].y, town.spawns[5].x, town.spawns[5].y)!;
+    expect(path.length).toBeGreaterThan(3);
     for (let i = 1; i < path.length; i++) {
       const a = path[i - 1];
       const b = path[i];
-      expect(Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))).toBeLessThanOrEqual(1);
-      if (a.x !== b.x && a.y !== b.y) {
-        expect(isWall(map, b.x, a.y) || isWall(map, a.x, b.y)).toBe(false);
-      }
+      if (a.x !== b.x && a.y !== b.y) expect(isWall(town, b.x, a.y) || isWall(town, a.x, b.y)).toBe(false);
     }
-    expect(findPath(map, 1.5, 1.5, 0.5, 0.5)).toBeNull();
   });
 });
 
-describe("combat", () => {
-  function duel() {
-    const world = createWorld(map);
+describe("weapons & items", () => {
+  it("rarity scales damage and reload", () => {
+    const common = weaponStats(makeWeapon("ar", "common"));
+    const legendary = weaponStats(makeWeapon("ar", "legendary"));
+    expect(legendary.damage).toBeCloseTo(common.damage * RARITY.legendary.damage, 5);
+    expect(legendary.reload).toBeLessThan(common.reload);
+  });
+
+  it("damage falls off beyond range to at most half", () => {
+    const sg = makeWeapon("shotgun");
+    expect(damageAt(sg, 3)).toBe(WEAPONS.shotgun.damage);
+    expect(damageAt(sg, 100)).toBe(WEAPONS.shotgun.damage * 0.5);
+  });
+
+  it("rarity rolls favour common, chests roll better", () => {
+    const rng = createRng(1);
+    const floor = Array.from({ length: 2000 }, () => rollRarity(rng, 0));
+    const chest = Array.from({ length: 2000 }, () => rollRarity(rng, 1));
+    expect(floor.filter((r) => r === "common").length).toBeGreaterThan(700);
+    expect(chest.filter((r) => r === "common").length).toBe(0);
+    expect(floor.includes("legendary")).toBe(true);
+  });
+});
+
+describe("combat & inventory", () => {
+  const arena = () => {
+    const world = createWorld(parseMap(["##########", "#........#", "#........#", "##########"]));
     const a = createEntity({ id: "a", name: "A", kind: "human", team: 0, x: 1.5, y: 1.5 });
     const b = createEntity({ id: "b", name: "B", kind: "bot", team: 1, x: 5.5, y: 1.5 });
     world.entities.set("a", a);
     world.entities.set("b", b);
-    return { world, a, b };
-  }
+    return { world, a, b, rng: createRng(3) };
+  };
+
+  it("shields absorb damage before health", () => {
+    const { world, a, b } = arena();
+    b.shield = 30;
+    damage(world, b, a, 50);
+    expect(b.shield).toBe(0);
+    expect(b.hp).toBe(80);
+  });
+
+  it("the storm ignores shields", () => {
+    const { world, b } = arena();
+    b.shield = 50;
+    damage(world, b, { id: "storm" }, 10, "storm");
+    expect(b.shield).toBe(50);
+    expect(b.hp).toBe(90);
+  });
+
+  it("shotgun pellets add up on one target; one shot event", () => {
+    const { world, a, b, rng } = arena();
+    b.x = 2.8;
+    a.inventory[0] = makeWeapon("shotgun", "common");
+    fire(world, a, rng);
+    expect(100 - b.hp).toBeGreaterThan(WEAPONS.shotgun.damage * 3);
+    expect(world.events.filter((e) => e.type === "shot")).toHaveLength(1);
+  });
+
+  it("aiming tightens spread and switching slots has a draw delay", () => {
+    const { world, a } = arena();
+    a.inventory[0] = makeWeapon("ar");
+    a.inventory[1] = makeWeapon("pistol");
+    switchSlot(world, a, 1);
+    expect(a.active).toBe(1);
+    expect(fire(world, a, createRng(1))).toBeNull();
+    tickWorld(world, 0.31);
+    expect(fire(world, a, createRng(1))).not.toBeNull();
+  });
+
+  it("pickup fills empty slots, stacks consumables, swaps weapons when full", () => {
+    const { world, a } = arena();
+    a.inventory = [makeWeapon("pistol"), makeWeapon("smg"), makeWeapon("ar"), makeWeapon("shotgun"), makeConsumable("medkit", 1)];
+    expect(giveItem(world, a, makeConsumable("medkit", 1))).toBe(true);
+    expect(a.inventory[4]).toMatchObject({ kind: "medkit", count: 2 });
+    a.active = 0;
+    expect(giveItem(world, a, makeWeapon("sniper", "epic"))).toBe(true);
+    expect(a.inventory[0]).toMatchObject({ kind: "sniper", rarity: "epic" });
+    expect([...world.loot.values()].some((l) => l.item.type === "weapon" && l.item.kind === "pistol")).toBe(true);
+  });
+
+  it("interact opens chests (better loot) and picks up items", () => {
+    const world = createWorld(town);
+    const chest = world.chests[0];
+    const a = createEntity({ id: "a", name: "A", kind: "human", team: 0, x: chest.x, y: chest.y });
+    world.entities.set("a", a);
+    expect(interact(world, a, createRng(2))).toBe(true);
+    expect(chest.opened).toBe(true);
+    const drops = [...world.loot.values()];
+    expect(drops.length).toBe(2);
+    expect(drops.some((d) => d.item.type === "weapon" && d.item.rarity !== "common")).toBe(true);
+    a.x = drops[0].x;
+    a.y = drops[0].y;
+    expect(interact(world, a, createRng(2))).toBe(true);
+    expect(a.inventory.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("med kits heal after their use time; shields cap at 100", () => {
+    const { world, a } = arena();
+    a.hp = 40;
+    a.inventory[0] = makeConsumable("medkit", 2);
+    a.inventory[1] = makeConsumable("shield", 3);
+    expect(startUse(world, a)).toBe(true);
+    tickWorld(world, 2.9);
+    expect(a.hp).toBe(40);
+    tickWorld(world, 0.2);
+    expect(a.hp).toBe(90);
+    a.active = 1;
+    for (let i = 0; i < 3; i++) {
+      startUse(world, a);
+      tickWorld(world, 2.1);
+    }
+    expect(a.shield).toBe(MAX_SHIELD);
+    expect(a.inventory[1]).toMatchObject({ count: 1 });
+  });
+
+  it("taking damage cancels using an item", () => {
+    const { world, a, b } = arena();
+    a.hp = 50;
+    a.inventory[0] = makeConsumable("medkit");
+    startUse(world, a);
+    damage(world, a, b, 5);
+    expect(a.using).toBeNull();
+  });
 
   it("hitscan hits enemies in front, not through walls or teammates", () => {
-    const { world, a, b } = duel();
+    const { world, a, b } = arena();
     expect(traceShot(world, a, 0).best?.target.id).toBe("b");
     b.team = 0;
     expect(traceShot(world, a, 0).best).toBeNull();
-    b.team = 1;
-    b.x = 10.5; // behind the wall at column 7
-    expect(traceShot(world, a, 0).best).toBeNull();
   });
+});
 
-  it("respects fire rate, ammo and reloads", () => {
-    const { world, a } = duel();
-    const rng = createRng(1);
-    expect(fire(world, a, rng)).not.toBeNull();
-    expect(fire(world, a, rng)).toBeNull(); // cooldown
-    a.ammo = 1;
-    a.nextFireAt = 0;
-    fire(world, a, rng);
-    expect(a.ammo).toBe(0);
-    expect(a.reloadUntil).toBeGreaterThan(world.time);
-    for (let t = 0; t < RELOAD_TIME + 0.1; t += DT) tickWorld(world, DT);
-    expect(a.ammo).toBe(MAG_SIZE);
-  });
-
-  it("damage kills, credits the killer and schedules a respawn", () => {
-    const { world, a, b } = duel();
-    damage(world, b, a, 150);
-    expect(b.alive).toBe(false);
-    expect(a.kills).toBe(1);
-    expect(b.deaths).toBe(1);
-    expect(world.events.some((e) => e.type === "kill" && e.killer === "a" && e.victim === "b")).toBe(true);
+describe("storm", () => {
+  it("shrinks phase by phase, each circle inside the previous", () => {
+    const rng = createRng(5);
+    const s = createStorm(72, 72, rng);
+    let prev = { ...s.to };
+    let phases = 0;
+    for (let t = 0; t < 1000 && !s.done; t += 0.5) {
+      const before = s.phase;
+      stepStorm(s, 0.5, rng, 72, 72);
+      if (s.phase !== before) {
+        phases++;
+        expect(Math.hypot(s.to.x - prev.x, s.to.y - prev.y) + s.to.r).toBeLessThanOrEqual(prev.r + 1e-6);
+        prev = { ...s.to };
+      }
+    }
+    expect(phases).toBe(STORM_PHASES.length - 1);
+    expect(s.current.r).toBeLessThan(1);
+    expect(outside(s.current, s.current.x + 2, s.current.y)).toBe(true);
   });
 });
 
 describe("bots", () => {
-  function arena(difficulty: Difficulty, seed: number) {
-    const world = createWorld(map);
-    const rng = createRng(seed);
-    const target = createEntity({ id: "t", name: "T", kind: "human", team: 0, x: 2.5, y: 5.5 });
-    const bot = createEntity({ id: "b", name: "B", kind: "bot", team: 1, x: 12.5, y: 5.5 });
-    bot.angle = Math.PI;
-    world.entities.set("t", target);
+  it("pick the right gun for the range", () => {
+    const b = createEntity({ id: "b", name: "B", kind: "bot", team: 1, x: 0, y: 0 });
+    b.inventory = [makeWeapon("sniper"), makeWeapon("shotgun"), makeWeapon("ar"), null, null];
+    expect(b.inventory[chooseSlot(b, 2)]?.type === "weapon" && (b.inventory[chooseSlot(b, 2)] as { kind: string }).kind).toBe("shotgun");
+    expect((b.inventory[chooseSlot(b, 25)] as { kind: string }).kind).toBe("sniper");
+    expect((b.inventory[chooseSlot(b, 9)] as { kind: string }).kind).toBe("ar");
+  });
+
+  it("loot nearby items when no enemies are around", () => {
+    const world = createWorld(town);
+    const rng = createRng(4);
+    const s = town.spawns[3];
+    const bot = createEntity({ id: "b", name: "B", kind: "bot", team: 1, x: s.x, y: s.y });
     world.entities.set("b", bot);
-    return { world, rng, target, bot, brain: createBrain(SKILLS[difficulty], rng) };
-  }
-
-  it("engage a visible enemy after their reaction time, and hit it", () => {
-    const { world, rng, target, bot, brain } = arena("normal", 3);
-    let firstShot = -1;
-    for (let i = 0; i < 60 * 5 && target.alive; i++) {
-      tickWorld(world, DT);
-      if (updateBot(world, bot, brain, DT, rng) && firstShot < 0) firstShot = world.time;
-    }
-    expect(firstShot).toBeGreaterThanOrEqual(SKILLS.normal.reaction);
-    expect(target.hp).toBeLessThan(100);
-  });
-
-  it("hard bots kill faster than easy bots on average", () => {
-    const ttk = (d: Difficulty) => {
-      let total = 0;
-      for (let seed = 1; seed <= 12; seed++) {
-        const { world, rng, target, bot, brain } = arena(d, seed);
-        let t = 0;
-        while (target.alive && t < 20) {
-          tickWorld(world, DT);
-          updateBot(world, bot, brain, DT, rng);
-          t += DT;
-        }
-        total += t;
-      }
-      return total / 12;
-    };
-    expect(ttk("hard")).toBeLessThan(ttk("easy"));
-  });
-
-  it("patrol without enemies keeps moving along valid floor", () => {
-    const { world, rng, bot, brain, target } = arena("normal", 9);
-    world.entities.delete(target.id);
-    const start = { x: bot.x, y: bot.y };
-    for (let i = 0; i < 60 * 8; i++) {
-      tickWorld(world, DT);
-      updateBot(world, bot, brain, DT, rng);
-      expect(isWall(map, bot.x, bot.y)).toBe(false);
-    }
-    expect(Math.hypot(bot.x - start.x, bot.y - start.y)).toBeGreaterThan(2);
-  });
-
-  it("hurt bots retreat out of the attacker's sight", () => {
-    const { world, rng, target, bot, brain } = arena("normal", 4);
-    target.team = 1; // make the target harmless (friendly) so we only test movement
-    bot.hp = 20;
-    brain.lastSeen = { x: target.x, y: target.y, t: 0 };
-    brain.state = "retreat";
-    brain.retreatUntil = 3;
-    // pickCover runs when the state flips; force it by simulating the trigger path.
-    for (let i = 0; i < 60 * 3; i++) {
+    spawnLoot(world, s.x + 1.5, s.y, makeWeapon("ar", "rare"));
+    const brain = createBrain(SKILLS.normal, rng);
+    for (let i = 0; i < 60 * 6 && !bot.inventory.some(Boolean); i++) {
       tickWorld(world, DT);
       updateBot(world, bot, brain, DT, rng);
     }
-    expect(isWall(map, bot.x, bot.y)).toBe(false);
+    expect(bot.inventory.some((it) => it?.type === "weapon" && it.kind === "ar")).toBe(true);
+  });
+
+  it("rotate into the safe zone when outside it", () => {
+    const world = createWorld(town);
+    const rng = createRng(8);
+    const s = town.spawns[0];
+    const bot = createEntity({ id: "b", name: "B", kind: "bot", team: 1, x: s.x, y: s.y });
+    world.entities.set("b", bot);
+    const brain = createBrain(SKILLS.normal, rng);
+    const safe = { x: 36, y: 36, r: 12 };
+    const d0 = Math.hypot(bot.x - safe.x, bot.y - safe.y);
+    for (let i = 0; i < 60 * 12; i++) {
+      tickWorld(world, DT);
+      updateBot(world, bot, brain, DT, rng, { safe, storm: { x: 36, y: 36, r: 60 } });
+    }
+    expect(Math.hypot(bot.x - safe.x, bot.y - safe.y)).toBeLessThan(Math.min(d0, safe.r + 2));
+  });
+
+  it("engage a visible enemy after their reaction time", () => {
+    const world = createWorld(parseMap(["####################", "#..................#", "####################"]));
+    const rng = createRng(3);
+    const t = createEntity({ id: "t", name: "T", kind: "human", team: 0, x: 2.5, y: 1.5 });
+    const b = createEntity({ id: "b", name: "B", kind: "bot", team: 1, x: 12.5, y: 1.5, angle: Math.PI });
+    b.inventory[0] = makeWeapon("ar", "rare");
+    applySkill(b, SKILLS.normal);
+    world.entities.set("t", t);
+    world.entities.set("b", b);
+    const brain = createBrain(SKILLS.normal, rng);
+    let first = -1;
+    for (let i = 0; i < 60 * 6 && t.alive; i++) {
+      tickWorld(world, DT);
+      if (updateBot(world, b, brain, DT, rng) && first < 0) first = world.time;
+    }
+    expect(first).toBeGreaterThanOrEqual(SKILLS.normal.reaction);
+    expect(t.hp).toBeLessThan(100);
   });
 });
 
-describe("solo waves", () => {
-  it("scoring helpers are capped", () => {
-    expect(killPoints(1)).toBe(100);
-    expect(killPoints(50)).toBe(300);
-    expect(waveBonus(50)).toBe(2000);
+describe("battle royale", () => {
+  it("scoring helpers", () => {
+    expect(placementBonus(1)).toBe(1000);
+    expect(placementBonus(4)).toBe(400);
+    expect(placementBonus(16)).toBe(0);
   });
 
-  /** An aimbot player: snaps to the nearest visible bot and fires. Upper bound on score rate. */
-  function aimbot(s: SoloState): PlayerInput {
+  /** An aimbot: loots nothing, but snaps to the nearest visible enemy and fires (upper bound on score rate). */
+  function aimbot(s: RoyaleState): PlayerInput {
     const p = s.player;
     let best: { a: number; d: number } | null = null;
     for (const e of s.world.entities.values()) {
-      if (e.kind !== "bot" || !e.alive || !lineOfSight(map, p.x, p.y, e.x, e.y)) continue;
+      if (e.id === p.id || !e.alive || !lineOfSight(s.world.map, p.x, p.y, e.x, e.y)) continue;
       const d = Math.hypot(e.x - p.x, e.y - p.y);
       if (!best || d < best.d) best = { a: Math.atan2(e.y - p.y, e.x - p.x), d };
     }
-    return { forward: best ? 0 : 0.5, strafe: 0, turn: best ? best.a - p.angle : 0.02, fire: !!best, reload: false };
+    const toSafe = Math.atan2(s.storm.to.y - p.y, s.storm.to.x - p.x);
+    return {
+      ...IDLE,
+      turn: best ? best.a - p.angle : (toSafe - p.angle) * 0.1,
+      forward: best ? 0 : 1,
+      fire: !!best,
+      interact: true,
+      aim: !!best && best.d > 10,
+    };
   }
 
-  it("waves progress, and even an aimbot stays under the server's 1,500 pts/s limit", () => {
-    let worst = 0;
-    let bestWave = 0;
-    for (let seed = 1; seed <= 6; seed++) {
-      const s = createSolo("easy", seed);
-      while (s.phase !== "over" && s.world.time < 240) stepSolo(s, DT, aimbot(s));
-      bestWave = Math.max(bestWave, s.wave);
-      if (s.world.time > 1) worst = Math.max(worst, s.score / s.world.time);
+  it("matches end with a placement, the field thins out, and score stays under the 150 pts/s server cap", () => {
+    let worstRate = 0;
+    const placements: number[] = [];
+    for (const [i, d] of (["easy", "normal", "hard"] as Difficulty[]).entries()) {
+      const s = createRoyale(d, 100 + i);
+      while (s.phase !== "over" && s.world.time < 400) stepRoyale(s, 1 / 30, aimbot(s));
+      expect(s.phase).toBe("over");
+      placements.push(s.placement!);
+      const st = matchStats(s);
+      expect(st.players).toBe(16);
+      expect(st.placement).toBeGreaterThanOrEqual(1);
+      if (st.survivedS > 1) worstRate = Math.max(worstRate, royaleScore(s) / st.survivedS);
     }
-    expect(bestWave).toBeGreaterThanOrEqual(3);
-    expect(worst).toBeLessThan(1500);
+    expect(worstRate).toBeLessThan(150);
   });
 
-  it("an idle player eventually dies and the run ends", () => {
-    const s = createSolo("hard", 5);
-    const idle = { forward: 0, strafe: 0, turn: 0, fire: false, reload: false };
-    while (s.phase !== "over" && s.world.time < 300) stepSolo(s, DT, idle);
-    expect(s.phase).toBe("over");
-    expect(s.player.alive).toBe(false);
-    expect(s.world.entities.get(PLAYER_ID)).toBeDefined();
+  it("bots fight each other and the storm, even with an idle player hiding", () => {
+    const s = createRoyale("normal", 7);
+    // Keep the player alive and out of the fight to watch the bots.
+    s.player.maxHp = s.player.hp = 1e9;
+    while (s.phase !== "over" && s.world.time < 420) stepRoyale(s, 1 / 30, IDLE);
+    expect(s.alive).toBeLessThan(8);
+    expect([...s.world.entities.values()].some((e) => e.kind === "bot" && e.kills > 0)).toBe(true);
+  });
+
+  it("starts everyone with a pistol and seeds loot", () => {
+    const s = createRoyale("easy", 1);
+    expect(activeWeapon(s.player)?.kind).toBe("pistol");
+    expect(s.world.loot.size).toBe(town.lootSpots.length);
+    expect(s.world.chests.length).toBe(town.chests.length);
   });
 });

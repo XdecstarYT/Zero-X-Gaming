@@ -8,6 +8,8 @@
  *   - MemoryHub: in-process, synchronous (unit tests)
  */
 
+import type { Rarity, WeaponKind } from "./items";
+
 export interface PeerInfo {
   id: string;
   name: string;
@@ -27,15 +29,24 @@ export interface EntState {
   al: boolean;
   ki: number;
   de: number;
+  /** shield */
+  sh: number;
+  /** active weapon kind + rarity (for rendering), null when holding a consumable/nothing */
+  w: WeaponKind | null;
+  r: Rarity | null;
+  /** outfit id */
+  o: string;
+  /** aiming down sights */
+  ad: boolean;
 }
 
 export type NetMessage =
   /** Entities the sender owns. `bots: true` means this is the host's complete bot list. */
   | { t: "state"; e: EntState[]; bots?: boolean }
-  | { t: "shot"; s: string; fx: number; fy: number; tx: number; ty: number }
+  | { t: "shot"; s: string; w: WeaponKind; fx: number; fy: number; tx: number; ty: number }
   /** Attacker `a` hit victim `v` for `d` damage; only the victim's owner applies it. */
-  | { t: "hit"; a: string; v: string; d: number }
-  | { t: "kill"; k: string; v: string }
+  | { t: "hit"; a: string; v: string; d: number; w: WeaponKind }
+  | { t: "kill"; k: string; v: string; w: WeaponKind | "storm" }
   /** Host heartbeat: seconds left, kill limit, and whether the match is over. */
   | { t: "match"; left: number; limit: number; over: boolean };
 

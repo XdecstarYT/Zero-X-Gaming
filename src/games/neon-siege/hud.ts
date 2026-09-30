@@ -1,0 +1,425 @@
+import { CONSUMABLES, RARITY, SLOTS, WEAPONS, type Item } from "./items";
+import { GROUND, SOLID, type GameMap } from "./map";
+import type { Banner, ModeController, ScoreRow } from "./mode";
+import type { StormState } from "./storm";
+import { MAX_SHIELD, activeWeapon, type Entity, type World } from "./world";
+
+/**
+ * The Neon Siege HUD, in DOM so it stays crisp at any resolution, works with
+ * both renderers, and is readable by assistive tech. Updated every frame but
+ * only touches the DOM when something changed.
+ */
+
+export interface KillFeedItem {
+  text: string;
+  at: number;
+  mine: boolean;
+}
+
+export interface HudFrame {
+  mode: ModeController;
+  world: World;
+  me: Entity;
+  killFeed: KillFeedItem[];
+  pings: { x: number; y: number; at: number }[];
+  hitMarkerAt: number;
+  /** Nearby interactable, e.g. "Open chest" / "Pick up Rare Assault Rifle". */
+  prompt: string | null;
+  promptColor: string | null;
+  ads: number;
+  showBoard: boolean;
+  ended: boolean;
+}
+
+const ICONS: Record<string, string> = {
+  pistol: "M8 7h28v6H23l-2 9h-7l2-9H8z",
+  smg: "M4 7h40v6H31l-2 9h-6l1-9h-5l-1 7h-5l1-7H4z",
+  ar: "M2 8h52v5H39l-3 9h-6l2-9h-9l-2 6h-5l1-6H11l-5 5H2z",
+  shotgun: "M2 9h58v4H29l-3 3H15l-9 5H2z",
+  sniper: "M2 10h60v3H35l-3 2H19l-11 6H2zM25 4h16v4H25z",
+  medkit: "M18 4h28v18H18zM29 8h6v4h4v4h-4v4h-6v-4h-4v-4h4z",
+  shield: "M28 2h8v4h3l4 5v11H21V11l4-5h3z",
+};
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", style = "") {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (style) node.style.cssText = style;
+  return node;
+}
+
+function icon(kind: string, color: string) {
+  return `<svg viewBox="0 0 64 24" width="100%" height="100%" aria-hidden="true"><path d="${ICONS[kind]}" fill="${color}" fill-rule="evenodd"/></svg>`;
+}
+
+/** Top-down minimap base image: grass, roads, floors, buildings, trees. */
+export function paintMapImage(map: GameMap, scale = 2) {
+  const c = document.createElement("canvas");
+  c.width = map.width * scale;
+  c.height = map.height * scale;
+  const g = c.getContext("2d")!;
+  for (let y = 0; y < map.height; y++)
+    for (let x = 0; x < map.width; x++) {
+      const i = y * map.width + x;
+      const cell = map.cells[i];
+      const gr = map.ground[i];
+      let color =
+        gr === GROUND.road ? "#5d6166" : gr === GROUND.floor ? "#9c8b73" : gr === GROUND.dirt ? "#8a7552" : "#5f7d3f";
+      if (cell === SOLID.brick) color = "#8f4a36";
+      else if (cell === SOLID.concrete) color = "#a3a39d";
+      else if (cell === SOLID.perimeter) color = "#3b3d3a";
+      else if (cell === SOLID.tree) color = "#2f4f24";
+      else if (cell === SOLID.rock) color = "#7d7a72";
+      else if (cell === SOLID.crate) color = "#8a6a3e";
+      else if (cell === SOLID.fence) color = "#6b5640";
+      g.fillStyle = color;
+      g.fillRect(x * scale, y * scale, scale, scale);
+    }
+  return c;
+}
+
+export class SiegeHud {
+  readonly root: HTMLDivElement;
+  private status = el("div", "rounded-md bg-black/45 px-2.5 py-1 text-right font-display text-[11px] font-bold tracking-wider sm:text-xs");
+  private stormLine = el("div", "mt-1 rounded bg-black/45 px-2 py-0.5 text-[10px] font-semibold sm:text-[11px]");
+  private feed = el("div", "mt-1.5 flex flex-col items-end gap-0.5 text-[10px] font-semibold sm:text-[11px]");
+  private mini = el("canvas", "block rounded-md border border-white/25 bg-black/40");
+  private miniCtx: CanvasRenderingContext2D;
+  private mapImage: HTMLCanvasElement | null = null;
+  private mapFor: GameMap | null = null;
+  private bars = el("div", "flex w-[min(19rem,62vw)] flex-col gap-1");
+  private shieldFill = el("div", "h-full bg-[#3c9bff] transition-[width] duration-150");
+  private hpFill = el("div", "h-full bg-[#4fd26b] transition-[width] duration-150");
+  private shieldText = el("span", "absolute inset-0 grid place-items-center text-[10px] font-bold");
+  private hpText = el("span", "absolute inset-0 grid place-items-center text-[10px] font-bold");
+  private slots: HTMLButtonElement[] = [];
+  private slotKeys: string[] = [];
+  private ammo = el("div", "min-h-5 font-display text-sm font-bold tabular-nums sm:text-base");
+  private promptBox = el(
+    "button",
+    "pointer-events-auto hidden rounded-md border border-white/25 bg-black/60 px-3 py-1.5 text-xs font-semibold backdrop-blur-sm",
+  );
+  private progress = el("div", "absolute top-[58%] left-1/2 hidden w-28 -translate-x-1/2 text-center text-[10px] font-semibold");
+  private progressFill = el("div", "h-full bg-white/90");
+  private progressLabel = el("div", "mb-0.5");
+  private cross = el("div", "absolute top-1/2 left-1/2 h-0 w-0");
+  private crossBars: HTMLDivElement[] = [];
+  private hitMarker = el("div", "absolute top-1/2 left-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 opacity-0");
+  private scope = el("div", "absolute inset-0 hidden");
+  private bannerBox = el("div", "absolute top-[24%] left-1/2 w-[90%] -translate-x-1/2 text-center");
+  private bannerText = el("p", "font-display text-2xl font-black tracking-wider sm:text-4xl");
+  private bannerSub = el("p", "mt-1 text-xs font-semibold text-white/80 sm:text-sm");
+  private board = el("div", "absolute top-[14%] left-1/2 hidden w-72 -translate-x-1/2 rounded-lg bg-black/80 p-3 text-xs");
+  private hurt = el("div", "absolute inset-0 opacity-0");
+  private stormTint = el("div", "absolute inset-0 opacity-0 transition-opacity duration-500");
+  private last = new Map<string, string>();
+  private miniAcc = 0;
+
+  constructor(
+    host: HTMLElement,
+    private opts: { coarse: boolean; onSlot: (i: number) => void; onInteract: () => void },
+  ) {
+    this.root = el(
+      "div",
+      "pointer-events-none absolute inset-0 select-none overflow-hidden text-white",
+      "text-shadow:0 1px 2px rgba(0,0,0,.8);padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)",
+    );
+    this.root.setAttribute("aria-hidden", "true");
+    this.miniCtx = this.mini.getContext("2d")!;
+    this.mini.width = 144;
+    this.mini.height = 144;
+    this.mini.style.cssText = "width:min(22vmin,8.5rem);height:min(22vmin,8.5rem)";
+
+    this.hurt.style.background = "radial-gradient(ellipse at center, rgba(180,0,0,0) 45%, rgba(170,0,0,.55) 100%)";
+    this.stormTint.style.background = "radial-gradient(ellipse at center, rgba(120,60,200,.25) 20%, rgba(90,30,170,.6) 100%)";
+
+    // Crosshair: four ticks that spread with weapon inaccuracy.
+    for (let i = 0; i < 4; i++) {
+      const b = el("div", "absolute bg-white", "box-shadow:0 0 2px rgba(0,0,0,.9)");
+      this.crossBars.push(b);
+      this.cross.appendChild(b);
+    }
+    this.hitMarker.innerHTML =
+      '<svg viewBox="0 0 24 24" width="24" height="24"><path d="M3 3l6 6M21 3l-6 6M3 21l6-6M21 21l-6-6" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>';
+    this.scope.style.background =
+      "radial-gradient(circle at center, transparent 0, transparent min(34vh,34vw), rgba(0,0,0,.94) calc(min(34vh,34vw) + 2px))";
+    this.scope.innerHTML =
+      '<div style="position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(0,0,0,.85)"></div><div style="position:absolute;top:0;bottom:0;left:50%;width:1px;background:rgba(0,0,0,.85)"></div>';
+
+    const top = el("div", "absolute top-2 right-2 left-2 flex items-start justify-between gap-2");
+    const topLeft = el("div", "flex flex-col items-start");
+    topLeft.append(this.mini, this.stormLine);
+    const topRight = el("div", "flex max-w-[45%] flex-col items-end");
+    topRight.append(this.status, this.feed);
+    top.append(topLeft, topRight);
+
+    const barRow = (fill: HTMLDivElement, text: HTMLSpanElement) => {
+      const bar = el("div", "relative h-3.5 overflow-hidden rounded-sm border border-black/40 bg-black/50 sm:h-4");
+      bar.append(fill, text);
+      return bar;
+    };
+    this.bars.append(barRow(this.shieldFill, this.shieldText), barRow(this.hpFill, this.hpText));
+
+    const hotbar = el("div", "flex gap-1");
+    for (let i = 0; i < SLOTS; i++) {
+      const b = el(
+        "button",
+        "pointer-events-auto relative grid h-11 w-12 place-items-center rounded-md border-2 border-white/20 bg-black/45 p-1 sm:h-12 sm:w-14",
+      );
+      b.type = "button";
+      b.tabIndex = -1;
+      b.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.opts.onSlot(i);
+      });
+      this.slots.push(b);
+      this.slotKeys.push("");
+      hotbar.appendChild(b);
+    }
+    this.promptBox.type = "button";
+    this.promptBox.tabIndex = -1;
+    this.promptBox.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.opts.onInteract();
+    });
+    const bottom = el("div", "absolute bottom-2 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1.5");
+    bottom.append(this.promptBox, this.ammo, this.bars, hotbar);
+
+    const track = el("div", "h-1 overflow-hidden rounded bg-black/50");
+    track.appendChild(this.progressFill);
+    this.progress.append(this.progressLabel, track);
+    this.bannerBox.append(this.bannerText, this.bannerSub);
+
+    this.root.append(this.stormTint, this.hurt, this.scope, this.cross, this.hitMarker, this.progress, top, bottom, this.bannerBox, this.board);
+    host.appendChild(this.root);
+  }
+
+  destroy() {
+    this.root.remove();
+  }
+
+  private set(key: string, value: string, apply: () => void) {
+    if (this.last.get(key) === value) return;
+    this.last.set(key, value);
+    apply();
+  }
+
+  update(f: HudFrame, dt: number) {
+    const { world, me, mode } = f;
+    const t = world.time;
+
+    // Status + storm
+    const st = mode.status();
+    const statusText = `${st.primary}  ·  ${st.kills} ${st.kills === 1 ? "KILL" : "KILLS"}`;
+    this.set("status", statusText, () => (this.status.textContent = statusText));
+    const storm = st.storm ?? "";
+    this.set("storm", storm + st.stormUrgent, () => {
+      this.stormLine.textContent = storm;
+      this.stormLine.hidden = !storm;
+      this.stormLine.style.color = st.stormUrgent ? "#d7b4ff" : "#ffffff";
+    });
+
+    // Kill feed
+    const feed = f.killFeed.filter((k) => t - k.at < 6).slice(-4);
+    const feedKey = feed.map((k) => k.text + k.at).join("|");
+    this.set("feed", feedKey, () => {
+      this.feed.replaceChildren(
+        ...feed.map((k) => {
+          const row = el("div", `rounded bg-black/45 px-1.5 py-0.5 ${k.mine ? "text-[#ffb321]" : "text-white/90"}`);
+          row.textContent = k.text;
+          return row;
+        }),
+      );
+    });
+
+    // Health / shield
+    const hp = Math.ceil(me.hp);
+    const sh = Math.ceil(me.shield);
+    this.set("hp", `${hp}`, () => {
+      this.hpFill.style.width = `${(100 * me.hp) / me.maxHp}%`;
+      this.hpFill.style.background = me.hp > 30 ? "#4fd26b" : "#e5484d";
+      this.hpText.textContent = `${hp}`;
+    });
+    this.set("sh", `${sh}`, () => {
+      this.shieldFill.style.width = `${(100 * me.shield) / MAX_SHIELD}%`;
+      this.shieldText.textContent = `${sh}`;
+    });
+
+    // Hotbar
+    for (let i = 0; i < SLOTS; i++) {
+      const it = me.inventory[i];
+      const key = `${slotKey(it)}|${i === me.active}`;
+      if (this.slotKeys[i] === key) continue;
+      this.slotKeys[i] = key;
+      const b = this.slots[i];
+      const active = i === me.active;
+      b.style.borderColor = active ? "#ffffff" : "rgba(255,255,255,.2)";
+      b.style.transform = active ? "translateY(-4px)" : "";
+      if (!it) {
+        b.innerHTML = `<span class="text-[10px] text-white/40">${i + 1}</span>`;
+        b.style.background = "rgba(0,0,0,.45)";
+        b.setAttribute("aria-label", `Slot ${i + 1}: empty`);
+        continue;
+      }
+      const color = it.type === "weapon" ? RARITY[it.rarity].color : it.kind === "medkit" ? "#e9edf2" : "#3c9bff";
+      b.style.background = `linear-gradient(180deg, ${color}55, ${color}22)`;
+      const count = it.type === "consumable" ? `<span class="absolute right-1 bottom-0 text-[10px] font-bold">${it.count}</span>` : "";
+      b.innerHTML = `${icon(it.kind, "#f4f6f8")}${count}`;
+      b.setAttribute("aria-label", `Slot ${i + 1}: ${it.type === "weapon" ? WEAPONS[it.kind].name : CONSUMABLES[it.kind].name}`);
+    }
+
+    // Ammo / reload / use progress
+    const w = activeWeapon(me);
+    const reloading = me.reloadUntil > t;
+    const ammoText = !me.alive ? "" : w ? (reloading ? "RELOADING" : `${w.ammo} / ${WEAPONS[w.kind].mag}`) : "";
+    this.set("ammo", ammoText, () => {
+      this.ammo.textContent = ammoText;
+      this.ammo.style.color = w && w.ammo === 0 ? "#ffb321" : "#ffffff";
+    });
+    const busy = reloading ? "Reloading" : me.using ? (me.inventory[me.using.slot]?.kind === "medkit" ? "Med Kit" : "Shield Potion") : "";
+    if (busy) {
+      const total = reloading && w ? (WEAPONS[w.kind].reload * RARITY[w.rarity].reload) : me.using ? CONSUMABLES[me.inventory[me.using.slot]?.kind === "medkit" ? "medkit" : "shield"].useTime : 1;
+      const left = reloading ? me.reloadUntil - t : me.using!.until - t;
+      this.progress.classList.remove("hidden");
+      this.progressLabel.textContent = busy;
+      this.progressFill.style.width = `${Math.min(100, (1 - left / total) * 100)}%`;
+    } else this.progress.classList.add("hidden");
+
+    // Interact prompt
+    const promptText = f.prompt && me.alive ? (this.opts.coarse ? f.prompt : `[E]  ${f.prompt}`) : "";
+    this.set("prompt", promptText + f.promptColor, () => {
+      this.promptBox.textContent = promptText;
+      this.promptBox.classList.toggle("hidden", !promptText);
+      this.promptBox.style.borderColor = f.promptColor ?? "rgba(255,255,255,.25)";
+    });
+
+    // Crosshair (spread) / scope
+    const scoped = !!w && w.kind === "sniper" && f.ads > 0.85 && me.alive;
+    this.scope.classList.toggle("hidden", !scoped);
+    const def = w ? WEAPONS[w.kind] : null;
+    const spread = def ? def.spread + (def.adsSpread - def.spread) * f.ads : 0.03;
+    const recoil = Math.max(0, 1 - (t - me.firedAt) / 0.15);
+    const gap = Math.round(4 + spread * 180 + recoil * 5);
+    const crossKey = `${gap}|${scoped || !me.alive || !w}`;
+    this.set("cross", crossKey, () => {
+      this.cross.style.display = scoped || !me.alive || !w ? "none" : "";
+      const len = 7;
+      const [u, r, d, l] = this.crossBars;
+      u.style.cssText += `;width:2px;height:${len}px;left:-1px;top:${-gap - len}px`;
+      d.style.cssText += `;width:2px;height:${len}px;left:-1px;top:${gap}px`;
+      l.style.cssText += `;height:2px;width:${len}px;top:-1px;left:${-gap - len}px`;
+      r.style.cssText += `;height:2px;width:${len}px;top:-1px;left:${gap}px`;
+    });
+    const hm = Math.max(0, 1 - (t - f.hitMarkerAt) / 0.25);
+    this.hitMarker.style.opacity = hm.toFixed(2);
+
+    // Damage + storm vignettes
+    const hurtK = Math.max(0, 1 - (t - me.hurtAt) / 0.6);
+    this.hurt.style.opacity = (me.alive ? hurtK * (me.lastAttacker === "storm" ? 0.4 : 1) : 0.6).toFixed(2);
+    const inStorm = !!mode.storm && Math.hypot(me.x - mode.storm.current.x, me.y - mode.storm.current.y) > mode.storm.current.r;
+    this.stormTint.style.opacity = inStorm && me.alive ? "1" : "0";
+
+    // Banner
+    const banner: Banner | null = f.ended && !mode.isOver() ? { text: "ELIMINATED", color: "#ff4d6d" } : mode.banner();
+    const bKey = banner ? banner.text + (banner.sub ?? "") : "";
+    this.set("banner", bKey, () => {
+      this.bannerBox.hidden = !banner;
+      this.bannerText.textContent = banner?.text ?? "";
+      this.bannerText.style.color = banner?.color ?? "#ffffff";
+      this.bannerSub.textContent = banner?.sub ?? "";
+    });
+
+    // Scoreboard
+    const rows = mode.scoreboard(f.showBoard);
+    this.renderBoard(rows);
+
+    // Minimap (~15 Hz)
+    this.miniAcc += dt;
+    if (this.miniAcc >= 1 / 15) {
+      this.miniAcc = 0;
+      this.drawMinimap(world, me, mode.storm, f.pings);
+    }
+  }
+
+  private renderBoard(rows: ScoreRow[] | null) {
+    const key = rows ? rows.map((r) => `${r.name}${r.kills}${r.deaths}`).join("|") : "";
+    this.set("board", key, () => {
+      this.board.classList.toggle("hidden", !rows);
+      if (!rows) return;
+      const head = el("div", "mb-1.5 flex justify-between font-display text-[10px] tracking-wider text-white/60");
+      head.innerHTML = "<span>PLAYER</span><span>K / D</span>";
+      this.board.replaceChildren(
+        head,
+        ...rows.map((r) => {
+          const row = el("div", `flex justify-between py-0.5 ${r.me ? "text-[#ffb321]" : ""}`);
+          const n = el("span");
+          n.textContent = r.name;
+          const s = el("span", "tabular-nums");
+          s.textContent = `${r.kills} / ${r.deaths}`;
+          row.append(n, s);
+          return row;
+        }),
+      );
+    });
+  }
+
+  private drawMinimap(world: World, me: Entity, storm: StormState | null, pings: { x: number; y: number; at: number }[]) {
+    const g = this.miniCtx;
+    const map = world.map;
+    if (this.mapFor !== map) {
+      this.mapImage = paintMapImage(map, 2);
+      this.mapFor = map;
+    }
+    const s = 144 / map.width;
+    g.clearRect(0, 0, 144, 144);
+    g.drawImage(this.mapImage!, 0, 0, 144, 144);
+    // Opened chests stay; unopened ones glint.
+    g.fillStyle = "#f2c230";
+    for (const c of world.chests) if (!c.opened) g.fillRect(c.x * s - 1.5, c.y * s - 1.5, 3, 3);
+    if (storm) {
+      g.save();
+      g.beginPath();
+      g.rect(0, 0, 144, 144);
+      g.arc(storm.current.x * s, storm.current.y * s, storm.current.r * s, 0, Math.PI * 2, true);
+      g.fillStyle = "rgba(110,50,200,.45)";
+      g.fill("evenodd");
+      g.restore();
+      g.strokeStyle = "rgba(255,255,255,.9)";
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.arc(storm.to.x * s, storm.to.y * s, storm.to.r * s, 0, Math.PI * 2);
+      g.stroke();
+    }
+    for (const p of pings) {
+      const k = 1 - (world.time - p.at) / 1.2;
+      if (k <= 0) continue;
+      g.fillStyle = `rgba(255,70,70,${k})`;
+      g.beginPath();
+      g.arc(p.x * s, p.y * s, 2.5, 0, Math.PI * 2);
+      g.fill();
+    }
+    // Player arrow
+    g.save();
+    g.translate(me.x * s, me.y * s);
+    g.rotate(me.angle);
+    g.fillStyle = "#ffffff";
+    g.strokeStyle = "#000000";
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(6, 0);
+    g.lineTo(-4, -4);
+    g.lineTo(-2, 0);
+    g.lineTo(-4, 4);
+    g.closePath();
+    g.fill();
+    g.stroke();
+    g.restore();
+  }
+}
+
+function slotKey(it: Item | null) {
+  if (!it) return "-";
+  return it.type === "weapon" ? `${it.kind}.${it.rarity}` : `${it.kind}.${it.count}`;
+}

@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
+import { BattlePass } from "@/components/season/BattlePass";
 
-export const metadata: Metadata = { title: "Battle Pass" };
+export const metadata: Metadata = {
+  title: "Battle Pass",
+  description: "Season 1: Ground Zero. Earn Season XP in Neon Siege to unlock outfits, weapon wraps and banners.",
+};
 
 export default function BattlePassPage() {
-  return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-magenta">Season 1</p>
-      <h1 className="font-display text-3xl font-black uppercase tracking-tight sm:text-4xl">Battle Pass</h1>
-      <p className="mt-2 text-muted">The Season 1 battle pass unlocks with the Neon Siege update.</p>
-    </div>
-  );
+  return <BattlePass />;
 }

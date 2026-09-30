@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { electHost, MemoryHub, normalizeRoom, randomRoom, ROOM_RE } from "./net";
 import { KILL_LIMIT, OnlineController, ROOM_SIZE } from "./online";
-import type { PlayerInput } from "./solo";
+import { IDLE as idle, type PlayerInput } from "./royale";
 
 const DT = 1 / 60;
-const idle: PlayerInput = { forward: 0, strafe: 0, turn: 0, fire: false, reload: false };
 
 async function room(n: number) {
   const hub = new MemoryHub();
@@ -18,16 +17,16 @@ function run(players: OnlineController[], seconds: number, input: (p: OnlineCont
   for (let t = 0; t < seconds; t += DT) for (const p of players) p.step(DT, input(p));
 }
 
-/** Put `a` facing `b` down an open corridor (row 5 is open end to end). */
+/** Put `a` facing `b` down the main east-west road (open end to end). */
 function lineUp(a: OnlineController, b: OnlineController) {
-  a.me.x = 2.5;
-  a.me.y = 5.5;
+  a.me.x = 10.5;
+  a.me.y = 35.5;
   a.me.angle = 0;
-  b.me.x = 8.5;
-  b.me.y = 5.5;
-  // Keep bots out of the way for deterministic duels.
+  b.me.x = 16.5;
+  b.me.y = 35.5;
+  // Keep bots out of the way (far down the north-south road) for deterministic duels.
   for (const p of [a, b])
-    for (const e of p.world.entities.values()) if (e.kind === "bot") Object.assign(e, { x: 20.5, y: 21.5 });
+    for (const e of p.world.entities.values()) if (e.kind === "bot") Object.assign(e, { x: 35.5, y: 66.5 });
 }
 
 describe("room codes", () => {
@@ -71,8 +70,8 @@ describe("online deathmatch", () => {
   it("positions sync and interpolate", async () => {
     const { players } = await room(2);
     const [a, b] = players;
-    a.me.x = 3.5;
-    a.me.y = 5.5;
+    a.me.x = 12.5;
+    a.me.y = 35.5;
     run(players, 0.5);
     const seen = b.world.entities.get(a.me.id)!;
     expect(seen.x).toBeCloseTo(a.me.x, 1);
@@ -110,8 +109,8 @@ describe("online deathmatch", () => {
     // Park B in the open where the bots roam, and let the host's bots find it.
     let hurt = false;
     for (let t = 0; t < 60 && !hurt; t += DT) {
-      a.me.x = 1.5;
-      a.me.y = 22.5; // host hides in a corner
+      a.me.x = 35.5;
+      a.me.y = 2.5; // host waits at the far north end of the road
       a.step(DT, idle);
       b.step(DT, idle);
       hurt = b.me.hp < 100 || b.me.deaths > 0;
@@ -132,7 +131,7 @@ describe("online deathmatch", () => {
     expect(bots).toHaveLength(ROOM_SIZE - 1);
     expect(botIds.every((id) => bots.some((x) => x.id === id))).toBe(true);
     const before = bots.map((x) => ({ x: x.x, y: x.y }));
-    run([b], 3);
+    run([b], 8); // they drink their shield potions first, then roam
     const moved = bots.some((x, i) => Math.hypot(x.x - before[i].x, x.y - before[i].y) > 0.5);
     expect(moved).toBe(true);
     expect(b.world.entities.has(a.me.id)).toBe(false);
@@ -150,13 +149,24 @@ describe("online deathmatch", () => {
     expect(a.ranked).toBe(false);
   });
 
+  it("spawns everyone with the deathmatch loadout", async () => {
+    const { players } = await room(2);
+    run(players, 0.3);
+    const kinds = players[0].me.inventory.map((i) => (i?.type === "weapon" ? i.kind : i?.kind));
+    expect(kinds).toEqual(["ar", "shotgun", "smg", "sniper", "shield"]);
+    const seen = players[1].world.entities.get(players[0].me.id)!;
+    expect(seen.inventory[0]).toMatchObject({ kind: "ar", rarity: "rare" });
+  });
+
   it("ignores damage sent for entities it doesn't own and clamps absurd damage", async () => {
     const { hub, players } = await room(2);
     const [a] = players;
     run(players, 0.3);
+    a.me.shield = 100;
     const spy = hub.join("cheater", "Cheater");
     await spy.connect();
-    spy.send({ t: "hit", a: "cheater", v: a.me.id, d: 9999 });
-    expect(a.me.hp).toBeGreaterThanOrEqual(60);
+    spy.send({ t: "hit", a: "cheater", v: a.me.id, d: 9999, w: "sniper" });
+    expect(a.me.alive).toBe(true);
+    expect(a.me.hp).toBeGreaterThanOrEqual(70);
   });
 });
