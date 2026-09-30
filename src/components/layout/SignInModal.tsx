@@ -1,20 +1,24 @@
 "use client";
 
 import { useId, useState, type FormEvent } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
-import { friendlyAuthError, validateEmail, validatePassword, validateUsername } from "@/lib/auth";
+import { validatePassword } from "@/lib/auth";
+import { ACTIVATION_HINT, accountEmail, accountError, validateAccountName } from "@/lib/zxg-account";
 import { toast } from "@/store/toast";
 import { cn } from "@/lib/cn";
 
 type Mode = "sign_in" | "sign_up";
-type OAuthProvider = "google" | "discord";
 
 const inputCls =
   "h-11 w-full rounded-md border border-border bg-bg px-3 text-sm placeholder:text-subtle focus:border-cyan focus:outline-none aria-[invalid=true]:border-danger";
 
+/**
+ * ZXG Account sign-in / sign-up: an account name and a password. No email,
+ * no third-party logins.
+ */
 export function SignInModal({
   open,
   onClose,
@@ -25,90 +29,75 @@ export function SignInModal({
   initialMode?: Mode;
 }) {
   const supabase = getSupabaseBrowser();
-  const pathname = usePathname();
   const router = useRouter();
   const uid = useId();
-  const ids = { email: `${uid}-email`, username: `${uid}-username`, hint: `${uid}-hint`, password: `${uid}-password` };
+  const ids = { name: `${uid}-name`, hint: `${uid}-hint`, password: `${uid}-password`, confirm: `${uid}-confirm` };
   const [mode, setMode] = useState<Mode>(initialMode);
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [username, setUsername] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<null | "email" | OAuthProvider>(null);
-  const [sentTo, setSentTo] = useState<string | null>(null);
-
-  const callbackUrl = (next: string) => `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+  const [busy, setBusy] = useState(false);
 
   function close() {
     setError(null);
-    setSentTo(null);
     setPassword("");
+    setConfirm("");
     onClose();
-  }
-
-  async function onOAuth(provider: OAuthProvider) {
-    if (!supabase) return;
-    setBusy(provider);
-    setError(null);
-    const { error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: callbackUrl(pathname) } });
-    if (error) {
-      setError(friendlyAuthError(error));
-      setBusy(null);
-    }
-    // On success the browser navigates away to the provider.
   }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!supabase) return;
     const problem =
-      validateEmail(email) ??
+      validateAccountName(name) ??
       validatePassword(password) ??
-      (mode === "sign_up" && username ? validateUsername(username) : null);
-    if (problem) {
-      setError(problem);
-      return;
-    }
-    setBusy("email");
+      (mode === "sign_up" && password !== confirm ? "Passwords don't match." : null);
+    if (problem) return setError(problem);
+    setBusy(true);
     setError(null);
+    const email = accountEmail(name);
 
     if (mode === "sign_in") {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      setBusy(null);
-      if (error) return setError(friendlyAuthError(error));
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      setBusy(false);
+      if (error) return setError(accountError(error));
       toast("Welcome back!", { tone: "success" });
       close();
       router.refresh();
       return;
     }
 
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: {
-        emailRedirectTo: callbackUrl("/profile"),
-        data: username ? { username } : undefined,
-      },
-    });
-    setBusy(null);
-    if (error) return setError(friendlyAuthError(error));
-    if (data.session) {
-      toast("Account created. Welcome to Zero X!", { tone: "success" });
-      close();
-      router.refresh();
-    } else {
-      setSentTo(email.trim());
+    // Friendly early check: is the name free? (The database still enforces it.)
+    const { data: taken } = await supabase.from("profiles").select("id").ilike("username", name.trim()).maybeSingle();
+    if (taken) {
+      setBusy(false);
+      return setError("That account name is taken. Try another.");
     }
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { username: name.trim() } },
+    });
+    setBusy(false);
+    if (error) return setError(accountError(error));
+    if (!data.session) return setError(ACTIVATION_HINT);
+    toast(`Welcome to Zero X, ${name.trim()}!`, { description: "Your ZXG account is ready.", tone: "success" });
+    close();
+    router.refresh();
   }
-
-  const title = mode === "sign_in" ? "Sign in" : "Join Zero X";
 
   if (!supabase) {
     return (
-      <Modal open={open} onClose={close} title="Join Zero X">
+      <Modal open={open} onClose={close} title="ZXG Account">
         <p className="text-sm text-muted">
-          Accounts aren&apos;t available on this deployment yet. You can still play as a guest; favorites and settings
-          are saved on this device.
+          Accounts aren&apos;t switched on for this site yet. You can still play as a guest: your progress is saved on
+          this device.
+        </p>
+        <p className="mt-3 rounded-md bg-surface-2 p-3 text-xs text-muted">
+          Site owner: add <code className="font-mono text-text">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
+          <code className="font-mono text-text">NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code> to your hosting environment
+          variables, then redeploy.
         </p>
         <Button onClick={close} className="mt-5 w-full">
           Play as guest
@@ -117,71 +106,33 @@ export function SignInModal({
     );
   }
 
-  if (sentTo) {
-    return (
-      <Modal open={open} onClose={close} title="Check your email">
-        <p className="text-sm text-muted">
-          We sent a confirmation link to <span className="font-semibold text-text">{sentTo}</span>. Open it on this
-          device to finish creating your account.
-        </p>
-        <Button onClick={close} className="mt-5 w-full">
-          Got it
-        </Button>
-      </Modal>
-    );
-  }
-
   return (
-    <Modal open={open} onClose={close} title={title}>
-      <p className="text-sm text-muted">Save scores, earn XP, and climb the leaderboards.</p>
+    <Modal open={open} onClose={close} title={mode === "sign_in" ? "Sign in to ZXG" : "Create a ZXG Account"}>
+      <p className="text-sm text-muted">
+        No email needed. Just an account name and a password. Save progress, coins and your Locker across devices.
+      </p>
 
-      <div className="mt-5 grid gap-2">
-        <Button variant="secondary" className="w-full" disabled={busy !== null} onClick={() => onOAuth("google")}>
-          {busy === "google" ? "Redirecting…" : "Continue with Google"}
-        </Button>
-        <Button variant="secondary" className="w-full" disabled={busy !== null} onClick={() => onOAuth("discord")}>
-          {busy === "discord" ? "Redirecting…" : "Continue with Discord"}
-        </Button>
-      </div>
-
-      <div className="my-5 flex items-center gap-3 text-xs uppercase tracking-wider text-subtle" aria-hidden>
-        <span className="h-px flex-1 bg-border" /> or <span className="h-px flex-1 bg-border" />
-      </div>
-
-      <form onSubmit={onSubmit} noValidate className="grid gap-3">
+      <form onSubmit={onSubmit} noValidate className="mt-5 grid gap-3">
         <div>
-          <label htmlFor={ids.email} className="mb-1 block text-sm font-semibold">
-            Email
+          <label htmlFor={ids.name} className="mb-1 block text-sm font-semibold">
+            Account name
           </label>
           <input
-            id={ids.email}
-            type="email"
-            autoComplete="email"
+            id={ids.name}
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            maxLength={20}
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            aria-describedby={ids.hint}
             className={inputCls}
           />
+          <p id={ids.hint} className="mt-1 text-xs text-subtle">
+            3–20 letters, numbers, or underscores. This is also your player name.
+          </p>
         </div>
-        {mode === "sign_up" && (
-          <div>
-            <label htmlFor={ids.username} className="mb-1 block text-sm font-semibold">
-              Username <span className="font-normal text-subtle">(optional)</span>
-            </label>
-            <input
-              id={ids.username}
-              autoComplete="username"
-              maxLength={20}
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              aria-describedby={ids.hint}
-              className={inputCls}
-            />
-            <p id={ids.hint} className="mt-1 text-xs text-subtle">
-              3–20 letters, numbers, or underscores. You can change it later.
-            </p>
-          </div>
-        )}
         <div>
           <label htmlFor={ids.password} className="mb-1 block text-sm font-semibold">
             Password
@@ -197,27 +148,47 @@ export function SignInModal({
             className={inputCls}
           />
         </div>
+        {mode === "sign_up" && (
+          <div>
+            <label htmlFor={ids.confirm} className="mb-1 block text-sm font-semibold">
+              Confirm password
+            </label>
+            <input
+              id={ids.confirm}
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={8}
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              className={inputCls}
+            />
+            <p className="mt-1 text-xs text-subtle">
+              There&apos;s no email to reset it with, so keep your password somewhere safe.
+            </p>
+          </div>
+        )}
 
         <p role="alert" className={cn("min-h-5 text-sm text-danger", !error && "sr-only")}>
           {error}
         </p>
 
-        <Button type="submit" className="w-full" disabled={busy !== null}>
-          {busy === "email" ? "Please wait…" : mode === "sign_in" ? "Sign in" : "Create account"}
+        <Button type="submit" className="w-full" disabled={busy}>
+          {busy ? "Please wait…" : mode === "sign_in" ? "Sign in" : "Create account"}
         </Button>
       </form>
 
       <p className="mt-4 text-center text-sm text-muted">
-        {mode === "sign_in" ? "New here?" : "Already have an account?"}{" "}
+        {mode === "sign_in" ? "New here?" : "Already have a ZXG account?"}{" "}
         <button
           type="button"
-          className="font-semibold text-cyan hover:underline"
+          className="font-semibold text-cyan underline underline-offset-2"
           onClick={() => {
             setMode(mode === "sign_in" ? "sign_up" : "sign_in");
             setError(null);
           }}
         >
-          {mode === "sign_in" ? "Create an account" : "Sign in"}
+          {mode === "sign_in" ? "Create a ZXG account" : "Sign in"}
         </button>
       </p>
       <button type="button" onClick={close} className="mt-2 w-full text-center text-xs text-subtle hover:text-text">

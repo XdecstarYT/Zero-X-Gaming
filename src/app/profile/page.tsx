@@ -10,6 +10,7 @@ import { BADGES, MOCK_PLAYER, getGame } from "@/lib/catalog";
 import { formatNumber, timeAgo } from "@/lib/format";
 import { levelFromXp } from "@/lib/xp";
 import { getSupabaseServer } from "@/lib/supabase/server";
+import { accountTag } from "@/lib/zxg-account";
 
 export const metadata: Metadata = { title: "Profile" };
 
@@ -93,16 +94,21 @@ export default async function ProfilePage() {
             <h1 id="profile-name" className="font-display text-2xl font-black uppercase tracking-wide">
               {p.username}
             </h1>
+            {!isGuest && p.userId && (
+              <p className="font-mono text-xs font-semibold tracking-wider text-cyan" data-testid="account-tag">
+                {accountTag(p.userId)}
+              </p>
+            )}
             <p className="text-sm text-muted">
               {isGuest
                 ? "Playing as a guest. Progress is saved on this device only."
-                : "Your progress is saved to your account."}
+                : "Your progress is saved to your ZXG account."}
             </p>
             <XPBar xp={p.xp} className="mt-4 max-w-md" />
           </div>
           {isGuest && (
             <SignInButton variant="accent" className="self-start sm:self-center" initialMode="sign_up">
-              Create account
+              Create ZXG account
             </SignInButton>
           )}
         </div>

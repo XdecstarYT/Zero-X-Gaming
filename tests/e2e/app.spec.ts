@@ -116,25 +116,26 @@ test("unknown game shows 404", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Game over" })).toBeVisible();
 });
 
-test("sign-in modal opens, validates, switches mode and closes with Escape", async ({ page, isMobile }) => {
+test("ZXG account modal: no email, validates, switches mode and closes with Escape", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Sign in" }).first().click();
-  const dialog = page.getByRole("dialog", { name: "Sign in" });
+  const dialog = page.getByRole("dialog", { name: "Sign in to ZXG" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Continue with Google" })).toBeEnabled();
+  await expect(dialog.getByText("No email needed")).toBeVisible();
+  await expect(dialog.getByLabel(/Email/)).toHaveCount(0);
 
-  await dialog.getByLabel("Email").fill("not-an-email");
-  await dialog.getByLabel("Password").fill("12345678");
+  await dialog.getByLabel("Account name").fill("no spaces");
+  await dialog.getByLabel("Password", { exact: true }).fill("12345678");
   await dialog.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("Enter a valid email address.");
+  await expect(dialog.getByRole("alert")).toHaveText("Use only letters, numbers, and underscores.");
 
-  await dialog.getByRole("button", { name: "Create an account" }).click();
-  const signUp = page.getByRole("dialog", { name: "Join Zero X" });
-  await expect(signUp.getByLabel(/Username/)).toBeVisible();
-  await signUp.getByLabel("Email").fill("player@zerox.gg");
-  await signUp.getByLabel(/Username/).fill("no spaces");
+  await dialog.getByRole("button", { name: "Create a ZXG account" }).click();
+  const signUp = page.getByRole("dialog", { name: "Create a ZXG Account" });
+  await signUp.getByLabel("Account name").fill("Trench_Rat");
+  await signUp.getByLabel("Password", { exact: true }).fill("12345678");
+  await signUp.getByLabel("Confirm password").fill("different1");
   await signUp.getByRole("button", { name: "Create account" }).click();
-  await expect(signUp.getByRole("alert")).toHaveText("Use only letters, numbers, and underscores.");
+  await expect(signUp.getByRole("alert")).toHaveText("Passwords don't match.");
 
   await page.keyboard.press("Escape");
   await expect(signUp).toBeHidden();
