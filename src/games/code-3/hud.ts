@@ -67,7 +67,10 @@ export class Code3Hud {
   private prompt = el("div", "rounded bg-black/65 px-3 py-1 text-sm font-semibold");
   private speech = el("div", "hidden max-w-[min(92vw,30rem)] rounded-lg bg-white/95 px-3 py-2 text-sm text-[#111]");
   private menu = el("div", "pointer-events-auto flex max-h-[40vh] w-[min(92vw,24rem)] flex-col gap-1 overflow-auto");
-  private mdt = el("div", "pointer-events-auto absolute inset-x-3 top-3 bottom-3 z-20 hidden overflow-auto rounded-xl border-2 border-[#3b82f6] bg-[#0b1220]/95 p-4 font-mono text-[12px] text-[#cfe3ff] sm:inset-x-[12%]");
+  private mdt = el("div", "pointer-events-auto absolute inset-0 z-20 hidden overflow-auto border-[#3b82f6] bg-[#0b1220]/95 p-4 font-mono text-[12px] text-[#cfe3ff] sm:inset-x-[12%] sm:inset-y-3 sm:rounded-xl sm:border-2");
+  private pursuit = el("div", "hidden rounded bg-[#7f1d1d]/80 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider");
+  /** Minimap scale (screen px per metre); tap the map or press M to zoom. */
+  private zoom = 1.25;
   private crosshair = el("div", "pointer-events-none absolute top-1/2 left-1/2 hidden h-5 w-5 -translate-x-1/2 -translate-y-1/2");
   private hurt = el("div", "pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300");
   private toast = el("div", "pointer-events-none absolute top-[22%] left-1/2 -translate-x-1/2 text-center font-display text-2xl font-black uppercase tracking-wider opacity-0 transition-opacity duration-300 [text-shadow:0_2px_8px_#000]");
@@ -84,11 +87,16 @@ export class Code3Hud {
     private sim: Code3Sim,
     private coarse: boolean,
   ) {
-    this.root = el("div", "pointer-events-none absolute inset-0 z-[4] select-none text-white [text-shadow:0_1px_2px_rgba(0,0,0,.9)]");
+    this.root = el("div", "pointer-events-none absolute z-[4] select-none text-white [text-shadow:0_1px_2px_rgba(0,0,0,.9)] [-webkit-touch-callout:none]");
+    // Keep clear of notches and home bars.
+    this.root.style.inset = "env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)";
     this.mapImg = paintMap(sim.city);
     this.map = el("canvas", "block rounded-full border-2 border-white/30 bg-black/40");
     this.map.width = this.map.height = 180;
-    this.map.style.width = this.map.style.height = "min(34vmin, 11rem)";
+    this.map.style.width = this.map.style.height = coarse ? "min(26vmin, 8rem)" : "min(34vmin, 11rem)";
+    this.map.classList.add("pointer-events-auto", "cursor-pointer");
+    this.map.title = "Zoom the map";
+    this.map.addEventListener("click", () => this.cycleZoom());
     this.health.append(this.healthBar);
     this.crosshair.innerHTML =
       '<svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="2" fill="white"/><path d="M10 0v6M10 14v6M0 10h6M14 10h6" stroke="white" stroke-width="1.5"/></svg>';
@@ -97,17 +105,19 @@ export class Code3Hud {
     this.sr.setAttribute("role", "status");
     this.sr.setAttribute("aria-live", "off");
 
-    const topLeft = el("div", "absolute top-2 left-2 flex flex-col items-start gap-1", this.map);
+    const topLeft = el("div", "absolute top-2 left-2 flex flex-col items-start gap-1", this.map, this.pursuit);
     const topRight = el(
       "div",
-      "absolute top-2 right-14 flex flex-col items-end gap-0.5 rounded-lg bg-black/45 px-3 py-1.5",
+      `absolute top-2 ${coarse ? "right-3 py-1" : "right-14 py-1.5"} flex flex-col items-end gap-0.5 rounded-lg bg-black/45 px-3`,
       this.clock,
       this.score,
       this.status,
     );
     const bottomRight = el(
       "div",
-      "absolute right-3 bottom-14 flex flex-col items-end gap-1 rounded-lg bg-black/45 px-3 py-2",
+      coarse
+        ? "absolute top-[4.9rem] right-3 flex flex-col items-end gap-0.5 rounded-lg bg-black/45 px-2 py-1 [&>div:first-child]:text-xl"
+        : "absolute right-3 bottom-14 flex flex-col items-end gap-1 rounded-lg bg-black/45 px-3 py-2",
       this.speed,
       el("div", "text-[10px] font-bold text-white/60", "MPH"),
       this.lights,
@@ -115,10 +125,12 @@ export class Code3Hud {
       this.weapon,
       this.health,
     );
-    const bottomLeft = el("div", `absolute left-2 ${coarse ? "top-[calc(min(34vmin,11rem)+1rem)]" : "bottom-3"} max-w-[min(60vw,28rem)] text-[11px] leading-tight`, this.radio);
+    const bottomLeft = el("div", `absolute left-2 ${coarse ? "top-[calc(min(26vmin,8rem)+2.2rem)] max-w-[40vw] text-[10px]" : "bottom-3 max-w-[min(60vw,28rem)] text-[11px]"} leading-tight`, this.radio);
+    // On phones the action list sits high in the middle, clear of both thumbs.
+    if (coarse) this.menu.className = "pointer-events-auto grid max-h-[46vh] w-[min(58vw,26rem)] grid-cols-1 gap-1.5 overflow-auto";
     const center = el(
       "div",
-      `absolute inset-x-0 ${coarse ? "bottom-[38%]" : "bottom-20"} flex flex-col items-center gap-2`,
+      `absolute inset-x-0 ${coarse ? "top-[16%]" : "bottom-20"} flex flex-col items-center gap-2`,
       this.speech,
       this.menu,
       this.prompt,
@@ -131,6 +143,10 @@ export class Code3Hud {
   destroy() {
     this.root.remove();
     this.sr.remove();
+  }
+
+  cycleZoom() {
+    this.zoom = this.zoom === 1.25 ? 0.7 : this.zoom === 0.7 ? 2.2 : 1.25;
   }
 
   toggleMdt(force?: boolean) {
@@ -158,14 +174,17 @@ export class Code3Hud {
     this.status.textContent = `Calls ${sim.stats.calls} · Arrests ${sim.stats.arrests} · Tickets ${sim.stats.citations}`;
     const mph = Math.round(Math.abs(speedOf(u)) * MPH);
     this.speed.textContent = pl.inCar ? String(mph) : "--";
-    this.lights.textContent = u.siren ? "● LIGHTS + SIREN" : u.lights ? "● LIGHTS" : "LIGHTS OFF";
+    this.lights.textContent = u.siren ? `● LIGHTS + SIREN (${sim.sirenTone})` : u.lights ? "● LIGHTS" : "LIGHTS OFF";
+    const flee = sim.cars.find((c) => c.ai?.mode === "flee");
+    this.pursuit.classList.toggle("hidden", !flee);
+    if (flee) this.pursuit.textContent = `Pursuit · ${Math.round(sim.distToOfficer(flee.x, flee.z))} m · ${Math.round(Math.abs(speedOf(flee)) * MPH)} mph${sim.air ? " · Air-1 overhead" : ""}`;
     this.lights.style.color = u.lights ? (Math.floor(performance.now() / 250) % 2 ? "#ff4757" : "#4d7cff") : "rgba(255,255,255,.55)";
     if (sim.radar && pl.inCar) {
       const r = Math.round(sim.radar.speed * MPH);
       this.radar.textContent = `RADAR ${r} MPH`;
       this.radar.style.color = sim.radar.speed > SPEED_LIMIT + 2.2 ? "#ff6b6b" : "#9be7a1";
     } else this.radar.textContent = "";
-    this.weapon.textContent = pl.inCar ? "" : `${pl.weapon === "taser" ? "TASER" : "SIDEARM"} · X to switch`;
+    this.weapon.textContent = pl.inCar ? "" : this.coarse ? (pl.weapon === "taser" ? "TASER" : "SIDEARM") : `${pl.weapon === "taser" ? "TASER" : "SIDEARM"} · X to switch`;
     this.healthBar.style.width = `${pl.hp}%`;
     this.healthBar.style.background = pl.hp < 35 ? "#ef4444" : "#4ade80";
     this.hurt.style.opacity = sim.time - pl.hurtAt < 0.6 ? "1" : pl.hp < 35 ? "0.5" : "0";
@@ -216,7 +235,7 @@ export class Code3Hud {
         ...opts.slice(0, 9).map((o, i) => {
           const b = el(
             "button",
-            "flex items-center gap-2 rounded-md bg-black/75 px-3 py-1.5 text-left text-sm font-semibold hover:bg-[#1d4ed8]/80 focus-visible:outline-2 focus-visible:outline-[#ffd21f]",
+            `flex items-center gap-2 rounded-md bg-black/75 px-3 text-left font-semibold hover:bg-[#1d4ed8]/80 focus-visible:outline-2 focus-visible:outline-[#ffd21f] ${this.coarse ? "min-h-11 py-2 text-[13px] active:bg-[#1d4ed8]" : "py-1.5 text-sm"}`,
             el("span", "grid h-5 w-5 shrink-0 place-items-center rounded bg-white/15 text-[11px] font-black", String(i + 1)),
             o.label,
           );
@@ -251,7 +270,7 @@ export class Code3Hud {
     const S = 180;
     const o = sim.officer;
     const heading = sim.player.inCar ? sim.unit.h : camYaw;
-    const scale = 1.25; // screen px per metre
+    const scale = this.zoom; // screen px per metre
     g.save();
     g.clearRect(0, 0, S, S);
     g.beginPath();
@@ -317,8 +336,30 @@ export class Code3Hud {
     g.fillText("★", st.x, st.y);
     // Cars of interest and people.
     const flash = Math.floor(performance.now() / 250) % 2 === 0;
+    // Checkpoint, roadblock, cones.
+    for (const d of sim.deploy) {
+      const q = to(d.x, d.z);
+      g.fillStyle = d.kind === "checkpoint" ? "#38bdf8" : d.kind === "roadblock" ? "#f97316" : "#fb923c";
+      g.fillRect(q.x - 4, q.y - 4, 8, 8);
+    }
+    if (sim.air) {
+      const q = to(sim.air.x, sim.air.z);
+      g.strokeStyle = "#e2e8f0";
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(q.x, q.y, 7, 0, Math.PI * 2);
+      g.stroke();
+    }
     for (const c of sim.cars) {
       if (c === sim.unit) continue;
+      if (sim.flagged.has(c.id) && c.ai?.mode !== "flee") {
+        const q = to(c.x, c.z);
+        g.fillStyle = flash ? "#facc15" : "#ef4444";
+        g.beginPath();
+        g.arc(q.x, q.y, 4, 0, Math.PI * 2);
+        g.fill();
+        continue;
+      }
       const fleeing = c.ai?.mode === "flee";
       const police = c.spec.police;
       if (!fleeing && !police && c.id !== sim.stopCar) continue;
@@ -331,7 +372,7 @@ export class Code3Hud {
     for (const p of sim.peds) {
       const threat = p.state === "flee" || p.state === "attack";
       const custody = p.state === "cuffed" || p.state === "escort" || p.state === "handsup";
-      if (!threat && !custody && p.role !== "suspect") continue;
+      if (!threat && !custody && p.role !== "suspect" && p.state !== "fight" && p.state !== "cross") continue;
       if (p.state === "gone" || p.state === "driving" || p.state === "incar" || p.state === "dead") continue;
       const q = to(p.x, p.z);
       g.fillStyle = threat ? "#ef4444" : custody ? "#a3e635" : "#fb923c";

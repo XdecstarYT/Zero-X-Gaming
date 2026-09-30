@@ -318,7 +318,8 @@ export function generateCity(seed = 1987): City {
   for (const b of blocks) {
     if (b.district === "station")
       for (let k = 0; k < 16; k++)
-        if (k % 2 === 0 || rng.next() < 0.3) parked.push({ x: b.x0 + 4 + k * 3.1 + 1.55, z: b.z0 + 6.5, h: Math.PI / 2, kind: k % 4 === 0 ? "interceptor" : "cruiser", color: "#0c0e12" });
+        // Bays 6–10 stay empty: that's the way out of the lot for the unit.
+        if ((k < 6 || k > 10) && (k % 2 === 0 || rng.next() < 0.3)) parked.push({ x: b.x0 + 4 + k * 3.1 + 1.55, z: b.z0 + 6.5, h: Math.PI / 2, kind: k % 4 === 0 ? "interceptor" : "cruiser", color: "#0c0e12" });
     if (b.district === "suburbs") {
       const lw = (b.x1 - b.x0) / 3;
       for (let a = 0; a < 3; a++)

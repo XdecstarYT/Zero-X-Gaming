@@ -73,6 +73,16 @@ class Code3Game implements GameModule {
   private touchFire = false;
   private touchBrake = false;
   private touchYelp = false;
+  private touchGas = false;
+  private touchBrakePedal = false;
+  private touchSprint = false;
+  private carButtons: HTMLButtonElement[] = [];
+  private footButtons: HTMLButtonElement[] = [];
+  private airButton: HTMLButtonElement | null = null;
+  /** Adaptive resolution: rolling frame time and current scale. */
+  private frameAvg = 1 / 60;
+  private resScale = 1;
+  private resAt = 0;
   private stick: { id: number; ox: number; oy: number; x: number; y: number } | null = null;
   private look: { id: number; x: number; y: number } | null = null;
   private knob: HTMLDivElement | null = null;
@@ -196,7 +206,7 @@ class Code3Game implements GameModule {
     const start = button("Start shift", PRIMARY, () => void this.beginShift());
     const controls = this.coarse
       ? "Left thumb: drive / walk · Right thumb: look · EXIT/ENTER · LIGHTS · FIRE · Tap the action list to talk, search, cite and arrest"
-      : "W/S throttle & brake · A/D steer · Space handbrake · Q lights/siren · H yelp · E exit/enter · Mouse look · Click fire · Right-click aim · X taser/sidearm · G shout · K spike strip · B backup · Y/N answer dispatch · 1–9 actions · Tab MDT · C camera (chase / far / hood)";
+      : "W/S throttle & brake · A/D steer · Space handbrake · Q lights/siren · H yelp · E exit/enter · Mouse look · Click fire · Right-click aim · X taser/sidearm · G shout · K spikes · P checkpoint · O roadblock · U cones · I air support · L flashlight · J siren tone · M map zoom · B backup · Y/N answer dispatch · 1–9 actions · Tab MDT · C camera (chase / far / hood)";
 
     this.menu.replaceChildren(
       el(
@@ -373,6 +383,7 @@ class Code3Game implements GameModule {
     }
     const p = this.pressed;
     this.pressed = {};
+    if (inCar && (this.touchGas || this.touchBrakePedal)) fwd = this.touchGas ? 1 : -1;
     return {
       ...NO_INPUT,
       throttle: inCar ? fwd : 0,
@@ -381,7 +392,7 @@ class Code3Game implements GameModule {
       moveX: inCar ? 0 : side,
       moveZ: inCar ? 0 : fwd,
       yaw: this.yaw,
-      sprint: k("ShiftLeft", "ShiftRight") || (!!this.stick && fwd > 0.92),
+      sprint: k("ShiftLeft", "ShiftRight") || this.touchSprint || (!!this.stick && fwd > 0.92),
       fire: !inCar && (this.mouseDown || this.touchFire || k("KeyF")),
       horn: k("KeyH") || this.touchYelp,
       ...p,
@@ -396,7 +407,7 @@ class Code3Game implements GameModule {
     // The unranked ?code3=quick test shift runs at 10× (held controls only; presses count once).
     if (this.quick)
       for (let i = 0; i < 9 && !sim.over; i++)
-        sim.step(dt, { ...input, enter: false, lights: false, backup: false, accept: false, decline: false, choose: null, weapon: null, shout: false, spikes: false });
+        sim.step(dt, { ...input, enter: false, lights: false, backup: false, accept: false, decline: false, choose: null, weapon: null, shout: false, spikes: false, checkpoint: false, roadblock: false, cones: false, air: false, flashlight: false, sirenTone: false });
     // In the car the camera swings back behind after a moment.
     if (sim.player.inCar && performance.now() - this.orbitAt > 1500) this.orbit *= 1 - Math.min(1, dt * 3);
     if (sim.over && !this.ended) this.endShift();
@@ -415,7 +426,10 @@ class Code3Game implements GameModule {
       if (e.type === "radio") this.audio.radio();
       else if (e.type === "shot") this.audio.shot(e.by !== "player" && Math.hypot(e.x - sim.officer.x, e.z - sim.officer.z) > 25);
       else if (e.type === "taser") this.audio.taser();
-      else if (e.type === "crash") this.audio.crash(e.speed);
+      else if (e.type === "crash") {
+        this.audio.crash(e.speed);
+        if (e.player && this.coarse) navigator.vibrate?.(Math.min(200, 30 + e.speed * 6));
+      } else if (e.type === "hurt" && this.coarse) navigator.vibrate?.([60, 40, 60]);
       else if (e.type === "cuff") this.audio.cuff();
       else if (e.type === "score") {
         if (e.points >= 100) this.hud.flash(`+${e.points}`, "#86efac");
@@ -424,12 +438,25 @@ class Code3Game implements GameModule {
         else this.audio.bad();
       }
     }
+    // Adaptive resolution (applied before drawing, so no blank frame): drop the scale when frames run long.
+    this.frameAvg += (frameDt - this.frameAvg) * 0.05;
+    if (now - this.resAt > 1500) {
+      this.resAt = now;
+      const next = this.frameAvg > 1 / 32 ? Math.max(0.55, this.resScale - 0.1) : this.frameAvg < 1 / 55 ? Math.min(1, this.resScale + 0.05) : this.resScale;
+      if (next !== this.resScale) {
+        this.resScale = next;
+        this.view.setResolution(next);
+      }
+    }
     this.view.render(cam, frameDt);
     sim.events = [];
+    this.syncTouch();
     const opts = sim.options();
     this.hud.update(aiming, this.yaw, opts);
     const u = sim.unit;
     this.audio.update(frameDt, {
+      tone: sim.sirenTone,
+      honk: (this.keys.has("KeyH") || this.touchYelp) && !u.siren && sim.player.inCar,
       siren: u.siren,
       yelp: this.keys.has("KeyH") || this.touchYelp,
       speed: speedOf(u),
@@ -463,7 +490,7 @@ class Code3Game implements GameModule {
         "m-auto flex w-full max-w-lg flex-col gap-3 rounded-xl border border-white/10 bg-[#0b1220] p-4",
         el("p", `font-display text-3xl font-black uppercase ${good ? "text-white" : "text-[#fca5a5]"}`, sim.over?.reason ?? "Shift over"),
         el("p", "font-display text-5xl font-black tabular-nums", String(s.score)),
-        el("div", "grid grid-cols-3 gap-2 text-center", stat("Calls", s.calls), stat("Arrests", s.arrests), stat("Citations", s.citations), stat("Stops", s.stops), stat("Pursuits", s.pursuits), stat("Booked", s.booked)),
+        el("div", "grid grid-cols-3 gap-2 text-center", stat("Calls", s.calls), stat("Arrests", s.arrests), stat("Citations", s.citations), stat("Stops", s.stops), stat("Pursuits", s.pursuits), stat("Booked", s.booked), stat("Screened", s.screened), stat("Penalties", s.penalties), stat("Grade", sim.grade())),
         el(
           "ul",
           "max-h-48 overflow-auto rounded bg-black/30 p-2 text-xs",
@@ -515,7 +542,7 @@ class Code3Game implements GameModule {
     if (!this.loop.isRunning || !this.sim) return;
     const handled = [
       "KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "ShiftLeft", "ShiftRight",
-      "KeyE", "KeyQ", "KeyH", "KeyB", "KeyY", "KeyN", "KeyX", "KeyG", "KeyF", "KeyC", "KeyK", "Tab",
+      "KeyE", "KeyQ", "KeyH", "KeyB", "KeyY", "KeyN", "KeyX", "KeyG", "KeyF", "KeyC", "KeyK", "KeyP", "KeyO", "KeyU", "KeyI", "KeyL", "KeyJ", "KeyM", "Tab",
       "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
     ];
     if (!handled.includes(e.code)) return;
@@ -547,6 +574,27 @@ class Code3Game implements GameModule {
         break;
       case "KeyK":
         p.spikes = true;
+        break;
+      case "KeyP":
+        p.checkpoint = true;
+        break;
+      case "KeyO":
+        p.roadblock = true;
+        break;
+      case "KeyU":
+        p.cones = true;
+        break;
+      case "KeyI":
+        p.air = true;
+        break;
+      case "KeyL":
+        p.flashlight = true;
+        break;
+      case "KeyJ":
+        p.sirenTone = true;
+        break;
+      case "KeyM":
+        this.hud?.cycleZoom();
         break;
       case "KeyC":
         this.camView = this.camView === "chase" ? "far" : this.camView === "far" ? "hood" : "chase";
@@ -625,49 +673,89 @@ class Code3Game implements GameModule {
   };
 
   private buildTouch() {
-    const round = (label: string, pos: string, aria: string) => {
-      const b = el("button", `pointer-events-auto absolute grid h-14 w-14 place-items-center rounded-full border-2 border-white/40 bg-black/40 text-[10px] font-black text-white ${pos}`, label);
+    const btn = (label: string, cls: string, aria: string) => {
+      const b = el("button", `pointer-events-auto absolute grid select-none place-items-center border-2 border-white/40 bg-black/45 text-[10px] font-black text-white active:bg-white/25 ${cls}`, label);
       b.type = "button";
       b.setAttribute("aria-label", aria);
       return b;
     };
+    const round = (label: string, pos: string, aria: string) => btn(label, `h-14 w-14 rounded-full ${pos}`, aria);
     const tap = (b: HTMLButtonElement, f: () => void) =>
       b.addEventListener("pointerdown", (e) => {
         e.preventDefault();
         e.stopPropagation();
+        navigator.vibrate?.(8);
         f();
       });
     const hold = (b: HTMLButtonElement, set: (v: boolean) => void) => {
       tap(b, () => set(true));
       for (const ev of ["pointerup", "pointercancel", "pointerleave"]) b.addEventListener(ev, () => set(false));
     };
-    const enter = round("E", "right-4 bottom-[46%]", "Enter or exit vehicle");
-    tap(enter, () => (this.pressed.enter = true));
-    const lights = round("LIGHTS", "right-20 bottom-[46%]", "Lights and siren");
-    tap(lights, () => (this.pressed.lights = (typeof this.pressed.lights === "number" ? this.pressed.lights : 0) + 1));
-    const fire = round("FIRE", "right-4 bottom-[26%] h-16 w-16 border-[#ef4444]", "Fire");
-    hold(fire, (v) => (this.touchFire = v));
-    const brake = round("BRAKE", "right-24 bottom-[20%]", "Handbrake");
-    hold(brake, (v) => (this.touchBrake = v));
-    const aim = round("AIM", "right-24 bottom-[32%]", "Aim");
-    tap(aim, () => (this.aimToggle = !this.aimToggle));
-    const wpn = round("WPN", "right-40 bottom-[26%]", "Switch taser / sidearm");
-    tap(wpn, () => (this.pressed.weapon = this.sim?.player.weapon === "taser" ? "pistol" : "taser"));
-    const yelp = round("YELP", "right-40 bottom-[38%]", "Siren yelp");
-    hold(yelp, (v) => (this.touchYelp = v));
-    const shout = round("SHOUT", "right-56 bottom-[32%]", "Shout: police, stop!");
-    tap(shout, () => (this.pressed.shout = true));
-    const spikes = round("SPIKES", "right-56 bottom-[44%]", "Lay or pick up a spike strip");
-    tap(spikes, () => (this.pressed.spikes = true));
-    const camBtn = round("CAM", "right-36 top-[40%]", "Change camera");
-    tap(camBtn, () => (this.camView = this.camView === "chase" ? "far" : this.camView === "far" ? "hood" : "chase"));
-    const backup = round("BACKUP", "right-4 top-[40%]", "Call backup");
-    tap(backup, () => (this.pressed.backup = true));
-    const mdt = round("MDT", "right-20 top-[40%]", "Open the MDT");
+    const cycleCam = () => (this.camView = this.camView === "chase" ? "far" : this.camView === "far" ? "hood" : "chase");
+
+    // A fixed grid over the right thumb (columns from the right edge, rows from the bottom),
+    // sized for short landscape phones; utilities sit in a row beside the minimap.
+    const C = ["right-3", "right-[4.75rem]", "right-[8.75rem]", "right-[12.75rem]"];
+    const R = ["bottom-3", "bottom-[4.75rem]", "bottom-[8.75rem]"];
+    const small = (label: string, pos: string, aria: string) => btn(label, `h-10 min-w-14 rounded-lg px-2 top-2 ${pos}`, aria);
+    const mdt = small("MDT", "left-[calc(min(26vmin,8rem)+1rem)]", "Open the MDT");
     tap(mdt, () => this.hud?.toggleMdt());
-    this.knob = el("div", "pointer-events-none absolute hidden h-20 w-20 rounded-full border-2 border-white/40 bg-white/10");
-    this.touch = el("div", "pointer-events-none absolute inset-0 z-[6]", this.knob, enter, lights, fire, brake, aim, wpn, yelp, shout, spikes, camBtn, backup, mdt);
+    const backup = small("BACKUP", "left-[calc(min(26vmin,8rem)+5rem)]", "Call backup");
+    tap(backup, () => (this.pressed.backup = true));
+    const camBtn = small("CAM", "left-[calc(min(26vmin,8rem)+10rem)]", "Change camera");
+    tap(camBtn, cycleCam);
+    const air = small("AIR-1", "left-[calc(min(26vmin,8rem)+14rem)] border-[#38bdf8]", "Request air support");
+    tap(air, () => (this.pressed.air = true));
+
+    // Driving: pedals under the right thumb, the stick steers.
+    const gas = btn("GAS", `${C[0]} ${R[0]} h-[7.5rem] w-14 rounded-2xl border-[#22c55e] text-xs`, "Accelerate (hold)");
+    hold(gas, (v) => (this.touchGas = v));
+    const brakePedal = btn("BRAKE", `${C[1]} ${R[0]} h-24 w-14 rounded-2xl border-[#ef4444] text-[10px]`, "Brake / reverse (hold)");
+    hold(brakePedal, (v) => (this.touchBrakePedal = v));
+    const hand = round("HAND\nBRAKE", `${C[2]} ${R[0]} whitespace-pre text-[9px]`, "Handbrake (hold)");
+    hold(hand, (v) => (this.touchBrake = v));
+    const lights = round("LIGHTS", `${C[2]} ${R[1]}`, "Lights and siren");
+    tap(lights, () => (this.pressed.lights = (typeof this.pressed.lights === "number" ? this.pressed.lights : 0) + 1));
+    const exit = round("EXIT", `${C[0]} ${R[2]} border-[#facc15]`, "Get out of the unit");
+    tap(exit, () => (this.pressed.enter = true));
+    const yelp = round("YELP", `${C[1]} ${R[2]}`, "Siren yelp / horn (hold)");
+    hold(yelp, (v) => (this.touchYelp = v));
+    const tone = round("TONE", `${C[2]} ${R[2]}`, "Change siren tone");
+    tap(tone, () => (this.pressed.sirenTone = true));
+
+    // On foot.
+    const fire = round("FIRE", `${C[0]} ${R[0]} border-[#ef4444]`, "Fire");
+    hold(fire, (v) => (this.touchFire = v));
+    const aim = round("AIM", `${C[1]} ${R[0]}`, "Aim");
+    tap(aim, () => (this.aimToggle = !this.aimToggle));
+    const sprint = round("RUN", `${C[2]} ${R[0]}`, "Sprint (hold)");
+    hold(sprint, (v) => (this.touchSprint = v));
+    const torch = round("TORCH", `${C[3]} ${R[0]}`, "Flashlight");
+    tap(torch, () => (this.pressed.flashlight = true));
+    const enter = round("ENTER", `${C[0]} ${R[1]} border-[#facc15]`, "Get in the unit");
+    tap(enter, () => (this.pressed.enter = true));
+    const wpn = round("WPN", `${C[1]} ${R[1]}`, "Switch taser / sidearm");
+    tap(wpn, () => (this.pressed.weapon = this.sim?.player.weapon === "taser" ? "pistol" : "taser"));
+    const shout = round("SHOUT", `${C[2]} ${R[1]}`, "Shout: police, stop!");
+    tap(shout, () => (this.pressed.shout = true));
+    const spikes = round("SPIKES", `${C[3]} ${R[1]}`, "Lay or pick up a spike strip");
+    tap(spikes, () => (this.pressed.spikes = true));
+
+    this.carButtons = [gas, brakePedal, hand, lights, yelp, tone, exit];
+    this.footButtons = [fire, aim, wpn, enter, shout, spikes, torch, sprint];
+    this.airButton = air;
+    this.knob = el("div", "pointer-events-none absolute hidden h-24 w-24 rounded-full border-2 border-white/40 bg-white/10");
+    this.touch = el("div", "pointer-events-none absolute inset-0 z-[6]", this.knob, mdt, backup, camBtn, air, ...this.carButtons, ...this.footButtons);
     this.host.append(this.touch);
+  }
+
+  /** Show the driving or the on-foot controls. */
+  private syncTouch() {
+    if (!this.touch || !this.sim) return;
+    const inCar = this.sim.player.inCar;
+    for (const b of this.carButtons) b.classList.toggle("hidden", !inCar);
+    for (const b of this.footButtons) b.classList.toggle("hidden", inCar);
+    this.airButton?.classList.toggle("hidden", !this.sim.canCallAir());
   }
 }
 

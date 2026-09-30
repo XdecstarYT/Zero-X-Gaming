@@ -41,7 +41,8 @@ import { HALF_ROAD, HALF_STREET, LINES, lightFor, nodePos, onSidewalk, SIZE, typ
 import { buildCar, buildPed, glowTexture, posePed, type CarModel, type PedModel, type Pose } from "./models";
 import type { Code3Sim, Ped, SimEvent, Weather } from "./sim";
 import { asphaltDetail, cloudTexture, concrete, facade, paintGround, radialTexture, signTexture } from "./textures";
-import { forward, right, speedOf } from "./vehicles";
+import { forward, right, signalOf, speedOf } from "./vehicles";
+import type { Deployable } from "./sim";
 
 export type Quality = "high" | "low";
 export type CamView = "chase" | "far" | "hood";
@@ -57,6 +58,8 @@ export interface CamState {
 }
 
 const KERB = 0.15;
+/** World streaming chunk size (m): two blocks. */
+const CHUNK = 144;
 
 /** Cinematic grade: filmic contrast, slight teal/orange split, vignette, grain. */
 const GRADE_SHADER = {
@@ -115,6 +118,52 @@ function skyMaterial() {
     depthWrite: false,
     fog: false,
   });
+}
+
+let stripeTex: THREE.Texture | null = null;
+/** Red/white chevron stripes for barriers. */
+function stripeTexture() {
+  if (stripeTex) return stripeTex;
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 32;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#f2f2f2";
+  g.fillRect(0, 0, 128, 32);
+  g.fillStyle = "#d1202a";
+  for (let x = -32; x < 160; x += 32) {
+    g.beginPath();
+    g.moveTo(x, 32);
+    g.lineTo(x + 16, 0);
+    g.lineTo(x + 32, 0);
+    g.lineTo(x + 16, 32);
+    g.fill();
+  }
+  stripeTex = new THREE.CanvasTexture(c);
+  stripeTex.colorSpace = THREE.SRGBColorSpace;
+  stripeTex.wrapS = THREE.RepeatWrapping;
+  stripeTex.repeat.set(4, 1);
+  return stripeTex;
+}
+
+function textPanel(a: string, b: string, bg: string) {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 192;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#f5f5f0";
+  g.fillRect(0, 0, 256, 192);
+  g.fillStyle = bg;
+  g.fillRect(8, 8, 240, 176);
+  g.fillStyle = "#ffffff";
+  g.font = "bold 44px Arial";
+  g.textAlign = "center";
+  g.fillText(a, 128, 84);
+  g.font = "bold 34px Arial";
+  g.fillText(b, 128, 140);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 /** Walls (UV'd in facade tiles) and a flat roof for a list of buildings. */
@@ -179,6 +228,7 @@ interface Fx {
 }
 
 const up = new THREE.Vector3(0, 1, 0);
+const M_GLASS = new THREE.MeshPhysicalMaterial({ color: "#0b1016", metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.85 });
 
 export class Code3View {
   readonly canvas: HTMLCanvasElement;
@@ -234,6 +284,47 @@ export class Code3View {
   private ro: ResizeObserver;
   private resolved = false;
   private readonly weather: Weather;
+  private deployMeshes = new Map<string, THREE.Group>();
+  private coneGeo = mergeGeometries([new THREE.ConeGeometry(0.17, 0.62, 12).translate(0, 0.33, 0), new THREE.BoxGeometry(0.42, 0.04, 0.42).translate(0, 0.02, 0)]);
+  private coneMat = new THREE.MeshStandardMaterial({ color: "#ff5a0a", roughness: 0.5, emissive: "#ff3a00", emissiveIntensity: 0.05 });
+  private heli: THREE.Group;
+  private rotor: THREE.Mesh;
+  private searchlight: THREE.SpotLight;
+  private torch: THREE.SpotLight;
+  // Streaming.
+  private CN = 1;
+  private chunkData: { buildings: Building[]; trees: City["trees"]; props: City["props"]; parked: City["parked"] }[] = [];
+  private chunks = new Map<number, THREE.Group>();
+  private loadRadius = 300;
+  private facadeMats = new Map<string, THREE.MeshStandardMaterial>();
+  private kindsCache: Record<PropKind, { geo: THREE.BufferGeometry; mat: THREE.Material }> | null = null;
+  private mats = {
+    roof: new THREE.MeshStandardMaterial({ color: "#4a4a48", roughness: 1 }),
+    houseRoof: new THREE.MeshStandardMaterial({ color: "#4f3a31", roughness: 0.85, flatShading: true }),
+    kit: new THREE.MeshStandardMaterial({ color: "#8f9295", roughness: 0.6, metalness: 0.4 }),
+    parapet: new THREE.MeshStandardMaterial({ color: "#6d6a64", roughness: 0.9 }),
+    awning: new THREE.MeshStandardMaterial({ color: "#7a1f24", roughness: 0.8, side: THREE.DoubleSide }),
+    trunk: new THREE.MeshStandardMaterial({ color: "#4b3526", roughness: 1 }),
+    crown: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.95, flatShading: true }),
+    shelterGlass: new THREE.MeshPhysicalMaterial({ color: "#9fb4c4", transparent: true, opacity: 0.3, roughness: 0.05 }),
+  };
+  private treeGeo = (() => {
+    const crown = mergeGeometries([
+      new THREE.IcosahedronGeometry(1.7, 1).translate(0, 4.2, 0),
+      new THREE.IcosahedronGeometry(1.3, 1).translate(0.9, 3.7, 0.4),
+      new THREE.IcosahedronGeometry(1.25, 1).translate(-0.7, 3.8, -0.6),
+      new THREE.IcosahedronGeometry(1.1, 1).translate(0.1, 5.2, -0.2),
+    ]);
+    const pos = crown.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const k = 1 + Math.sin(pos.getX(i) * 7.1) * Math.cos(pos.getZ(i) * 6.3) * 0.08;
+      pos.setXYZ(i, pos.getX(i) * k, pos.getY(i) * k, pos.getZ(i) * k);
+    }
+    crown.computeVertexNormals();
+    const trunk = new THREE.CylinderGeometry(0.14, 0.24, 3, 7).translate(0, 1.5, 0);
+    crown.userData.shared = trunk.userData.shared = true;
+    return { crown, trunk };
+  })();
 
   constructor(
     private host: HTMLElement,
@@ -337,25 +428,20 @@ export class Code3View {
     walk.receiveShadow = true;
     this.scene.add(walk);
 
-    this.buildBuildings(city);
+    // The city is streamed in chunks (buildings, rooftops, signs, trees, street
+    // furniture, parked cars) around the camera; far chunks are freed.
+    this.CN = Math.ceil(SIZE / CHUNK);
+    this.chunkData = Array.from({ length: this.CN * this.CN }, () => ({ buildings: [] as Building[], trees: [] as City["trees"], props: [] as City["props"], parked: [] as City["parked"] }));
+    const at = (x: number, z: number) => this.chunkData[Math.min(this.CN - 1, Math.floor(z / CHUNK)) * this.CN + Math.min(this.CN - 1, Math.floor(x / CHUNK))];
+    for (const b of city.buildings) if (b.kind !== "parked") at(b.x, b.z).buildings.push(b);
+    for (const t of city.trees) at(t.x, t.z).trees.push(t);
+    for (const p of city.props) at(p.x, p.z).props.push(p);
+    for (const p of city.parked) at(p.x, p.z).parked.push(p);
+    this.loadRadius = high ? 360 : 250;
     this.lampSpots = this.buildStreetFurniture(city);
     this.pools = this.buildPools(this.lampSpots);
-    this.buildProps(city);
-    const parked = city.parked.map((p) => {
-      const m = buildCar(p.kind, p.color, "", "low");
-      m.group.position.set(p.x, 0, p.z);
-      m.group.rotation.y = -p.h;
-      m.beam.visible = false;
-      // Parked: lamps off.
-      (m.heads.material as THREE.MeshStandardMaterial).emissiveIntensity = 0;
-      m.tail.emissiveIntensity = 0.05;
-      return m.group;
-    });
-    for (const mesh of bakeStatic(parked)) {
-      mesh.castShadow = high;
-      mesh.receiveShadow = true;
-      this.scene.add(mesh);
-    }
+    this.buildManholes(city);
+    this.streamChunks(true);
     for (let i = 0; i < (high ? 6 : 0); i++) {
       const l = new THREE.PointLight("#ffc98a", 0, 26, 1.5);
       this.lampLights.push(l);
@@ -415,6 +501,29 @@ export class Code3View {
     // The officer on foot.
     this.officer = buildPed({ skin: "#d8a47f", shirt: "#1f2b44", pants: "#1a2233", officer: true });
     this.scene.add(this.officer.group);
+    this.torch = new THREE.SpotLight("#fff6e0", 0, 30, 0.35, 0.5, 1.2);
+    this.torch.position.set(0.3, 1.4, 0.2);
+    this.torch.target.position.set(10, 0.2, 0);
+    this.officer.group.add(this.torch, this.torch.target);
+
+    // Air-1.
+    const heliMat = new THREE.MeshStandardMaterial({ color: "#1b2536", metalness: 0.5, roughness: 0.4 });
+    this.heli = new THREE.Group();
+    this.heli.add(
+      new THREE.Mesh(new THREE.SphereGeometry(1.4, 16, 12).scale(1.6, 1, 1), heliMat),
+      new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.3, 5, 8).rotateZ(Math.PI / 2).translate(-4, 0.3, 0), heliMat),
+      new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.2, 0.1).translate(-6.4, 0.8, 0.2), heliMat),
+      new THREE.Mesh(mergeGeometries([new THREE.BoxGeometry(3, 0.08, 0.08).translate(0, -1.3, 0.8), new THREE.BoxGeometry(3, 0.08, 0.08).translate(0, -1.3, -0.8)]), heliMat),
+      new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2).rotateZ(-Math.PI / 2).translate(1.2, 0.2, 0), M_GLASS),
+    );
+    this.rotor = new THREE.Mesh(mergeGeometries([new THREE.BoxGeometry(9, 0.05, 0.3), new THREE.BoxGeometry(0.3, 0.05, 9)]).translate(0, 1.3, 0), heliMat);
+    this.heli.add(this.rotor);
+    this.searchlight = new THREE.SpotLight("#eef4ff", 0, 140, 0.16, 0.4, 1);
+    this.searchlight.position.set(1.5, -1.2, 0);
+    this.heli.add(this.searchlight, this.searchlight.target);
+    this.scene.add(this.searchlight.target);
+    this.heli.visible = false;
+    this.scene.add(this.heli);
 
     // Unit headlights and light-bar lights.
     for (const side of [-1, 1]) {
@@ -461,6 +570,14 @@ export class Code3View {
     this.resize();
   }
 
+  /** Render-resolution scale (1 = full) for adaptive performance on phones. */
+  setResolution(k: number) {
+    const base = Math.min(window.devicePixelRatio || 1, this.quality === "high" ? 1.5 : 1);
+    this.renderer.setPixelRatio(base * k);
+    this.composer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25) * k);
+    this.resize();
+  }
+
   private resize() {
     const w = Math.max(1, this.host.clientWidth);
     const h = Math.max(1, this.host.clientHeight);
@@ -480,28 +597,86 @@ export class Code3View {
 
   // ------------------------------------------------------------ city build
 
-  private buildBuildings(city: City) {
-    const groups = new Map<string, Building[]>();
-    for (const b of city.buildings) {
-      if (b.kind === "parked") continue;
-      const key = b.kind === "tower" || b.kind === "office" ? `${b.kind}${b.style}` : b.kind;
-      (groups.get(key) ?? groups.set(key, []).get(key)!).push(b);
+  // ---------------------------------------------------------------- chunks
+
+  private streamChunks(all = false) {
+    const f = this.sim.officer;
+    const need: { i: number; d: number }[] = [];
+    for (let i = 0; i < this.CN * this.CN; i++) {
+      const cx = (i % this.CN) * CHUNK + CHUNK / 2;
+      const cz = Math.floor(i / this.CN) * CHUNK + CHUNK / 2;
+      const d = Math.max(0, Math.hypot(cx - f.x, cz - f.z) - CHUNK * 0.71);
+      const loaded = this.chunks.get(i);
+      if (d < this.loadRadius && !loaded) need.push({ i, d });
+      else if (loaded && d > this.loadRadius + 90) this.unloadChunk(i);
     }
-    let seed = 1;
-    const roofs: THREE.BufferGeometry[] = [];
-    for (const [key, list] of groups) {
-      const tex = facade(key, seed++);
-      // Towers get a setback crown (visual only).
-      const crowns = key.startsWith("tower")
-        ? list.filter((b) => b.h > 55).map((b) => ({ ...b, hw: b.hw * 0.7, hd: b.hd * 0.7, h: b.h + 9 }))
-        : [];
-      const { walls, roofs: r } = buildingGeometry([...list, ...crowns]);
-      roofs.push(r);
-      const mat = new THREE.MeshStandardMaterial({
+    need.sort((a, b) => a.d - b.d);
+    // One chunk per frame while playing (no hitches); everything nearby up front.
+    for (const n of all ? need : need.slice(0, 1)) this.loadChunk(n.i);
+  }
+
+  private loadChunk(i: number) {
+    const g = new THREE.Group();
+    g.name = `chunk-${i}`;
+    const data = this.chunkData[i];
+    this.buildBuildings(g, data.buildings, data.trees);
+    this.buildProps(g, data.props);
+    if (data.parked.length) {
+      const parked = data.parked.map((p) => {
+        const m = buildCar(p.kind, p.color, "", "low");
+        m.group.position.set(p.x, 0, p.z);
+        m.group.rotation.y = -p.h;
+        m.beam.visible = false;
+        // Parked: lamps off.
+        (m.heads.material as THREE.MeshStandardMaterial).emissiveIntensity = 0;
+        m.tail.emissiveIntensity = 0.05;
+        return m.group;
+      });
+      for (const mesh of bakeStatic(parked)) {
+        mesh.castShadow = this.quality === "high";
+        mesh.receiveShadow = true;
+        g.add(mesh);
+      }
+    }
+    this.chunks.set(i, g);
+    this.scene.add(g);
+  }
+
+  private unloadChunk(i: number) {
+    const g = this.chunks.get(i);
+    if (!g) return;
+    this.chunks.delete(i);
+    g.removeFromParent();
+    g.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      if (!m.geometry.userData.shared) m.geometry.dispose();
+      if ((m as unknown as THREE.InstancedMesh).isInstancedMesh) (m as unknown as THREE.InstancedMesh).dispose();
+      const mat = m.material as THREE.MeshBasicMaterial;
+      if (mat.userData?.chunkOwned) {
+        this.signMats = this.signMats.filter((x) => x !== mat);
+        mat.map?.dispose();
+        mat.dispose();
+      }
+    });
+  }
+
+  /** Loaded chunk count (for tests / debugging). */
+  get loadedChunks() {
+    return this.chunks.size;
+  }
+
+  private facadeMat(key: string) {
+    let mat = this.facadeMats.get(key);
+    if (!mat) {
+      let seed = 1;
+      for (const ch of key) seed = (seed * 31 + ch.charCodeAt(0)) % 1000;
+      const tex = facade(key, seed);
+      mat = new THREE.MeshStandardMaterial({
         map: tex.map,
         emissiveMap: tex.lit,
         emissive: "#ffffff",
-        emissiveIntensity: 1,
+        emissiveIntensity: this.night * 1.4,
         roughnessMap: tex.rough,
         roughness: 1,
         normalMap: this.quality === "high" ? tex.normal : null,
@@ -509,23 +684,43 @@ export class Code3View {
         metalness: key.startsWith("tower") ? 0.25 : 0.05,
         envMapIntensity: 1.3,
       });
+      this.facadeMats.set(key, mat);
       this.windowMats.push(mat);
-      const mesh = new THREE.Mesh(walls, mat);
+    }
+    return mat;
+  }
+
+  private buildBuildings(target: THREE.Object3D, buildings: Building[], trees: City["trees"]) {
+    const groups = new Map<string, Building[]>();
+    for (const b of buildings) {
+      const key = b.kind === "tower" || b.kind === "office" ? `${b.kind}${b.style}` : b.kind;
+      (groups.get(key) ?? groups.set(key, []).get(key)!).push(b);
+    }
+    const roofs: THREE.BufferGeometry[] = [];
+    for (const [key, list] of groups) {
+      // Towers get a setback crown (visual only).
+      const crowns = key.startsWith("tower")
+        ? list.filter((b) => b.h > 55).map((b) => ({ ...b, hw: b.hw * 0.7, hd: b.hd * 0.7, h: b.h + 9 }))
+        : [];
+      const { walls, roofs: r } = buildingGeometry([...list, ...crowns]);
+      roofs.push(r);
+      const mesh = new THREE.Mesh(walls, this.facadeMat(key));
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      this.scene.add(mesh);
+      target.add(mesh);
     }
-    const roofMesh = new THREE.Mesh(mergeGeometries(roofs), new THREE.MeshStandardMaterial({ color: "#4a4a48", roughness: 1 }));
-    roofMesh.receiveShadow = true;
-    this.scene.add(roofMesh);
+    if (roofs.length) {
+      const roofMesh = new THREE.Mesh(mergeGeometries(roofs), this.mats.roof);
+      roofMesh.receiveShadow = true;
+      target.add(roofMesh);
+    }
 
     // Pitched roofs; parapets, AC units, water tanks; shop awnings.
     const houseRoofs: THREE.BufferGeometry[] = [];
     const roofKit: THREE.BufferGeometry[] = [];
     const parapets: THREE.BufferGeometry[] = [];
     const awnings: THREE.BufferGeometry[] = [];
-    for (const b of city.buildings) {
-      if (b.kind === "parked") continue;
+    for (const b of buildings) {
       if (b.kind === "house") {
         const g = new THREE.CylinderGeometry(0.01, b.hd * 1.18, 3, 4, 1).rotateY(Math.PI / 4);
         g.scale(b.hw / b.hd, 1, 1);
@@ -559,25 +754,24 @@ export class Code3View {
       }
     }
     if (houseRoofs.length) {
-      const m = new THREE.Mesh(mergeGeometries(houseRoofs), new THREE.MeshStandardMaterial({ color: "#4f3a31", roughness: 0.85, flatShading: true }));
+      const m = new THREE.Mesh(mergeGeometries(houseRoofs), this.mats.houseRoof);
       m.castShadow = true;
-      this.scene.add(m);
+      target.add(m);
     }
-    const kitMat = new THREE.MeshStandardMaterial({ color: "#8f9295", roughness: 0.6, metalness: 0.4 });
-    if (roofKit.length) this.scene.add(new THREE.Mesh(mergeGeometries(roofKit), kitMat));
+    if (roofKit.length) target.add(new THREE.Mesh(mergeGeometries(roofKit), this.mats.kit));
     if (parapets.length) {
-      const pm = new THREE.Mesh(mergeGeometries(parapets), new THREE.MeshStandardMaterial({ color: "#6d6a64", roughness: 0.9 }));
+      const pm = new THREE.Mesh(mergeGeometries(parapets), this.mats.parapet);
       pm.castShadow = true;
-      this.scene.add(pm);
+      target.add(pm);
     }
     if (awnings.length) {
-      const am = new THREE.Mesh(mergeGeometries(awnings), new THREE.MeshStandardMaterial({ color: "#7a1f24", roughness: 0.8, side: THREE.DoubleSide }));
+      const am = new THREE.Mesh(mergeGeometries(awnings), this.mats.awning);
       am.castShadow = true;
-      this.scene.add(am);
+      target.add(am);
     }
 
     // Signs (lit at night).
-    for (const b of city.buildings) {
+    for (const b of buildings) {
       if (!b.sign) continue;
       const colors: Record<string, [string, string]> = {
         station: ["#12305e", "#ffffff"],
@@ -587,33 +781,24 @@ export class Code3View {
       const [bg, fg] = colors[b.kind] ?? ["#2a2a2a", "#f5e6b8"];
       const w = Math.min(b.hw * 1.7, 14);
       const mat = new THREE.MeshBasicMaterial({ map: signTexture(b.sign, bg, fg) });
+      mat.userData.chunkOwned = true;
+      mat.color.setScalar(0.55 + this.night * 0.9);
       this.signMats.push(mat);
       const sign = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 0.19), mat);
       sign.position.set(b.x, Math.min(b.h - 0.8, b.kind === "store" ? 4.2 : b.h - 1.5), b.z - b.hd - 0.08);
       sign.rotation.y = Math.PI;
-      this.scene.add(sign);
+      target.add(sign);
     }
+    if (!trees.length) return;
 
     // Trees: trunk + three-lobed crowns, varied tints.
-    const n = city.trees.length;
-    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.14, 0.24, 3, 7).translate(0, 1.5, 0), new THREE.MeshStandardMaterial({ color: "#4b3526", roughness: 1 }), n);
-    const crownGeo = mergeGeometries([
-      new THREE.IcosahedronGeometry(1.7, 1).translate(0, 4.2, 0),
-      new THREE.IcosahedronGeometry(1.3, 1).translate(0.9, 3.7, 0.4),
-      new THREE.IcosahedronGeometry(1.25, 1).translate(-0.7, 3.8, -0.6),
-      new THREE.IcosahedronGeometry(1.1, 1).translate(0.1, 5.2, -0.2),
-    ]);
-    const pos = crownGeo.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < pos.count; i++) {
-      const k = 1 + (Math.sin(pos.getX(i) * 7.1) * Math.cos(pos.getZ(i) * 6.3)) * 0.08;
-      pos.setXYZ(i, pos.getX(i) * k, pos.getY(i) * k, pos.getZ(i) * k);
-    }
-    crownGeo.computeVertexNormals();
-    const crown = new THREE.InstancedMesh(crownGeo, new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.95, flatShading: true }), n);
+    const n = trees.length;
+    const trunk = new THREE.InstancedMesh(this.treeGeo.trunk, this.mats.trunk, n);
+    const crown = new THREE.InstancedMesh(this.treeGeo.crown, this.mats.crown, n);
     const m4 = new THREE.Matrix4();
     const col = new THREE.Color();
     const q = new THREE.Quaternion();
-    city.trees.forEach((t, k) => {
+    trees.forEach((t, k) => {
       q.setFromAxisAngle(up, k * 1.7);
       m4.compose(new THREE.Vector3(t.x, 0, t.z), q, new THREE.Vector3(t.s, t.s, t.s));
       trunk.setMatrixAt(k, m4);
@@ -622,7 +807,7 @@ export class Code3View {
     });
     crown.castShadow = true;
     trunk.castShadow = true;
-    this.scene.add(trunk, crown);
+    target.add(trunk, crown);
   }
 
   private buildStreetFurniture(city: City) {
@@ -722,7 +907,9 @@ export class Code3View {
     return pools;
   }
 
-  private buildProps(city: City) {
+  /** Street furniture kinds: shared geometry + material, built once. */
+  private propKinds(): Record<PropKind, { geo: THREE.BufferGeometry; mat: THREE.Material }> {
+    if (this.kindsCache) return this.kindsCache;
     const kinds: Record<PropKind, { geo: THREE.BufferGeometry; mat: THREE.Material }> = {
       hydrant: {
         geo: mergeGeometries([
@@ -769,9 +956,16 @@ export class Code3View {
         mat: new THREE.MeshStandardMaterial({ color: "#6f757c", roughness: 0.35, metalness: 0.8 }),
       },
     };
+    for (const k of Object.values(kinds)) k.geo.userData.shared = true;
+    this.kindsCache = kinds;
+    return kinds;
+  }
+
+  private buildProps(target: THREE.Object3D, props: City["props"]) {
+    const kinds = this.propKinds();
     const byKind = new Map<PropKind, THREE.Matrix4[]>();
     const q = new THREE.Quaternion();
-    for (const p of city.props) {
+    for (const p of props) {
       q.setFromAxisAngle(up, -p.h);
       (byKind.get(p.kind) ?? byKind.set(p.kind, []).get(p.kind)!).push(new THREE.Matrix4().compose(new THREE.Vector3(p.x, KERB, p.z), q, new THREE.Vector3(1, 1, 1)));
     }
@@ -779,15 +973,18 @@ export class Code3View {
       const k = kinds[kind];
       const im = new THREE.InstancedMesh(k.geo, k.mat, list.length);
       list.forEach((m, i) => im.setMatrixAt(i, m));
-      im.castShadow = true;
-      this.scene.add(im);
+      im.castShadow = this.quality === "high";
+      target.add(im);
       if (kind === "shelter") {
         // Glass back panels.
-        const glass = new THREE.InstancedMesh(new THREE.BoxGeometry(0.02, 2, 3.4).translate(-0.6, 1.3, 0), new THREE.MeshPhysicalMaterial({ color: "#9fb4c4", transparent: true, opacity: 0.3, roughness: 0.05 }), list.length);
+        const glass = new THREE.InstancedMesh(new THREE.BoxGeometry(0.02, 2, 3.4).translate(-0.6, 1.3, 0), this.mats.shelterGlass, list.length);
         list.forEach((m, i) => glass.setMatrixAt(i, m));
-        this.scene.add(glass);
+        target.add(glass);
       }
     }
+  }
+
+  private buildManholes(city: City) {
     // Manhole covers on the roads.
     const mh: THREE.Matrix4[] = [];
     for (const L of city.lines)
@@ -805,6 +1002,7 @@ export class Code3View {
     const sim = this.sim;
     const t = sim.time;
     this.timeOfDay();
+    this.streamChunks();
     this.syncCars(t, frameDt);
     this.syncPeds(cam);
     this.syncFx(sim.events, t);
@@ -812,6 +1010,8 @@ export class Code3View {
     this.updateSignals(t);
     this.updateLamps();
     this.updateWeather(frameDt);
+    this.syncDeploy(t);
+    this.syncAir(t, frameDt);
     const wp = sim.waypoint();
     this.marker.visible = !!wp;
     if (wp) {
@@ -874,6 +1074,7 @@ export class Code3View {
     fog.color.copy(hor).multiplyScalar(this.night > 0.5 ? 0.8 : 1);
     fog.near = w === "fog" ? 4 : 40;
     fog.far = w === "fog" ? 95 : w === "rain" ? 230 : w === "overcast" ? 330 : 280 + day * 260;
+    fog.far = Math.min(fog.far, this.loadRadius - 10);
     this.hemi.intensity = (0.18 + day * 1.3) * (1 - gloom * 0.2);
     this.hemi.color.set(this.night > 0.5 ? "#51638f" : "#cfe2ff");
     this.hemi.groundColor.set(this.night > 0.5 ? "#2b2118" : "#4a4032");
@@ -992,6 +1193,10 @@ export class Code3View {
       m.tail.emissiveIntensity = c.braking ? 3 : 0.3 + nightGlow * 0.9;
       (m.heads.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.3 + nightGlow * 3;
       (m.reverse.material as THREE.MeshStandardMaterial).emissiveIntensity = vf < -0.5 ? 2 : 0;
+      const sig = signalOf(c);
+      const blink = Math.floor(t * 2.6) % 2 === 0;
+      m.amberL.emissiveIntensity = (sig === -1 || sig === 2) && blink ? 5 : 0.1;
+      m.amberR.emissiveIntensity = (sig === 1 || sig === 2) && blink ? 5 : 0.1;
       for (const g of m.headGlow) (g.material as THREE.SpriteMaterial).opacity = nightGlow * 0.9;
       for (const g of m.tailGlow) (g.material as THREE.SpriteMaterial).opacity = c.braking ? 0.9 : nightGlow * 0.45;
       (m.beam.material as THREE.MeshBasicMaterial).opacity = nightGlow * 0.55;
@@ -1121,6 +1326,7 @@ export class Code3View {
       const moving = pl.moving ? (pl.sprinting ? 6.5 : 3.2) : 0;
       this.officerStep += moving / 60;
       posePed(om, cam.aiming ? "aim" : "walk", this.officerStep, moving, t);
+      this.torch.intensity = sim.flashlight ? 60 : 0;
       om.gun.visible = pl.weapon === "pistol" && cam.aiming;
       om.taser.visible = pl.weapon === "taser" && cam.aiming;
     }
@@ -1204,6 +1410,95 @@ export class Code3View {
     }
     this.camera.lookAt(this.camLook);
     this.camera.updateProjectionMatrix();
+  }
+
+  // ------------------------------------------------------------- deployables
+
+  private buildDeploy(d: Deployable) {
+    const g = new THREE.Group();
+    const cone = (x: number, z: number) => {
+      const c = new THREE.Mesh(this.coneGeo, this.coneMat);
+      c.position.set(x, 0, z);
+      c.castShadow = true;
+      g.add(c);
+      const flare = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: "#ff3a1a", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+      flare.scale.set(1.4, 1.4, 1);
+      flare.position.set(x, 0.3, z);
+      flare.userData.flare = true;
+      g.add(flare);
+    };
+    const striped = new THREE.MeshStandardMaterial({ map: stripeTexture(), roughness: 0.6 });
+    if (d.kind === "checkpoint") {
+      // Cones down the centre line, a sawhorse at the stop line, a sign on the approach.
+      const r = { x: -d.dz, z: d.dx };
+      const cx = d.x - r.x * 2;
+      const cz = d.z - r.z * 2;
+      for (let a = -14; a <= 6; a += 3) cone(cx + d.dx * a - r.x * 0.2, cz + d.dz * a - r.z * 0.2);
+      const saw = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.25, 0.08), striped);
+      saw.position.set(d.x + r.x * 1.9 + d.dx * 1.5, 1, d.z + r.z * 1.9 + d.dz * 1.5);
+      saw.rotation.y = -Math.atan2(r.z, r.x);
+      g.add(saw);
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.2), new THREE.MeshBasicMaterial({ map: textPanel("POLICE", "CHECKPOINT", "#12305e"), side: THREE.DoubleSide }));
+      sign.position.set(d.x + r.x * 2.9 - d.dx * 16, 1.2, d.z + r.z * 2.9 - d.dz * 16);
+      sign.rotation.y = -Math.atan2(-d.dz, -d.dx) + Math.PI / 2;
+      g.add(sign);
+    } else if (d.kind === "roadblock") {
+      const across = d.hw! > d.hd! ? { x: 1, z: 0 } : { x: 0, z: 1 };
+      const len = Math.max(d.hw!, d.hd!) * 2;
+      for (const off of [-0.25, 0.25]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(len, 0.35, 0.1), striped);
+        bar.position.set(d.x + (across.x ? 0 : off), 0.9, d.z + (across.z ? 0 : off));
+        bar.rotation.y = across.x ? 0 : Math.PI / 2;
+        bar.castShadow = true;
+        g.add(bar);
+        for (const e of [-len / 2 + 0.3, len / 2 - 0.3]) {
+          const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.1, 0.5), this.mats.kit);
+          leg.position.set(d.x + across.x * e + (across.x ? 0 : off), 0.55, d.z + across.z * e + (across.z ? 0 : off));
+          g.add(leg);
+        }
+      }
+      for (const e of [-3, -1, 1, 3]) cone(d.x + across.x * e - (across.x ? 0 : 1.2), d.z + across.z * e - (across.z ? 0 : 1.2));
+    } else for (const p of d.points ?? []) cone(p.x, p.z);
+    return g;
+  }
+
+  private syncDeploy(t: number) {
+    const live = new Set<string>();
+    for (const d of this.sim.deploy) {
+      live.add(d.id);
+      let g = this.deployMeshes.get(d.id);
+      if (!g) {
+        g = this.buildDeploy(d);
+        this.deployMeshes.set(d.id, g);
+        this.scene.add(g);
+      }
+      const flick = 0.75 + Math.sin(t * 17 + d.x) * 0.25;
+      g.traverse((o) => {
+        if (o.userData.flare) ((o as THREE.Sprite).material as THREE.SpriteMaterial).opacity = this.night * flick;
+      });
+    }
+    for (const [id, g] of this.deployMeshes)
+      if (!live.has(id)) {
+        g.removeFromParent();
+        this.deployMeshes.delete(id);
+      }
+  }
+
+  private syncAir(t: number, dt: number) {
+    const a = this.sim.air;
+    this.heli.visible = !!a;
+    if (!a) {
+      this.searchlight.intensity = 0;
+      return;
+    }
+    const orbit = t * 0.35;
+    this.heli.position.set(a.x + Math.cos(orbit) * 26, 48, a.z + Math.sin(orbit) * 26);
+    this.heli.rotation.y = -orbit - Math.PI / 2;
+    this.heli.rotation.z = 0.08;
+    this.rotor.rotation.y += dt * 40;
+    const tgt = this.sim.car(a.target) ?? this.sim.ped(a.target);
+    if (tgt) this.searchlight.target.position.set(tgt.x, 0, tgt.z);
+    this.searchlight.intensity = Math.max(0.3, this.night) * 400;
   }
 
   destroy() {

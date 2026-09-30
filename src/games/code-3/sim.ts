@@ -4,6 +4,7 @@ import {
   buildingsNear,
   describe,
   generateCity,
+  HALF_ROAD,
   HALF_STREET,
   lightFor,
   LINES,
@@ -75,7 +76,10 @@ export type PedState =
   | "incar"
   | "attack"
   | "dead"
-  | "gone";
+  | "gone"
+  | "panic"
+  | "fight"
+  | "cross";
 
 export type Role = "civilian" | "driver" | "suspect" | "victim" | "officer";
 
@@ -110,6 +114,29 @@ export interface Ped {
   call?: string;
   /** Transport van coming for this prisoner. */
   pickup?: string;
+  /** Panicking: running from this point until `panicUntil`. */
+  panicFrom?: { x: number; z: number };
+  panicUntil?: number;
+  /** Fighting this ped. */
+  foe?: string;
+  /** Jaywalking toward this point. */
+  cross?: { x: number; z: number };
+}
+
+/** Things the officer can set up on the road. */
+export interface Deployable {
+  id: string;
+  kind: "checkpoint" | "roadblock" | "cones";
+  x: number;
+  z: number;
+  /** Direction of the traffic it controls (checkpoint) / along the road. */
+  dx: number;
+  dz: number;
+  /** Cone positions (cones). */
+  points?: { x: number; z: number }[];
+  /** Collision box (roadblock). */
+  hw?: number;
+  hd?: number;
 }
 
 export interface Contact {
@@ -135,6 +162,12 @@ export interface Contact {
   resolved: "" | "released" | "arrested" | "cited" | "fled";
   /** Rolled once: will they run at the lights / during the stop? */
   runs: boolean;
+  /** K9 sniff result arrives at this time. */
+  k9At?: number;
+  fst?: boolean;
+  miranda?: boolean;
+  /** Screened at this checkpoint. */
+  checkpoint?: string;
 }
 
 export type CallKind =
@@ -149,7 +182,10 @@ export type CallKind =
   | "suspicious"
   | "domestic"
   | "hitrun"
-  | "shoplift";
+  | "shoplift"
+  | "burglary"
+  | "fight"
+  | "drunk";
 
 export interface Call {
   id: string;
@@ -217,6 +253,15 @@ export interface Code3Input {
   shout: boolean;
   /** Lay (or pick up) a spike strip. */
   spikes?: boolean;
+  /** Set up / take down a sobriety checkpoint, a roadblock, a line of cones. */
+  checkpoint?: boolean;
+  roadblock?: boolean;
+  cones?: boolean;
+  /** Request the helicopter. */
+  air?: boolean;
+  flashlight?: boolean;
+  /** Cycle the siren tone (wail → yelp → phaser). */
+  sirenTone?: boolean;
 }
 
 export const NO_INPUT: Code3Input = {
@@ -248,6 +293,8 @@ export interface Stats {
   pursuits: number;
   booked: number;
   penalties: number;
+  /** Drivers screened at checkpoints. */
+  screened: number;
   /** Lines for the shift report. */
   report: { text: string; points: number }[];
 }
@@ -307,6 +354,9 @@ export const CALLS: CallDef[] = [
   { kind: "pursuit", title: "Pursuit in progress: units requested", code: 3, weight: 2, minRank: 1, points: 250 },
   { kind: "race", title: "Street racing", code: 3, weight: 1.5, minRank: 2, points: 250 },
   { kind: "bank", title: "Bank robbery: silent alarm", code: 3, weight: 1, minRank: 3, points: 500 },
+  { kind: "burglary", title: "Burglary in progress", code: 3, weight: 2, minRank: 0, points: 200 },
+  { kind: "fight", title: "Fight in the street", code: 3, weight: 2, minRank: 0, points: 140 },
+  { kind: "drunk", title: "Intoxicated person causing a disturbance", code: 2, weight: 2, minRank: 0, points: 90 },
 ];
 
 export class Code3Sim {
@@ -337,7 +387,7 @@ export class Code3Sim {
   calls: Call[] = [];
   log: LogLine[] = [];
   events: SimEvent[] = [];
-  stats: Stats = { score: 0, calls: 0, arrests: 0, citations: 0, stops: 0, pursuits: 0, booked: 0, penalties: 0, report: [] };
+  stats: Stats = { score: 0, calls: 0, arrests: 0, citations: 0, stops: 0, pursuits: 0, booked: 0, penalties: 0, screened: 0, report: [] };
   over: null | { reason: string } = null;
   /** Car being pulled over. */
   stopCar: string | null = null;
@@ -354,6 +404,19 @@ export class Code3Sim {
   readonly surface: number;
   /** Deployed spike strip (one at a time). */
   spikes: { x: number; z: number; h: number; until: number } | null = null;
+  /** Checkpoint, roadblock and cones set up by the officer. */
+  deploy: Deployable[] = [];
+  /** Air-1: the police helicopter tracking a suspect. */
+  air: { x: number; z: number; target: string; until: number } | null = null;
+  airReadyAt = 0;
+  flashlight = false;
+  sirenTone: "wail" | "yelp" | "phaser" = "wail";
+  /** Cars the plate reader has flagged (stolen, expired, wanted owner). */
+  flagged = new Set<string>();
+  private scanned = new Set<string>();
+  private alprAt = 0;
+  private nextIncidentAt = 70;
+  private pursuitReportAt = 0;
   private nextCallAt: number;
   private seq = 0;
   private readonly rankIdx: number;
@@ -545,9 +608,24 @@ export class Code3Sim {
       city: this.city,
       time: this.time,
       cars: this.cars,
-      walkers: this.peds.filter((p) => p.state !== "driving" && p.state !== "incar" && p.state !== "gone" && onRoad(p.x, p.z)),
+      walkers: [
+        ...this.peds.filter((p) => p.state !== "driving" && p.state !== "incar" && p.state !== "gone" && onRoad(p.x, p.z)),
+        ...this.deploy.flatMap((d) => d.points ?? []),
+        ...(this.player.inCar || !onRoad(this.player.x, this.player.z) ? [] : [this.player]),
+      ],
       threat: this.officer,
       rand: () => this.rng.next(),
+      stops: this.deploy.flatMap((d) =>
+        d.kind === "checkpoint"
+          ? [{ id: d.id, x: d.x, z: d.z, dx: d.dx, dz: d.dz }]
+          : d.kind === "roadblock"
+            ? [
+                { id: d.id, x: d.x - d.dx * 7, z: d.z - d.dz * 7, dx: d.dx, dz: d.dz },
+                { id: d.id, x: d.x + d.dx * 7, z: d.z + d.dz * 7, dx: -d.dx, dz: -d.dz },
+              ]
+            : [],
+      ),
+      avoid: this.deploy.filter((d) => d.kind === "roadblock"),
     };
   }
 
@@ -590,6 +668,12 @@ export class Code3Sim {
     const pl = this.player;
     const u = this.unit;
     if (input.weapon) pl.weapon = input.weapon;
+    if (input.sirenTone) {
+      this.sirenTone = this.sirenTone === "wail" ? "yelp" : this.sirenTone === "yelp" ? "phaser" : "wail";
+      this.info(`Siren tone: ${this.sirenTone}.`, "info");
+    }
+    if (input.flashlight) this.flashlight = !this.flashlight;
+    if (input.air) this.callAir();
     const presses = typeof input.lights === "number" ? input.lights : input.lights ? 1 : 0;
     for (let i = 0; i < presses; i++) {
       // off → lights → lights + siren → off
@@ -627,6 +711,9 @@ export class Code3Sim {
       for (const c of this.cars) this.pushOutOfCar(pl, c);
       if (input.enter) this.tryEnter();
       if (input.spikes) this.toggleSpikes();
+      if (input.checkpoint) this.choose(this.deploy.some((d) => d.kind === "checkpoint") ? "cp-remove" : "cp-deploy");
+      if (input.roadblock) this.choose(this.deploy.some((d) => d.kind === "roadblock") ? "rb-remove" : "rb-deploy");
+      if (input.cones) this.choose(this.deploy.some((d) => d.kind === "cones") ? "cones-remove" : "cones-deploy");
       if (input.fire) this.fire();
       if (input.shout) this.shout();
       // Tackle: sprint into a fleeing suspect.
@@ -671,6 +758,10 @@ export class Code3Sim {
         }
       }
       if (this.radar && this.radar.speed > SPEED_LIMIT + 2.3) this.car(this.radar.id)?.seen.add("speeding");
+      if (this.time >= this.alprAt) {
+        this.alprAt = this.time + 0.5;
+        this.scanPlates();
+      }
     }
   }
 
@@ -791,6 +882,7 @@ export class Code3Sim {
       by: "player",
       hit: !!t,
     });
+    this.panicAround(pl.x, pl.z);
     if (!t) return;
     const justified = t.state === "attack" && t.person.armed;
     t.hp -= 45;
@@ -858,6 +950,225 @@ export class Code3Sim {
     } else if (c === this.unit) this.info("You drove over your own spike strip!", "bad");
   }
 
+  // ------------------------------------------------------------ patrol tools
+
+  /** Automatic plate reader: flags stolen, expired and wanted-owner plates near the unit. */
+  private scanPlates() {
+    const u = this.unit;
+    for (const c of this.cars) {
+      if (c === u || c.spec.police || !c.reg || this.scanned.has(c.id)) continue;
+      if (Math.hypot(c.x - u.x, c.z - u.z) > 28) continue;
+      this.scanned.add(c.id);
+      const r = c.reg;
+      const d = this.ped(c.driver);
+      const ownerWanted = !!d && r.owner === fullName(d.person) && d.person.warrants.length > 0;
+      const why = r.status === "stolen" ? "STOLEN" : ownerWanted ? "REGISTERED OWNER WANTED" : r.status === "expired" ? "EXPIRED REGISTRATION" : r.status === "uninsured" ? "NO INSURANCE" : "";
+      if (!why) continue;
+      this.flagged.add(c.id);
+      this.radio(`ALPR: "${r.plate}, ${r.make}: ${why}."`);
+    }
+  }
+
+  canCallAir() {
+    return this.time >= this.airReadyAt && !this.air && (this.anyPursuit() || this.peds.some((p) => p.state === "flee"));
+  }
+
+  private callAir() {
+    if (!this.canCallAir()) {
+      this.info(this.air ? "Air-1 is already overhead." : "Air-1 only flies for pursuits.", "info");
+      return;
+    }
+    const target = this.cars.find((c) => c.ai?.mode === "flee")?.id ?? this.peds.find((p) => p.state === "flee")!.id;
+    const st = this.city.station;
+    this.air = { x: st.x, z: st.z, target, until: this.time + 120 };
+    this.airReadyAt = this.time + 180;
+    this.radio(`You: "Requesting air support." Air-1: "Air-1 en route, we'll have the eye in a moment."`);
+  }
+
+  private stepAir(dt: number) {
+    const a = this.air;
+    if (!a) return;
+    const c = this.car(a.target);
+    const p = this.ped(a.target);
+    const tracking = (c && c.ai?.mode === "flee") || (p && p.state === "flee");
+    const tx = c?.x ?? p?.x ?? this.officer.x;
+    const tz = c?.z ?? p?.z ?? this.officer.z;
+    const d = Math.hypot(tx - a.x, tz - a.z);
+    const sp = Math.min(40 * dt, d);
+    if (d > 0.01) {
+      a.x += ((tx - a.x) / d) * sp;
+      a.z += ((tz - a.z) / d) * sp;
+    }
+    if (!tracking || this.time > a.until) {
+      if (tracking) this.radio(`Air-1: "Low on fuel, breaking off."`);
+      else this.radio(`Air-1: "Suspect's stopped. Air-1 clearing."`);
+      this.air = null;
+    }
+  }
+
+  /** Nearest spot on a road to the officer, away from intersections (for checkpoints etc). */
+  roadSpot() {
+    const pl = this.player;
+    const nearest = (v: number) => this.city.lines.reduce((b, L) => (Math.abs(L - v) < Math.abs(b - v) ? L : b), this.city.lines[0]);
+    const Lx = nearest(pl.x);
+    const Lz = nearest(pl.z);
+    const onNS = Math.abs(pl.x - Lx) < Math.abs(pl.z - Lz);
+    if (Math.min(Math.abs(pl.x - Lx), Math.abs(pl.z - Lz)) > 9) return null;
+    const margin = HALF_STREET + 14;
+    const along = onNS ? pl.z : pl.x;
+    const cross = nearest(along);
+    const a = Math.abs(along - cross) < margin ? cross + Math.sign(along - cross || 1) * margin : along;
+    if (a < margin || a > SIZE - margin) return null;
+    // The lane on the officer's side of the road, and which way its traffic goes.
+    if (onNS) {
+      const south = pl.x < Lx;
+      return { x: south ? Lx - 2 : Lx + 2, z: a, dx: 0, dz: south ? 1 : -1, cx: Lx, cz: a, ns: true };
+    }
+    const east = pl.z > Lz;
+    return { x: a, z: east ? Lz + 2 : Lz - 2, dx: east ? 1 : -1, dz: 0, cx: a, cz: Lz, ns: false };
+  }
+
+  /** The car waiting at the front of your checkpoint queue. */
+  checkpointCar() {
+    const cp = this.deploy.find((d) => d.kind === "checkpoint");
+    if (!cp) return null;
+    for (const c of this.cars) {
+      if (!c.ai || c.ai.mode !== "cruise" || c.ai.waved === cp.id || c.spec.police) continue;
+      if (Math.abs(speedOf(c)) > 0.6) continue;
+      const f = forward(c.h);
+      if (f.x * cp.dx + f.z * cp.dz < 0.7) continue;
+      const ahead = (cp.x - c.x) * f.x + (cp.z - c.z) * f.z;
+      if (ahead > -1 && ahead < c.spec.len / 2 + 3 && Math.abs((cp.x - c.x) * -f.z + (cp.z - c.z) * f.x) < 3) return c;
+    }
+    return null;
+  }
+
+  /** Road tools and unit actions (not tied to a person). Returns true if handled. */
+  private chooseTool(id: string) {
+    const u = this.unit;
+    switch (id) {
+      case "cp-deploy":
+      case "rb-deploy":
+      case "cones-deploy": {
+        const spot = this.roadSpot();
+        if (!spot) {
+          this.info("Stand at the side of a road, away from the intersection.", "info");
+          return true;
+        }
+        const kind = id === "cp-deploy" ? "checkpoint" : id === "rb-deploy" ? "roadblock" : "cones";
+        this.deploy = this.deploy.filter((d) => d.kind !== kind);
+        if (kind === "checkpoint") {
+          this.deploy.push({ id: this.id("cp"), kind, x: spot.x, z: spot.z, dx: spot.dx, dz: spot.dz });
+          this.radio(`You: "Dispatch, 1-Adam-12 setting up a sobriety checkpoint, ${describe(spot.x, spot.z)}."`);
+        } else if (kind === "roadblock") {
+          const along = spot.ns ? { dx: 0, dz: 1 } : { dx: 1, dz: 0 };
+          this.deploy.push({ id: this.id("rb"), kind, x: spot.cx, z: spot.cz, dx: along.dx, dz: along.dz, hw: spot.ns ? HALF_ROAD + 0.4 : 0.5, hd: spot.ns ? 0.5 : HALF_ROAD + 0.4 });
+          this.radio(`You: "Roadblock in place, ${describe(spot.cx, spot.cz)}!"`);
+        } else {
+          const f = forward(this.player.h);
+          const points = Array.from({ length: 6 }, (_, i) => ({ x: this.player.x + f.x * (1.5 + i * 1.3), z: this.player.z + f.z * (1.5 + i * 1.3) }));
+          this.deploy.push({ id: this.id("cn"), kind, x: points[0].x, z: points[0].z, dx: f.x, dz: f.z, points });
+          this.info("Cones out: traffic will steer around them.", "info");
+        }
+        return true;
+      }
+      case "cp-remove":
+      case "rb-remove":
+      case "cones-remove": {
+        const kind = id === "cp-remove" ? "checkpoint" : id === "rb-remove" ? "roadblock" : "cones";
+        for (const d of this.deploy) if (d.kind === kind) for (const c of this.cars) if (c.ai?.waved === d.id) c.ai.waved = undefined;
+        this.deploy = this.deploy.filter((d) => d.kind !== kind);
+        this.info(kind === "checkpoint" ? "Checkpoint taken down." : kind === "roadblock" ? "Roadblock cleared." : "Cones picked up.", "info");
+        return true;
+      }
+      case "cp-wave":
+      case "cp-screen": {
+        const c = this.checkpointCar();
+        const cp = this.deploy.find((d) => d.kind === "checkpoint");
+        if (!c || !cp || !c.ai) return true;
+        c.ai.waved = cp.id;
+        this.stats.screened++;
+        this.award(5, "Driver screened at the checkpoint");
+        const d = this.ped(c.driver);
+        if (id === "cp-wave" || !d) return true;
+        c.ai.mode = "stopped";
+        this.stopCar = c.id;
+        const k = this.newContact(d, c, "Sobriety checkpoint");
+        k.checkpoint = cp.id;
+        k.runs = this.rng.next() < d.person.flee * 0.35;
+        this.stats.stops++;
+        if (d.person.bac >= 0.05 && this.rng.next() < 0.7) {
+          k.pc.add("alcohol");
+          this.info("You smell alcohol through the open window.", "info");
+        }
+        this.say(d, d.person.bac >= 0.08 ? "*fumbling* Just... heading home, officer." : "Evening. Just going home.");
+        return true;
+      }
+      case "air":
+        this.callAir();
+        return true;
+      case "repair":
+        u.health = 100;
+        u.spiked = false;
+        this.player.hp = 100;
+        this.info("Unit repaired, tyres changed, first-aid kit restocked.", "good");
+        return true;
+    }
+    return false;
+  }
+
+  /** Things you run into on patrol without a call: fights, drunks, jaywalkers. */
+  private stepIncidents() {
+    if (this.time < this.nextIncidentAt || this.activeCall()) return;
+    this.nextIncidentAt = this.time + this.rng.range(60, 110);
+    const o = this.officer;
+    for (let k = 0; k < 20; k++) {
+      const block = this.rng.int(0, this.city.blocks.length - 1);
+      const pt = this.ringPoint(block, this.rng.range(0, 400));
+      const d = Math.hypot(pt.x - o.x, pt.z - o.z);
+      if (d < 45 || d > 110) continue;
+      const kind = this.rng.pick(["fight", "drunk", "jaywalk"] as const);
+      if (kind === "fight") {
+        const a = this.newPed(makePerson(this.rng, { shady: 0.5 }), "suspect", pt.x - 0.5, pt.z, "fight");
+        const b = this.newPed(makePerson(this.rng, { shady: 0.5 }), "suspect", pt.x + 0.5, pt.z, "fight");
+        a.foe = b.id;
+        b.foe = a.id;
+        this.info(`You see two people fighting near ${describe(pt.x, pt.z)}.`, "info");
+      } else if (kind === "drunk") {
+        const p = this.newPed(makePerson(this.rng, { shady: 0.3, drunk: true }), "suspect", pt.x, pt.z, "walk");
+        p.person.bac = Math.max(p.person.bac, 0.15);
+        p.walk = { block, t: 0, dir: 1 };
+        this.info(`Someone is stumbling along the sidewalk near ${describe(pt.x, pt.z)}.`, "info");
+      } else {
+        const p = this.newPed(makePerson(this.rng, { shady: 0.2 }), "civilian", pt.x, pt.z, "cross");
+        // Straight across the nearest street.
+        const b = this.city.blocks[block];
+        const toN = Math.abs(pt.z - b.z0);
+        const toS = Math.abs(pt.z - b.z1);
+        const toW = Math.abs(pt.x - b.x0);
+        const toE = Math.abs(pt.x - b.x1);
+        const m = Math.min(toN, toS, toW, toE);
+        p.cross =
+          m === toN ? { x: pt.x, z: pt.z - 17 } : m === toS ? { x: pt.x, z: pt.z + 17 } : m === toW ? { x: pt.x - 17, z: pt.z } : { x: pt.x + 17, z: pt.z };
+      }
+      return;
+    }
+  }
+
+  /** Report-card grade for the shift. */
+  grade() {
+    const s = this.stats;
+    const work = s.calls * 3 + s.arrests * 2 + s.citations + s.stops + s.screened * 0.3 + s.booked;
+    const pts = s.score - s.penalties * 0.5;
+    if (s.penalties >= 1000) return "F";
+    if (pts > 2500 && work > 25) return "A+";
+    if (pts > 1500 && work > 15) return "A";
+    if (pts > 900) return "B";
+    if (pts > 400) return "C";
+    if (pts > 0) return "D";
+    return "F";
+  }
+
   // --------------------------------------------------------------- traffic
 
   private stepTraffic(dt: number) {
@@ -900,6 +1211,31 @@ export class Code3Sim {
           this.impact(this.cars[b], hit, this.cars[a]);
         }
       }
+    // Roadblocks are solid.
+    for (const d of this.deploy) {
+      if (d.kind !== "roadblock") continue;
+      for (const c of this.cars) {
+        if (Math.abs(c.x - d.x) > 9 || Math.abs(c.z - d.z) > 9) continue;
+        for (const k of carCircles(c)) {
+          const px = Math.max(d.x - d.hw!, Math.min(k.x, d.x + d.hw!));
+          const pz = Math.max(d.z - d.hd!, Math.min(k.z, d.z + d.hd!));
+          const dx = k.x - px;
+          const dz = k.z - pz;
+          const dd = Math.hypot(dx, dz);
+          if (dd >= k.r || dd < 1e-4) continue;
+          const nx = dx / dd;
+          const nz = dz / dd;
+          c.x += nx * (k.r - dd);
+          c.z += nz * (k.r - dd);
+          const vn = c.vx * nx + c.vz * nz;
+          if (vn < 0) {
+            c.vx -= nx * vn * 1.3;
+            c.vz -= nz * vn * 1.3;
+            if (-vn > 2) this.impact(c, -vn * 1.6, null);
+          }
+        }
+      }
+    }
     // Sirens clear the road.
     const u = this.unit;
     if (u.siren && this.player.inCar && Math.abs(speedOf(u)) > 3)
@@ -999,6 +1335,7 @@ export class Code3Sim {
               const chance = Math.max(0.08, 0.6 - d * 0.018) * (pl.inCar ? 0.4 : 1);
               const hit = this.rng.next() < chance;
               this.events.push({ type: "shot", x: p.x, z: p.z, tx: o.x, tz: o.z, by: "ped", hit });
+              this.panicAround(p.x, p.z);
               if (hit) this.hurtOfficer(this.rng.int(11, 18));
               this.addOffence(p, "discharging a firearm");
               this.addOffence(p, "assault on an officer");
@@ -1014,6 +1351,54 @@ export class Code3Sim {
             }
           }
           this.pushOut(p, 0.35);
+          break;
+        }
+        case "panic": {
+          // Run from the gunfire, then stop and stay put.
+          const from = p.panicFrom ?? o;
+          const a = Math.atan2(p.z - from.z, p.x - from.x);
+          p.x += Math.cos(a) * 4.5 * dt;
+          p.z += Math.sin(a) * 4.5 * dt;
+          p.h = a;
+          this.pushOut(p, 0.35);
+          if (this.time > (p.panicUntil ?? 0)) p.state = "stand";
+          break;
+        }
+        case "fight": {
+          const foe = this.ped(p.foe);
+          if (!foe || foe.state !== "fight") {
+            p.state = "stand";
+            break;
+          }
+          p.h = Math.atan2(foe.z - p.z, foe.x - p.x);
+          const d = Math.hypot(foe.x - p.x, foe.z - p.z);
+          if (d > 1.1) {
+            p.x += Math.cos(p.h) * 1.5 * dt;
+            p.z += Math.sin(p.h) * 1.5 * dt;
+          }
+          p.step += dt * 6;
+          // Break it up when the police arrive.
+          if (Math.hypot(o.x - p.x, o.z - p.z) < 14) {
+            for (const x of [p, foe]) {
+              x.state = this.rng.next() < 0.3 ? "flee" : "stand";
+              x.role = "suspect";
+              this.addOffence(x, "disorderly conduct");
+            }
+            this.say(p, "He started it!");
+          }
+          break;
+        }
+        case "cross": {
+          const tgt = p.cross!;
+          const a = Math.atan2(tgt.z - p.z, tgt.x - p.x);
+          p.x += Math.cos(a) * WALK * 1.2 * dt;
+          p.z += Math.sin(a) * WALK * 1.2 * dt;
+          p.h = a;
+          if (onRoad(p.x, p.z) && this.distToOfficer(p.x, p.z) < 45) {
+            const k = this.contacts.find((x) => x.ped === p.id && !x.resolved) ?? this.newContact(p, null, "Jaywalking");
+            k.violations.add("jaywalking");
+          }
+          if (Math.hypot(tgt.x - p.x, tgt.z - p.z) < 0.5) p.state = "stand";
           break;
         }
         case "down":
@@ -1050,6 +1435,17 @@ export class Code3Sim {
           break;
         }
     }
+  }
+
+  /** Bystanders near gunfire run for cover. */
+  private panicAround(x: number, z: number) {
+    for (const p of this.peds)
+      if ((p.state === "walk" || p.state === "stand") && p.role === "civilian" && Math.hypot(p.x - x, p.z - z) < 35) {
+        p.state = "panic";
+        p.walk = undefined;
+        p.panicFrom = { x, z };
+        p.panicUntil = this.time + 5;
+      }
   }
 
   private hurtOfficer(n: number) {
@@ -1199,7 +1595,7 @@ export class Code3Sim {
       let z = p.z;
       if (p.state === "driving") {
         const c = this.car(p.carId);
-        if (!c || Math.abs(speedOf(c)) > 0.5) continue;
+        if (!c || Math.abs(speedOf(c)) > 1) continue;
         // Driver's window (left side).
         const r = right(c.h);
         const f = forward(c.h);
@@ -1208,7 +1604,8 @@ export class Code3Sim {
       }
       const d = Math.hypot(x - pl.x, z - pl.z);
       if (d > TALK_RANGE || d >= bestD) continue;
-      const k = this.contacts.find((x) => x.ped === p.id && !x.resolved) ?? null;
+      const custody = p.state === "cuffed" || p.state === "escort";
+      const k = this.contacts.find((x) => x.ped === p.id && !x.resolved) ?? (custody ? (this.contacts.findLast((x) => x.ped === p.id) ?? null) : null);
       if (p.state === "driving" && !k) continue;
       if (p.state === "walk" || p.state === "down" || p.state === "dead" || k || p.state === "stand" || p.state === "handsup" || p.state === "cuffed" || p.state === "escort" || p.state === "talk") {
         best = { ped: p, k };
@@ -1241,10 +1638,34 @@ export class Code3Sim {
       });
       if (handled) out.push({ id: "tow", label: "Call a tow truck and clear the scene" });
     }
+    const st = this.city.station;
+    if (pl.inCar && Math.hypot(u.x - st.x, u.z - st.z) < 26 && Math.abs(speedOf(u)) < 1 && (u.health < 100 || u.spiked))
+      out.push({ id: "repair", label: "Repair and restock the unit" });
+    if (this.canCallAir()) out.push({ id: "air", label: "Request air support (Air-1)" });
 
     if (pl.inCar) return out;
+    // Screening the driver waiting at your checkpoint.
+    const cpc = this.checkpointCar();
+    if (cpc) {
+      const r = right(cpc.h);
+      if (Math.hypot(cpc.x - r.x * 1.3 - pl.x, cpc.z - r.z * 1.3 - pl.z) < 3.5) {
+        out.push({ id: "cp-screen", label: "Checkpoint: \"Licence please, where are you headed tonight?\"" });
+        out.push({ id: "cp-wave", label: "Checkpoint: wave them through" });
+        return out;
+      }
+    }
     const f = this.focus();
-    if (!f) return out;
+    if (!f) {
+      // Setting up on the road.
+      if (this.roadSpot()) {
+        const has = (k: Deployable["kind"]) => this.deploy.some((d) => d.kind === k);
+        out.push(has("checkpoint") ? { id: "cp-remove", label: "Take down the checkpoint" } : { id: "cp-deploy", label: "Set up a sobriety checkpoint here" });
+        out.push(has("cones") ? { id: "cones-remove", label: "Pick up the cones" } : { id: "cones-deploy", label: "Put out a line of cones" });
+        if (has("roadblock")) out.push({ id: "rb-remove", label: "Clear the roadblock" });
+        else if (this.anyPursuit()) out.push({ id: "rb-deploy", label: "Block the road here (roadblock)" });
+      }
+      return out;
+    }
     const { ped: p, k } = f;
     const name = k?.idShown ? fullName(p.person) : "them";
     if (p.state === "cuffed" || p.state === "escort") {
@@ -1255,6 +1676,7 @@ export class Code3Sim {
       const pc = this.car(p.carId);
       if (pc && !pc.towAt && pc !== u) out.push({ id: "tow", label: "Have their vehicle towed and impounded" });
       if (k && !k.ranPerson && k.idShown) out.push({ id: "person", label: `MDT: run ${name}` });
+      if (k && !k.miranda) out.push({ id: "miranda", label: "Read them their rights (Miranda)" });
       return out;
     }
     if (p.state === "dead") {
@@ -1284,7 +1706,9 @@ export class Code3Sim {
     if (!k.asked.has("drink")) out.push({ id: "drink", label: "Have you had anything to drink tonight?" });
     if (!k.asked.has("illegal")) out.push({ id: "illegal", label: car ? "Anything illegal in the vehicle?" : "Anything illegal on you?" });
     if (inCar) out.push({ id: "out", label: "Step out of the vehicle, please" });
+    if (!inCar && !k.fst) out.push({ id: "fst", label: "Field sobriety tests" });
     if (!inCar && !k.breath) out.push({ id: "breath", label: "Breathalyzer" });
+    if (car && !k.searched && k.k9At === undefined) out.push({ id: "k9", label: "Request a K9 sniff of the vehicle" });
     if (!k.searched) out.push({ id: "search", label: car ? "Search the vehicle" : "Search / frisk" });
     if (k.violations.size && !k.cited) {
       out.push({ id: "cite", label: `Write a citation (${[...k.violations].join(", ")})` });
@@ -1306,6 +1730,7 @@ export class Code3Sim {
       }
       return;
     }
+    if (this.chooseTool(id)) return;
     if (id === "plate" && this.player.inCar) {
       const c = this.car(this.stopCar);
       const k = c && this.contacts.find((x) => x.car === c.id && !x.resolved);
@@ -1423,11 +1848,33 @@ export class Code3Sim {
         this.say(p, P.attitude === "hostile" ? "Fine. Whatever." : "Okay...");
         return;
       }
+      case "fst": {
+        k!.fst = true;
+        const clues = P.bac >= 0.08 ? this.rng.int(4, 6) : P.bac >= 0.05 ? this.rng.int(2, 3) : this.rng.int(0, 1);
+        const lines = [`Eye test (HGN): ${Math.min(6, clues)}/6 clues`, clues >= 4 ? "Walk-and-turn: stepped off the line, used arms for balance" : "Walk-and-turn: completed", clues >= 3 ? "One-leg stand: swayed, put foot down" : "One-leg stand: completed"];
+        this.mdt.unshift({ title: "FIELD SOBRIETY TESTS", lines, flag: clues >= 4, at: this.time });
+        if (clues >= 4) {
+          k!.pc.add("alcohol");
+          this.info("They failed the field sobriety tests: probable cause for a breath test.", "info");
+        } else this.info("Field sobriety tests: no signs of impairment.", "info");
+        return;
+      }
+      case "k9": {
+        k!.k9At = this.time + 8;
+        this.radio(`You: "Dispatch, requesting K9 for a sniff, ${describe(p.x, p.z)}." K9-3: "En route, two minutes out."`);
+        return;
+      }
+      case "miranda": {
+        k!.miranda = true;
+        this.info('You: "You have the right to remain silent. Anything you say can and will be used against you..."', "speech");
+        this.say(p, P.attitude === "polite" ? "I understand." : "Yeah, yeah. Lawyer.");
+        return;
+      }
       case "breath": {
         k!.breath = true;
         this.mdt.unshift({ title: "BREATHALYZER", lines: [`BAC ${P.bac.toFixed(3)}`, P.bac >= 0.08 ? "OVER THE LIMIT (0.08)" : "Under the limit"], flag: P.bac >= 0.08, at: this.time });
         if (P.bac >= 0.08) {
-          k!.offences.add("DUI");
+          k!.offences.add(car ? "DUI" : "public intoxication");
           this.info(`BAC ${P.bac.toFixed(3)}: over the limit.`, "info");
         } else this.info(`BAC ${P.bac.toFixed(3)}.`, "info");
         return;
@@ -1619,6 +2066,7 @@ export class Code3Sim {
     this.events.push({ type: "cuff" });
     const charges = [...k.offences];
     const pts = charges.length ? 120 + 60 * Math.min(4, charges.length - 1) : 60;
+    if (k.checkpoint && charges.length) this.award(50, "Checkpoint catch");
     this.award(pts, `Arrest: ${fullName(p.person)} (${charges.join(", ") || "detained"})`);
     this.say(p, p.person.attitude === "hostile" ? "I want my lawyer." : "This is a mistake...");
     // Their car stays where it is.
@@ -1648,6 +2096,9 @@ export class Code3Sim {
     for (const id of u.back) {
       const p = this.ped(id);
       if (!p) continue;
+      const k = this.contacts.find((x) => x.ped === id && x.resolved === "arrested");
+      if (k && !k.miranda) this.award(-25, `No Miranda warning for ${fullName(p.person)}: statements suppressed`);
+      else if (k) this.award(10, "Rights read, paperwork in order");
       p.state = "gone";
       this.stats.booked++;
       this.award(100, `Booked ${fullName(p.person)} into custody`);
@@ -1827,6 +2278,11 @@ export class Code3Sim {
       case "robbery":
       case "shoplift":
         return pick(["store", "gas"]);
+      case "burglary":
+        return pick(["house"]);
+      case "fight":
+      case "drunk":
+        return pick(["store", "park", "gas"]);
       case "bank":
         return pick(["bank"]);
       case "domestic":
@@ -1869,6 +2325,30 @@ export class Code3Sim {
         const s = P({ shady: 0.9, armed: true, hostile: true }, "suspect", place.x, place.z);
         call.suspects.push(s.id);
         call.note = "Caller reports a man firing a handgun in the street.";
+        break;
+      }
+      case "burglary": {
+        const s = P({ shady: 0.85 }, "suspect", place.x + 2, place.z + 4);
+        call.suspects.push(s.id);
+        call.note = "Homeowner hears someone breaking in through the back.";
+        break;
+      }
+      case "fight": {
+        const a = P({ shady: 0.6 }, "suspect", place.x - 0.5, place.z);
+        const b = P({ shady: 0.6 }, "suspect", place.x + 0.5, place.z);
+        a.state = b.state = "fight";
+        a.foe = b.id;
+        b.foe = a.id;
+        call.suspects.push(a.id, b.id);
+        call.note = "Two males fighting on the sidewalk, crowd gathering.";
+        break;
+      }
+      case "drunk": {
+        const s = P({ shady: 0.3, drunk: true }, "suspect", place.x, place.z);
+        s.person.bac = Math.max(s.person.bac, 0.16);
+        s.person.attitude = "rude";
+        call.suspects.push(s.id);
+        call.note = "Intoxicated male yelling at passers-by.";
         break;
       }
       case "shoplift": {
@@ -1996,6 +2476,25 @@ export class Code3Sim {
   private stepCalls(dt: number) {
     this.stepBackup(dt);
     if (this.spikes && this.time > this.spikes.until) this.spikes = null;
+    this.stepAir(dt);
+    for (const k of this.contacts) {
+      if (k.k9At === undefined || this.time < k.k9At || k.pc.has("k9-done")) continue;
+      k.pc.add("k9-done");
+      const p = this.ped(k.ped);
+      if (p?.person.drugs) {
+        k.pc.add("odor");
+        k.pc.add("K9 alert");
+        this.radio(`K9-3: "Dog's alerting on the driver's door. You've got probable cause."`);
+      } else this.radio(`K9-3: "No alert on the vehicle."`);
+    }
+    // Pursuit updates on the radio.
+    const fleeing = this.cars.find((c) => c.ai?.mode === "flee");
+    if (fleeing && this.time >= this.pursuitReportAt) {
+      this.pursuitReportAt = this.time + 12;
+      const who = this.air ? "Air-1" : "You";
+      this.radio(`${who}: "Suspect vehicle now at ${describe(fleeing.x, fleeing.z)}, ${Math.round(Math.abs(speedOf(fleeing)) * 2.237)} mph."`);
+    }
+    this.stepIncidents();
     const offered = this.offeredCall();
     if (offered && this.time - offered.offeredAt > this.offerSeconds) {
       offered.state = "expired";
@@ -2047,6 +2546,9 @@ export class Code3Sim {
           p.attackAt = this.time + 1.5;
         } else p.state = "handsup";
         this.addOffence(p, "armed robbery");
+      } else if (call.kind === "burglary") {
+        p.state = this.rng.next() < 0.55 ? "flee" : "handsup";
+        this.addOffence(p, "burglary");
       } else if (call.kind === "shoplift") {
         if (this.rng.next() < 0.65) p.state = "flee";
         this.addOffence(p, "shoplifting");
@@ -2067,7 +2569,7 @@ export class Code3Sim {
     if (p.state === "dead") return true;
     const k = this.contactFor(id);
     // Releasing is fine for the calls where nobody has to go to jail.
-    if (k?.resolved && (call.kind === "suspicious" || call.kind === "dui" || call.kind === "collision")) return true;
+    if (k?.resolved && (call.kind === "suspicious" || call.kind === "dui" || call.kind === "collision" || call.kind === "fight" || call.kind === "drunk")) return true;
     if (k?.resolved === "released" && call.kind === "domestic" && !p.aggressor) return true;
     return false;
   }
@@ -2156,7 +2658,7 @@ export class Code3Sim {
       c.ai.yieldT = v < 1.2 ? c.ai.yieldT + 1 / 60 : 0;
       const d = Math.hypot(c.x - o.x, c.z - o.z);
       if (c.health <= 0 || (c.ai.yieldT > 3 && d < 70)) this.endPursuit(c);
-      else if (d > 320) {
+      else if (d > 320 && this.air?.target !== c.id) {
         c.ai.weave += 1 / 60;
         if (c.ai.weave > 20) {
           const dr = this.ped(c.driver);

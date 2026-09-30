@@ -268,6 +268,29 @@ Code 3 (`src/games/code-3/`) is its own engine: a pure simulation (`sim.ts`, `ve
   warnings as an alternative to a ticket, EMS for injured people (an ambulance comes to collect them) and the
   coroner for the dead, towing and impounding an arrestee's car, and two more callouts: a fleeing shoplifter and a
   hit and run.
+- **Checkpoints and road tools:** on foot at the side of a road, set up a **sobriety checkpoint** (P, or from the
+  action list): cones down the centre line, a sign and a barrier; traffic in that lane queues at the line, and you
+  screen each driver (wave them through, or "licence please", which turns into a full stop with a bonus for
+  catching a drunk or wanted driver). During a pursuit you can **block the road** (O): a solid barrier that
+  civilians stop for and fleeing drivers route around (or crash into). **Cones** (U) close a lane; at night they
+  carry flares.
+- **More systems:** an **automatic plate reader** on the unit calls out stolen, expired, uninsured and
+  wanted-owner plates near you (and marks them on the map); **Air-1** (I), a helicopter with a searchlight that
+  keeps the eye on a fleeing car or runner so it can't be lost; **K9** sniffs on stopped cars (an alert is
+  probable cause); **field sobriety tests**; **Miranda** warnings (booking without them loses points); repair and
+  restock at the station; a flashlight (L); three siren tones (J: wail, yelp, phaser) and a horn; pursuit radio
+  updates and a pursuit readout; turn signals and hazards on traffic; bystanders who run from gunfire; street
+  **incidents** you come across on patrol (fights, drunks, jaywalkers); three more callouts (burglary, street fight,
+  intoxicated person); a zoomable minimap (M or tap it); and a report-card grade for every shift.
+- **Real car shapes:** every body is its real side silhouette (nose, bonnet, raked screen, roofline, boot, cut-out
+  wheel arches) extruded with rounded edges, with a narrower glasshouse, glass set into pillars, and indicators
+  per side.
+- **Performance:** the city streams in 144 m chunks around the camera (buildings, rooftops, signs, trees, street
+  furniture, parked cars), one chunk per frame so nothing hitches, and far chunks are freed. Parked cars are baked
+  into a few meshes per chunk, polycounts are trimmed on Low, and the render resolution adapts to the frame rate.
+- **Phones:** gas and brake pedals under the right thumb with the stick steering, a separate on-foot button set,
+  utilities beside the minimap, a compact HUD that respects notches, big action buttons placed out of thumb
+  reach, a full-screen MDT, and haptics on crashes and hits.
 - **Weather:** clear, overcast, rain or fog (or random). Rain wets the streets (reflective asphalt and puddles,
   falling rain) and cuts tyre grip and braking for everyone; fog closes the view down to ~90 m.
 - **Presentation (`render.ts`, `models.ts`, `textures.ts`):** clear-coated car paint, tinted reflective glass,

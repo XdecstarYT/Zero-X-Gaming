@@ -156,6 +156,7 @@ describe("traffic stops", () => {
     s.choose("arrest");
     expect(d.state).toBe("cuffed");
     expect(s.stats.arrests).toBe(1);
+    s.choose("miranda");
     const afterArrest = s.stats.score;
     expect(afterArrest).toBeGreaterThan(100);
     // Walk them to the unit and put them in.
@@ -169,7 +170,7 @@ describe("traffic stops", () => {
     expect(s.options().map((o) => o.id)).toContain("book");
     s.choose("book");
     expect(s.stats.booked).toBe(1);
-    expect(s.stats.score).toBe(afterArrest + 100);
+    expect(s.stats.score).toBe(afterArrest + 100 + 10);
   });
 
   it("a DUI: slurred answers give probable cause, the breathalyzer seals it", () => {
@@ -401,5 +402,120 @@ describe("patrol tools", () => {
     expect(s.ped(b.victims[0])!.state).toBe("down");
     expect(b.cars).toHaveLength(1);
     expect(b.note).toMatch(/plate/);
+  });
+});
+
+describe("checkpoints and road tools", () => {
+  /** Put the officer on foot at the side of a north-south road, mid-block. */
+  function roadside(s: Code3Sim) {
+    run(s, 0.05, { enter: true });
+    Object.assign(s.player, { x: s.city.lines[3] - 5.5, z: s.city.lines[3] + 36 });
+  }
+
+  it("a sobriety checkpoint stops traffic in its lane until each driver is screened", () => {
+    const s = new Code3Sim({ seed: 51, firstCall: 1e9 });
+    roadside(s);
+    expect(s.options().map((o) => o.id)).toContain("cp-deploy");
+    s.choose("cp-deploy");
+    const cp = s.deploy.find((d) => d.kind === "checkpoint")!;
+    expect(cp).toBeTruthy();
+    expect([cp.dx, cp.dz]).toEqual([0, 1]); // southbound lane on this side
+    // A southbound car approaches and stops at the line.
+    const c = s.spawnTraffic(false, { near: { minD: 0, maxD: 1e9 } })!;
+    const from = nodeId(3, 3);
+    const to = nodeId(3, 4);
+    Object.assign(c.ai!, { from, to, next: nodeId(3, 5), mode: "cruise" });
+    Object.assign(c, { x: cp.x, z: cp.z - 30, h: Math.PI / 2, vx: 0, vz: 10 });
+    for (let t = 0; t < 10 && !s.checkpointCar(); t += DT) s.step(DT, NO_INPUT);
+    expect(s.checkpointCar()).toBe(c);
+    // Walk to the window and screen the driver.
+    const r = right(c.h);
+    Object.assign(s.player, { x: c.x - r.x * 1.3, z: c.z - r.z * 1.3 });
+    expect(s.options().map((o) => o.id)).toEqual(["cp-screen", "cp-wave"]);
+    s.choose("cp-screen");
+    const k = s.contacts.at(-1)!;
+    expect(k.reason).toBe("Sobriety checkpoint");
+    expect(s.stats.screened).toBe(1);
+    // Released drivers go on through.
+    k.runs = false;
+    s.choose("release");
+    const z0 = c.z;
+    run(s, 6);
+    expect(c.z - z0).toBeGreaterThan(5);
+    s.choose("cp-remove");
+    expect(s.deploy).toHaveLength(0);
+  });
+
+  it("a roadblock is solid and fleeing drivers route around it; cones are obstacles", () => {
+    const s = new Code3Sim({ seed: 52, firstCall: 1e9 });
+    run(s, 1);
+    const flee = s.cars.find((x) => x.ai && !x.spec.police && x.driver)!;
+    s.startPursuit(flee);
+    roadside(s);
+    expect(s.options().map((o) => o.id)).toContain("rb-deploy");
+    s.choose("rb-deploy");
+    const rb = s.deploy.find((d) => d.kind === "roadblock")!;
+    // A car driven straight into it bounces off.
+    const c = s.cars.find((x) => x !== flee && x.ai && !x.spec.police)!;
+    c.ai!.mode = "parked";
+    Object.assign(c, { x: rb.x, z: rb.z - 4, h: Math.PI / 2, vx: 0, vz: 15 });
+    run(s, 0.6);
+    expect(c.z).toBeLessThan(rb.z);
+    s.choose("cones-deploy");
+    expect(s.deploy.find((d) => d.kind === "cones")!.points).toHaveLength(6);
+  });
+
+  it("the plate reader flags stolen cars on the radio", () => {
+    const s = new Code3Sim({ seed: 53, firstCall: 1e9 });
+    const c = s.cars.find((x) => x.ai && x.reg && !x.spec.police)!;
+    c.reg!.status = "stolen";
+    Object.assign(s.unit, { x: c.x + 8, z: c.z });
+    run(s, 0.6);
+    expect(s.flagged.has(c.id)).toBe(true);
+    expect(s.log.some((l) => l.text.includes("STOLEN"))).toBe(true);
+  });
+
+  it("Air-1 keeps the eye on a fleeing car so it isn't lost", () => {
+    const s = new Code3Sim({ seed: 54, firstCall: 1e9 });
+    run(s, 1);
+    const c = s.cars.find((x) => x.ai && !x.spec.police && x.driver)!;
+    s.startPursuit(c);
+    expect(s.options().map((o) => o.id)).toContain("air");
+    run(s, 0.05, { air: true });
+    expect(s.air?.target).toBe(c.id);
+    run(s, 5);
+    expect(Math.hypot(s.air!.x - c.x, s.air!.z - c.z)).toBeLessThan(200);
+  });
+
+  it("K9 sniffs and field sobriety tests give probable cause", () => {
+    const s = new Code3Sim({ seed: 55, firstCall: 1e9 });
+    run(s, 2);
+    const { d, k } = pullOver(s);
+    d.person.drugs = true;
+    d.person.bac = 0.12;
+    s.choose("k9");
+    run(s, 9);
+    expect(k.pc.has("K9 alert")).toBe(true);
+    s.choose("out");
+    s.player.x = d.x + 1;
+    s.player.z = d.z;
+    s.choose("fst");
+    expect(k.pc.has("alcohol")).toBe(true);
+    expect(s.mdt[0].title).toBe("FIELD SOBRIETY TESTS");
+  });
+
+  it("ambient incidents appear on patrol, gunfire makes bystanders panic, and the shift gets a grade", () => {
+    const s = new Code3Sim({ seed: 56, firstCall: 1e9 });
+    run(s, 75);
+    expect(s.log.some((l) => /fighting|stumbling/.test(l.text)) || s.peds.some((p) => p.state === "cross" || p.state === "fight")).toBe(true);
+    run(s, 0.05, { enter: true });
+    const p = s.peds.find((x) => x.state === "walk" && x.role === "civilian")!;
+    Object.assign(s.player, { x: p.x + 5, z: p.z });
+    const armed = s.peds.find((x) => x !== p && x.state === "walk")!;
+    Object.assign(armed, { state: "attack", role: "suspect", walk: undefined, x: p.x + 20, z: p.z });
+    armed.person.armed = true;
+    run(s, 2);
+    expect(p.state).toBe("panic");
+    expect(["A+", "A", "B", "C", "D", "F"]).toContain(s.grade());
   });
 });

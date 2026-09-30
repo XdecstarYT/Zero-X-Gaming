@@ -84,6 +84,8 @@ export interface Ai {
   drunk?: boolean;
   /** Runs red lights. */
   reckless?: boolean;
+  /** Waved through this checkpoint. */
+  waved?: string;
 }
 
 export interface Car {
@@ -343,6 +345,10 @@ export interface AiWorld {
   /** Where to run from (flee). */
   threat: { x: number; z: number };
   rand: () => number;
+  /** Police checkpoints: stop lines for traffic travelling along (dx, dz). */
+  stops?: { id: string; x: number; z: number; dx: number; dz: number }[];
+  /** Roadblocks: fleeing drivers route away from these. */
+  avoid?: { x: number; z: number }[];
 }
 
 /** Choose where to go after `to` (not back to `from` unless it's a dead end). */
@@ -356,7 +362,8 @@ export function chooseNext(w: AiWorld, c: Car, from: number, to: number): number
     let score = -Infinity;
     for (const n of list) {
       const p = nodePos(n);
-      const s = Math.hypot(p.x - w.threat.x, p.z - w.threat.z) + w.rand() * 90;
+      let s = Math.hypot(p.x - w.threat.x, p.z - w.threat.z) + w.rand() * 90;
+      for (const b of w.avoid ?? []) if (Math.hypot(p.x - b.x, p.z - b.z) < 45) s -= 500;
       if (s > score) {
         score = s;
         best = n;
@@ -461,12 +468,24 @@ export function drive(w: AiWorld, c: Car, dt: number): Controls {
     }
   }
 
+  // Police checkpoint ahead in our lane: stop at the line until waved through.
+  if (!fleeing && !responding && ai.mode === "cruise")
+    for (const st of w.stops ?? []) {
+      if (ai.waved === st.id || f.x * st.dx + f.z * st.dz < 0.7) continue;
+      const ox = st.x - c.x;
+      const oz = st.z - c.z;
+      const ahead = ox * f.x + oz * f.z;
+      if (ahead < -0.5 || ahead > 40 || Math.abs(ox * -f.z + oz * f.x) > 3) continue;
+      want = Math.min(want, Math.sqrt(Math.max(0, 2 * 5 * (ahead - 1.5))));
+    }
+
   // Keep a gap to the car (or person) ahead. Cars crossing our path only
   // matter while they're moving (a stopped cross car is waiting its turn), and
-  // after 6 s of being held up a driver creeps on regardless.
+  // after 6 s of being held up a driver creeps past cross traffic (never into
+  // the car in front of it).
   ai.s = s;
   const lightWant = want;
-  if (!responding && ai.wait < 6) {
+  if (!responding) {
     for (const o of w.cars) {
       if (o === c) continue;
       const ox = o.x - c.x;
@@ -478,7 +497,7 @@ export function drive(w: AiWorld, c: Car, dt: number): Controls {
       const fo = forward(o.h);
       const same = fo.x * f.x + fo.z * f.z > 0.4;
       const moving = Math.hypot(o.vx, o.vz) > 1;
-      if (!same && !(moving && ahead < 12)) continue;
+      if (!same && (ai.wait >= 6 || !(moving && ahead < 12))) continue;
       const gap = ahead - c.spec.len / 2 - o.spec.len / 2;
       want = Math.min(want, Math.max(0, (gap - 2.5) * (fleeing ? 1.6 : 0.8)));
     }
@@ -487,9 +506,10 @@ export function drive(w: AiWorld, c: Car, dt: number): Controls {
         const ox = p.x - c.x;
         const oz = p.z - c.z;
         const ahead = ox * f.x + oz * f.z;
-        if (ahead <= 0 || ahead > 18) continue;
+        // Beside the car (e.g. the officer at the window) isn't in the way.
+        if (ahead <= c.spec.len / 2 || ahead > 18) continue;
         if (Math.abs(ox * -f.z + oz * f.x) > 1.8) continue;
-        want = Math.min(want, Math.max(0, (ahead - 4) * 0.8));
+        want = Math.min(want, Math.max(0, (ahead - c.spec.len / 2 - 2) * 0.8));
       }
   }
 
@@ -541,3 +561,19 @@ export function spawnOnLane(c: Car, from: number, to: number, t: number) {
 }
 
 export { LINES };
+
+/** Indicator state for rendering: -1 left, 1 right, 2 hazards, 0 off. */
+export function signalOf(c: Car): -1 | 0 | 1 | 2 {
+  const ai = c.ai;
+  if (!ai) return 0;
+  if (ai.mode === "stopped" || ai.mode === "parked" || c.health < 30) return 2;
+  if (ai.mode !== "cruise" && ai.mode !== "yield") return 0;
+  if (!laneTurn(ai.from, ai.to, ai.next)) return 0;
+  const seg = laneStart(ai.from, ai.to);
+  if (seg.len - ai.s > 32) return 0;
+  const a = nodePos(ai.from);
+  const b = nodePos(ai.to);
+  const n = nodePos(ai.next);
+  const cross = (b.x - a.x) * (n.z - b.z) - (b.z - a.z) * (n.x - b.x);
+  return cross > 0 ? 1 : -1;
+}

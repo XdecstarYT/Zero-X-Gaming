@@ -309,4 +309,9 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     image-based reflections from a live sky, clear-coat paint, glossy glass, wet-road reflections, soft shadows,
     ambient occlusion, bloom and a filmic grade, plus a lot more modelled detail. Parked cars are baked into a
     handful of static meshes, and far cars, people and effects are culled, to keep draw calls in check on phones.
-
+86. **"100 features" became about 25 real ones.** Rather than pad the list with toggles, Code 3 got the systems that
+    change how a shift plays: checkpoints, roadblocks, cones, plate reader, air support, K9, sobriety tests,
+    Miranda, repairs, ambient incidents, new callouts and more (listed in the README).
+87. **Checkpoints act on one lane.** A checkpoint is a stop line that traffic travelling that way treats like a
+    red light until the officer waves the driver on, so queues form naturally with the existing car-following
+    logic; the officer's side of the road picks the lane.

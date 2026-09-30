@@ -130,7 +130,8 @@ export type Violation =
   | "suspended licence"
   | "expired licence"
   | "no licence"
-  | "reckless driving";
+  | "reckless driving"
+  | "jaywalking";
 
 /** Things that justify an arrest. */
 export type Offence =
@@ -146,6 +147,9 @@ export type Offence =
   | "discharging a firearm"
   | "domestic assault"
   | "shoplifting"
+  | "burglary"
+  | "public intoxication"
+  | "disorderly conduct"
   | "driving while suspended";
 
 /** What a driver says when asked a question, by attitude. */

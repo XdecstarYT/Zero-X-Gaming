@@ -63,19 +63,26 @@ export class Code3Audio {
   }
 
   /** Per frame: siren mode, engine speed (m/s) and throttle, whether we're in the car. */
-  update(dt: number, o: { siren: boolean; yelp: boolean; speed: number; throttle: number; inCar: boolean; distance: number }) {
+  update(dt: number, o: { siren: boolean; yelp: boolean; speed: number; throttle: number; inCar: boolean; distance: number; tone?: "wail" | "yelp" | "phaser"; honk?: boolean }) {
     if (!this.ctx || !this.siren || !this.engine) return;
     this.t += dt;
     const now = this.ctx.currentTime;
     const near = o.inCar ? 1 : Math.max(0.15, 1 - o.distance / 60);
     if (o.siren) {
       // Wail: slow sweep. Yelp (horn held): fast sweep.
-      const rate = o.yelp ? 3.2 : 0.22;
+      // Wail: slow sweep. Yelp: fast sweep. Phaser: a very fast warble. Holding the horn yelps.
+      const tone = o.yelp ? "yelp" : (o.tone ?? "wail");
+      const rate = tone === "yelp" ? 3.2 : tone === "phaser" ? 11 : 0.22;
       const k = (Math.sin(this.t * Math.PI * 2 * rate) + 1) / 2;
-      const f = 650 + k * 700;
+      const f = tone === "phaser" ? 900 + k * 900 : 650 + k * 700;
       this.siren.osc.frequency.setTargetAtTime(f, now, 0.02);
       this.siren.osc2.frequency.setTargetAtTime(f * 1.005, now, 0.02);
       this.siren.gain.gain.setTargetAtTime(0.09 * near, now, 0.05);
+    } else if (o.honk) {
+      // Car horn: a two-tone square chord.
+      this.siren.osc.frequency.setTargetAtTime(410, now, 0.01);
+      this.siren.osc2.frequency.setTargetAtTime(512, now, 0.01);
+      this.siren.gain.gain.setTargetAtTime(0.08, now, 0.02);
     } else this.siren.gain.gain.setTargetAtTime(0, now, 0.05);
     const rpm = 45 + Math.abs(o.speed) * 3.2 + o.throttle * 20;
     this.engine.osc.frequency.setTargetAtTime(rpm, now, 0.08);

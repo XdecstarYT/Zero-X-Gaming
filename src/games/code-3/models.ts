@@ -46,6 +46,76 @@ function cabinGeo(len: number, h: number, wid: number, x: number, y: number, rak
   return g.translate(x, y, 0);
 }
 
+/**
+ * The lower body as a real side silhouette: flat floor with arches cut over
+ * the wheels, a rounded nose, a bonnet rising to the cowl, the beltline under
+ * the glasshouse, the boot deck (or a flat load bed / van back) and the tail,
+ * extruded across the car with rounded (bevelled) edges.
+ */
+function lowerBody(L: number, W: number, y0: number, top: number, wheel: number, xw: number, xr: number, flatBack: boolean, hi: boolean) {
+  const s = new THREE.Shape();
+  const R = Math.max(wheel * 0.8, Math.min(wheel + 0.08, top - 0.06 - wheel));
+  const wy = wheel;
+  const nose = Math.min(0.35, L * 0.07);
+  s.moveTo(-L / 2 + 0.12, y0);
+  for (const wx of [-L * 0.32, L * 0.32]) {
+    const base = Math.max(y0, wy);
+    const a0 = Math.asin(Math.min(0.99, (base - wy) / R));
+    s.lineTo(wx - R * Math.cos(a0), base);
+    s.absarc(wx, wy, R, Math.PI - a0, a0, true);
+    s.lineTo(wx + R * Math.cos(a0), y0);
+  }
+  s.lineTo(L / 2 - 0.12, y0);
+  s.quadraticCurveTo(L / 2, y0, L / 2, y0 + 0.12);
+  s.lineTo(L / 2, top - 0.2);
+  s.quadraticCurveTo(L / 2, top - 0.03, L / 2 - nose, top - 0.03);
+  s.lineTo(xw + 0.05, top + 0.02);
+  s.lineTo(xr, top + 0.02);
+  if (flatBack) {
+    s.lineTo(-L / 2 + 0.08, top);
+    s.quadraticCurveTo(-L / 2, top, -L / 2, top - 0.1);
+  } else {
+    s.lineTo(Math.min(xr - 0.05, -L / 2 + 0.3), top + 0.01);
+    s.quadraticCurveTo(-L / 2, top, -L / 2, top - 0.17);
+  }
+  s.lineTo(-L / 2, y0 + 0.12);
+  s.quadraticCurveTo(-L / 2, y0, -L / 2 + 0.12, y0);
+  const bt = 0.08;
+  const g = new THREE.ExtrudeGeometry(s, {
+    depth: W - 2 * bt,
+    bevelEnabled: true,
+    bevelThickness: bt,
+    bevelSize: 0.05,
+    bevelOffset: -0.05,
+    bevelSegments: hi ? 3 : 1,
+    curveSegments: hi ? 10 : 4,
+  });
+  return g.translate(0, 0, -(W - 2 * bt) / 2);
+}
+
+/** The glasshouse: raked screen, rounded roofline, rear window; extruded to `width`. */
+function greenhouse(xw: number, xr: number, top: number, h: number, rakeF: number, rakeB: number, width: number, hi: boolean) {
+  const s = new THREE.Shape();
+  s.moveTo(xw, top);
+  s.lineTo(xw - rakeF, top + h - 0.05);
+  s.quadraticCurveTo(xw - rakeF - 0.03, top + h, xw - rakeF - 0.14, top + h);
+  s.lineTo(xr + rakeB + 0.14, top + h);
+  s.quadraticCurveTo(xr + rakeB + 0.03, top + h, xr + rakeB, top + h - 0.05);
+  s.lineTo(xr, top);
+  s.lineTo(xw, top);
+  const bt = 0.04;
+  const g = new THREE.ExtrudeGeometry(s, {
+    depth: width - 2 * bt,
+    bevelEnabled: true,
+    bevelThickness: bt,
+    bevelSize: 0.03,
+    bevelOffset: -0.03,
+    bevelSegments: hi ? 2 : 1,
+    curveSegments: hi ? 6 : 2,
+  });
+  return g.translate(0, 0, -(width - 2 * bt) / 2);
+}
+
 interface Shape {
   bodyH: number;
   clear: number;
@@ -185,7 +255,6 @@ const M = {
   white: new THREE.MeshPhysicalMaterial({ color: "#f1f3f5", metalness: 0.3, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.08 }),
   headLens: new THREE.MeshPhysicalMaterial({ color: "#e9eef2", emissive: "#fff3d6", emissiveIntensity: 0.3, roughness: 0.05, metalness: 0.2, clearcoat: 1 }),
   reverse: new THREE.MeshStandardMaterial({ color: "#dddddd", emissive: "#ffffff", emissiveIntensity: 0 }),
-  amber: new THREE.MeshStandardMaterial({ color: "#8a4a00", emissive: "#ff9a1a", emissiveIntensity: 0.15 }),
   plateBack: new THREE.MeshStandardMaterial({ color: "#1a1a1a", roughness: 0.6 }),
   interior: new THREE.MeshStandardMaterial({ color: "#1b1c1f", roughness: 0.95 }),
   stripeRed: new THREE.MeshStandardMaterial({ color: "#c8102e", roughness: 0.4 }),
@@ -212,7 +281,8 @@ interface CarGeo {
   heads: THREE.BufferGeometry;
   tails: THREE.BufferGeometry;
   reverse: THREE.BufferGeometry;
-  amber: THREE.BufferGeometry;
+  amberL: THREE.BufferGeometry;
+  amberR: THREE.BufferGeometry;
   interior: THREE.BufferGeometry;
   stripe?: THREE.BufferGeometry;
   tyre: THREE.BufferGeometry;
@@ -243,14 +313,32 @@ function carGeometry(kind: CarKind, detail: "high" | "low"): CarGeo {
   const whiteBody = kind === "ambulance" || kind === "transport";
   const bodyList = whiteBody ? white : body;
 
-  // Lower body with a slightly narrower, rounded nose and tail.
-  bodyList.push(rbox(L, sh.bodyH, W, 0.14, 0, y0 + sh.bodyH / 2, 0));
-  // Bonnet and boot tops dip a little (a separate rounded slab reads as panel shape).
-  bodyList.push(rbox(L * 0.98, 0.06, W * 0.96, 0.03, 0, top + 0.01, 0));
+  // Lower body: the real side silhouette (nose, bonnet, beltline, boot, tail,
+  // cut-out wheel arches) extruded across the car with rounded edges.
+  const hi = detail === "high";
+  const xw = sh.boxy ? L * 0.3 : sh.cabTo * L; // windscreen base
+  const xr = sh.cabFrom * L; // rear-window base
+  bodyList.push(lowerBody(L, W, y0, top, sh.wheel, xw, xr, !!sh.boxy || !!sh.bed, hi));
 
   const cl = (sh.cabTo - sh.cabFrom) * L;
   const cx = ((sh.cabTo + sh.cabFrom) / 2) * L;
   const cy = top + sh.cabH / 2;
+  if (!sh.boxy) {
+    // Glasshouse: body-coloured shell (roof, pillars) with glass set into it.
+    const roofList = police ? white : bodyList;
+    roofList.push(greenhouse(xw, xr, top, sh.cabH, sh.rakeF, sh.rakeB, W * 0.84, hi));
+    glass.push(greenhouse(xw + 0.012, xr - 0.012, top + 0.05, sh.cabH - 0.1, sh.rakeF * 0.94, sh.rakeB * 0.94, W * 0.855, hi));
+    // A- and C-pillars along the screen edges, in body colour.
+    const pillar = (x0: number, y0p: number, x1: number, y1p: number, z: number) => {
+      const len = Math.hypot(x1 - x0, y1p - y0p);
+      const g = new THREE.BoxGeometry(len, 0.07, 0.05).rotateZ(Math.atan2(y1p - y0p, x1 - x0)).translate((x0 + x1) / 2, (y0p + y1p) / 2, z);
+      roofList.push(g);
+    };
+    for (const z of [W * 0.428, -W * 0.428]) {
+      pillar(xw + 0.01, top + 0.02, xw - sh.rakeF + 0.03, top + sh.cabH - 0.02, z);
+      pillar(xr - 0.01, top + 0.02, xr + sh.rakeB - 0.03, top + sh.cabH - 0.02, z);
+    }
+  }
   if (sh.boxy) {
     // Box body behind a raked cab.
     const boxLen = L * 0.7;
@@ -261,13 +349,9 @@ function carGeometry(kind: CarKind, detail: "high" | "low"): CarGeo {
     if (kind === "van") for (const zz of [W / 2 + 0.003, -W / 2 - 0.003]) glass.push(box(boxLen * 0.3, sh.cabH * 0.45, 0.01, L * 0.02, cy + 0.12, zz));
     if (kind === "ambulance") for (const zz of [W / 2 + 0.006, -W / 2 - 0.006]) stripe.push(box(L * 0.99, 0.18, 0.012, 0, y0 + sh.bodyH * 0.62, zz));
   } else {
-    glass.push(cabinGeo(cl, sh.cabH, W * 0.92, cx, cy, sh.rakeF, sh.rakeB));
-    // Roof skin and pillars in body colour.
-    const roofLen = Math.max(0.5, cl - sh.rakeF - sh.rakeB - 0.12);
+    // B-pillars between the side windows.
     const roofX = cx + (sh.rakeB - sh.rakeF) / 2;
-    (police ? white : bodyList).push(rbox(roofLen, 0.07, W * 0.8, 0.03, roofX, top + sh.cabH + 0.005, 0));
-    // B-pillars.
-    for (const zz of [W * 0.44, -W * 0.44]) bodyList.push(box(0.09, sh.cabH * 0.92, 0.04, roofX + 0.05, cy, zz));
+    for (const zz of [W * 0.43, -W * 0.43]) bodyList.push(box(0.08, sh.cabH * 0.9, 0.03, roofX + 0.05, cy, zz));
   }
   if (sh.bed) {
     bodyList.push(box(L * 0.4, 0.38, 0.07, -L * 0.29, top + 0.18, W / 2 - 0.04));
@@ -302,7 +386,10 @@ function carGeometry(kind: CarKind, detail: "high" | "low"): CarGeo {
   const heads = mergeGeometries([rbox(0.06, 0.13, 0.36, 0.03, L / 2 - 0.005, lensY, W / 2 - 0.3), rbox(0.06, 0.13, 0.36, 0.03, L / 2 - 0.005, lensY, -W / 2 + 0.3)]);
   const tails = mergeGeometries([rbox(0.06, 0.14, 0.34, 0.03, -L / 2 + 0.005, lensY, W / 2 - 0.27), rbox(0.06, 0.14, 0.34, 0.03, -L / 2 + 0.005, lensY, -W / 2 + 0.27)]);
   const reverse = mergeGeometries([box(0.05, 0.05, 0.1, -L / 2 - 0.01, lensY - 0.12, W / 2 - 0.45), box(0.05, 0.05, 0.1, -L / 2 - 0.01, lensY - 0.12, -W / 2 + 0.45)]);
-  const amber = mergeGeometries([box(0.05, 0.05, 0.12, L / 2 - 0.0, lensY - 0.14, W / 2 - 0.2), box(0.05, 0.05, 0.12, L / 2 - 0.0, lensY - 0.14, -W / 2 + 0.2)]);
+  // Indicators: front corner and rear, per side (left = -z).
+  const side = (z: number) => mergeGeometries([box(0.05, 0.05, 0.14, L / 2 - 0.005, lensY - 0.14, z * (W / 2 - 0.18)), box(0.05, 0.06, 0.12, -L / 2 + 0.005, lensY - 0.12, z * (W / 2 - 0.16))]);
+  const amberL = side(-1);
+  const amberR = side(1);
   // Seats and dash seen through the glass.
   const interior = sh.boxy
     ? box(L * 0.18, 0.5, W * 0.8, L * 0.3, top + 0.25, 0)
@@ -332,7 +419,8 @@ function carGeometry(kind: CarKind, detail: "high" | "low"): CarGeo {
     heads,
     tails,
     reverse,
-    amber,
+    amberL,
+    amberR,
     interior,
     stripe: stripe.length ? mergeGeometries(stripe) : undefined,
     tyre,
@@ -360,6 +448,9 @@ export interface CarModel {
   smoke?: THREE.Mesh;
   /** Faked headlight pool on the road ahead (night). */
   beam: THREE.Mesh;
+  /** Indicator lamps (left / right). */
+  amberL: THREE.MeshStandardMaterial;
+  amberR: THREE.MeshStandardMaterial;
 }
 
 let beamTex: THREE.Texture | null = null;
@@ -408,7 +499,10 @@ export function buildCar(kind: CarKind, color: string, plate = "", detail: "high
   const tail = new THREE.MeshStandardMaterial({ color: "#5a0b0b", emissive: "#ff1a1a", emissiveIntensity: 0.3, roughness: 0.2 });
   add(g.tails, tail);
   const reverse = add(g.reverse, M.reverse.clone());
-  add(g.amber, M.amber);
+  const amberL = new THREE.MeshStandardMaterial({ color: "#6a3a00", emissive: "#ff9a1a", emissiveIntensity: 0.1 });
+  const amberR = amberL.clone();
+  add(g.amberL, amberL);
+  add(g.amberR, amberR);
 
   // Wheels.
   const wheels: THREE.Group[] = [];
@@ -458,7 +552,7 @@ export function buildCar(kind: CarKind, color: string, plate = "", detail: "high
   beam.renderOrder = 2;
   group.add(beam);
 
-  const model: CarModel = { group, tail, heads, reverse, wheels, headGlow, tailGlow, beam };
+  const model: CarModel = { group, tail, heads, reverse, wheels, headGlow, tailGlow, beam, amberL, amberR };
 
   if (s.police) {
     const ems = kind === "ambulance";
