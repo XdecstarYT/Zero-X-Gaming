@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BANNERS, DAILY, REWARDS, SEASON, WEEKLY, activeChallenges, matchXp, ownedItems, rewardsBetween, tierFromXp } from "./season";
+import { BANNERS, COIN_TIERS, DAILY, REWARDS, SEASON, WEEKLY, activeChallenges, matchXp, ownedItems, rewardsBetween, tierCoinsBetween, tierFromXp } from "./season";
 import { OUTFITS, WRAPS } from "@/games/neon-siege/cosmetics";
 
 const sql = readFileSync(join(process.cwd(), "supabase/migrations/20260930120000_season_one.sql"), "utf8");
@@ -55,5 +55,16 @@ describe("challenges", () => {
     const week1 = activeChallenges(start + 8 * 86_400_000);
     expect(week1.filter((c) => c.kind === "weekly").map((c) => c.id)).toEqual(["w4", "w5", "w6", "w7"]);
     expect(week1.at(-1)!.period).toBe("w1");
+  });
+});
+
+describe("free coin track", () => {
+  it("pays coins every 5 tiers to everyone, matching the database", () => {
+    const freeSql = readFileSync(join(process.cwd(), "supabase/migrations/20260930170000_free_coin_track.sql"), "utf8");
+    for (const [tier, coins] of Object.entries(COIN_TIERS)) expect(freeSql).toContain(`('s1', ${tier}, ${coins})`);
+    expect(Object.values(COIN_TIERS).reduce((a, b) => a + b, 0)).toBe(175);
+    expect(tierCoinsBetween(4600, 5000)).toBe(25);
+    expect(tierCoinsBetween(0, 4999)).toBe(0);
+    expect(tierCoinsBetween(0, 99_999)).toBe(175);
   });
 });

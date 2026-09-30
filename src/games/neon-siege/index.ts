@@ -9,6 +9,7 @@ import { readGraphics, readLoadout, writeGraphics, type Graphics } from "./loado
 import { RoyaleController, type ModeController } from "./mode";
 import { CanvasView } from "./render";
 import type { MatchStats, PlayerInput } from "./royale";
+import { showResults, type MatchReward } from "./results";
 import { SiegeAudio } from "./sfx";
 import type { Tracer, ViewFx, ViewRenderer } from "./view";
 import { activeWeapon, nearestChest, nearestLoot } from "./world";
@@ -40,7 +41,7 @@ export type OnlineMenuBuilder = (ctx: {
 }) => void;
 
 /** Called when a match ends with stats (season XP / challenges / coins). */
-export type MatchEndHook = (stats: MatchStats, info: { won: boolean; ranked: boolean }) => void;
+export type MatchEndHook = (stats: MatchStats, info: { won: boolean; ranked: boolean }) => Promise<MatchReward | null>;
 /** Tells the menu how many ranked matches were played (Cash Cup every third). */
 export type MatchesPlayedLoader = () => Promise<number>;
 
@@ -198,7 +199,12 @@ export class NeonSiege implements GameModule {
     // Warm the 3D chunk while the player picks a mode.
     if (this.viewKind !== "2d") void import("./render3d").catch(() => {});
 
-    const pressedGroup = <T extends string>(values: readonly T[], current: T, label: (v: T) => string, onPick: (v: T) => void) => {
+    const pressedGroup = <T extends string>(
+      values: readonly T[],
+      current: T,
+      label: (v: T) => string,
+      onPick: (v: T) => void,
+    ) => {
       const buttons = values.map((v) => {
         const b = el("button", `${BTN} px-3 capitalize`, label(v));
         b.type = "button";
@@ -220,7 +226,12 @@ export class NeonSiege implements GameModule {
       return buttons;
     };
 
-    const diffButtons = pressedGroup(["easy", "normal", "hard"] as const, this.difficulty, (d) => d, (d) => (this.difficulty = d));
+    const diffButtons = pressedGroup(
+      ["easy", "normal", "hard"] as const,
+      this.difficulty,
+      (d) => d,
+      (d) => (this.difficulty = d),
+    );
     const fast = new URLSearchParams(window.location.search).get("siege") === "quick";
     // Cash Cup status: every third ranked match. Filled in once progress loads.
     const cup = el("div", "w-full rounded-md border border-[#f2c230]/40 bg-[#f2c230]/10 px-3 py-2 text-xs text-muted");
@@ -293,7 +304,11 @@ export class NeonSiege implements GameModule {
       : "WASD move · Mouse look (click to lock) · Click fire · Right-click aim · E loot / open · 1–5 or wheel switch · R reload · Tab scores";
 
     const outfitName = OUTFITS[loadout.outfit]?.name ?? "Recruit";
-    const locker = el("a", "text-xs font-semibold text-cyan underline-offset-2 hover:underline", `Outfit: ${outfitName} · Change in Locker`);
+    const locker = el(
+      "a",
+      "text-xs font-semibold text-cyan underline-offset-2 hover:underline",
+      `Outfit: ${outfitName} · Change in Locker`,
+    );
     locker.setAttribute("href", "/locker");
 
     this.menu.replaceChildren(
@@ -306,7 +321,11 @@ export class NeonSiege implements GameModule {
           "section",
           "flex w-full max-w-md flex-col items-center gap-2 rounded-lg border border-border bg-surface/80 p-3",
           el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-cyan", "Battle Royale · Solo"),
-          el("p", "text-xs text-muted", "16 fighters, one town, a closing storm. Loot, survive, win. Ranked + season XP."),
+          el(
+            "p",
+            "text-xs text-muted",
+            "16 fighters, one town, a closing storm. Loot, survive, win. Ranked + season XP.",
+          ),
           cup,
           el("div", "flex gap-2", ...diffButtons),
           deploy,
@@ -388,7 +407,10 @@ export class NeonSiege implements GameModule {
       return b;
     };
     // Fire: hold to shoot; drag while holding to keep aiming (thumb never has to leave it).
-    const fire = round("FIRE", "right-[4%] bottom-[30%] h-20 w-20 border-white/60 bg-white/15 text-xs active:bg-white/35");
+    const fire = round(
+      "FIRE",
+      "right-[4%] bottom-[30%] h-20 w-20 border-white/60 bg-white/15 text-xs active:bg-white/35",
+    );
     fire.setAttribute("aria-label", "Fire");
     fire.addEventListener("pointerdown", (e) => {
       e.preventDefault();
@@ -405,7 +427,10 @@ export class NeonSiege implements GameModule {
     fire.addEventListener("pointerup", stopFire);
     fire.addEventListener("pointercancel", stopFire);
     // Mirror fire button on the left for two-thumb shooting.
-    const fireL = round("FIRE", "left-[4%] top-[34%] h-14 w-14 border-white/40 bg-white/10 text-[10px] active:bg-white/35");
+    const fireL = round(
+      "FIRE",
+      "left-[4%] top-[34%] h-14 w-14 border-white/40 bg-white/10 text-[10px] active:bg-white/35",
+    );
     fireL.setAttribute("aria-label", "Fire (left)");
     fireL.addEventListener("pointerdown", (e) => {
       e.preventDefault();
@@ -436,7 +461,10 @@ export class NeonSiege implements GameModule {
       "div",
       "absolute hidden h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/30 bg-white/5",
     ) as HTMLDivElement;
-    const knob = el("div", "absolute top-1/2 left-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/40");
+    const knob = el(
+      "div",
+      "absolute top-1/2 left-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/40",
+    );
     this.stickKnob.appendChild(knob);
     this.touchLayer = el("div", "pointer-events-none absolute inset-0 z-[5]", this.stickKnob, fire, fireL, aim, reload);
     this.opts.root.appendChild(this.touchLayer);
@@ -648,7 +676,10 @@ export class NeonSiege implements GameModule {
             ev.weapon === "storm"
               ? `${mode.nameOf(ev.victim)} ${how}`
               : `${mode.nameOf(ev.killer)}  ✕  ${mode.nameOf(ev.victim)}`;
-          this.killFeed = [...this.killFeed.slice(-6), { text, at: t, mine: ev.killer === me.id || ev.victim === me.id }];
+          this.killFeed = [
+            ...this.killFeed.slice(-6),
+            { text, at: t, mine: ev.killer === me.id || ev.victim === me.id },
+          ];
           if (ev.killer === me.id) this.audio.cue("elim");
           break;
         }
@@ -700,12 +731,21 @@ export class NeonSiege implements GameModule {
     this.touchLayer?.remove();
     this.touchLayer = null;
     const stats = mode.stats();
-    if (stats) this.onMatchEnd?.(stats, { won: mode.won(), ranked: mode.ranked });
-    this.emitter.emit({
-      kind: "final",
-      score: mode.score(),
-      durationMs: Math.round(this.loop.activeMs),
+    const score = mode.score();
+    const durationMs = Math.round(this.loop.activeMs);
+    const reward =
+      stats && mode.ranked && this.onMatchEnd ? this.onMatchEnd(stats, { won: mode.won(), ranked: true }) : null;
+    // Results screen first; the platform's game-over (score submit) follows on Continue.
+    void showResults(this.opts.root, {
+      stats,
+      won: mode.won(),
       ranked: mode.ranked,
+      reward,
+      reduceMotion: this.opts.settings.reduceMotion,
+      score,
+    }).then(() => {
+      if (this.destroyed) return;
+      this.emitter.emit({ kind: "final", score, durationMs, ranked: mode.ranked });
     });
   }
 

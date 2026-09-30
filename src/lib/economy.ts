@@ -37,6 +37,8 @@ export interface ShopItem {
   price: number;
   /** Shown big at the top of the drop. */
   featured?: boolean;
+  /** One line of flavour text for the inspect view. */
+  blurb: string;
 }
 
 export interface Drop {
@@ -56,15 +58,15 @@ export const DROPS: Drop[] = [
     startsAt: "2026-09-30T00:00:00Z",
     endsAt: "2026-10-14T00:00:00Z",
     items: [
-      { kind: "outfit", item: "apex", price: 150, featured: true },
-      { kind: "outfit", item: "dropzone", price: 100 },
-      { kind: "outfit", item: "sunset", price: 90 },
-      { kind: "outfit", item: "frostbite", price: 60 },
-      { kind: "wrap", item: "chrome", price: 80 },
-      { kind: "wrap", item: "molten", price: 60 },
-      { kind: "wrap", item: "aurora", price: 40 },
-      { kind: "banner", item: "cash-king", price: 35 },
-      { kind: "banner", item: "drop-1", price: 25 },
+      { kind: "outfit", item: "apex", price: 150, featured: true, blurb: "Blackout armour, red-hot visor. The last thing the lobby sees." },
+      { kind: "outfit", item: "dropzone", price: 100, blurb: "Built for hot drops: glowing hazard trim and a jump helmet." },
+      { kind: "outfit", item: "sunset", price: 90, blurb: "Golden-hour colours for fighters who finish every day on top." },
+      { kind: "outfit", item: "frostbite", price: 60, blurb: "Ice-blue layers that stay cool when the storm closes in." },
+      { kind: "wrap", item: "chrome", price: 80, blurb: "Mirror-polished metal. It reflects the storm and your wins." },
+      { kind: "wrap", item: "molten", price: 60, blurb: "Cooling-lava camo with embers that never quite go out." },
+      { kind: "wrap", item: "aurora", price: 40, blurb: "Northern lights streaked across the steel." },
+      { kind: "banner", item: "cash-king", price: 35, blurb: "A crown of gold coins for Cash Cup regulars." },
+      { kind: "banner", item: "drop-1", price: 25, blurb: "The hazard stripes of the very first drop. Day-one flex." },
     ],
   },
 ];

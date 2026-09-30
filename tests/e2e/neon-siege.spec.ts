@@ -39,8 +39,13 @@ test("Neon Siege battle royale: drop in, loot keys, pause/resume, the storm clos
   await stage.getByRole("button", { name: "Resume" }).click();
   await expect(stage).toHaveAttribute("data-phase", "playing");
 
-  // Standing still, the storm (or the bots) end the match.
-  await expect(stage).toHaveAttribute("data-phase", "over", { timeout: 90_000 });
+  // Standing still, the storm (or the bots) end the match: results screen, then the platform's game over.
+  const results = stage.getByTestId("siege-results");
+  await expect(results).toBeVisible({ timeout: 90_000 });
+  await expect(results).toContainText("Unranked match");
+  await expect(results).toContainText("Eliminations");
+  await results.getByRole("button", { name: "Continue" }).click();
+  await expect(stage).toHaveAttribute("data-phase", "over");
   expect(errors).toEqual([]);
 });
 

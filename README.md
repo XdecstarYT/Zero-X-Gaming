@@ -136,8 +136,12 @@ sight, hearing, and noticing who shot them). Difficulty changes reaction time, a
 - Every third ranked match is a **Cash Cup** on Hard: 1st/2nd/3rd win 50/20/5 coins. The game menu shows when
   one is next.
 - The **battle pass** costs 200 coins. XP always counts, and buying the pass unlocks every tier already reached.
-- The **Item Shop** (`/shop`) sells timed drops. **DROP 1** has 4 outfits, 3 wraps and 2 banners. Purchases land
-  in the Locker.
+  A **free lane** pays everyone 175 coins across the season (every 5 tiers).
+- After every match, a **results screen** shows placement, stats, the Cash Cup payout, an animated XP/tier bar,
+  unlocks and challenges.
+- The **Item Shop** (`/shop`) sells timed drops. **DROP 1** has 4 outfits, 3 wraps and 2 banners. Items are shown
+  as 3D-rendered product shots (`three/thumbs.ts`), with a 3D inspect view and an unlock celebration. Purchases
+  land in the Locker.
 - Coins are earn-only (no real money). They're server-validated for accounts and on-device for guests.
 
 **Season 1 · Battle pass** (`src/lib/season.ts`, `supabase/migrations/20260930120000_season_one.sql`)

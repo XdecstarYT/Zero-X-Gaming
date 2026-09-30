@@ -14,6 +14,7 @@ import {
   metricValue,
   REWARDS,
   SEASON,
+  tierCoinsBetween,
   tierFromXp,
   type CosmeticKind,
   type Reward,
@@ -50,6 +51,8 @@ export interface MatchSummary {
   challenges: { id: string; title: string; xp: number }[];
   cashCup: boolean;
   coinsWon: number;
+  /** Free-track coins for tiers crossed this match. */
+  tierCoins: number;
   coins: number;
   hasPass: boolean;
 }
@@ -213,7 +216,9 @@ export async function recordSiegeMatch(m: RecordedMatch): Promise<MatchSummary> 
       has_pass: boolean;
     };
     useWallet.getState().set(r.coins);
+    const before = r.xp_total - r.xp_match - r.xp_challenges;
     return {
+      tierCoins: tierCoinsBetween(before, r.xp_total),
       xpMatch: r.xp_match,
       xpChallenges: r.xp_challenges,
       xpTotal: r.xp_total,
@@ -256,8 +261,9 @@ export function recordGuestMatch(m: RecordedMatch, now = Date.now()): MatchSumma
 
   const cashCup = isCashCup(g.matches + 1);
   const coinsWon = cashCup && m.difficulty === CASH_CUP_DIFFICULTY ? cashCupPrize(m.placement) : 0;
-  g.coins += coinsWon;
   g.xp += xpMatch + xpChallenges;
+  const tierCoins = tierCoinsBetween(before, g.xp);
+  g.coins += coinsWon + tierCoins;
   g.matches++;
   g.kills += m.kills;
   if (m.placement === 1) g.wins++;
@@ -274,6 +280,7 @@ export function recordGuestMatch(m: RecordedMatch, now = Date.now()): MatchSumma
     challenges: done,
     cashCup,
     coinsWon,
+    tierCoins,
     coins: g.coins,
     hasPass: g.hasPass,
   };

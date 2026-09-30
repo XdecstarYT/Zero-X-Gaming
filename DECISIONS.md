@@ -232,4 +232,17 @@ Deviations from, or interpretations of, the master prompt. Newest last.
       every tier already reached. Rewards earned before the pass existed stay owned.
     - The shop is organised as timed "drops" (DROP 1: 30 Sep – 14 Oct), mirrored in `shop_items`, and a unit
       test keeps the TypeScript and SQL catalogues in sync.
+65. **The battle pass got a free lane of coins.** Tiers 5/10/15/20/25 pay 25 coins and tier 30 pays 50: 175 over the
+    season, for everyone. A database trigger on `season_progress.xp` pays them, so any XP source is covered, and
+    guests get the same on-device. The paid lane keeps one cosmetic per tier. The track is shown as two
+    horizontal lanes that scroll to your current tier.
+66. **Matches end on a results screen, not a toast.** It shows placement, stats, the Cash Cup prize ladder with
+    your payout, XP with an animated tier bar and "TIER UP", unlocks, completed challenges and coin totals.
+    Continue hands off to the platform's game-over, which still submits the leaderboard score. The rewards
+    promise resolves while you read, and unranked matches say so.
+67. **Item images are rendered, not drawn.** One shared offscreen WebGL renderer takes studio shots of outfits
+    (the real rigged character) and wraps (the real rifle). Renders are queued one at a time and cached as data
+    URLs, then used by the shop, Locker and battle pass, with the flat illustrations as fallback. The shop adds a
+    3D inspect dialog with a turntable and blurb, confirm-to-buy, and a full-screen rarity burst with confetti
+    and "Equip now". Motion respects the reduce-motion settings.
 

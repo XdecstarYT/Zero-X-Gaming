@@ -94,6 +94,21 @@ export const REWARDS: Reward[] = (
   ] as const
 ).map(([kind, item], i) => ({ tier: i + 1, kind, item }));
 
+/**
+ * The free track: coins for everyone (pass or not) at these tiers. Worth 175
+ * coins over the season, so the 200-coin pass nearly pays for itself.
+ */
+export const COIN_TIERS: Record<number, number> = { 5: 25, 10: 25, 15: 25, 20: 25, 25: 25, 30: 50 };
+
+/** Free-track coins earned going from one XP total to another. */
+export function tierCoinsBetween(fromXp: number, toXp: number) {
+  const a = tierFromXp(fromXp).tier;
+  const b = tierFromXp(toXp).tier;
+  let coins = 0;
+  for (const [t, c] of Object.entries(COIN_TIERS)) if (Number(t) > a && Number(t) <= b) coins += c;
+  return coins;
+}
+
 /** Owned by everyone from the start. */
 export const DEFAULT_ITEMS: { kind: CosmeticKind; item: string }[] = [
   { kind: "outfit", item: "recruit" },

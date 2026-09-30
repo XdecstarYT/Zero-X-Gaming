@@ -468,3 +468,79 @@ html[data-reduce-motion="true"] .zx-intro *,
 html[data-reduce-motion="true"] .zx-intro {
   animation-delay: 0s !important;
 }
+
+/* ------------------------------------------------------------ Item Shop */
+
+/* Diagonal hazard stripes that drift (DROP hero). */
+.zx-stripes {
+  background-image: repeating-linear-gradient(135deg, #16181c 0 22px, #1b1d22 22px 44px);
+  background-size: 62.2px 62.2px;
+  animation: zx-stripes 3s linear infinite;
+}
+@keyframes zx-stripes {
+  to {
+    background-position: 62.2px 0;
+  }
+}
+
+/* A light sweep across a card on hover. */
+.zx-shine {
+  position: relative;
+  overflow: hidden;
+}
+.zx-shine::after {
+  content: "";
+  position: absolute;
+  inset: -50% auto -50% -60%;
+  width: 40%;
+  transform: rotate(20deg) translateX(-150%);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.28), transparent);
+  pointer-events: none;
+}
+.zx-shine:hover::after,
+.zx-shine:focus-within::after {
+  animation: zx-shine 0.9s var(--zx-ease-out);
+}
+@keyframes zx-shine {
+  to {
+    transform: rotate(20deg) translateX(520%);
+  }
+}
+
+/* Purchase celebration: spinning light rays, pop-in, falling confetti. */
+.zx-rays {
+  background: repeating-conic-gradient(from 0deg, var(--zx-burst, #ffb321) 0 6deg, transparent 6deg 18deg);
+  mask-image: radial-gradient(circle, #000 0 30%, transparent 70%);
+  animation: zx-spin 14s linear infinite;
+}
+@keyframes zx-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.zx-pop {
+  animation: zx-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes zx-pop {
+  from {
+    transform: scale(0.3) rotate(-8deg);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
+}
+.zx-confetti {
+  position: absolute;
+  top: -5%;
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  animation: zx-fall var(--zx-fall, 2.6s) linear var(--zx-delay, 0s) infinite;
+}
+@keyframes zx-fall {
+  to {
+    transform: translateY(115vh) rotate(720deg);
+  }
+}

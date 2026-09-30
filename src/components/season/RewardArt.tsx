@@ -1,7 +1,10 @@
+"use client";
+
 import { OUTFITS, WRAPS } from "@/games/neon-siege/cosmetics";
 import { RARITY, type Rarity } from "@/games/neon-siege/items";
 import { BANNERS, type CosmeticKind } from "@/lib/season";
 import { cn } from "@/lib/cn";
+import { useItemThumb } from "./use-item-thumb";
 
 export function rarityOf(kind: CosmeticKind, item: string): Rarity {
   if (kind === "outfit") return OUTFITS[item]?.rarity ?? "common";
@@ -21,8 +24,20 @@ export function itemName(kind: CosmeticKind, item: string) {
 
 export const rarityColor = (r: Rarity) => RARITY[r].color;
 
-/** A small flat illustration of a cosmetic (no WebGL needed). */
+/**
+ * Art for a cosmetic: a 3D-rendered product shot for outfits and wraps once it's
+ * ready, with a flat illustration meanwhile (and when WebGL isn't available).
+ */
 export function RewardArt({ kind, item, className }: { kind: CosmeticKind; item: string; className?: string }) {
+  const thumb = useItemThumb(kind, item);
+  if (thumb) {
+    return (
+      <div aria-hidden className={cn("relative overflow-hidden rounded-md bg-surface-3", className)}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- generated data URL */}
+        <img src={thumb} alt="" className="absolute inset-0 h-full w-full animate-rise object-contain" />
+      </div>
+    );
+  }
   if (kind === "banner") {
     return <div aria-hidden className={cn("rounded-md", className)} style={{ background: BANNERS[item]?.art }} />;
   }

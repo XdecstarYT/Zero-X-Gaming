@@ -10,7 +10,7 @@ import { toast } from "@/store/toast";
 import { cn } from "@/lib/cn";
 import { formatNumber } from "@/lib/format";
 import { activeChallenges, REWARDS, SEASON, seasonTimeLeft, tierFromXp, type ActiveChallenge } from "@/lib/season";
-import { RewardArt, itemName, rarityColor, rarityOf } from "./RewardArt";
+import { RewardTrack } from "./RewardTrack";
 import { useSeason } from "./use-season";
 
 const subscribeMinute = (cb: () => void) => {
@@ -237,44 +237,10 @@ export function BattlePass() {
             Open Locker →
           </Link>
         </div>
-        <ol className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6">
-          {REWARDS.map((r) => {
-            const reached = tier >= r.tier;
-            const unlocked = reached && (state?.owned.has(r.item) ?? false);
-            const current = r.tier === tier + 1;
-            const rarity = rarityOf(r.kind, r.item);
-            return (
-              <li
-                key={r.tier}
-                className={cn(
-                  "relative flex flex-col overflow-hidden rounded-lg border-2 bg-surface",
-                  current ? "ring-2 ring-[#ffb321] ring-offset-2 ring-offset-bg" : "",
-                  !unlocked && "opacity-80",
-                )}
-                style={{ borderColor: rarityColor(rarity) + (unlocked ? "" : "66") }}
-              >
-                <div className="flex items-center justify-between px-2 pt-1.5 text-[11px] font-bold">
-                  <span>Tier {r.tier}</span>
-                  <span className={unlocked ? "text-success" : "text-muted"}>
-                    {unlocked ? "✓ Owned" : reached ? "Needs pass" : "Locked"}
-                  </span>
-                </div>
-                <RewardArt kind={r.kind} item={r.item} className="mx-2 mt-1.5 aspect-[4/3]" />
-                <div className="px-2 pt-1.5 pb-2">
-                  <p className="truncate text-sm font-semibold">{itemName(r.kind, r.item)}</p>
-                  <p className="flex items-center gap-1.5 text-[11px] text-muted capitalize">
-                    <span
-                      aria-hidden
-                      className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ background: rarityColor(rarity) }}
-                    />
-                    {rarity} {r.kind}
-                  </p>
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+        <p className="mt-1 text-sm text-muted">
+          Free lane: coins every 5 tiers for everyone. Battle Pass lane: a new cosmetic every tier.
+        </p>
+        <RewardTrack tier={tier} pct={pct} owned={state?.owned ?? null} hasPass={state?.hasPass ?? false} />
       </section>
     </div>
   );

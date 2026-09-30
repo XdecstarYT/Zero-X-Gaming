@@ -5,9 +5,11 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Preview } from "@/games/neon-siege/three/preview";
 import { RewardArt, itemName, rarityColor, rarityOf } from "@/components/season/RewardArt";
 import { useSeason } from "@/components/season/use-season";
+import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/cn";
 import { CASH_CUP_PRIZES, currentDrop, DROPS, type ShopItem } from "@/lib/economy";
-import { buyShopItem } from "@/lib/season-client";
+import { BANNERS, COIN_TIERS } from "@/lib/season";
+import { buyShopItem, saveLoadout } from "@/lib/season-client";
 import { useSettings } from "@/store/settings";
 import { toast } from "@/store/toast";
 import { CoinAmount, CoinIcon } from "./Coin";
@@ -33,6 +35,8 @@ function countdown(ms: number) {
   return d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m ${sec}s`;
 }
 
+const keyOf = (it: ShopItem) => `${it.kind}:${it.item}`;
+
 export function ItemShop() {
   const { state, setState } = useSeason();
   const now = useNow();
@@ -40,21 +44,36 @@ export function ItemShop() {
   const drop = now ? currentDrop(now) : DROPS[0];
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [inspect, setInspect] = useState<ShopItem | null>(null);
+  const [celebrate, setCelebrate] = useState<ShopItem | null>(null);
   const coins = state?.coins ?? 0;
 
   async function buy(it: ShopItem) {
-    const key = `${it.kind}:${it.item}`;
+    const key = keyOf(it);
     if (confirming !== key) return setConfirming(key);
     setBusy(key);
     try {
       const r = await buyShopItem(it.kind, it.item);
       if (state) setState({ ...state, coins: r.coins, owned: new Set([...state.owned, it.item]) });
-      toast(`${itemName(it.kind, it.item)} is yours!`, { description: "Equip it in the Locker.", tone: "success" });
+      setInspect(null);
+      setCelebrate(it);
     } catch (e) {
       toast("Couldn't buy that", { description: (e as Error).message, tone: "error" });
     } finally {
       setBusy(null);
       setConfirming(null);
+    }
+  }
+
+  async function equip(it: ShopItem) {
+    if (!state) return;
+    const next = { ...state.loadout, [it.kind]: it.item };
+    setState({ ...state, loadout: next });
+    try {
+      await saveLoadout(next);
+      toast(`${itemName(it.kind, it.item)} equipped`, { tone: "success" });
+    } catch {
+      toast("Couldn't save your loadout", { tone: "error" });
     }
   }
 
@@ -69,20 +88,35 @@ export function ItemShop() {
 
   const featured = drop.items.find((i) => i.featured) ?? drop.items[0];
   const rest = drop.items.filter((i) => i !== featured);
+  const cardProps = (it: ShopItem) => ({
+    it,
+    owned: !!state?.owned.has(it.item),
+    confirming: confirming === keyOf(it),
+    busy: busy === keyOf(it),
+    canAfford: coins >= it.price,
+    disabled: !state,
+    onBuy: () => buy(it),
+    onInspect: () => {
+      setConfirming(null);
+      setInspect(it);
+    },
+  });
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
       {/* Hero */}
-      <section
-        className="relative overflow-hidden rounded-2xl border border-[#ff7a1a]/40 p-5 text-white sm:p-8"
-        style={{
-          background:
-            "radial-gradient(900px 400px at 85% 0%, rgba(255,122,26,.35), transparent 60%), repeating-linear-gradient(135deg, #16181c 0 22px, #1b1d22 22px 44px)",
-        }}
-      >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <section className="zx-stripes relative overflow-hidden rounded-2xl border border-[#ff7a1a]/40 p-5 text-white sm:p-8">
+        <div
+          aria-hidden
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(900px 400px at 85% 0%, rgba(255,122,26,.4), transparent 60%), linear-gradient(90deg, rgba(10,11,13,.85), rgba(10,11,13,.35))",
+          }}
+        />
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#ffb06b]">Item Shop</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#ffb06b]">Item Shop · Season 1</p>
             <h1
               className="mt-1 font-display text-5xl font-black uppercase italic tracking-tight sm:text-7xl"
               data-testid="drop-name"
@@ -91,13 +125,14 @@ export function ItemShop() {
                 {drop.name}
               </span>
             </h1>
-            <p className="mt-2 max-w-lg text-sm text-white/80">{drop.tagline}</p>
+            <p className="mt-2 max-w-lg text-sm text-white/85">{drop.tagline}</p>
+            <p className="mt-1 text-xs text-white/70">{drop.items.length} items · tap any item to inspect it in 3D</p>
           </div>
           <div className="flex flex-col items-start gap-2 sm:items-end">
-            <p className="rounded-full bg-black/50 px-3 py-1 text-xs font-semibold text-white/90" aria-live="off">
+            <p className="rounded-full bg-black/60 px-3 py-1 text-xs font-semibold text-white/90" aria-live="off">
               Leaves in {now ? countdown(Date.parse(drop.endsAt) - now) : "…"}
             </p>
-            <p className="flex items-center gap-2 rounded-full bg-black/50 px-3 py-1 text-sm">
+            <p className="flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-sm">
               Your balance <CoinAmount amount={coins} className="text-[#f2c230]" />
             </p>
           </div>
@@ -105,32 +140,13 @@ export function ItemShop() {
       </section>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <FeaturedCard
-          it={featured}
-          owned={!!state?.owned.has(featured.item)}
-          confirming={confirming === `${featured.kind}:${featured.item}`}
-          busy={busy === `${featured.kind}:${featured.item}`}
-          canAfford={coins >= featured.price}
-          disabled={!state}
-          onBuy={() => buy(featured)}
-        />
+        <FeaturedCard {...cardProps(featured)} />
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3" aria-label={`${drop.name} items`}>
-          {rest.map((it) => {
-            const key = `${it.kind}:${it.item}`;
-            return (
-              <li key={key}>
-                <ItemCard
-                  it={it}
-                  owned={!!state?.owned.has(it.item)}
-                  confirming={confirming === key}
-                  busy={busy === key}
-                  canAfford={coins >= it.price}
-                  disabled={!state}
-                  onBuy={() => buy(it)}
-                />
-              </li>
-            );
-          })}
+          {rest.map((it) => (
+            <li key={keyOf(it)}>
+              <ItemCard {...cardProps(it)} />
+            </li>
+          ))}
         </ul>
       </div>
 
@@ -156,7 +172,9 @@ export function ItemShop() {
           ))}
         </ol>
         <p className="text-xs text-muted sm:col-span-3">
-          Spend coins here or on the{" "}
+          The Battle Pass free lane also pays{" "}
+          <strong className="text-text">{Object.values(COIN_TIERS).reduce((a, b) => a + b, 0)} coins</strong> across the
+          season (every 5 tiers). Spend coins here or on the{" "}
           <Link href="/battle-pass" className="text-cyan underline underline-offset-2">
             Battle Pass
           </Link>{" "}
@@ -164,6 +182,26 @@ export function ItemShop() {
           {state && !state.signedIn && " Playing as a guest: your coins are saved on this device only."}
         </p>
       </section>
+
+      {inspect && (
+        <InspectDialog
+          {...cardProps(inspect)}
+          onClose={() => {
+            setInspect(null);
+            setConfirming(null);
+          }}
+        />
+      )}
+      {celebrate && (
+        <Celebration
+          it={celebrate}
+          onEquip={() => {
+            void equip(celebrate);
+            setCelebrate(null);
+          }}
+          onClose={() => setCelebrate(null)}
+        />
+      )}
     </div>
   );
 }
@@ -176,6 +214,7 @@ interface CardProps {
   canAfford: boolean;
   disabled: boolean;
   onBuy: () => void;
+  onInspect: () => void;
 }
 
 function BuyButton({ it, owned, confirming, busy, canAfford, disabled, onBuy, big }: CardProps & { big?: boolean }) {
@@ -218,24 +257,33 @@ function BuyButton({ it, owned, confirming, busy, canAfford, disabled, onBuy, bi
 }
 
 function ItemCard(props: CardProps) {
-  const { it } = props;
+  const { it, onInspect, owned } = props;
   const rarity = rarityOf(it.kind, it.item);
+  const color = rarityColor(rarity);
   return (
     <article
-      className="flex h-full flex-col overflow-hidden rounded-xl border-2 bg-surface"
-      style={{ borderColor: rarityColor(rarity) }}
+      className="zx-shine flex h-full flex-col overflow-hidden rounded-xl border-2 bg-surface transition-transform duration-200 hover:-translate-y-0.5"
+      style={{ borderColor: color, boxShadow: `0 10px 30px -18px ${color}` }}
     >
-      <div
-        className="relative"
-        style={{ background: `linear-gradient(180deg, ${rarityColor(rarity)}55, transparent)` }}
+      <button
+        type="button"
+        onClick={onInspect}
+        aria-label={`Inspect ${itemName(it.kind, it.item)}`}
+        className="relative block text-left"
+        style={{ background: `radial-gradient(circle at 50% 30%, ${color}66, transparent 70%)` }}
       >
         <RewardArt kind={it.kind} item={it.item} className="m-2 aspect-[4/3] bg-transparent" />
-      </div>
+        {owned && (
+          <span className="absolute top-2 left-2 rounded-full bg-black/75 px-2 py-0.5 text-[10px] font-bold text-[#7dffb0]">
+            ✓ OWNED
+          </span>
+        )}
+      </button>
       <div className="flex flex-1 flex-col gap-2 px-2.5 pb-2.5">
         <div>
           <h3 className="truncate text-sm font-bold">{itemName(it.kind, it.item)}</h3>
           <p className="flex items-center gap-1.5 text-[11px] text-muted capitalize">
-            <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: rarityColor(rarity) }} />
+            <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: color }} />
             {rarity} {it.kind}
           </p>
         </div>
@@ -247,23 +295,22 @@ function ItemCard(props: CardProps) {
   );
 }
 
-/** Big featured card; outfits get the live 3D turntable. */
-function FeaturedCard(props: CardProps) {
-  const { it } = props;
+/** A live 3D turntable of an outfit (or of the rifle wearing a wrap), or a big banner. */
+function ItemStage({ it, className }: { it: ShopItem; className?: string }) {
   const host = useRef<HTMLDivElement>(null);
   const reduceMotion = useSettings((s) => s.reduceMotion);
-  const [noWebGL, setNoWebGL] = useState(it.kind !== "outfit");
-  const rarity = rarityOf(it.kind, it.item);
+  const [noWebGL, setNoWebGL] = useState(it.kind === "banner");
 
   useEffect(() => {
-    if (it.kind !== "outfit") return;
+    if (it.kind === "banner") return;
     let preview: Preview | null = null;
     let cancelled = false;
     import("@/games/neon-siege/three/preview")
       .then(({ createPreview }) => {
         if (cancelled || !host.current) return;
         preview = createPreview(host.current, { reduceMotion });
-        preview.setOutfit(it.item);
+        if (it.kind === "outfit") preview.setOutfit(it.item);
+        else preview.setWrap(it.item);
       })
       .catch(() => !cancelled && setNoWebGL(true));
     return () => {
@@ -272,29 +319,178 @@ function FeaturedCard(props: CardProps) {
     };
   }, [it.kind, it.item, reduceMotion]);
 
+  if (it.kind === "banner")
+    return <div aria-hidden className={cn("rounded-xl", className)} style={{ background: BANNERS[it.item]?.art }} />;
+  return (
+    <div className={className ?? "relative"}>
+      <div ref={host} className="absolute inset-0" />
+      {noWebGL && <RewardArt kind={it.kind} item={it.item} className="absolute inset-6 bg-transparent" />}
+    </div>
+  );
+}
+
+function FeaturedCard(props: CardProps) {
+  const { it, onInspect } = props;
+  const rarity = rarityOf(it.kind, it.item);
+  const color = rarityColor(rarity);
   return (
     <article
       className="relative flex min-h-[26rem] flex-col overflow-hidden rounded-2xl border-2"
-      style={{ borderColor: rarityColor(rarity) }}
+      style={{ borderColor: color, boxShadow: `0 20px 60px -25px ${color}` }}
     >
       <div
         className="absolute inset-0"
-        style={{ background: `radial-gradient(circle at 50% 35%, ${rarityColor(rarity)}66, #111318 70%)` }}
+        style={{ background: `radial-gradient(circle at 50% 35%, ${color}66, #111318 70%)` }}
       />
-      <div ref={host} className="absolute inset-0" />
-      {noWebGL && <RewardArt kind={it.kind} item={it.item} className="absolute inset-10 bg-transparent" />}
+      <ItemStage it={it} className="absolute inset-0" />
       <span className="absolute top-3 left-3 rounded-full bg-black/70 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-[#ffd23f]">
         Featured
       </span>
-      <div className="relative mt-auto bg-gradient-to-t from-black/85 via-black/60 to-transparent p-4 pt-16 text-white">
-        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: rarityColor(rarity) }}>
+      <button
+        type="button"
+        onClick={onInspect}
+        className="absolute top-3 right-3 rounded-full bg-black/70 px-3 py-1 text-[11px] font-bold text-white hover:bg-black/90"
+      >
+        Inspect
+      </button>
+      <div className="relative mt-auto bg-gradient-to-t from-black/90 via-black/60 to-transparent p-4 pt-16 text-white">
+        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color }}>
           {rarity} {it.kind}
         </p>
         <h2 className="font-display text-3xl font-black uppercase">{itemName(it.kind, it.item)}</h2>
+        <p className="mt-1 text-sm text-white/80">{it.blurb}</p>
         <div className="mt-3">
           <BuyButton {...props} big />
         </div>
       </div>
     </article>
+  );
+}
+
+function InspectDialog(props: CardProps & { onClose: () => void }) {
+  const { it, onClose, owned, canAfford } = props;
+  const rarity = rarityOf(it.kind, it.item);
+  const color = rarityColor(rarity);
+  return (
+    <Modal open onClose={onClose} title={itemName(it.kind, it.item)} className="w-[min(94vw,52rem)]">
+      <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+        <div
+          className="relative aspect-square overflow-hidden rounded-xl"
+          style={{ background: `radial-gradient(circle at 50% 35%, ${color}66, #111318 72%)` }}
+        >
+          <ItemStage it={it} className="absolute inset-0" />
+          <span className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] text-white/80">
+            Drag to rotate
+          </span>
+        </div>
+        <div className="flex flex-col gap-3">
+          <p className="flex items-center gap-2 text-sm font-semibold capitalize">
+            <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+            {rarity} {it.kind}
+          </p>
+          <p className="text-muted">{it.blurb}</p>
+          <dl className="grid grid-cols-2 gap-2 text-sm">
+            <div className="rounded-md bg-surface-2 p-2">
+              <dt className="text-xs text-muted">Price</dt>
+              <dd>
+                <CoinAmount amount={it.price} />
+              </dd>
+            </div>
+            <div className="rounded-md bg-surface-2 p-2">
+              <dt className="text-xs text-muted">Drop</dt>
+              <dd className="font-semibold">DROP 1</dd>
+            </div>
+          </dl>
+          {!owned && !canAfford && (
+            <p className="text-xs text-muted">
+              You need a few more coins. Win a Cash Cup (every third match) or climb the Battle Pass free lane.
+            </p>
+          )}
+          <div className="mt-auto">
+            <BuyButton {...props} big />
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+const CONFETTI = ["#ffb321", "#ff4d6d", "#22e5ff", "#7dffb0", "#b25cff", "#ffffff"];
+
+/** Full-screen "UNLOCKED!" moment after a purchase, in the item's rarity colour. */
+function Celebration({ it, onEquip, onClose }: { it: ShopItem; onEquip: () => void; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const color = rarityColor(rarityOf(it.kind, it.item));
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      aria-labelledby="unlocked-title"
+      className="m-0 h-[100dvh] max-h-none w-screen max-w-none overflow-hidden bg-transparent p-0 text-white backdrop:bg-black/85"
+      style={{ "--zx-burst": color } as React.CSSProperties}
+    >
+      <div className="relative grid h-full place-items-center">
+        <div
+          aria-hidden
+          className="zx-rays absolute top-1/2 left-1/2 h-[160vmax] w-[160vmax] -translate-x-1/2 -translate-y-1/2 opacity-40"
+        />
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+          {Array.from({ length: 36 }, (_, i) => (
+            <span
+              key={i}
+              className="zx-confetti"
+              style={
+                {
+                  left: `${(i * 37) % 100}%`,
+                  background: CONFETTI[i % CONFETTI.length],
+                  "--zx-fall": `${2.2 + ((i * 13) % 10) / 6}s`,
+                  "--zx-delay": `${-((i * 7) % 20) / 8}s`,
+                } as React.CSSProperties
+              }
+            />
+          ))}
+        </div>
+        <div className="zx-pop relative flex flex-col items-center gap-4 px-6 text-center">
+          <p className="font-display text-xs font-black tracking-[0.5em]" style={{ color }}>
+            NEW ITEM
+          </p>
+          <h2 id="unlocked-title" className="font-display text-4xl font-black uppercase italic sm:text-6xl">
+            Unlocked!
+          </h2>
+          <div
+            className="aspect-square w-[min(60vw,18rem)] rounded-2xl border-2"
+            style={{
+              borderColor: color,
+              background: `radial-gradient(circle at 50% 35%, ${color}88, #111318 75%)`,
+              boxShadow: `0 0 80px -10px ${color}`,
+            }}
+          >
+            <RewardArt kind={it.kind} item={it.item} className="h-full w-full bg-transparent" />
+          </div>
+          <p className="text-lg font-bold">{itemName(it.kind, it.item)}</p>
+          <div className="flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              autoFocus
+              onClick={onEquip}
+              className="rounded-md bg-[#f2c230] px-6 py-2.5 font-bold text-[#2a1d00] hover:brightness-110"
+            >
+              Equip now
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-white/40 px-6 py-2.5 font-bold hover:bg-white/10"
+            >
+              Keep shopping
+            </button>
+          </div>
+        </div>
+      </div>
+    </dialog>
   );
 }

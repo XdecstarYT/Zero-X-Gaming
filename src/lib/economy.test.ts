@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OUTFITS, WRAPS } from "@/games/neon-siege/cosmetics";
 import { BATTLE_PASS_PRICE, CASH_CUP_PRIZES, currentDrop, DROPS, isCashCup, matchesUntilCashCup } from "./economy";
 import { BANNERS } from "./season";
-import { buyBattlePass, buyShopItem, loadSeasonState, recordGuestMatch, type RecordedMatch } from "./season-client";
+import { buyBattlePass, buyShopItem, loadSeasonState, recordGuestMatch, type MatchSummary, type RecordedMatch } from "./season-client";
 
 const sql = readFileSync(join(process.cwd(), "supabase/migrations/20260930150000_coins_shop.sql"), "utf8");
 
@@ -57,17 +57,26 @@ describe("guest economy (same rules as the server)", () => {
   afterEach(() => vi.useRealTimers());
 
   it("pays Cash Cup coins on the third match, on Hard only", async () => {
-    expect(recordGuestMatch(match(1)).cashCup).toBe(false);
-    expect(recordGuestMatch(match(1)).coinsWon).toBe(0);
-    const cup = recordGuestMatch(match(1));
-    expect(cup).toMatchObject({ cashCup: true, coinsWon: 50, coins: 50 });
-    recordGuestMatch(match(2));
-    recordGuestMatch(match(2));
-    expect(recordGuestMatch(match(2, "normal"))).toMatchObject({ cashCup: true, coinsWon: 0 });
-    recordGuestMatch(match(1));
-    recordGuestMatch(match(1));
-    expect(recordGuestMatch(match(3))).toMatchObject({ coinsWon: 5, coins: 55 });
-    expect((await loadSeasonState()).coins).toBe(55);
+    const results: MatchSummary[] = [];
+    const play = (placement: number, difficulty: RecordedMatch["difficulty"] = "hard") => {
+      const r = recordGuestMatch(match(placement, difficulty));
+      results.push(r);
+      return r;
+    };
+    expect(play(1)).toMatchObject({ cashCup: false, coinsWon: 0 });
+    expect(play(1)).toMatchObject({ cashCup: false, coinsWon: 0 });
+    expect(play(1)).toMatchObject({ cashCup: true, coinsWon: 50 });
+    play(2);
+    play(2);
+    expect(play(2, "normal")).toMatchObject({ cashCup: true, coinsWon: 0 });
+    play(1);
+    play(1);
+    expect(play(3)).toMatchObject({ cashCup: true, coinsWon: 5 });
+    // Balance = Cash Cup winnings + free-track tier coins.
+    const expected = results.reduce((sum, r) => sum + r.coinsWon + r.tierCoins, 0);
+    expect(results.some((r) => r.tierCoins > 0)).toBe(true);
+    expect(results.at(-1)!.coins).toBe(expected);
+    expect((await loadSeasonState()).coins).toBe(expected);
   });
 
   it("gates tier rewards behind the 200-coin pass, then grants everything reached", async () => {
