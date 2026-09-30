@@ -5,7 +5,7 @@ A browser gaming hub: discover, play, and compete in original web games. Dark, n
 **Status:** all six phases are complete, plus an intro splash and an arena FPS with bots and online play. The project
 has:
 
-- 5 games, including **Neon Siege**, an arena FPS with AI bots and online multiplayer
+- 5 games, including **Neon Siege**, a 3D battle royale with AI bots, online rooms, and a Season 1 battle pass
 - a cinematic intro splash on each visitor's first page load in a session
 - accounts
 - server-validated scores
@@ -22,7 +22,7 @@ See [`DECISIONS.md`](./DECISIONS.md) for every deviation from the original brief
 | **Grid Lock**    | Slide & match  | Arrows move the cursor, Shift + arrows slide · swipe along a row or column        |
 | **Orbit**        | Gravity arcade | ← → steer, Space boost · drag to steer, second finger to boost                    |
 | **Blitz Trivia** | 60 s quiz      | 1–4 or Tab + Enter · tap an answer                                                |
-| **Neon Siege**   | Arena FPS      | WASD + mouse (click to lock), click/Space fire, R reload · stick, drag look, FIRE |
+| **Neon Siege**   | Battle royale  | WASD + mouse, click fire, right-click aim, E loot, 1–5 switch, R reload · stick, drag look, FIRE/AIM |
 
 Esc (or the pause key from Settings) pauses any game. Games also pause when the tab is hidden.
 
@@ -90,24 +90,56 @@ supabase/migrations/          schema, RLS, functions (append-only history)
 tests/e2e/                    Playwright specs (app flows + a11y)
 ```
 
-### Neon Siege: bots and multiplayer
+### Neon Siege: battle royale, 3D view, and Season 1
 
-Neon Siege (`src/games/neon-siege/`) is a raycast ("2.5D") shooter on the same Canvas engine:
+Neon Siege (`src/games/neon-siege/`) is a battle royale shooter. The simulation is 2D and grid-based: pure, seeded,
+and unit tested. It's drawn by a three.js 3D view, or a Canvas 2D raycaster when WebGL is unavailable.
 
-- `map.ts` holds the arena grid, DDA raycasting, line of sight, and collision.
+**Simulation**
+
+- `map.ts` generates the Season 1 town "Ground Zero": 72 × 72 m with brick and concrete buildings (doors,
+  partitions, windows), roads, a forest, a quarry, crate yards, chests, loot spots, and 24 spawns. It also does DDA
+  raycasting, line of sight, and collision.
 - `path.ts` is A* pathfinding.
-- `world.ts` covers fighters, hitscan weapons, damage, kills, and respawns.
-- `render.ts` draws walls, depth-sorted sprites, the gun, and the HUD.
+- `items.ts` defines five weapons (pistol, SMG, assault rifle, pump shotgun, sniper), rarities from common to
+  legendary (damage and reload bonuses), med kits, and shield potions.
+- `world.ts` covers fighters, a 5-slot inventory, hitscan with pellets and falloff, shields, loot, chests, and
+  consumables.
+- `storm.ts` runs five shrinking circles with rising damage.
+- `royale.ts` is the ranked mode: you plus 15 bots, last one standing. Score is `kills × 100 + placement bonus +
+  2/s survived`.
 
-**Bot AI** (`bots.ts`) runs a state machine: patrol → hunt → engage → retreat to cover. Bots perceive fairly: a vision
-cone plus line of sight, hearing up close, and noticing who shot them. They navigate with A* and fire in bursts.
-Difficulty only changes reaction time, aim error, turn speed, burst discipline, and the bot rifle's
-damage/spread/fire rate.
+**Bot AI** (`bots.ts`) runs a state machine: loot → rotate (to the safe zone) → heal → patrol → hunt → engage →
+retreat. Bots pick the right gun for the range, use consumables, and perceive fairly (vision cone plus line of
+sight, hearing, and noticing who shot them). Difficulty changes reaction time, aim, and a damage/spread handicap.
 
-**Solo "Siege" mode** (`solo.ts`, ranked) is wave survival. Waves grow in size, bot HP, and skill. Kills score
-`100 + 25 × wave` (max 300), and each cleared wave adds a bonus and heals you.
+**Rendering** (`render3d.ts`, `three/`, lazy-loaded)
 
-**Online deathmatch** (`net.ts`, `online.ts`, unranked) is free-for-all for up to 4 fighters, with bots filling
+- Everything is procedural (no downloaded assets):
+  - PBR-ish textures: brick, concrete, asphalt, grass, wood, bark, roof tiles, stone.
+  - The atmospheric `Sky` with image-based lighting, a sun with soft shadows (High quality), and distance fog.
+- The static town is merged by material into a couple of dozen draw calls.
+- Characters are animated humanoids in their outfit (walk cycle, aiming, recoil, falling on elimination).
+- The first-person weapon has sway, bob, recoil, reload and draw animations, and ADS zoom (a scope overlay for the
+  sniper).
+- Effects: muzzle flashes with light, tracers, impact sparks and dust, and a scrolling storm wall that tints the fog
+  when you're caught outside.
+- The HUD (`hud.ts`) is DOM: shield/health, hotbar, minimap with the storm, kill feed, and a loot/chest prompt.
+- Touch controls: move stick, drag-to-look, a FIRE button you can drag to aim, AIM, reload, and tap-to-switch.
+- Graphics: High, Low, or Classic 2D, remembered per device.
+- Gunfire audio is synthesised per weapon and muffled with distance (`sfx.ts`).
+
+**Season 1 · Battle pass** (`src/lib/season.ts`, `supabase/migrations/20260930120000_season_one.sql`)
+
+- Tiers: 30 tiers × 1,000 XP, each unlocking an outfit, weapon wrap, or banner. Everything is free to earn.
+- Challenges: 3 daily and 4 weekly, rotating deterministically from a pool.
+- Ranked matches award season XP through `record_siege_match`, which validates plausibility, rate-limits, advances
+  challenges, and grants unlocks server-side. Guests progress on-device with the same rules.
+- `/battle-pass` shows progress and rewards. `/locker` equips cosmetics, with a 3D preview (`set_loadout` checks
+  ownership).
+- A unit test checks the SQL seed against the TypeScript catalogue.
+
+**Online deathmatch** (`net.ts`, `online.ts`, unranked) takes place in the same town with a fixed loadout (AR, shotgun, SMG, sniper, shields). It's free-for-all for up to 4 fighters, with bots filling
 empty slots. The match runs to 15 kills or 5 minutes.
 
 - **Rooms:** players join a room by code, or by an invite link with `?room=CODE`.

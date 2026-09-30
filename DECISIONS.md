@@ -182,3 +182,26 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     screen. Page scroll and pull-to-refresh are disabled while playing. Leaving fullscreen with the back gesture
     pauses the game. Pause sits at top-center, clear of every game's controls, and Exit lives in the pause and
     game-over overlays. Landscape games show a dismissable "rotate your phone" card in portrait.
+57. **Neon Siege became a battle royale on a 2D-grid simulation with a 3D view.** The rules still run on the 1 m grid
+    (A*, raycast hitscan, collision), so they stay pure, seeded, fast in unit tests, and shared by the bots, online
+    play, and both renderers. The three.js view is a presentation layer: buildings get storeys, roofs, and windows,
+    and trees get canopies that are visual only. Shots are horizontal, with no vertical aim. That trade keeps the
+    netcode and bot AI simple and makes touch controls one-thumb friendly.
+58. **All 3D assets are procedural.** Textures are painted on canvases at startup, and models (guns, characters,
+    town) are built from primitives. There's nothing to download or license, the chunk stays small (three.js plus
+    our code, lazy-loaded only when you play or open the Locker), and every design is original. Static geometry is
+    merged per material, so the whole town draws in a couple of dozen calls.
+59. **Quality tiers and a fallback.** High adds shadows, antialiasing, and pixel ratio up to 2. Low (the default on
+    touch devices) drops those and pulls the fog in. Classic 2D is the old raycaster, used automatically if WebGL
+    fails. The HUD is DOM, so it's identical and crisp across all three.
+60. **The battle pass is free and server-authoritative for signed-in players.** No purchases; every tier is earned
+    by playing. `record_siege_match` accepts only plausible match stats:
+    - bounded kills, placement, damage, chests, and time;
+    - damage limited to 200 per second survived;
+    - a match can't last longer than the time since the previous one was recorded.
+    It computes XP and challenge progress itself, so clients never write progress tables. The catalogue lives in
+    TypeScript and is mirrored in SQL, and a unit test fails if they drift. Guests progress on-device.
+61. **Score caps were re-tuned for the battle royale** (`max_score` 5,000, 150 pts/s). Leaderboard entries from
+    the earlier wave-survival mode stay in the history. `?siege=quick` speeds the storm up for testing, and those
+    matches are unranked.
+
