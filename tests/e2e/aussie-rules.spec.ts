@@ -65,3 +65,45 @@ test("Screamer: unlock Sports+ for 50 coins, then play a match to full time", as
   await expect(stage).toHaveAttribute("data-phase", "over");
   expect(errors).toEqual([]);
 });
+
+/** The premiership season: pick a club, see the ladder, play round 1 and get the votes and the next fixture. */
+test("Screamer: start a premiership season and play round 1", async ({ page }) => {
+  test.setTimeout(360_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 10, hasPass: false, purchases: ["unlock:sports-plus"], challenges: {} }));
+    localStorage.setItem("zx-footy-prefs", JSON.stringify({ gfx: "low", minutes: 2, mode: "season", weather: "rain" }));
+  });
+  await page.goto("/games/aussie-rules?footy=quick");
+  const stage = page.getByTestId("game-stage");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
+  await stage.getByRole("group", { name: "Your club" }).getByRole("button", { name: /Highland Wolves/ }).click();
+  await stage.getByTestId("footy-start").click();
+  // The season hub: the ladder, then round 1.
+  await expect(stage.getByTestId("footy-ladder")).toBeVisible();
+  await expect(stage.getByTestId("footy-ladder")).toContainText("Highland Wolves");
+  await expect(stage.getByTestId("footy-start")).toContainText("Round 1");
+  await stage.getByTestId("footy-start").click();
+  const bug = stage.getByTestId("footy-score");
+  await expect(bug).toContainText("HIG", { timeout: 60_000 });
+  await expect(bug).toContainText("Round 1 · Rain");
+
+  await page.waitForFunction(() => "__footyAdvance" in window);
+  for (let i = 0; i < 12; i++) {
+    const over = await page.evaluate(() => {
+      const w = window as unknown as { __footyAdvance: (s: number) => void; __footy: { phase: string } };
+      w.__footyAdvance(20);
+      return w.__footy.phase === "over";
+    });
+    if (over) break;
+  }
+  const results = stage.getByTestId("footy-results");
+  await expect(results).toBeVisible({ timeout: 60_000 });
+  await expect(results).toContainText("Best on ground");
+  // The quick test match is unranked, so the season doesn't move on.
+  await expect(stage.getByTestId("footy-commentary")).toBeAttached();
+  await results.getByRole("button", { name: "Continue" }).click();
+  expect(errors).toEqual([]);
+});

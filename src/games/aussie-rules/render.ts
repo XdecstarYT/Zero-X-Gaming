@@ -10,7 +10,7 @@ import { setTextureDetail } from "../neon-siege/three/textures";
 import { GRADE_SHADER, nightDome, physicalSky, type TimeOfDay } from "../sports-kit/look";
 import { BONES, buildPed, posePed, type PedModel, type Pose } from "../code-3/people3d";
 import { buildStadium, type Detail, type Stadium } from "./stadium";
-import { A, B, FootySim, points, type Official, type Player, type SimEvent } from "./sim";
+import { A, B, FootySim, GOAL_X, points, type Official, type Player, type SimEvent } from "./sim";
 import { ballTexture, blobTexture, ringTexture } from "./textures";
 
 export type { TimeOfDay } from "../sports-kit/look";
@@ -24,6 +24,27 @@ const HAIRS = ["#2a1d14", "#1a1410", "#4a3020", "#7a5a38", "#b08a58", "#d9b98a",
 interface Body {
   model: PedModel;
   t: number;
+}
+
+/** One frame of the match, kept for instant replays. */
+interface Snap {
+  t: number;
+  players: Player[];
+  ball: FootySim["ball"];
+  umpire: Official;
+  goalUmps: [Official, Official];
+  tackle: FootySim["tackle"];
+  stoppage: FootySim["stoppage"];
+  human: number;
+}
+
+export interface ViewOptions {
+  /** Rain: a slick, darker ground, overcast light and falling rain. */
+  wet?: boolean;
+  /** Watching, not playing (Live Sports): no markers for "your" player. */
+  spectator?: boolean;
+  /** Instant replays of goals: seconds of build-up shown, and the playback speed. */
+  replay?: { window: number; speed: number } | false;
 }
 
 export class FootyView {
@@ -69,11 +90,28 @@ export class FootyView {
   private readonly xAxis = new THREE.Vector3(1, 0, 0);
   private ballRoll = 0;
 
+  // Instant replay.
+  private history: Snap[] = [];
+  private lastRec = -1;
+  private replayQ: { at: number; goalT: number; side: number } | null = null;
+  private replayFrames: Snap[] | null = null;
+  private replayT = 0;
+  private replayI = 0;
+  private replaySide = 1;
+  replaying = false;
+  // Weather and the premiership cup.
+  private rain: THREE.LineSegments | null = null;
+  private cup: THREE.Group | null = null;
+  private confetti: THREE.Points | null = null;
+  private confettiV: Float32Array | null = null;
+  private celebrateTeam = -1;
+
   constructor(
     private host: HTMLElement,
     private sim: FootySim,
     private detail: Detail,
     private tod: TimeOfDay,
+    private opts: ViewOptions = {},
   ) {
     const high = detail !== "low";
     this.renderer = new THREE.WebGLRenderer({ antialias: !high, powerPreference: "high-performance", stencil: false });
@@ -169,6 +207,262 @@ export class FootyView {
     this.ro.observe(host);
     this.resize();
     this.drawScreen(true);
+    if (opts.wet) this.makeWet(high);
+    if (opts.spectator) this.you.visible = this.youArrow.visible = false;
+  }
+
+  /** Rain: overcast light, a slick ground that catches the reflections, and the rain itself. */
+  private makeWet(high: boolean) {
+    this.key.intensity *= 0.55;
+    this.hemi.intensity *= 0.8;
+    const fog = this.scene.fog as THREE.FogExp2 | null;
+    if (fog) {
+      fog.density *= 2.6;
+      if (this.tod === "day") fog.color.set("#7c8692");
+    }
+    this.scene.environmentIntensity *= 1.6;
+    const g = this.stadium.ground;
+    g.roughness = 0.42;
+    g.color.multiplyScalar(0.8);
+    const n = high ? 2600 : 900;
+    const pos = new Float32Array(n * 6);
+    for (let i = 0; i < n; i++) {
+      const x = (Math.random() - 0.5) * 70;
+      const y = Math.random() * 32;
+      const z = (Math.random() - 0.5) * 70;
+      pos.set([x, y, z, x + 0.06, y + 0.55, z + 0.02], i * 6);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    this.rain = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: "#d4dde8", transparent: true, opacity: this.tod === "night" ? 0.42 : 0.3, depthWrite: false }));
+    this.rain.frustumCulled = false;
+    this.scene.add(this.rain);
+  }
+
+  private stepRain(dt: number) {
+    const r = this.rain;
+    if (!r) return;
+    const a = r.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const arr = a.array as Float32Array;
+    const c = this.camera.position;
+    const fall = 17 * dt;
+    for (let i = 0; i < arr.length; i += 6) {
+      let y = arr[i + 1] - fall;
+      let x = arr[i] - fall * 0.1;
+      let z = arr[i + 2];
+      if (y < 0) y += 32;
+      // Keep the drops in a 70 m box round the camera.
+      if (x - c.x > 35) x -= 70;
+      else if (x - c.x < -35) x += 70;
+      if (z - c.z > 35) z -= 70;
+      else if (z - c.z < -35) z += 70;
+      arr[i] = x;
+      arr[i + 1] = y;
+      arr[i + 2] = z;
+      arr[i + 3] = x + 0.06;
+      arr[i + 4] = y + 0.55;
+      arr[i + 5] = z + 0.02;
+    }
+    a.needsUpdate = true;
+  }
+
+  // ------------------------------------------------------- instant replay
+
+  private record() {
+    const sim = this.sim;
+    if (this.opts.replay === false || this.replaying || sim.time - this.lastRec < 1 / 30) return;
+    this.lastRec = sim.time;
+    this.history.push({
+      t: sim.time,
+      players: sim.players.map((p) => ({ ...p, act: p.act ? { ...p.act } : null })),
+      ball: { ...sim.ball },
+      umpire: { ...sim.umpire },
+      goalUmps: [{ ...sim.goalUmps[0] }, { ...sim.goalUmps[1] }],
+      tackle: sim.tackle ? { ...sim.tackle } : null,
+      stoppage: sim.stoppage ? { ...sim.stoppage } : null,
+      human: sim.human,
+    });
+    if (this.history.length > 300) this.history.splice(0, this.history.length - 300);
+  }
+
+  /** Replay the last few seconds now (test hook). */
+  replayNow() {
+    this.replayQ = { at: this.time, goalT: this.sim.time, side: this.sim.ball.x > 0 ? 1 : -1 };
+  }
+
+  /** Stop any replay (and drop a queued one). */
+  cancelReplay() {
+    this.replaying = false;
+    this.replayQ = null;
+    this.replayFrames = null;
+  }
+
+  /** A frame of the replay: between two snapshots, interpolated. */
+  private ghost(a: Snap, b: Snap, k: number) {
+    const lerp = (x: number, y: number) => x + (y - x) * k;
+    const lerpA = (x: number, y: number) => x + Math.atan2(Math.sin(y - x), Math.cos(y - x)) * k;
+    const players = a.players.map((p, i) => {
+      const q = b.players[i];
+      return { ...p, x: lerp(p.x, q.x), y: lerp(p.y, q.y), z: lerp(p.z, q.z), h: lerpA(p.h, q.h), step: lerp(p.step, q.step), speed: lerp(p.speed, q.speed), act: p.act && q.act && p.act.kind === q.act.kind ? { ...p.act, t: lerp(p.act.t, q.act.t) } : p.act };
+    });
+    const ball = { ...a.ball, x: lerp(a.ball.x, b.ball.x), y: lerp(a.ball.y, b.ball.y), z: lerp(a.ball.z, b.ball.z), spin: lerp(a.ball.spin, b.ball.spin) };
+    const real = this.sim;
+    return {
+      players,
+      ball,
+      umpire: a.umpire,
+      goalUmps: a.goalUmps,
+      tackle: a.tackle,
+      stoppage: a.stoppage,
+      human: a.human,
+      phase: "play",
+      landing: null,
+      set: null,
+      clubs: real.clubs,
+      score: real.score,
+      quarter: real.quarter,
+      clock: real.clock,
+      time: a.t,
+      get you() {
+        return players[a.human];
+      },
+    } as unknown as FootySim;
+  }
+
+  /** Play the replay; false when it's over. */
+  private renderReplay(dt: number) {
+    const frames = this.replayFrames;
+    if (!frames) return false;
+    const speed = this.opts.replay ? this.opts.replay.speed : 0.5;
+    this.replayT += dt * speed;
+    const t = frames[0].t + this.replayT;
+    while (this.replayI < frames.length - 2 && frames[this.replayI + 1].t <= t) this.replayI++;
+    const a = frames[this.replayI];
+    const b = frames[Math.min(frames.length - 1, this.replayI + 1)];
+    if (t >= frames[frames.length - 1].t) {
+      this.cancelReplay();
+      this.cutTo = 1;
+      return false;
+    }
+    const k = b.t > a.t ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 0;
+    const real = this.sim;
+    this.sim = this.ghost(a, b, k);
+    const sim = this.sim;
+    sim.players.forEach((p, i) => this.updatePlayer(p, this.players[i], dt * speed));
+    this.updateOfficial(sim.umpire, this.officials[0], dt * speed);
+    this.updateOfficial(sim.goalUmps[0], this.officials[1], dt * speed);
+    this.updateOfficial(sim.goalUmps[1], this.officials[2], dt * speed);
+    this.updateBall(dt * speed);
+    // Behind the goals, low, looking back up the ground at the ball.
+    const bl = sim.ball;
+    const want = this.tmp.set(this.replaySide * (GOAL_X + 6), 2.6, Math.max(-1.8, Math.min(1.8, bl.z * 0.2)));
+    const look = this.tmp2.set(bl.x, Math.max(1, bl.y * 0.8), bl.z);
+    this.camPos.lerp(want, this.replayT < 0.05 ? 1 : 1 - Math.exp(-dt * 2));
+    this.camLook.lerp(look, this.replayT < 0.05 ? 1 : 1 - Math.exp(-dt * 6));
+    this.camera.position.copy(this.camPos);
+    this.camera.lookAt(this.camLook);
+    const dist = this.camPos.distanceTo(this.camLook);
+    const fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.max(6, 9 + bl.y * 0.4) / dist));
+    this.camera.fov += (Math.min(45, fov) - this.camera.fov) * Math.min(1, dt * 3);
+    this.camera.updateProjectionMatrix();
+    this.sim = real;
+    this.focus.set(bl.x, 0, bl.z);
+    this.you.visible = this.youArrow.visible = this.drop.visible = this.arc.visible = false;
+    return true;
+  }
+
+  // -------------------------------------------------------- the premiers
+
+  /** The siren in a Grand Final: confetti, and the captain holds up the cup. */
+  celebrate(team: 0 | 1) {
+    if (this.cup) return;
+    this.celebrateTeam = team;
+    const gold = new THREE.MeshStandardMaterial({ color: "#f0cc62", metalness: 0.85, roughness: 0.25, emissive: "#6b4a0a", emissiveIntensity: 0.6 });
+    const cup = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.LatheGeometry(
+        [
+          [0.0, 0],
+          [0.12, 0],
+          [0.12, 0.03],
+          [0.04, 0.08],
+          [0.035, 0.22],
+          [0.09, 0.28],
+          [0.16, 0.42],
+          [0.17, 0.55],
+          [0.15, 0.58],
+        ].map(([r, y]) => new THREE.Vector2(r, y)),
+        32,
+      ),
+      gold,
+    );
+    cup.add(body);
+    for (const s of [-1, 1]) {
+      const handle = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.012, 8, 20, Math.PI * 1.2), gold);
+      handle.position.set(0, 0.44, s * 0.17);
+      handle.rotation.set(0, Math.PI / 2, s > 0 ? -0.6 : Math.PI + 0.6);
+      cup.add(handle);
+    }
+    const ribbonMat = new THREE.MeshStandardMaterial({ color: this.sim.clubs[team].guernsey, roughness: 0.6, side: THREE.DoubleSide });
+    for (const s of [-1, 1]) {
+      const rb = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.4), ribbonMat);
+      rb.position.set(0, 0.3, s * 0.2);
+      cup.add(rb);
+    }
+    cup.traverse((o) => (o.castShadow = true));
+    cup.scale.setScalar(1.35);
+    this.cup = cup;
+    this.scene.add(cup);
+    const n = 2400;
+    const pos = new Float32Array(n * 3);
+    const col = new Float32Array(n * 3);
+    this.confettiV = new Float32Array(n * 3);
+    const club = this.sim.clubs[team];
+    const palette = [club.guernsey, club.hoop, "#ffffff", club.guernsey].map((c) => new THREE.Color(c));
+    for (let i = 0; i < n; i++) {
+      pos.set([(Math.random() - 0.5) * 70, 6 + Math.random() * 40, (Math.random() - 0.5) * 60], i * 3);
+      const c = palette[i % palette.length];
+      col.set([c.r, c.g, c.b], i * 3);
+      this.confettiV.set([(Math.random() - 0.5) * 1.5, -1.2 - Math.random() * 1.6, (Math.random() - 0.5) * 1.5], i * 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    this.confetti = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.32, vertexColors: true }));
+    this.confetti.frustumCulled = false;
+    this.scene.add(this.confetti);
+    this.cheer = 1;
+  }
+
+  /** The captain: the winning side's player nearest the centre. */
+  private captain() {
+    const team = this.celebrateTeam;
+    let best = this.sim.players.find((p) => p.team === team)!;
+    for (const p of this.sim.players) if (p.team === team && Math.hypot(p.x, p.z) < Math.hypot(best.x, best.z)) best = p;
+    return best;
+  }
+
+  private stepCelebration(dt: number) {
+    if (!this.cup || !this.confetti || !this.confettiV) return;
+    this.cheer = Math.max(this.cheer, 0.9);
+    const cap = this.captain();
+    const body = this.players[cap.id].model;
+    body.group.updateMatrixWorld(true);
+    const l = body.bones[HAND_L].getWorldPosition(this.tmp);
+    const r = body.bones[HAND_R].getWorldPosition(this.tmp2);
+    this.cup.position.copy(l).add(r).multiplyScalar(0.5);
+    this.cup.position.y += 0.02;
+    this.cup.rotation.y = -cap.h + Math.PI / 2;
+    const a = this.confetti.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const arr = a.array as Float32Array;
+    const v = this.confettiV;
+    for (let i = 0; i < arr.length; i += 3) {
+      arr[i] += (v[i] + Math.sin(this.time * 2 + i) * 0.6) * dt;
+      arr[i + 1] += v[i + 1] * dt;
+      arr[i + 2] += (v[i + 2] + Math.cos(this.time * 1.7 + i) * 0.6) * dt;
+      if (arr[i + 1] < 0.02) arr[i + 1] = 0.02;
+    }
+    a.needsUpdate = true;
   }
 
   private baseRatio() {
@@ -296,6 +590,7 @@ export class FootyView {
       this.headline = p ? `GOAL · ${p.name.toUpperCase()} ${Math.round(e.dist)}m` : "GOAL";
       this.headlineT = 6;
       this.cutTo = 0;
+      if (this.opts.replay !== false) this.replayQ = { at: this.time + 1.5, goalT: sim.time, side: sim.ball.x > 0 ? 1 : -1 };
     } else if (e.kind === "behind") {
       this.cheer = Math.max(this.cheer, 0.25);
       this.headline = e.rushed ? "RUSHED BEHIND" : e.post ? "HIT THE POST" : "BEHIND";
@@ -313,8 +608,32 @@ export class FootyView {
   // ---------------------------------------------------------------- frame
 
   render(dt: number, mode: CamMode) {
-    const sim = this.sim;
     this.time += dt;
+    this.record();
+    this.stepRain(dt);
+    if (this.replayQ && this.time >= this.replayQ.at && !this.replaying) {
+      const q = this.replayQ;
+      this.replayQ = null;
+      const w = this.opts.replay ? this.opts.replay.window : 3.2;
+      const frames = this.history.filter((f) => f.t >= q.goalT - w && f.t <= q.goalT + 0.35);
+      if (frames.length > 10) {
+        this.replayFrames = frames;
+        this.replayT = 0;
+        this.replayI = 0;
+        this.replaySide = q.side;
+        this.replaying = true;
+      }
+    }
+    if (this.replaying && this.renderReplay(dt)) {
+      this.cheer = Math.max(0, this.cheer - dt * 0.05);
+      this.stadium.crowd.uTime.value = this.time;
+      this.stadium.crowd.uCheer.value = this.cheer;
+      this.updateShadow();
+      if (this.composer) this.composer.render();
+      else this.renderer.render(this.scene, this.camera);
+      return;
+    }
+    const sim = this.sim;
     this.cheer = Math.max(0, this.cheer - dt * 0.16);
     this.headlineT = Math.max(0, this.headlineT - dt);
     const st = this.stadium;
@@ -329,6 +648,7 @@ export class FootyView {
     this.updateBall(dt);
     this.updateMarkers();
     this.updateCamera(dt, mode);
+    this.stepCelebration(dt);
     this.updateShadow();
     this.drawScreen();
 
@@ -338,6 +658,7 @@ export class FootyView {
 
   private poseOf(p: Player): [Pose, number] {
     const sim = this.sim;
+    if (this.celebrateTeam >= 0 && p.team === this.celebrateTeam) return [this.cup && p.id === this.captain().id ? "trophy" : "celebrate", 0];
     if (p.down > 0) return ["down", 0];
     if (sim.tackle?.on === p.id) return ["crouch", 0];
     if (p.act) {
@@ -420,9 +741,9 @@ export class FootyView {
         this.qSpin.setFromAxisAngle(this.xAxis, this.ballRoll);
         m.quaternion.copy(this.qYaw).multiply(this.qSpin);
       } else {
-        // End over end (a drop punt's backspin) along the line of flight.
+        // End over end (a drop punt's backspin), or spiralling (a torpedo), along the line of flight.
         if (hs > 0.5) this.qYaw.setFromAxisAngle(this.yAxis, -Math.atan2(b.vz, b.vx));
-        this.qSpin.setFromAxisAngle(this.zAxis, b.spin);
+        this.qSpin.setFromAxisAngle(b.kick?.style === "torpedo" ? this.xAxis : this.zAxis, b.spin);
         m.quaternion.copy(this.qYaw).multiply(this.qSpin);
       }
     }
@@ -449,7 +770,7 @@ export class FootyView {
     this.you.rotation.y = this.time * 0.8;
     this.youArrow.position.set(you.x, 2.55 + you.y + Math.sin(this.time * 4) * 0.08, you.z);
     this.youArrow.rotation.y = this.time * 2;
-    const show = sim.phase !== "goal" && sim.phase !== "break" && sim.phase !== "over";
+    const show = sim.phase !== "goal" && sim.phase !== "break" && sim.phase !== "over" && !this.opts.spectator;
     this.you.visible = this.youArrow.visible = show;
     const land = sim.ball.state === "air" && sim.landing && !sim.ball.ruck ? sim.landing : null;
     this.drop.visible = !!land && show;
@@ -460,6 +781,7 @@ export class FootyView {
     }
     const pts = sim.aimPreview(30);
     this.arc.visible = !!pts;
+    (this.arc.material as THREE.LineBasicMaterial).color.set(sim.kickStyle === "torpedo" ? "#7dd3fc" : sim.kickStyle === "snap" ? "#f9a8d4" : "#ffffff");
     if (pts) {
       const attr = this.arc.geometry.getAttribute("position") as THREE.BufferAttribute;
       const n = Math.min(100, pts.length);
@@ -485,7 +807,14 @@ export class FootyView {
     const set = sim.set;
     const scorer = sim.phase === "goal" && this.lastScorer >= 0 ? sim.players[this.lastScorer] : null;
     let fov = 30;
-    if (scorer && sim.phaseT > 1.2) {
+    if (this.cup) {
+      // The premiers: a slow orbit round the captain and the cup.
+      const cap = this.captain();
+      const a = this.time * 0.25;
+      want.set(cap.x + Math.cos(a) * 7.5, 2.6, cap.z + Math.sin(a) * 7.5);
+      look.set(cap.x, 2.2, cap.z);
+      fov = 40;
+    } else if (scorer && sim.phaseT > 1.2) {
       // Celebration: a slow orbit around the goal kicker.
       const a = this.time * 0.35;
       want.set(scorer.x + Math.cos(a) * 7, 2.1, scorer.z + Math.sin(a) * 7);

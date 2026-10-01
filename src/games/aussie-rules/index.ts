@@ -5,14 +5,20 @@ import { ScoreEmitter } from "../engine/emitter";
 import { FootyAudio } from "./audio";
 import { FootyHud, leaderLine } from "./hud";
 import { FootyView, type CamMode, type TimeOfDay } from "./render";
-import { FootySim, GOAL_X, points, RIVALS, type Difficulty, type FootyInput } from "./sim";
+import { clubName, ladder, nextGame, premiers, recordResult, startSeason, type Season } from "./season";
+import { clubById, CLUBS, FootySim, GOAL_X, KICK_STYLES, points, type Difficulty, type FootyInput, type KickStyle } from "./sim";
 import type { Detail } from "./stadium";
 
 const STICK_R = 52;
 const PREFS_KEY = "zx-footy-prefs";
 const RECORD_KEY = "zx-footy-record";
+const SEASON_KEY = "zx-footy-season";
+const STYLES: KickStyle[] = ["punt", "torpedo", "snap"];
 
 interface Prefs {
+  mode: "exhibition" | "season";
+  club: string;
+  weather: "fine" | "rain";
   rival: string;
   difficulty: Difficulty;
   minutes: number;
@@ -27,6 +33,7 @@ interface Record {
   draws: number;
   best: number;
   goals: number;
+  flags?: number;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", ...children: (Node | string)[]) {
@@ -89,6 +96,10 @@ class FootyGame implements GameModule {
   private resAt = 0;
   private overAt = 0;
   private idle = 0;
+  private season: Season | null = null;
+  /** This match is the season's Grand Final / a final, and its label. */
+  private fixtureLabel = "";
+  private styleBtn: HTMLButtonElement | null = null;
 
   // Input.
   private keys = new Set<string>();
@@ -106,7 +117,8 @@ class FootyGame implements GameModule {
   init(opts: GameInitOptions) {
     this.opts = opts;
     this.coarse = window.matchMedia("(pointer: coarse)").matches;
-    this.prefs = read<Prefs>(PREFS_KEY, { rival: RIVALS[0].id, difficulty: "pro", minutes: 4, tod: "night", gfx: this.coarse ? "low" : "high", cam: "tv" });
+    this.prefs = read<Prefs>(PREFS_KEY, { mode: "exhibition", club: "hawks", weather: "fine", rival: "sharks", difficulty: "pro", minutes: 4, tod: "night", gfx: this.coarse ? "low" : "high", cam: "tv" });
+    this.season = this.loadSeason();
     this.host = el("div", "absolute inset-0 overflow-hidden bg-[#05070c]");
     this.host.style.touchAction = "none";
     opts.root.appendChild(this.host);
@@ -203,8 +215,21 @@ class FootyGame implements GameModule {
 
     const controls = this.coarse
       ? "Left thumb runs · hold KICK and release (longer = further) · HANDBALL · KICK without the ball = LEAP for a mark · TACKLE · SWITCH · SPRINT · CAM"
-      : "WASD run · Shift sprint · hold Space / click to kick, release to let fly · F / right-click handball · Space without the ball = leap for a mark · E tackle · Q switch player · C camera · Esc pause";
-    const start = button("Bounce the ball", PRIMARY, () => void this.beginMatch());
+      : "WASD run · Shift sprint · hold Space / click to kick, release to let fly · R kick style (drop punt, torpedo, snap) · F / right-click handball · Space without the ball = leap for a mark · E tackle · Q switch player · C camera · Esc pause";
+    const ng = p.mode === "season" && this.season ? nextGame(this.season) : null;
+    const start = button(
+      p.mode === "season" ? (this.season ? (ng ? `${ng.label}: v ${clubName(ng.opponent)}` : "New season") : `Start the season with the ${clubName(p.club).split(" ").slice(-1)[0]}`) : "Bounce the ball",
+      PRIMARY,
+      () => {
+        if (p.mode === "season" && (!this.season || !ng)) {
+          this.season = startSeason(this.prefs.club, Date.now() & 0x7fffffff);
+          this.saveSeason();
+          this.showMenu();
+          return;
+        }
+        void this.beginMatch();
+      },
+    );
     start.setAttribute("data-testid", "footy-start");
     this.menu.replaceChildren(
       el(
@@ -222,17 +247,45 @@ class FootyGame implements GameModule {
           el("p", "relative mt-1 text-[11px] font-bold uppercase tracking-[0.35em] text-white/80", "Aussie Rules · 18 a side · Four quarters"),
         ),
         card(
-          "Harbour Hawks · your record",
-          el("p", "text-sm", rec.played ? `${rec.wins} W · ${rec.losses} L · ${rec.draws} D · ${rec.goals} goals · best match ${rec.best} pts` : "No games yet. Run out with the Hawks."),
+          "Your record",
+          el("p", "text-sm", rec.played ? `${rec.wins} W · ${rec.losses} L · ${rec.draws} D · ${rec.goals} goals · best match ${rec.best} pts${rec.flags ? ` · ${rec.flags} premiership${rec.flags > 1 ? "s" : ""}` : ""}` : "No games yet. Pick a club and run out."),
         ),
         card(
-          "Opponent",
+          "Mode",
           group(
-            "Opponent",
-            RIVALS.map((r) => ({ value: r.id, title: r.name, sub: r.id === "sharks" ? "Fast, run-and-carry" : r.id === "rams" ? "Big bodies, contested ball" : "Slick ball movement" })),
-            p.rival,
-            (v) => (this.prefs.rival = v),
+            "Mode",
+            [
+              { value: "exhibition" as const, title: "Exhibition", sub: "One match, any two clubs" },
+              { value: "season" as const, title: "Premiership season", sub: "7 rounds, finals, a Grand Final" },
+            ],
+            p.mode,
+            (v) => {
+              this.prefs.mode = v;
+              save();
+              this.showMenu();
+            },
           ),
+          p.mode === "season" && this.season ? this.seasonPanel() : group(
+            "Your club",
+            CLUBS.map((c) => ({ value: c.id, title: c.name, sub: c.short })),
+            p.club,
+            (v) => {
+              this.prefs.club = v;
+              if (this.prefs.rival === v) this.prefs.rival = CLUBS.find((c) => c.id !== v)!.id;
+              save();
+              this.showMenu();
+            },
+          ),
+          ...(p.mode === "exhibition"
+            ? [
+                group(
+                  "Opponent",
+                  CLUBS.filter((c) => c.id !== p.club).map((c) => ({ value: c.id, title: c.name, sub: c.short })),
+                  p.rival === p.club ? CLUBS.find((c) => c.id !== p.club)!.id : p.rival,
+                  (v) => (this.prefs.rival = v),
+                ),
+              ]
+            : []),
           group(
             "Difficulty",
             [
@@ -267,6 +320,15 @@ class FootyGame implements GameModule {
             (v) => (this.prefs.tod = v),
           ),
           group(
+            "Weather",
+            [
+              { value: "fine" as const, title: "Fine", sub: "A dry deck" },
+              { value: "rain" as const, title: "Rain", sub: "Greasy ball, skidding bounces" },
+            ],
+            p.weather,
+            (v) => (this.prefs.weather = v),
+          ),
+          group(
             "Camera",
             [
               { value: "tv" as const, title: "Broadcast", sub: "High on the wing, like TV" },
@@ -293,6 +355,65 @@ class FootyGame implements GameModule {
     );
   }
 
+  // --------------------------------------------------------------- season
+
+  private loadSeason(): Season | null {
+    try {
+      const s = JSON.parse(localStorage.getItem(SEASON_KEY) ?? "null") as Season | null;
+      return s && s.v === 1 && Array.isArray(s.fixtures) ? s : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private saveSeason() {
+    write(SEASON_KEY, this.season);
+  }
+
+  /** The season hub: the ladder, your next game, or how it finished. */
+  private seasonPanel() {
+    const s = this.season!;
+    const rows = ladder(s);
+    const table = el("table", "w-full text-xs tabular-nums");
+    table.setAttribute("data-testid", "footy-ladder");
+    table.append(el("tr", "text-[10px] uppercase tracking-wider text-white/50", ...["", "Club", "P", "W", "L", "D", "%", "Pts"].map((h, i) => el("th", i < 2 ? "py-0.5 text-left" : "px-1 text-right", h))));
+    rows.forEach((r, i) => {
+      const mine = r.id === s.club;
+      const c = clubById(r.id);
+      const chip = el("span", "mr-1.5 inline-block h-3 w-1.5 rounded-sm align-middle");
+      chip.style.background = `linear-gradient(${c.guernsey} 0 40%, ${c.hoop} 40% 60%, ${c.guernsey} 60%)`;
+      table.append(
+        el(
+          "tr",
+          `${mine ? "bg-[#facc15]/15 font-bold text-[#facc15]" : ""} ${i === 3 ? "border-b border-dashed border-white/25" : ""}`,
+          el("td", "w-5 py-0.5 text-white/50", String(i + 1)),
+          el("td", "py-0.5", chip, c.name),
+          ...[r.played, r.won, r.lost, r.drawn, r.pct.toFixed(1), r.points].map((v) => el("td", "px-1 text-right", String(v))),
+        ),
+      );
+    });
+    const ng = nextGame(s);
+    const status = s.stage === "done" ? (premiers(s) ? `PREMIERS! The ${clubName(s.club)} have won the flag.` : `Season over. ${clubName(s.premier ?? "")} are the premiers.`) : ng ? `Next: ${ng.label}, ${ng.fixture.home === s.club ? "home" : "away"} v ${clubName(ng.opponent)}` : "";
+    const finals = s.finals.length
+      ? el("p", "text-[11px] text-white/70", s.finals.map((f) => `${f.round > 7 ? "GF" : "SF"}: ${clubById(f.home).short} ${f.result ? `${f.result[0]}–${f.result[1]}` : "v"} ${clubById(f.away).short}`).join(" · "))
+      : el("span");
+    const votes = Object.entries(s.votes).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    return el(
+      "div",
+      "flex flex-col gap-2",
+      el("p", "text-sm font-bold", status),
+      table,
+      finals,
+      votes.length ? el("p", "text-[11px] text-white/70", `Club champion count: ${votes.map(([n, v]) => `${n} ${v}`).join(", ")}`) : el("span"),
+      button("Abandon season", `${BTN} self-start text-xs`, () => {
+        if (!confirm("Abandon this season?")) return;
+        this.season = null;
+        write(SEASON_KEY, null);
+        this.showMenu();
+      }),
+    );
+  }
+
   private howToPlay() {
     const item = (title: string, text: string) => el("li", "", el("strong", "text-white", `${title}: `), text);
     return el(
@@ -309,6 +430,9 @@ class FootyGame implements GameModule {
         item("Tackles", "Tackle the ball carrier. If they've had a chance to get rid of it, it's holding the ball: free kick to you. Otherwise, a ball-up."),
         item("Out of bounds", "Kicked out on the full: free kick to the other side. Otherwise the boundary umpire throws it back in."),
         item("Quarters", "Four quarters, ends change each break. If you mark before the siren, you get your kick after it."),
+        item("Kicks", "R (or STYLE) switches kick: the drop punt is the reliable one; the torpedo spirals 70 m+ but sprays; the snap curls back in, so kick it from a tight angle and it bends through."),
+        item("Premiership season", "Pick your club: seven rounds against the other seven clubs, a ladder (4 points a win, then percentage), the top four into the finals, then the Grand Final. Win it and lift the cup."),
+        item("Votes", "After every match the umpires give 3-2-1 votes to the best three on the ground."),
         item("Leaderboard", "Your score: points, winning margin, marks, screamers and tackles, more on harder levels."),
       ),
     );
@@ -326,34 +450,65 @@ class FootyGame implements GameModule {
     const quick = params.get("footy") === "quick";
     this.unranked = test;
     const p = this.prefs;
+    const ng = p.mode === "season" && this.season ? nextGame(this.season) : null;
+    const home = clubById(ng ? this.season!.club : p.club);
+    const rivalId = ng ? ng.opponent : p.rival === home.id ? CLUBS.find((c) => c.id !== home.id)!.id : p.rival;
+    this.fixtureLabel = ng ? ng.label : "";
+    const wet = p.weather === "rain";
     this.sim = new FootySim({
       seed: Date.now() & 0x7fffffff,
-      rival: RIVALS.find((r) => r.id === p.rival) ?? RIVALS[0],
+      home,
+      rival: clubById(rivalId),
       difficulty: p.difficulty,
       quarterSeconds: quick ? 20 : p.minutes * 60,
+      wet,
     });
     if (test) {
       // Test hooks: the sim, and a fast-forward (the AI plays your side) for scripts.
-      const w = window as unknown as { __footy?: FootySim; __footyAdvance?: (s: number) => void };
+      const w = window as unknown as { __footy?: FootySim; __footyAdvance?: (s: number) => void; __footyReplay?: () => void; __footyRender?: (n: number, dt: number) => void; __footyCelebrate?: () => void };
       w.__footy = this.sim;
+      w.__footyReplay = () => this.view?.replayNow();
+      w.__footyRender = (n: number, dt: number) => {
+        for (let i = 0; i < n; i++) {
+          this.view?.render(dt, this.prefs.cam);
+          this.hud?.setReplay(!!this.view?.replaying);
+          this.hud?.update(dt);
+        }
+      };
+      w.__footyCelebrate = () => this.view?.celebrate(0);
+      (w as unknown as { __footyPlay: (s: number) => void }).__footyPlay = (secs: number) => {
+        const sim = this.sim;
+        if (!sim) return;
+        sim.autopilot = true;
+        for (let i = 0; i < secs * 30; i++) {
+          this.update(1 / 60);
+          this.update(1 / 60);
+          this.view?.render(1 / 30, this.prefs.cam);
+        }
+        sim.autopilot = false;
+      };
       w.__footyAdvance = (secs: number) => {
         const sim = this.sim;
         if (!sim) return;
         sim.autopilot = true;
-        for (let i = 0; i < secs * 60; i++) this.update(1 / 60);
+        for (let i = 0; i < secs * 60; i++) {
+          this.view?.cancelReplay();
+          this.update(1 / 60);
+        }
         sim.autopilot = false;
         for (let i = 0; i < 6; i++) this.view?.render(0.5, this.prefs.cam);
       };
     }
     try {
-      this.view = new FootyView(this.host, this.sim, p.gfx, p.tod);
+      this.view = new FootyView(this.host, this.sim, p.gfx, p.tod, { wet, replay: test && params.get("footy") !== "replay" ? false : { window: 3.2, speed: 0.5 } });
     } catch {
       this.showMenu();
       this.menu.prepend(el("p", "w-full rounded bg-red-900/60 p-2 text-center text-sm", "3D graphics aren't available on this device (WebGL is off)."));
       this.sim = null;
       return;
     }
-    this.hud = new FootyHud(this.host, this.sim, this.coarse);
+    this.hud = new FootyHud(this.host, this.sim, this.coarse, { label: [this.fixtureLabel, wet ? "Rain" : ""].filter(Boolean).join(" · ") || undefined });
+    if (wet) this.audio.rain();
     if (this.coarse) this.buildTouch();
     this.overAt = 0;
     this.lastFrame = performance.now();
@@ -418,6 +573,14 @@ class FootyGame implements GameModule {
   private update(dt: number) {
     const sim = this.sim;
     if (!sim || !this.view) return;
+    // The instant replay holds the match (any button skips it).
+    if (this.view.replaying) {
+      const k = this.input();
+      if (k.kick || k.handball || k.tackle || k.leap) this.view.cancelReplay();
+      this.hud?.setReplay(this.view.replaying);
+      return;
+    }
+    this.hud?.setReplay(false);
     const inp = this.input();
     const moving = Math.hypot(inp.mx, inp.mz) > 0.1;
     this.idle = moving ? 0 : this.idle + dt;
@@ -427,7 +590,14 @@ class FootyGame implements GameModule {
       this.view.onEvent(e);
       this.hud?.onEvent(e);
       this.audio.onEvent(e, (t) => t === 0);
-      if (e.kind === "over") this.overAt = performance.now();
+      if (e.kind === "over") {
+        this.overAt = performance.now();
+        if (this.fixtureLabel === "Grand Final" && points(sim.score[0]) > points(sim.score[1])) {
+          this.view.celebrate(0);
+          this.hud?.shout("PREMIERS!", `The ${sim.clubs[0].name} have won the flag`, 8, "#facc15");
+          this.overAt += 6000;
+        }
+      }
     }
     sim.events.length = 0;
     // Crowd tension: the ball inside 50, a set shot, a pack.
@@ -475,7 +645,28 @@ class FootyGame implements GameModule {
       else rec.draws++;
       rec.best = Math.max(rec.best, us);
       rec.goals += sim.score[0].goals;
+      if (this.fixtureLabel === "Grand Final" && us > them) rec.flags = (rec.flags ?? 0) + 1;
       write(RECORD_KEY, rec);
+    }
+    // The umpires' votes, and the season moves on.
+    const votes = sim.votes();
+    let seasonLine = "";
+    if (this.season && this.fixtureLabel && !this.unranked) {
+      const mine: { [name: string]: number } = {};
+      for (const v of votes) if (sim.players[v.id].team === 0) mine[sim.players[v.id].name] = v.votes;
+      recordResult(this.season, us, them, mine);
+      this.saveSeason();
+      const s = this.season;
+      const pos = ladder(s).findIndex((r) => r.id === s.club) + 1;
+      const ng = nextGame(s);
+      seasonLine =
+        s.stage === "done"
+          ? premiers(s)
+            ? "Premiers! Your name's on the cup."
+            : `Season over: ${clubName(s.premier ?? "")} won the flag.`
+          : ng
+            ? `${s.stage === "home" ? `${pos}${["th", "st", "nd", "rd"][pos] ?? "th"} on the ladder · ` : ""}Next: ${ng.label} v ${clubName(ng.opponent)}`
+            : "";
     }
     const final = { kind: "final" as const, score, durationMs: this.loop.activeMs, ranked: !this.unranked };
     const s = sim.stats[0];
@@ -487,7 +678,7 @@ class FootyGame implements GameModule {
         "div",
         "w-full max-w-lg rounded-xl border border-white/15 bg-[#0b0f18] p-5 text-center",
         el("p", "text-[11px] font-bold uppercase tracking-[0.35em] text-[#facc15]", "Full time"),
-        el("p", "mt-1 font-display text-3xl font-black uppercase", us > them ? "Hawks win!" : us < them ? `${sim.clubs[1].name} win` : "A draw!"),
+        el("p", "mt-1 font-display text-3xl font-black uppercase", us > them ? `${sim.clubs[0].name.split(" ").slice(-1)[0]} win!` : us < them ? `${sim.clubs[1].name} win` : "A draw!"),
         el("p", "mt-1 text-sm text-white/70", `${sim.clubs[0].name} ${FootySim.fmt(sim.score[0])} · ${sim.clubs[1].name} ${FootySim.fmt(sim.score[1])} · ${leaderLine(sim)}`),
         el(
           "div",
@@ -501,6 +692,18 @@ class FootyGame implements GameModule {
           stat("Hit-outs", s.hitouts),
           stat("Inside 50s", s.inside50),
         ),
+        el(
+          "div",
+          "mt-4 rounded-lg border border-[#facc15]/30 bg-[#facc15]/5 p-3 text-left",
+          el("p", "text-[10px] font-bold uppercase tracking-[0.3em] text-[#facc15]", "Best on ground · 3-2-1 votes"),
+          ...votes.map((v) => {
+            const pl = sim.players[v.id];
+            const st = pl.st;
+            const line = [`${st.kicks + st.handballs} disposals`, st.marks ? `${st.marks} marks` : "", st.goals ? `${st.goals} goal${st.goals > 1 ? "s" : ""}` : "", st.tackles ? `${st.tackles} tackles` : "", st.hitouts > 4 ? `${st.hitouts} hit-outs` : ""].filter(Boolean).join(", ");
+            return el("p", "mt-1 text-sm", el("span", "mr-2 inline-block w-4 font-black text-[#facc15]", String(v.votes)), el("strong", "", `#${pl.number} ${pl.name}`), el("span", "text-white/60", ` (${sim.clubs[pl.team].short}) · ${line}`));
+          }),
+        ),
+        ...(seasonLine ? [el("p", "mt-3 text-sm font-bold text-[#facc15]", seasonLine)] : []),
         el("p", "mt-4 text-xs uppercase tracking-[0.25em] text-white/50", "Match score"),
         el("p", "font-display text-4xl font-black text-[#facc15]", String(score)),
         button("Continue", `${PRIMARY} mt-4`, () => {
@@ -525,7 +728,16 @@ class FootyGame implements GameModule {
     if (e.code === "KeyE") this.edges.tackle = true;
     if (e.code === "KeyQ") this.edges.switchPlayer = true;
     if (e.code === "KeyC") this.toggleCam();
+    if (e.code === "KeyR") this.cycleStyle();
   };
+
+  private cycleStyle() {
+    const sim = this.sim;
+    if (!sim) return;
+    sim.kickStyle = STYLES[(STYLES.indexOf(sim.kickStyle) + 1) % STYLES.length];
+    this.hud?.shout(KICK_STYLES[sim.kickStyle].name.toUpperCase(), KICK_STYLES[sim.kickStyle].sub, 1.1);
+    if (this.styleBtn) this.styleBtn.textContent = sim.kickStyle === "punt" ? "PUNT" : sim.kickStyle === "torpedo" ? "TORP" : "SNAP";
+  }
   private onKeyUp = (e: KeyboardEvent) => {
     this.keys.delete(e.code);
   };
@@ -609,12 +821,15 @@ class FootyGame implements GameModule {
     hold(sprint, (v) => (this.touchSprint = v));
     const cam = btn("CAM", "right-[9.5rem] top-2 h-10 w-14 rounded-lg", "Change camera");
     tap(cam, () => this.toggleCam());
+    const style = btn("PUNT", "right-[9.75rem] bottom-4 h-12 w-12 rounded-full", "Kick style");
+    tap(style, () => this.cycleStyle());
+    this.styleBtn = style;
     this.kickBtn = kick;
     this.hbBtn = hb;
     const base = el("div", "pointer-events-none absolute bottom-6 left-6 h-28 w-28 rounded-full border-2 border-white/25 bg-black/25");
     this.knob = el("div", "absolute left-1/2 top-1/2 -ml-6 -mt-6 h-12 w-12 rounded-full border-2 border-white/60 bg-white/20");
     base.append(this.knob);
-    this.touch = el("div", "pointer-events-none absolute inset-0 z-[6]", base, kick, hb, sw, sprint, cam);
+    this.touch = el("div", "pointer-events-none absolute inset-0 z-[6]", base, kick, hb, sw, sprint, cam, style);
     this.host.appendChild(this.touch);
   }
 }

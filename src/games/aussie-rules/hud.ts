@@ -1,4 +1,5 @@
-import { A, B, BEHIND_HALF, FootySim, GOAL_X, points, POSITIONS, type SimEvent } from "./sim";
+import { commentary } from "./commentary";
+import { A, B, BEHIND_HALF, FootySim, GOAL_X, KICK_STYLES, points, POSITIONS, type SimEvent } from "./sim";
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", ...children: (Node | string)[]) {
   const n = document.createElement(tag);
@@ -38,11 +39,16 @@ export class FootyHud {
   private breakBox: HTMLDivElement;
   private live: HTMLDivElement;
   private mapT = 0;
+  private ticker: HTMLDivElement;
+  private lines: { node: HTMLParagraphElement; t: number }[] = [];
+  private powerLabel: HTMLParagraphElement;
+  private replay: HTMLDivElement;
 
   constructor(
     host: HTMLElement,
     private sim: FootySim,
     private coarse: boolean,
+    private opts: { label?: string; spectator?: boolean } = {},
   ) {
     const [h, a] = sim.clubs;
     this.root = el("div", "pointer-events-none absolute inset-0 z-[5] select-none font-sans text-white");
@@ -66,6 +72,7 @@ export class FootyHud {
       line(h, this.home, this.homeTot),
       line(a, this.away, this.awayTot),
       el("div", "flex items-center justify-between gap-3 bg-white/10 px-2 py-0.5 text-xs", this.quarter, this.clock),
+      ...(opts.label ? [el("div", "bg-black/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.2em] text-[#facc15]", opts.label)] : []),
     );
     this.bug.setAttribute("data-testid", "footy-score");
     // Umpire's call (centre).
@@ -87,10 +94,11 @@ export class FootyHud {
     );
     // Kick power.
     this.powerFill = el("div", "h-full origin-left rounded-full bg-gradient-to-r from-[#facc15] via-[#fb923c] to-[#ef4444]");
+    this.powerLabel = el("p", "mb-1 text-center text-[10px] font-bold uppercase tracking-[0.3em] text-white/80", "Kick power");
     this.power = el(
       "div",
       "absolute bottom-[22%] left-1/2 w-56 -translate-x-1/2 opacity-0 transition-opacity",
-      el("p", "mb-1 text-center text-[10px] font-bold uppercase tracking-[0.3em] text-white/80", "Kick power"),
+      this.powerLabel,
       el("div", "h-2.5 overflow-hidden rounded-full border border-white/30 bg-black/50", this.powerFill),
     );
     this.shotClock = el("p", "absolute bottom-[30%] left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1 text-sm font-bold tabular-nums opacity-0");
@@ -100,7 +108,24 @@ export class FootyHud {
     this.map.width = 240;
     this.map.height = 192;
     this.breakBox = el("div", "absolute inset-0 grid place-items-center bg-black/55 opacity-0 transition-opacity duration-500");
-    this.root.append(this.bug, this.call, this.live, this.me, this.power, this.shotClock, this.hint, this.map, this.breakBox);
+    // The commentary box: the last few calls, under the score.
+    this.ticker = el("div", "absolute left-[max(0.5rem,env(safe-area-inset-left))] top-[calc(max(0.5rem,env(safe-area-inset-top))+5.4rem)] flex w-[min(22rem,60vw)] flex-col gap-1");
+    this.ticker.setAttribute("data-testid", "footy-commentary");
+    // Instant replay: letterbox bars and the bug.
+    this.replay = el(
+      "div",
+      "absolute inset-0 opacity-0 transition-opacity duration-300",
+      el("div", "absolute inset-x-0 top-0 h-[9%] bg-black"),
+      el("div", "absolute inset-x-0 bottom-0 h-[9%] bg-black"),
+      el("p", "absolute right-4 top-[11%] rounded bg-[#a3122c] px-2 py-0.5 font-display text-sm font-black italic tracking-widest", "REPLAY"),
+    );
+    this.replay.setAttribute("data-testid", "footy-replay");
+    if (opts.spectator) {
+      this.me.hidden = true;
+      this.hint.hidden = true;
+      this.power.hidden = true;
+    }
+    this.root.append(this.replay, this.bug, this.ticker, this.call, this.live, this.me, this.power, this.shotClock, this.hint, this.map, this.breakBox);
     host.appendChild(this.root);
   }
 
@@ -114,8 +139,24 @@ export class FootyHud {
     this.live.textContent = `${text} ${sub}`.trim();
   }
 
+  /** Show or hide the replay letterbox. */
+  setReplay(on: boolean) {
+    this.replay.style.opacity = on ? "1" : "0";
+    this.bug.style.opacity = on ? "0" : "1";
+  }
+
+  /** Add a commentary line. */
+  say(text: string) {
+    const node = el("p", "rounded bg-black/60 px-2 py-1 text-[11px] leading-snug text-white/90 shadow transition-opacity duration-700", text);
+    this.ticker.append(node);
+    this.lines.push({ node, t: 7 });
+    while (this.lines.length > 3) this.lines.shift()!.node.remove();
+  }
+
   onEvent(e: SimEvent) {
     const sim = this.sim;
+    const line = commentary(e, sim);
+    if (line) this.say(line);
     const name = (id: number) => sim.players[id]?.name ?? "";
     const ours = (t: number) => t === 0;
     switch (e.kind) {
@@ -173,6 +214,12 @@ export class FootyHud {
     this.meRole.textContent = POSITIONS[you.role].name;
     this.stamina.style.width = `${Math.round(you.stamina * 100)}%`;
     this.power.style.opacity = sim.charge > 0 ? "1" : "0";
+    this.powerLabel.textContent = `${KICK_STYLES[sim.kickStyle].name} · power`;
+    for (const l of this.lines) {
+      l.t -= dt;
+      l.node.style.opacity = l.t < 1 ? String(Math.max(0, l.t)) : "1";
+    }
+    while (this.lines.length && this.lines[0].t <= 0) this.lines.shift()!.node.remove();
     this.powerFill.style.transform = `scaleX(${sim.charge})`;
     const mySet = sim.phase === "set" && sim.set?.id === sim.human;
     this.shotClock.style.opacity = mySet ? "1" : "0";
@@ -194,8 +241,9 @@ export class FootyHud {
     const you = sim.you;
     const has = sim.ball.state === "held" && sim.ball.holder === you.id;
     const kick = this.coarse ? "hold KICK" : "hold Space";
-    if (sim.phase === "set" && sim.set?.id === you.id) return `Aim with ${this.coarse ? "the stick" : "WASD"} · ${kick}, release to kick · ${this.coarse ? "SPRINT" : "Shift"} + move = play on`;
-    if (has) return `${kick} to kick · ${this.coarse ? "HANDBALL" : "F"} to handball`;
+    const style = `${KICK_STYLES[sim.kickStyle].name} (${this.coarse ? "STYLE" : "R"} to change)`;
+    if (sim.phase === "set" && sim.set?.id === you.id) return `Aim with ${this.coarse ? "the stick" : "WASD"} · ${kick}, release to kick · ${style} · ${this.coarse ? "SPRINT" : "Shift"} + move = play on`;
+    if (has) return `${kick} to kick · ${style} · ${this.coarse ? "HANDBALL" : "F"} to handball`;
     if (sim.ball.state === "air" && !sim.ball.ruck) return `Get under it · ${this.coarse ? "LEAP" : "Space"} to mark`;
     const c = sim.carrier;
     if (c && c.team === 1 && Math.hypot(c.x - you.x, c.z - you.z) < 6) return `${this.coarse ? "TACKLE" : "E"} to tackle`;

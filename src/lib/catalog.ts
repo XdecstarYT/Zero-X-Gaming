@@ -117,7 +117,7 @@ export const GAMES: Game[] = [
     title: "Screamer: Aussie Rules",
     tagline: "Take a screamer. Slot it from 50. Win the flag.",
     description:
-      "The first Sports+ game: full 18-a-side Australian rules football on a floodlit 3D oval. Four quarters, centre bounces, kicks, handballs, bounces, marks and set shots, tackles and holding-the-ball, kick-ins, throw-ins and behinds. Play as the whole Harbour Hawks side against a smart AI (Easy, Pro or Legend): lead into space, take a screamer on someone's shoulders and kick the winner after the siren. Goals are 6, behinds 1; your margin, goals and marks score for the leaderboard. Needs the Sports+ pass (50 coins, once).",
+      "Full 18-a-side Australian rules football on a floodlit 3D oval. Four quarters, centre bounces, kicks, handballs, bounces, marks and set shots, tackles and holding-the-ball, kick-ins, throw-ins and behinds. The mega update: a Premiership season with eight clubs, a ladder, finals and a Grand Final (lift the cup), drop punts, torpedoes and curling snaps, rain that greases the ball, goal replays, live commentary, and 3-2-1 best-on-ground votes. Lead into space, take a screamer on someone's shoulders and kick the winner after the siren. Needs the Sports+ pass (50 coins, once).",
     category: "sports",
     tags: ["football", "aussie rules", "3d", "sports+"],
     status: "live",
@@ -135,12 +135,13 @@ export const GAMES: Game[] = [
       { keys: ["E"], action: "Jump for a mark / spoil (without the ball); tackle when close" },
       { keys: ["Q"], action: "Switch to the player nearest the ball" },
       { keys: ["B"], action: "Bounce (every 15 m while running)" },
+      { keys: ["R"], action: "Kick style: drop punt, torpedo, snap" },
       { keys: ["C"], action: "Camera: broadcast / behind the player" },
       { keys: ["Esc", "P"], action: "Pause" },
     ],
     orientation: "landscape",
     touchControls:
-      "Left thumb runs. Hold KICK and release to kick (longer hold = longer kick), tap HANDBALL to dish off, MARK to leap, TACKLE when close, SWITCH to take the player nearest the ball.",
+      "Left thumb runs. Hold KICK and release to kick (longer hold = longer kick), STYLE switches punt / torpedo / snap, tap HANDBALL to dish off, MARK to leap, TACKLE when close, SWITCH to take the player nearest the ball.",
   },
   {
     slug: "diamond-derby",

@@ -429,7 +429,9 @@ export type Pose =
   | "tennisReady"
   | "forehand"
   | "backhand"
-  | "serve";
+  | "serve"
+  // Holding a cup over your head.
+  | "trophy";
 
 export interface PedModel {
   group: THREE.Group;
@@ -730,6 +732,14 @@ function target(pose: Pose, step: number, speed: number, t: number, seed: number
       p.set("armR", -0.35, 0, 2.7 + pump * 0.2).set("foreR", 0, 0, 0.3 + Math.max(0, pump) * 0.8);
       p.set("armL", 0.5, 0, 1.2 + pump * 0.2).set("foreL", 0, 0, 1.4);
       p.set("head", 0, 0, 0.3).set("chest", 0, 0, 0.12);
+      break;
+    }
+    case "trophy": {
+      locomotion(p, 0, 0, t + seed);
+      const bob = Math.sin(t * 5 + seed) * 0.06;
+      p.set("armL", -0.22, 0, 2.95 + bob).set("foreL", 0, 0, 0.15).set("armR", 0.22, 0, 2.95 + bob).set("foreR", 0, 0, 0.15);
+      p.set("head", 0, 0, 0.35).set("chest", 0, 0, 0.1);
+      p.root(0, Math.max(0, Math.sin(t * 5 + seed)) * 0.05, 0);
       break;
     }
     case "setshot": {

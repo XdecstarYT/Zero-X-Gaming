@@ -57,6 +57,22 @@ export class FootyAudio {
     this.bed = { gain, filter };
   }
 
+  /** Rain on the roof and the ground: a steady hiss. */
+  rain() {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || !this.noise) return;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = "highpass";
+    f.frequency.value = 2200;
+    const g = ctx.createGain();
+    g.gain.value = 0.07;
+    src.connect(f).connect(g).connect(this.master);
+    src.start();
+  }
+
   suspend() {
     void this.ctx?.suspend();
   }
