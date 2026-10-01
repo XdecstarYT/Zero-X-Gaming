@@ -167,6 +167,33 @@ export const GAMES: Game[] = [
     orientation: "landscape",
     touchControls: "Drag anywhere to move the aim circle, tap SWING as the ball arrives. CAM switches between the batter's view and the centre-field camera.",
   },
+  {
+    slug: "ace-rally",
+    title: "Ace Rally",
+    tagline: "Toss. Serve. Rally. Break. Hold. Win it on Centre Court.",
+    description:
+      "Sports+ singles tennis at the Zero X Open, in a full 3D stadium. Time your toss for a 200 km/h first serve, then slug it out with topspin, slice, lobs and drop shots against touring pros with their own styles. Real ball flight with spin and drag, hard, clay or grass (each bounces its own way), full scoring with deuce, advantage and tiebreaks, Hawk-Eye on close calls, an umpire who calls the score, and men's and women's draws. Needs the Sports+ pass (50 coins, once).",
+    category: "sports",
+    tags: ["tennis", "3d", "sports+"],
+    status: "live",
+    palette: ["#15803d", "#d9f99d"],
+    rating: 0,
+    ratingCount: 0,
+    plays: 0,
+    releasedAt: "2026-10-06",
+    pass: "sports-plus",
+    controls: [
+      { keys: ["W", "A", "S", "D"], action: "Move (and aim as you hit)" },
+      { keys: ["Space", "Click", "J"], action: "Serve (toss, then hit) / topspin" },
+      { keys: ["K", "Right-click"], action: "Slice" },
+      { keys: ["L"], action: "Lob" },
+      { keys: ["I"], action: "Drop shot" },
+      { keys: ["C"], action: "Camera: broadcast / player" },
+      { keys: ["Esc", "P"], action: "Pause" },
+    ],
+    orientation: "landscape",
+    touchControls: "Left thumb moves you and aims your shot as you hit. SERVE (tap to toss, tap at the top to hit) turns into TOPSPIN in the rally; SLICE, LOB and DROP sit beside it.",
+  },
 ];
 
 export const FEATURED_SLUG = "trenches";

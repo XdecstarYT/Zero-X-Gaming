@@ -3,6 +3,7 @@ import { grassTexture } from "../neon-siege/three/textures";
 import { buildCrowd, crowdUniforms, type CrowdUniforms, type Seat } from "../sports-kit/crowd";
 import type { Detail } from "../sports-kit/look";
 import { canvasTexture, noise2 } from "../sports-kit/pipeline";
+import { band, ribbon, type Edge } from "../sports-kit/geo";
 import { adTexture, glowTexture, grassDetail, lampTexture, seatTexture } from "../aussie-rules/textures";
 import { BASE, fenceAt, FT, MOUND, wallAt } from "./sim";
 
@@ -31,14 +32,6 @@ const SIDE = 18;
 const FIRST = new THREE.Vector2(BASE * Math.SQRT1_2, BASE * Math.SQRT1_2);
 const SECOND = new THREE.Vector2(BASE * Math.SQRT2, 0);
 const THIRD = new THREE.Vector2(BASE * Math.SQRT1_2, -BASE * Math.SQRT1_2);
-
-/** A point on the field's edge path with its outward normal. */
-interface Edge {
-  x: number;
-  z: number;
-  nx: number;
-  nz: number;
-}
 
 /** The fair-territory fence from the left-field pole to the right (radial normals). */
 function fencePath(segs: number, inset = 0, from = -Q, to = Q): Edge[] {
@@ -74,36 +67,6 @@ function grandstandPath(segs: number, inset = 0): Edge[] {
     out.push({ x: s * Math.SQRT1_2 - d * Math.SQRT1_2, z: -s * Math.SQRT1_2 - d * Math.SQRT1_2, nx: -Math.SQRT1_2, nz: -Math.SQRT1_2 });
   }
   return out;
-}
-
-/** A surface swept along an edge path: f(s) gives [offset, height] across the band (s 0–1). */
-function band(path: Edge[], rows: number, f: (s: number, e: Edge, i: number) => [number, number], uLen: number, vLen: number) {
-  const pos: number[] = [];
-  const uv: number[] = [];
-  const idx: number[] = [];
-  let u = 0;
-  for (let i = 0; i < path.length; i++) {
-    const e = path[i];
-    if (i > 0) u += Math.hypot(e.x - path[i - 1].x, e.z - path[i - 1].z);
-    for (let j = 0; j <= rows; j++) {
-      const s = j / rows;
-      const [d, y] = f(s, e, i);
-      pos.push(e.x + e.nx * d, y, e.z + e.nz * d);
-      uv.push(u / uLen, s * vLen);
-    }
-  }
-  for (let i = 0; i < path.length - 1; i++)
-    for (let j = 0; j < rows; j++) {
-      const a = i * (rows + 1) + j;
-      const b = a + rows + 1;
-      idx.push(a, b, a + 1, b, b + 1, a + 1);
-    }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  return g;
 }
 
 // ------------------------------------------------------------------- field
@@ -223,29 +186,6 @@ function fieldTexture(res: number) {
     g.arc(MOUND, 0, 95 * FT - 3, -1.1, 1.1);
     g.stroke();
   });
-}
-
-/** A flat ribbon on the ground along a polyline. */
-function ribbon(pts: [number, number][], w: number, y = 0.012) {
-  const pos: number[] = [];
-  const idx: number[] = [];
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[Math.max(0, i - 1)];
-    const b = pts[Math.min(pts.length - 1, i + 1)];
-    let dx = b[0] - a[0];
-    let dz = b[1] - a[1];
-    const l = Math.hypot(dx, dz) || 1;
-    dx /= l;
-    dz /= l;
-    const p = pts[i];
-    pos.push(p[0] - dz * w * 0.5, y, p[1] + dx * w * 0.5, p[0] + dz * w * 0.5, y, p[1] - dx * w * 0.5);
-    if (i) idx.push((i - 1) * 2, i * 2, (i - 1) * 2 + 1, i * 2, i * 2 + 1, (i - 1) * 2 + 1);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute("normal", new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
-  g.setIndex(idx);
-  return g;
 }
 
 /** Distance marker on the wall: "400" in yellow. */

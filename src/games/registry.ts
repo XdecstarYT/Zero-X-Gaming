@@ -10,6 +10,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   "code-3": () => import("./code-3/index"),
   "aussie-rules": () => import("./aussie-rules/index"),
   "diamond-derby": () => import("./diamond-derby/index"),
+  "ace-rally": () => import("./ace-rally/index"),
 };
 
 export function hasGame(slug: string) {
