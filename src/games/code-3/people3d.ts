@@ -67,7 +67,7 @@ const JOINT: Record<BoneName, [number, number, number]> = {
 const SLOT = { skin: 0, top: 1, bottom: 2, shoes: 3, hair: 4, eyes: 5, lips: 6, accent: 7, belt: 8, metal: 9, white: 10, hat: 11, vest: 12, sole: 13 } as const;
 type Slot = keyof typeof SLOT;
 
-export type Top = "tee" | "long" | "tank" | "jacket" | "hoodie" | "suit" | "uniform";
+export type Top = "tee" | "long" | "tank" | "jacket" | "hoodie" | "suit" | "uniform" | "guernsey";
 export type Bottom = "trousers" | "shorts" | "skirt";
 export type Hair = "short" | "long" | "ponytail" | "buzz" | "bald";
 
@@ -80,6 +80,8 @@ export interface Outfit {
   hat: "none" | "cap" | "beanie" | "police";
   backpack: boolean;
   officer: boolean;
+  /** Football socks (accent colour) pulled up to the knee. */
+  socks?: boolean;
 }
 
 export interface Colors {
@@ -155,7 +157,7 @@ function buildTemplate(o: Outfit, lod: "high" | "low") {
     const foot = side < 0 ? "footL" : "footR";
     const z = side * (F ? 0.09 : 0.095);
     const knee = band(thigh, shin, 0.44, 0.57);
-    const legSlot = (y: number): Slot => (o.bottom === "skirt" ? (y > 0.62 ? "bottom" : "skin") : o.bottom === "shorts" ? (y > 0.56 ? "bottom" : "skin") : "bottom");
+    const legSlot = (y: number): Slot => (o.socks && y < 0.46 ? (y > 0.4 ? "white" : "accent") : o.bottom === "skirt" ? (y > 0.62 ? "bottom" : "skin") : o.bottom === "shorts" ? (y > 0.56 ? "bottom" : "skin") : "bottom");
     add(lathe(legProfile).translate(0, 0, z), knee, legSlot);
     // Shoe: upper and sole, toe forward.
     add(new RoundedBoxGeometry(0.25, 0.085, 0.1, 2, 0.03).translate(0.055, 0.05, z), rigid(foot), flat("shoes"));
@@ -200,10 +202,12 @@ function buildTemplate(o: Outfit, lod: "high" | "low") {
   const waist = band("spine", "hips", 1.0, 1.1);
   const ribs = band("chest", "spine", 1.16, 1.28);
   const torsoBind = (y: number) => (y > 1.13 ? ribs(y) : waist(y));
-  const tuck = o.top === "tank" || o.top === "tee" ? 1.0 : 0.98;
-  add(torso, torsoBind, (y) => (y < tuck ? "bottom" : "top"));
+  const tuck = o.top === "tank" || o.top === "tee" || o.top === "guernsey" ? 1.0 : 0.98;
+  // A footy guernsey: a hoop across the chest and a trimmed collar.
+  const jumper = (y: number): Slot => (y < tuck ? "bottom" : (y > 1.22 && y < 1.31) || y > 1.545 ? "accent" : "top");
+  add(torso, torsoBind, o.top === "guernsey" ? jumper : (y) => (y < tuck ? "bottom" : "top"));
   // Shoulders (a capsule across the top of the chest) and deltoids.
-  const shoulderSlot: Slot = o.top === "tank" ? "skin" : "top";
+  const shoulderSlot: Slot = o.top === "tank" ? "skin" : o.top === "guernsey" ? "top" : "top";
   add(new THREE.CapsuleGeometry(F ? 0.062 : 0.07, F ? 0.25 : 0.28, 3, 10).rotateX(Math.PI / 2).scale(0.85, 1, 1).translate(0, 1.49, 0), rigid("chest"), flat(shoulderSlot));
   if (F) for (const side of [-1, 1]) add(new THREE.SphereGeometry(0.058, 10, 8).scale(0.9, 0.85, 1).translate(0.075, 1.36, side * 0.07), rigid("chest"), flat("top"));
   for (const side of [-1, 1]) add(new THREE.SphereGeometry(F ? 0.055 : 0.063, 10, 8).translate(0, 1.485, side * 0.2), rigid(side < 0 ? "armL" : "armR"), flat(shoulderSlot));
@@ -224,7 +228,7 @@ function buildTemplate(o: Outfit, lod: "high" | "low") {
     [0, 1.545],
   ];
   const sleeve = (y: number): Slot => {
-    if (o.top === "tank") return "skin";
+    if (o.top === "tank" || o.top === "guernsey") return "skin";
     if (o.top === "tee") return y > 1.33 ? "top" : "skin";
     if (o.officer && o.top === "uniform") return y > 1.32 ? "top" : "skin";
     return y > 0.97 ? "top" : "skin";
@@ -343,6 +347,26 @@ function material() {
   return sharedMat;
 }
 
+const numberTexts = new Map<string, THREE.Texture>();
+/** A kit number, cached per number and colour. */
+function numberText(n: number, color: string) {
+  const key = n + color;
+  let t = numberTexts.get(key);
+  if (t) return t;
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = color;
+  g.font = "900 104px Arial Black, Arial, sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(String(n), 64, 70);
+  t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  numberTexts.set(key, t);
+  return t;
+}
+
 let vestText: THREE.Texture | null = null;
 function policeText() {
   if (vestText) return vestText;
@@ -383,7 +407,20 @@ export type Pose =
   | "point"
   | "search"
   | "film"
-  | "direct";
+  | "direct"
+  // Football: `act` (0–1) is the action's progress.
+  | "kick"
+  | "handball"
+  | "mark"
+  | "tackle"
+  | "bounce"
+  | "ruck"
+  | "carry"
+  | "celebrate"
+  | "setshot"
+  | "crouch"
+  | "umpGoal"
+  | "umpBounce";
 
 export interface PedModel {
   group: THREE.Group;
@@ -420,6 +457,15 @@ export interface PedLook {
   long?: boolean;
   /** Mesh detail (Low halves the segments and drops tiny face parts). */
   lod?: "high" | "low";
+  /** Override parts of the seeded outfit (sports kits, umpires). */
+  outfit?: Partial<Outfit>;
+  /** Accent colour (guernsey hoop, socks, trim). */
+  accent?: string;
+  shoes?: string;
+  /** A number on the back (sports kits). */
+  number?: number;
+  numberColor?: string;
+  hatColor?: string;
 }
 
 const SHOES = ["#1b1a18", "#3a2a1e", "#e8e6e1", "#2b2f36", "#5a4030"];
@@ -442,7 +488,7 @@ export function outfitFor(seed: number, officer = false): Outfit {
 
 export function buildPed(look: PedLook): PedModel {
   const seed = look.seed ?? (look.skin.charCodeAt(2) * 31 + look.shirt.charCodeAt(3) * 7 + look.pants.charCodeAt(4));
-  const o = outfitFor(seed, !!look.officer);
+  const o = { ...outfitFor(seed, !!look.officer), ...look.outfit };
   if (look.long && !o.officer) o.hair = "long";
   const t = template(o, look.lod ?? "high");
   // Share positions / normals / skinning; each person gets its own colours.
@@ -453,15 +499,15 @@ export function buildPed(look: PedLook): PedModel {
     [SLOT.skin]: new THREE.Color(look.skin),
     [SLOT.top]: new THREE.Color(look.officer ? "#1f2b44" : look.shirt),
     [SLOT.bottom]: new THREE.Color(look.officer ? "#1a2233" : look.pants),
-    [SLOT.shoes]: new THREE.Color(look.officer ? "#0e0e0e" : pick(SHOES, 1)),
+    [SLOT.shoes]: new THREE.Color(look.officer ? "#0e0e0e" : (look.shoes ?? pick(SHOES, 1))),
     [SLOT.hair]: new THREE.Color(look.hair ?? "#2a1d14"),
     [SLOT.eyes]: new THREE.Color("#1a1410"),
     [SLOT.lips]: new THREE.Color(look.skin).multiplyScalar(0.72).lerp(new THREE.Color("#8a3a3a"), 0.25),
-    [SLOT.accent]: new THREE.Color(pick(ACCENT, 2)),
+    [SLOT.accent]: new THREE.Color(look.accent ?? pick(ACCENT, 2)),
     [SLOT.belt]: new THREE.Color("#101010"),
     [SLOT.metal]: new THREE.Color("#d9b44a"),
     [SLOT.white]: new THREE.Color("#ecebe6"),
-    [SLOT.hat]: new THREE.Color(o.hat === "police" ? "#141c2e" : pick(HATS, 3)),
+    [SLOT.hat]: new THREE.Color(o.hat === "police" ? "#141c2e" : (look.hatColor ?? pick(HATS, 3))),
     [SLOT.vest]: new THREE.Color("#1b1e24"),
     [SLOT.sole]: new THREE.Color(pick(SHOES, 1) === "#e8e6e1" ? "#f4f4f2" : "#141414"),
   };
@@ -505,6 +551,12 @@ export function buildPed(look: PedLook): PedModel {
   if (o.officer) {
     const back = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.085), new THREE.MeshBasicMaterial({ map: policeText(), transparent: true, depthWrite: false }));
     back.position.set(-0.162, 0.2, 0);
+    back.rotation.y = -Math.PI / 2;
+    bones[B.chest].add(back);
+  }
+  if (look.number !== undefined) {
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2), new THREE.MeshStandardMaterial({ map: numberText(look.number, look.numberColor ?? "#ffffff"), transparent: true, depthWrite: false, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2 }));
+    back.position.set(-0.132, 0.1, 0);
     back.rotation.y = -Math.PI / 2;
     bones[B.chest].add(back);
   }
@@ -589,9 +641,118 @@ function lying(p: PoseVec, faceDown: boolean) {
   p.root(faceDown ? -0.88 : 0.88, faceDown ? 0.13 : 0.11, 0);
 }
 
-function target(pose: Pose, step: number, speed: number, t: number, seed: number) {
+const ease = (a: number, b: number, x: number) => {
+  const k = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return k * k * (3 - 2 * k);
+};
+
+function target(pose: Pose, step: number, speed: number, t: number, seed: number, act = 0) {
   const p = new PoseVec();
   switch (pose) {
+    case "kick": {
+      // Drop punt off the right foot: hold, drop, backswing, strike, follow through.
+      const back = ease(0, 0.35, act) * (1 - ease(0.35, 0.5, act));
+      const through = ease(0.35, 0.55, act) * (1 - ease(0.75, 1, act) * 0.45);
+      locomotion(p, step, Math.min(speed, 2), t + seed);
+      p.set("thighR", -0.05, 0, -0.75 * back + 1.75 * through);
+      p.set("shinR", 0, 0, -1.5 * back - 0.25 * through);
+      p.set("footR", 0, 0, 0.35 * through);
+      p.set("thighL", 0.05, 0, 0.12 - 0.25 * through).set("shinL", 0, 0, -0.2);
+      const hold = 1 - ease(0.25, 0.4, act);
+      p.set("armL", 0.45 * (1 - hold), 0, 0.9 * hold + 0.5).set("foreL", 0, 0, 1.1 * hold + 0.3);
+      p.set("armR", -0.5 * (1 - hold), 0, 0.9 * hold - 0.4 * through).set("foreR", 0, 0, 1.1 * hold + 0.3);
+      p.set("spine", 0, 0, 0.1 * through).set("chest", 0, -0.1 * through, -0.12 * hold + 0.12 * through).set("head", 0, 0, -0.25 * hold);
+      p.root(0, 0.04 * through, 0);
+      break;
+    }
+    case "handball": {
+      const punch = ease(0.3, 0.55, act) * (1 - ease(0.8, 1, act) * 0.6);
+      locomotion(p, step, Math.min(speed, 2.5), t + seed);
+      p.set("armL", -0.2, 0, 0.75).set("foreL", 0, -0.4, 1.0).set("handL", 0, 0, 0.3);
+      p.set("armR", 0.1, 0, -0.4 + 1.6 * punch).set("foreR", 0, 0, 1.6 - 1.35 * punch);
+      p.set("chest", 0, 0.35 - 0.6 * punch, -0.12).set("head", 0, 0.1, -0.08);
+      break;
+    }
+    case "mark": {
+      // Arms up, one knee driving up: a screamer when there's a pack to climb.
+      const up = ease(0, 0.3, act) * (1 - ease(0.85, 1, act));
+      const hug = ease(0.5, 0.75, act);
+      p.set("armL", 0.25 * up, 0, 2.9 * up - 1.6 * hug * up + 0.2).set("foreL", 0, 0, 0.25 + 1.1 * hug);
+      p.set("armR", -0.25 * up, 0, 2.9 * up - 1.6 * hug * up + 0.2).set("foreR", 0, 0, 0.25 + 1.1 * hug);
+      p.set("thighR", -0.05, 0, 1.3 * up).set("shinR", 0, 0, -1.6 * up);
+      p.set("thighL", 0.05, 0, 0.1 * up).set("shinL", 0, 0, -0.25 * up).set("footL", 0, 0, -0.4 * up);
+      p.set("chest", 0, 0, 0.12 * up).set("head", 0, 0, 0.35 * up - 0.3 * hug);
+      break;
+    }
+    case "tackle": {
+      const dive = ease(0, 0.4, act);
+      p.set("spine", 0, 0, -0.45 * dive).set("chest", 0, 0, -0.35 * dive).set("head", 0, 0, 0.3 * dive);
+      p.set("armL", -0.45, 0.2, 1.45 * dive).set("foreL", 0, 0, 1.3 * dive);
+      p.set("armR", 0.45, -0.2, 1.45 * dive).set("foreR", 0, 0, 1.3 * dive);
+      p.set("thighL", 0.05, 0, 0.7 * dive).set("shinL", 0, 0, -1.0 * dive);
+      p.set("thighR", -0.05, 0, -0.35 * dive).set("shinR", 0, 0, -0.5 * dive);
+      p.root(0, -0.18 * dive, 0);
+      break;
+    }
+    case "bounce": {
+      locomotion(p, step, speed, t + seed);
+      const push = Math.sin(Math.min(1, act) * Math.PI);
+      p.set("armR", 0, 0, 0.9 - 0.55 * push).set("foreR", 0, 0, 0.9 - 0.8 * push);
+      p.set("chest", 0, 0, -0.1 - 0.1 * push).set("head", 0, 0, -0.2 * push);
+      break;
+    }
+    case "ruck": {
+      const up = ease(0, 0.35, act) * (1 - ease(0.7, 1, act));
+      p.set("armR", -0.1, 0, 3.05 * up).set("foreR", 0, 0, 0.1);
+      p.set("armL", 0.4, 0, 1.2 * up).set("foreL", 0, 0, 0.8);
+      p.set("thighR", 0, 0, 1.1 * up).set("shinR", 0, 0, -1.4 * up);
+      p.set("thighL", 0, 0, 0.2 * up).set("shinL", 0, 0, -0.3 * up).set("footL", 0, 0, -0.5 * up);
+      p.set("chest", 0, 0.2 * up, 0.08 * up).set("head", 0, 0, 0.35 * up);
+      break;
+    }
+    case "carry":
+      // Ball tucked under the left arm, right arm pumping.
+      locomotion(p, step, speed, t + seed);
+      p.set("armL", -0.18, 0, 0.35).set("foreL", 0, -0.3, 1.55);
+      break;
+    case "celebrate": {
+      locomotion(p, step, speed, t + seed);
+      const pump = Math.sin(t * 7 + seed);
+      p.set("armR", -0.35, 0, 2.7 + pump * 0.2).set("foreR", 0, 0, 0.3 + Math.max(0, pump) * 0.8);
+      p.set("armL", 0.5, 0, 1.2 + pump * 0.2).set("foreL", 0, 0, 1.4);
+      p.set("head", 0, 0, 0.3).set("chest", 0, 0, 0.12);
+      break;
+    }
+    case "setshot": {
+      // Lining up: ball held out in both hands, eyes on the goals, then a slow walk in.
+      locomotion(p, step, speed, t + seed);
+      p.set("armL", -0.25, 0, 0.85).set("foreL", 0, 0, 1.0);
+      p.set("armR", 0.25, 0, 0.85).set("foreR", 0, 0, 1.0);
+      p.set("head", 0, 0, 0.05 + Math.sin(t * 0.8) * 0.05);
+      break;
+    }
+    case "crouch":
+      // Ready position at a stoppage: knees bent, weight forward, arms out.
+      locomotion(p, 0, 0, t + seed);
+      p.set("thighL", 0.1, 0, 0.55).set("shinL", 0, 0, -0.9).set("footL", 0, 0, 0.35);
+      p.set("thighR", -0.1, 0, 0.55).set("shinR", 0, 0, -0.9).set("footR", 0, 0, 0.35);
+      p.set("spine", 0, 0, -0.35).set("chest", 0, 0, -0.1).set("head", 0, 0, 0.35);
+      p.set("armL", 0.35, 0, 0.5).set("foreL", 0, 0, 0.6).set("armR", -0.35, 0, 0.5).set("foreR", 0, 0, 0.6);
+      p.root(0, -0.14, 0);
+      break;
+    case "umpGoal":
+      // Goal umpire: both arms out in front, fingers pointing.
+      locomotion(p, 0, 0, t + seed);
+      p.set("armL", -0.12, 0, 1.55).set("foreL", 0, 0, 0.02).set("armR", 0.12, 0, 1.55).set("foreR", 0, 0, 0.02);
+      break;
+    case "umpBounce": {
+      // Field umpire bouncing the ball: both hands overhead, then slammed down.
+      locomotion(p, 0, 0, t + seed);
+      const slam = ease(0.35, 0.55, act);
+      p.set("armL", 0.2, 0, 2.6 - 2.1 * slam).set("foreL", 0, 0, 0.5).set("armR", -0.2, 0, 2.6 - 2.1 * slam).set("foreR", 0, 0, 0.5);
+      p.set("chest", 0, 0, 0.15 - 0.45 * slam).set("spine", 0, 0, -0.25 * slam);
+      break;
+    }
     case "walk":
     case "stand":
       locomotion(p, step, pose === "stand" ? 0 : speed, t + seed);
@@ -738,11 +899,11 @@ const smooth = (x: number) => x * x * (3 - 2 * x);
  * Animate a person. `step` is the walk-cycle phase (metres walked), `speed` in
  * m/s, `t` a clock for idles; switching pose blends over a quarter second.
  */
-export function posePed(m: PedModel, pose: Pose, step: number, speed: number, t = 0, dt = 1 / 30) {
+export function posePed(m: PedModel, pose: Pose, step: number, speed: number, t = 0, dt = 1 / 30, act = 0) {
   const a = m.anim;
   const seed = m.mesh.id * 0.37;
-  const tgt = target(pose, step, speed, t, seed);
-  const fam = (q: Pose | "") => (q === "walk" || q === "stand" ? "move" : q);
+  const tgt = target(pose, step, speed, t, seed, act);
+  const fam = (q: Pose | "") => (q === "walk" || q === "stand" || q === "carry" ? "move" : q);
   if (a.pose !== pose) {
     if (a.pose && fam(a.pose) !== fam(pose)) {
       a.from.set(a.cur);
@@ -750,7 +911,8 @@ export function posePed(m: PedModel, pose: Pose, step: number, speed: number, t 
     }
     a.pose = pose;
   }
-  a.blend = Math.min(1, a.blend + dt / 0.28);
+  const quick = pose === "kick" || pose === "handball" || pose === "mark" || pose === "tackle" || pose === "ruck" || pose === "bounce";
+  a.blend = Math.min(1, a.blend + dt / (quick ? 0.1 : 0.28));
   const k = smooth(a.blend);
   for (let i = 0; i < LEN; i++) a.cur[i] = k >= 1 ? tgt[i] : a.from[i] + (tgt[i] - a.from[i]) * k;
   const c = a.cur;

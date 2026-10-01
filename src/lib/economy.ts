@@ -14,6 +14,9 @@ export const CASH_CUP_PRIZES: Record<number, number> = { 1: 50, 2: 20, 3: 5 };
 export const CASH_CUP_DIFFICULTY = "hard" as const;
 
 export const BATTLE_PASS_PRICE = 200;
+/** Sports+ is a one-time unlock: every Sports+ game, now and later. */
+export const SPORTS_PASS_PRICE = 50;
+export const SPORTS_PASS_ID = "sports-plus";
 
 /** Is the Nth ranked match of the season (1-based) a Cash Cup? */
 export function isCashCup(matchNumber: number) {

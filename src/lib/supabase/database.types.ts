@@ -28,6 +28,24 @@ export type Database = {
         }
         Relationships: []
       }
+      player_unlocks: {
+        Row: {
+          created_at: string
+          unlock_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          unlock_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          unlock_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       coin_ledger: {
         Row: {
           amount: number
@@ -629,6 +647,10 @@ export type Database = {
         Returns: Json
       }
       buy_battle_pass: {
+        Args: never
+        Returns: Json
+      }
+      buy_sports_pass: {
         Args: never
         Returns: Json
       }

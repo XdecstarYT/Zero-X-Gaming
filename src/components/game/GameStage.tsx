@@ -15,6 +15,8 @@ import { formatKeyCode } from "@/lib/keys";
 import { Button } from "@/components/ui/Button";
 import { SignInButton } from "@/components/layout/SignInButton";
 import { GameArt } from "./GameArt";
+import { SportsPassCard } from "@/components/sports/SportsPassCard";
+import { useSportsPass } from "@/components/sports/use-sports-pass";
 
 const noopSubscribe = () => () => {};
 
@@ -78,6 +80,9 @@ export function GameStage({ game }: { game: Game }) {
   const localBest = useLibrary((s) => s.recent.find((r) => r.slug === game.slug)?.bestScore ?? 0);
   const authStatus = useAuth((s) => s.status);
   const pauseKey = useSettings((s) => s.keybindings.pause);
+  const needsPass = game.pass === "sports-plus";
+  const pass = useSportsPass();
+  const locked = needsPass && pass.owned !== true;
   const playable = game.status === "live" && game.slug in GAME_LOADERS;
   // Keep Play disabled until hydrated, so an early click is never silently lost.
   const hydrated = useSyncExternalStore(
@@ -128,7 +133,7 @@ export function GameStage({ game }: { game: Game }) {
 
   const launch = useCallback(async () => {
     const host = hostRef.current;
-    if (!host || !playable) return;
+    if (!host || !playable || locked) return;
     if (window.matchMedia("(pointer: coarse)").matches) enterImmersive();
     setPhase("loading");
     setSubmit({ state: "idle" });
@@ -158,7 +163,7 @@ export function GameStage({ game }: { game: Game }) {
     } catch {
       setPhase("error");
     }
-  }, [game.slug, playable, handleFinal, pause, enterImmersive]);
+  }, [game.slug, playable, locked, handleFinal, pause, enterImmersive]);
 
   const exitImmersive = useCallback(() => {
     moduleRef.current?.pause();
@@ -252,7 +257,16 @@ export function GameStage({ game }: { game: Game }) {
           </Overlay>
         )}
 
-        {playable && (phase === "idle" || phase === "loading") && (
+        {playable && locked && phase === "idle" && (
+          <Overlay dim>
+            <div data-testid="sports-lock" className="w-full max-w-lg text-left">
+              <p className="mb-3 text-center font-display text-xl font-black uppercase tracking-wider sm:text-2xl">{game.title}</p>
+              {pass.owned === null ? <p className="text-center text-sm text-muted">Checking your Sports+ pass…</p> : <SportsPassCard compact />}
+            </div>
+          </Overlay>
+        )}
+
+        {playable && !locked && (phase === "idle" || phase === "loading") && (
           <Overlay>
             <p className="font-display text-xl font-black uppercase tracking-wider sm:text-3xl">{game.title}</p>
             <p className="mt-1 text-sm text-muted">{game.tagline}</p>

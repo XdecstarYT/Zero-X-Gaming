@@ -1,15 +1,20 @@
 import type { Metadata } from "next";
 import { LinkButton } from "@/components/ui/Button";
 import { SportsLineup } from "@/components/sports/SportsLineup";
+import { SportsPassCard } from "@/components/sports/SportsPassCard";
+import { GameArt } from "@/components/game/GameArt";
+import { getGame } from "@/lib/catalog";
+import { SPORTS_PASS_PRICE } from "@/lib/economy";
 import { SPORTS } from "@/lib/sports";
 
 export const metadata: Metadata = {
   title: "Sports+",
-  description: "Sports+ is the new Zero X Gaming section for sports games: football, basketball, hockey, tennis and more, coming soon.",
+  description: `Sports+ is the Zero X Gaming section for sports games. Unlock it once for ${SPORTS_PASS_PRICE} coins and play Screamer: Aussie Rules now, with football, basketball, hockey, tennis and more on the way.`,
 };
 
 export default function SportsPage() {
   const sports = new Set(SPORTS.map((s) => s.sport)).size;
+  const live = getGame("aussie-rules")!;
   return (
     <div className="pb-8">
       <section aria-labelledby="sports-title" className="relative overflow-hidden border-b border-border">
@@ -25,18 +30,44 @@ export default function SportsPage() {
             Sports<span className="text-cyan">+</span>
           </h1>
           <p className="mt-4 max-w-2xl text-lg text-muted">
-            A whole new line-up of sports games is on the way: {SPORTS.length} games across {sports} sports, built for your browser and your
-            phone, with online play, leaderboards and the battle pass. Tap <strong className="text-text">Notify me</strong> on the ones you
-            want first.
+            Unlock Sports+ once for <strong className="text-text">{SPORTS_PASS_PRICE} coins</strong> and play every sports game, starting
+            with <strong className="text-text">{live.title}</strong>. {SPORTS.length} more games across {sports} sports are on the way, built
+            for your browser and your phone. Tap <strong className="text-text">Notify me</strong> on the ones you want first.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <LinkButton href="#lineup" size="lg">
+            <LinkButton href={`/games/${live.slug}`} size="lg">
+              Play {live.title.split(":")[0]}
+            </LinkButton>
+            <LinkButton href="#lineup" size="lg" variant="secondary">
               See the line-up
             </LinkButton>
-            <LinkButton href="/games" size="lg" variant="secondary">
-              Play what&apos;s out now
-            </LinkButton>
           </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="now-title" className="mx-auto mt-10 max-w-7xl px-4 sm:px-6">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-magenta">Out now</p>
+        <h2 id="now-title" className="mb-5 font-display text-2xl font-bold uppercase tracking-wide">
+          Now playing
+        </h2>
+        <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]">
+          <article aria-labelledby="live-title" className="overflow-hidden rounded-xl border border-border bg-surface">
+            <div className="relative aspect-[16/9]">
+              <GameArt game={live} className="h-full w-full" />
+              <span className="absolute top-2 left-2 rounded-full bg-lime-400 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-bg">Out now</span>
+            </div>
+            <div className="p-4">
+              <h3 id="live-title" className="font-display text-xl font-bold uppercase tracking-wide">
+                {live.title}
+              </h3>
+              <p className="mt-1 text-sm text-muted">{live.tagline}</p>
+              <p className="mt-2 text-sm">{live.description}</p>
+              <LinkButton href={`/games/${live.slug}`} className="mt-4">
+                Play now
+              </LinkButton>
+            </div>
+          </article>
+          <SportsPassCard />
         </div>
       </section>
 

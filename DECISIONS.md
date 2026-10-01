@@ -346,4 +346,12 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     games catalog, so they never show up as playable, on leaderboards or in search until they ship. "Notify me"
     is stored on the device only (no account or email needed). To fit a sixth link, the top nav uses short labels
     (Pass, Shop, Ranks) between tablet and desktop widths, and the phone tab bar has six tabs.
+98. **Sports+ is a one-time pass, not a per-game price.** One 50-coin unlock covers every Sports+ game, so the
+    section can grow without asking again. It's stored as a generic `player_unlocks` row (`sports-plus`) and
+    bought through a SECURITY DEFINER RPC that spends coins with `add_coins` (new ledger reason `sports_pass`),
+    the same pattern as the battle pass and the shop. Guests buy it from their device save.
+99. **Screamer uses invented clubs and no league branding.** The rules are real Australian football; the clubs,
+    players, sponsors and ground are made up. You always control the ball carrier (or the player nearest the
+    ball), and an assist positions your player when the stick is idle, so an 18-a-side game stays playable with
+    one thumb. The simulation is pure and deterministic (seeded), so the rules are unit tested headlessly.
 

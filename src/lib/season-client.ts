@@ -4,7 +4,7 @@ import { OUTFITS, WRAPS } from "@/games/neon-siege/cosmetics";
 import { readLoadout, writeLoadout, type Loadout } from "@/games/neon-siege/loadout";
 import { useAuth } from "@/store/auth";
 import { useWallet } from "@/store/wallet";
-import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup } from "./economy";
+import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE } from "./economy";
 import { deviceSaveSuffix } from "./device-accounts";
 import { getSupabaseBrowser } from "./supabase/client";
 import {
@@ -369,6 +369,34 @@ export async function buyShopItem(kind: CosmeticKind, item: string): Promise<{ c
   g.coins -= it.price;
   g.purchases.push(`${kind}:${item}`);
   writeGuest(g);
+  return { coins: g.coins };
+}
+
+/** Has this player unlocked Sports+ (50 coins, once)? */
+export async function hasSportsPass(): Promise<boolean> {
+  const auth = signedInClient();
+  if (!auth) return readGuest().purchases.includes(`unlock:${SPORTS_PASS_ID}`);
+  const { data } = await auth.supabase.from("player_unlocks").select("unlock_id").eq("user_id", auth.userId).eq("unlock_id", SPORTS_PASS_ID).maybeSingle();
+  return !!data;
+}
+
+/** Unlock Sports+ for 50 coins. */
+export async function buySportsPass(): Promise<{ coins: number }> {
+  const auth = signedInClient();
+  if (auth) {
+    const { data, error } = await auth.supabase.rpc("buy_sports_pass");
+    if (error) throw buyError(error.message);
+    const r = data as { coins: number };
+    useWallet.getState().set(r.coins);
+    return r;
+  }
+  const g = readGuest();
+  if (g.purchases.includes(`unlock:${SPORTS_PASS_ID}`)) throw buyError("already owned");
+  if (g.coins < SPORTS_PASS_PRICE) throw buyError("not enough coins");
+  g.coins -= SPORTS_PASS_PRICE;
+  g.purchases.push(`unlock:${SPORTS_PASS_ID}`);
+  writeGuest(g);
+  useWallet.getState().set(g.coins);
   return { coins: g.coins };
 }
 

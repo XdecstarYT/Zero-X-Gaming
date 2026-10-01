@@ -23,3 +23,12 @@ test("the home page teases Sports+", async ({ page }) => {
   await section.getByRole("link", { name: /See all sports/ }).click();
   await expect(page).toHaveURL(/\/sports$/);
 });
+
+test("Sports+ shows the live game and the 50-coin unlock", async ({ page }) => {
+  await page.goto("/sports");
+  const now = page.getByRole("region", { name: "Now playing" });
+  await expect(now.getByRole("heading", { name: "Screamer: Aussie Rules" })).toBeVisible();
+  await expect(now.getByTestId("sports-pass")).toContainText("50");
+  await now.getByRole("link", { name: "Play now" }).click();
+  await expect(page).toHaveURL(/\/games\/aussie-rules$/);
+});

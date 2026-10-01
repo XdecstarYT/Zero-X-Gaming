@@ -1,0 +1,277 @@
+import { A, B, BEHIND_HALF, FootySim, GOAL_X, points, POSITIONS, type SimEvent } from "./sim";
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", ...children: (Node | string)[]) {
+  const n = document.createElement(tag);
+  n.className = className;
+  n.append(...children);
+  return n;
+}
+
+const BREAK = ["", "QUARTER TIME", "HALF TIME", "THREE-QUARTER TIME", "FULL TIME"];
+
+/**
+ * The broadcast graphics: the score bug, the umpire's calls, your player and
+ * kick power, a minimap of the oval, and the quarter-break scoreboard.
+ */
+export class FootyHud {
+  private root: HTMLDivElement;
+  private bug: HTMLDivElement;
+  private home: HTMLSpanElement;
+  private away: HTMLSpanElement;
+  private homeTot: HTMLSpanElement;
+  private awayTot: HTMLSpanElement;
+  private clock: HTMLSpanElement;
+  private quarter: HTMLSpanElement;
+  private call: HTMLDivElement;
+  private callText: HTMLParagraphElement;
+  private callSub: HTMLParagraphElement;
+  private callT = 0;
+  private me: HTMLDivElement;
+  private meName: HTMLParagraphElement;
+  private meRole: HTMLParagraphElement;
+  private stamina: HTMLDivElement;
+  private power: HTMLDivElement;
+  private powerFill: HTMLDivElement;
+  private shotClock: HTMLParagraphElement;
+  private hint: HTMLParagraphElement;
+  private map: HTMLCanvasElement;
+  private breakBox: HTMLDivElement;
+  private live: HTMLDivElement;
+  private mapT = 0;
+
+  constructor(
+    host: HTMLElement,
+    private sim: FootySim,
+    private coarse: boolean,
+  ) {
+    const [h, a] = sim.clubs;
+    this.root = el("div", "pointer-events-none absolute inset-0 z-[5] select-none font-sans text-white");
+    // Score bug (top left, broadcast style).
+    const chip = (c: typeof h) => {
+      const s = el("span", "inline-block h-5 w-1.5 rounded-sm");
+      s.style.background = `linear-gradient(${c.guernsey} 0 40%, ${c.hoop} 40% 60%, ${c.guernsey} 60%)`;
+      return s;
+    };
+    this.home = el("span", "tabular-nums text-white/70");
+    this.away = el("span", "tabular-nums text-white/70");
+    this.homeTot = el("span", "min-w-[2.2ch] text-right font-black tabular-nums text-[#facc15]");
+    this.awayTot = el("span", "min-w-[2.2ch] text-right font-black tabular-nums text-[#facc15]");
+    this.quarter = el("span", "font-bold text-white/80");
+    this.clock = el("span", "font-black tabular-nums");
+    const line = (c: typeof h, gb: HTMLSpanElement, tot: HTMLSpanElement) =>
+      el("div", "flex items-center gap-2 px-2 py-0.5", chip(c), el("span", "w-10 font-black tracking-wider", c.short), gb, tot);
+    this.bug = el(
+      "div",
+      "absolute left-[max(0.5rem,env(safe-area-inset-left))] top-[max(0.5rem,env(safe-area-inset-top))] overflow-hidden rounded-md border border-white/15 bg-black/70 text-[13px] shadow-lg backdrop-blur-sm sm:text-sm",
+      line(h, this.home, this.homeTot),
+      line(a, this.away, this.awayTot),
+      el("div", "flex items-center justify-between gap-3 bg-white/10 px-2 py-0.5 text-xs", this.quarter, this.clock),
+    );
+    this.bug.setAttribute("data-testid", "footy-score");
+    // Umpire's call (centre).
+    this.callText = el("p", "font-display text-4xl font-black italic tracking-tight drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] sm:text-6xl");
+    this.callSub = el("p", "mt-1 text-sm font-bold uppercase tracking-[0.3em] text-white/85 drop-shadow");
+    this.call = el("div", "absolute left-1/2 top-[22%] -translate-x-1/2 text-center opacity-0 transition-opacity duration-300", this.callText, this.callSub);
+    this.live = el("div", "sr-only");
+    this.live.setAttribute("aria-live", "polite");
+    // Your player.
+    this.meName = el("p", "text-sm font-black uppercase tracking-wide");
+    this.meRole = el("p", "text-[10px] uppercase tracking-[0.2em] text-white/60");
+    this.stamina = el("div", "h-full rounded bg-[#facc15] transition-[width]");
+    this.me = el(
+      "div",
+      `absolute ${coarse ? "bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 text-center" : "left-[max(0.75rem,env(safe-area-inset-left))] bottom-3"} rounded-md bg-black/55 px-3 py-1.5 backdrop-blur-sm`,
+      this.meName,
+      this.meRole,
+      el("div", "mt-1 h-1 w-28 overflow-hidden rounded bg-white/15", this.stamina),
+    );
+    // Kick power.
+    this.powerFill = el("div", "h-full origin-left rounded-full bg-gradient-to-r from-[#facc15] via-[#fb923c] to-[#ef4444]");
+    this.power = el(
+      "div",
+      "absolute bottom-[22%] left-1/2 w-56 -translate-x-1/2 opacity-0 transition-opacity",
+      el("p", "mb-1 text-center text-[10px] font-bold uppercase tracking-[0.3em] text-white/80", "Kick power"),
+      el("div", "h-2.5 overflow-hidden rounded-full border border-white/30 bg-black/50", this.powerFill),
+    );
+    this.shotClock = el("p", "absolute bottom-[30%] left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1 text-sm font-bold tabular-nums opacity-0");
+    this.hint = el("p", `absolute left-1/2 -translate-x-1/2 rounded bg-black/55 px-3 py-1 text-center text-xs text-white/85 ${coarse ? "bottom-[42%]" : "bottom-3"}`);
+    // Minimap.
+    this.map = el("canvas", `absolute right-[max(0.5rem,env(safe-area-inset-right))] ${coarse ? "top-[max(0.5rem,env(safe-area-inset-top))]" : "bottom-3"} h-[64px] w-[80px] rounded-md bg-black/40 sm:h-[96px] sm:w-[120px]`);
+    this.map.width = 240;
+    this.map.height = 192;
+    this.breakBox = el("div", "absolute inset-0 grid place-items-center bg-black/55 opacity-0 transition-opacity duration-500");
+    this.root.append(this.bug, this.call, this.live, this.me, this.power, this.shotClock, this.hint, this.map, this.breakBox);
+    host.appendChild(this.root);
+  }
+
+  /** Big centre call, e.g. MARK / GOAL! */
+  shout(text: string, sub = "", seconds = 1.8, color = "#ffffff") {
+    this.callText.textContent = text;
+    this.callText.style.color = color;
+    this.callSub.textContent = sub;
+    this.callT = seconds;
+    this.call.style.opacity = "1";
+    this.live.textContent = `${text} ${sub}`.trim();
+  }
+
+  onEvent(e: SimEvent) {
+    const sim = this.sim;
+    const name = (id: number) => sim.players[id]?.name ?? "";
+    const ours = (t: number) => t === 0;
+    switch (e.kind) {
+      case "goal": {
+        const club = sim.clubs[e.team];
+        this.shout(e.afterSiren ? "AFTER THE SIREN!" : "GOAL!", `${name(e.by)} · ${Math.round(e.dist)} m · ${club.name}`, 4, ours(e.team) ? "#facc15" : "#ffffff");
+        break;
+      }
+      case "behind":
+        this.shout(e.rushed ? "RUSHED" : e.post ? "POSTER" : "BEHIND", e.rushed ? "Rushed behind · 1 point" : "1 point", 2.2);
+        break;
+      case "mark":
+        this.shout(e.screamer ? "SCREAMER!" : "MARK", `${name(e.id)}${e.contested ? " · contested" : ""}`, e.screamer ? 2.6 : 1.4, e.screamer ? "#facc15" : "#ffffff");
+        break;
+      case "free":
+        this.shout("FREE KICK", `${e.reason} · ${name(e.id)}`, 2.2);
+        break;
+      case "playon":
+        this.shout("PLAY ON", "", 1);
+        break;
+      case "ballup":
+        this.shout("BALL UP", "", 1);
+        break;
+      case "out":
+        if (!e.full) this.shout("OUT OF BOUNDS", "Throw-in", 1.2);
+        break;
+      case "tackle":
+        if (ours(e.team)) this.shout("TACKLE", name(e.id), 0.9);
+        break;
+      case "siren":
+        this.shout("SIREN", `End of quarter ${e.quarter}`, 2);
+        break;
+      case "quarter":
+        this.shout(`QUARTER ${e.quarter}`, "Change of ends", 1.6);
+        break;
+      default:
+        break;
+    }
+  }
+
+  update(dt: number) {
+    const sim = this.sim;
+    const [h, a] = sim.score;
+    this.home.textContent = `${h.goals}.${h.behinds}`;
+    this.away.textContent = `${a.goals}.${a.behinds}`;
+    this.homeTot.textContent = String(points(h));
+    this.awayTot.textContent = String(points(a));
+    this.quarter.textContent = sim.phase === "over" ? "FULL TIME" : `Q${sim.quarter}`;
+    const c = Math.ceil(sim.clock);
+    this.clock.textContent = `${Math.floor(c / 60)}:${String(c % 60).padStart(2, "0")}`;
+    this.callT -= dt;
+    if (this.callT <= 0) this.call.style.opacity = "0";
+    const you = sim.you;
+    this.meName.textContent = `#${you.number} ${you.name}`;
+    this.meRole.textContent = POSITIONS[you.role].name;
+    this.stamina.style.width = `${Math.round(you.stamina * 100)}%`;
+    this.power.style.opacity = sim.charge > 0 ? "1" : "0";
+    this.powerFill.style.transform = `scaleX(${sim.charge})`;
+    const mySet = sim.phase === "set" && sim.set?.id === sim.human;
+    this.shotClock.style.opacity = mySet ? "1" : "0";
+    if (mySet) this.shotClock.textContent = `${sim.set!.kind === "kickin" ? "Kick-in" : sim.set!.kind === "free" ? "Free kick" : "Set shot"} · ${Math.ceil(sim.set!.clock)}`;
+    this.hint.textContent = this.hintText();
+    this.hint.style.opacity = this.hint.textContent ? "1" : "0";
+    this.mapT -= dt;
+    if (this.mapT <= 0) {
+      this.mapT = 0.1;
+      this.drawMap();
+    }
+    this.breakBox.style.opacity = sim.phase === "break" || sim.phase === "over" ? "1" : "0";
+    if (sim.phase === "break" && !this.breakBox.dataset.q) this.drawBreak();
+    if (sim.phase !== "break") delete this.breakBox.dataset.q;
+  }
+
+  private hintText() {
+    const sim = this.sim;
+    const you = sim.you;
+    const has = sim.ball.state === "held" && sim.ball.holder === you.id;
+    const kick = this.coarse ? "hold KICK" : "hold Space";
+    if (sim.phase === "set" && sim.set?.id === you.id) return `Aim with ${this.coarse ? "the stick" : "WASD"} · ${kick}, release to kick · ${this.coarse ? "SPRINT" : "Shift"} + move = play on`;
+    if (has) return `${kick} to kick · ${this.coarse ? "HANDBALL" : "F"} to handball`;
+    if (sim.ball.state === "air" && !sim.ball.ruck) return `Get under it · ${this.coarse ? "LEAP" : "Space"} to mark`;
+    const c = sim.carrier;
+    if (c && c.team === 1 && Math.hypot(c.x - you.x, c.z - you.z) < 6) return `${this.coarse ? "TACKLE" : "E"} to tackle`;
+    return "";
+  }
+
+  private drawMap() {
+    const sim = this.sim;
+    const g = this.map.getContext("2d")!;
+    const W = this.map.width;
+    const H = this.map.height;
+    g.clearRect(0, 0, W, H);
+    const sx = (x: number) => W / 2 + (x / (A + 6)) * (W / 2);
+    const sz = (z: number) => H / 2 + (z / (B + 6)) * (H / 2);
+    g.fillStyle = "rgba(40,90,40,0.75)";
+    g.beginPath();
+    g.ellipse(W / 2, H / 2, (A / (A + 6)) * (W / 2), (B / (B + 6)) * (H / 2), 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = "rgba(255,255,255,0.6)";
+    g.lineWidth = 1.5;
+    g.stroke();
+    g.strokeRect(sx(-25), sz(-25), sx(25) - sx(-25), sz(25) - sz(-25));
+    g.fillStyle = "#ffffff";
+    for (const x of [-GOAL_X, GOAL_X]) for (const z of [-BEHIND_HALF, -3.2, 3.2, BEHIND_HALF]) g.fillRect(sx(x) - 1.5, sz(z) - 1.5, 3, 3);
+    for (const p of sim.players) {
+      g.fillStyle = p.team === 0 ? sim.clubs[0].guernsey : sim.clubs[1].hoop;
+      g.beginPath();
+      g.arc(sx(p.x), sz(p.z), p.id === sim.human ? 5 : 3.2, 0, Math.PI * 2);
+      g.fill();
+      if (p.id === sim.human) {
+        g.strokeStyle = "#facc15";
+        g.lineWidth = 2;
+        g.stroke();
+      }
+    }
+    g.fillStyle = "#ef4444";
+    g.beginPath();
+    g.arc(sx(sim.ball.x), sz(sim.ball.z), 3.5, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = "#fff";
+    g.lineWidth = 1;
+    g.stroke();
+  }
+
+  private drawBreak() {
+    const sim = this.sim;
+    this.breakBox.dataset.q = String(sim.quarter);
+    const rows = sim.byQuarter;
+    const table = el("table", "mt-3 w-full text-sm tabular-nums");
+    const head = el("tr", "text-[10px] uppercase tracking-widest text-white/50", el("th", "pr-4 text-left font-bold", ""));
+    rows.forEach((_, i) => head.append(el("th", "px-2 font-bold", `Q${i + 1}`)));
+    table.append(head);
+    sim.clubs.forEach((c, t) => {
+      const tr = el("tr", "", el("td", "pr-4 text-left font-black", c.name));
+      rows.forEach((r) => tr.append(el("td", "px-2 text-center", FootySim.fmt(r[t]))));
+      table.append(tr);
+    });
+    this.breakBox.replaceChildren(
+      el(
+        "div",
+        "rounded-xl border border-white/15 bg-black/75 px-6 py-5 text-center shadow-2xl",
+        el("p", "text-[11px] font-bold uppercase tracking-[0.35em] text-[#facc15]", BREAK[sim.quarter] ?? ""),
+        el("p", "mt-1 font-display text-2xl font-black uppercase", leaderLine(sim)),
+        table,
+      ),
+    );
+  }
+
+  destroy() {
+    this.root.remove();
+  }
+}
+
+export function leaderLine(sim: FootySim) {
+  const d = points(sim.score[0]) - points(sim.score[1]);
+  if (d === 0) return "Scores level";
+  const lead = sim.clubs[d > 0 ? 0 : 1];
+  return `${lead.name} by ${Math.abs(d)}`;
+}

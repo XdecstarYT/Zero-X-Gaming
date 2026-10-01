@@ -27,7 +27,7 @@ describe("queryGames", () => {
   });
 
   it("sorts newest first", () => {
-    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("code-3");
+    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("aussie-rules");
   });
 
   it("sorts by rating", () => {

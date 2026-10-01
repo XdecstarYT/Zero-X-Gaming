@@ -356,7 +356,33 @@ Kings (five-a-side football), Hoops X (3v3 basketball), Gridiron Blitz (7v7 Amer
 hockey), Ace Rally (tennis), Diamond Derby (home run derby), Knockout (boxing) and Fairway (golf). Each card shows
 its status and season window, original drawn art, the planned features and a **Notify me** toggle remembered on
 the device. Sports+ is in the top nav, the phone tab bar, the footer, the sitemap and a teaser row on the home
-page. Nothing in it is playable yet.
+page.
+
+**Sports+ costs 50 coins, once.** The pass (`SPORTS_PASS_PRICE` / `SPORTS_PASS_ID` in `src/lib/economy.ts`)
+unlocks every Sports+ game, now and later. Signed in, `buy_sports_pass()` takes the coins and records the
+unlock in `player_unlocks`; guests pay from their device save. Games with `pass: "sports-plus"` in the catalog
+show the unlock card instead of **Play** until it's owned (`SportsPassCard`, `useSportsPass`).
+
+#### Screamer: Aussie Rules
+
+The first Sports+ game (`src/games/aussie-rules/`): an 18-a-side Australian rules football match on a full 3D
+oval. You play the Harbour Hawks against an AI side (Coastline Sharks, Ironbark Rams or Riverton Kings; Rookie,
+Pro or Legend), over four quarters of 2, 4 or 8 minutes, by day, at twilight or under lights.
+
+- **Rules:** centre bounces, kicks (hold to charge), handballs, a bounce every 15 m, marks from kicks of 15 m+
+  (screamers when you climb a pack), set shots and free kicks with play on, tackles with prior opportunity and
+  holding the ball, ball-ups, throw-ins, out on the full, goals (6), behinds (1), rushed behinds and posters,
+  kick-ins, changes of ends and a kick after the siren.
+- **AI:** positional zones, man-on-man defence goal-side, leads at the ball carrier, chasers and tacklers, ruck
+  contests, pack marks and spoils, shots at goal from range.
+- **Looks:** a mown oval with painted and modelled markings, padded goal posts and netting, an LED fence, a
+  two-tier bowl with a roof, an instanced crowd that cheers, six light towers, live score screens, players built
+  on Code 3's skinned rig (guernseys, numbers, socks, new kick / handball / mark / tackle / ruck poses), a red
+  leather ball that tumbles end over end, a physical sky, soft shadows, bloom, SMAA and a sharpening grade.
+- **Cameras:** a telephoto broadcast camera, a behind-the-player camera, over-the-shoulder set shots, a crane
+  shot to open and a goal-celebration orbit.
+- **Score:** points, margin, marks, contested marks, screamers, tackles and the result, ×1.5 on Pro and ×2 on
+  Legend. `?footy=quick` runs 20-second quarters (unranked) for testing.
 
 ### Themes
 

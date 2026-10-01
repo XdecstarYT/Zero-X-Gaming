@@ -9,6 +9,7 @@ import type { BadgeDef, Game, GameCategory, PlayerSummary } from "./types";
 export const CATEGORIES: { id: GameCategory; label: string }[] = [
   { id: "shooter", label: "Shooter" },
   { id: "sim", label: "Sim" },
+  { id: "sports", label: "Sports+" },
 ];
 
 export const GAMES: Game[] = [
@@ -106,6 +107,36 @@ export const GAMES: Game[] = [
     orientation: "landscape",
     touchControls:
       "Left thumb drives or walks, right thumb looks around. Buttons for enter/exit, lights, handbrake, fire, aim and backup; tap the action list to talk, search, cite and arrest.",
+  },
+  {
+    slug: "aussie-rules",
+    title: "Screamer: Aussie Rules",
+    tagline: "Take a screamer. Slot it from 50. Win the flag.",
+    description:
+      "The first Sports+ game: full 18-a-side Australian rules football on a floodlit 3D oval. Four quarters, centre bounces, kicks, handballs, bounces, marks and set shots, tackles and holding-the-ball, kick-ins, throw-ins and behinds. Play as the whole Harbour Hawks side against a smart AI (Easy, Pro or Legend): lead into space, take a screamer on someone's shoulders and kick the winner after the siren. Goals are 6, behinds 1; your margin, goals and marks score for the leaderboard. Needs the Sports+ pass (50 coins, once).",
+    category: "sports",
+    tags: ["football", "aussie rules", "3d", "sports+"],
+    status: "live",
+    palette: ["#e11d48", "#1d4ed8"],
+    rating: 0,
+    ratingCount: 0,
+    plays: 0,
+    releasedAt: "2026-10-03",
+    pass: "sports-plus",
+    controls: [
+      { keys: ["W", "A", "S", "D"], action: "Run (camera-relative)" },
+      { keys: ["Shift"], action: "Sprint" },
+      { keys: ["Space", "Click"], action: "Hold to charge a kick, release to kick (aim with the mouse / at the goals)" },
+      { keys: ["F", "Right-click"], action: "Handball to the nearest teammate" },
+      { keys: ["E"], action: "Jump for a mark / spoil (without the ball); tackle when close" },
+      { keys: ["Q"], action: "Switch to the player nearest the ball" },
+      { keys: ["B"], action: "Bounce (every 15 m while running)" },
+      { keys: ["C"], action: "Camera: broadcast / behind the player" },
+      { keys: ["Esc", "P"], action: "Pause" },
+    ],
+    orientation: "landscape",
+    touchControls:
+      "Left thumb runs. Hold KICK and release to kick (longer hold = longer kick), tap HANDBALL to dish off, MARK to leap, TACKLE when close, SWITCH to take the player nearest the ball.",
   },
 ];
 

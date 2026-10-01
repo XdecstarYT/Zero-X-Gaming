@@ -45,6 +45,8 @@ export function GameArt({
         <Trenches id={id} a={a} b={b} />
       ) : game.slug === "code-3" ? (
         <Code3 id={id} a={a} b={b} />
+      ) : game.category === "sports" ? (
+        <Oval id={id} a={a} b={b} />
       ) : (
         <Motif category={game.category} id={id} a={a} b={b} />
       )}
@@ -281,6 +283,47 @@ function Code3({ id, a, b }: { id: string; a: string; b: string }) {
       {/* reflections on the wet road */}
       <rect x="140" y="160" width="14" height="36" fill={b} fillOpacity="0.25" filter={`url(#${id}-blur)`} />
       <rect x="160" y="160" width="14" height="36" fill={a} fillOpacity="0.25" filter={`url(#${id}-blur)`} />
+    </g>
+  );
+}
+
+/** Floodlit oval, goal posts and a footy on the way through. */
+function Oval({ id, a, b }: { id: string; a: string; b: string }) {
+  return (
+    <g>
+      <ellipse cx="160" cy="150" rx="170" ry="58" fill="#1f5a2a" />
+      <ellipse cx="160" cy="150" rx="150" ry="48" fill="#2a7334" />
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <rect key={i} x={20 + i * 50} y="100" width="25" height="100" fill="#fff" opacity="0.035" />
+      ))}
+      <ellipse cx="160" cy="150" rx="150" ry="48" fill="none" stroke="#fff" strokeOpacity=".7" strokeWidth="1.5" />
+      <rect x="146" y="142" width="28" height="16" fill="none" stroke="#fff" strokeOpacity=".6" />
+      <circle cx="160" cy="150" r="3" fill="none" stroke="#fff" strokeOpacity=".6" />
+      <path d="M36 128 Q70 150 36 172 M284 128 Q250 150 284 172" fill="none" stroke="#fff" strokeOpacity=".45" />
+      {/* posts at the far end: behind, goal, goal, behind */}
+      {[
+        [248, 90, 1.3],
+        [258, 70, 2],
+        [272, 70, 2],
+        [282, 90, 1.3],
+      ].map(([x, y, w]) => (
+        <line key={x} x1={x} y1={y} x2={x} y2={124} stroke="#fff" strokeWidth={w} />
+      ))}
+      {[30, 290].map((x) => (
+        <g key={x}>
+          <line x1={x} y1="14" x2={x} y2="96" stroke="#9aa3b5" strokeWidth="2" />
+          <rect x={x - 12} y="8" width="24" height="10" rx="2" fill="#fff" />
+          <path d={`M${x - 12} 18 L${x - 70} 200 L${x + 70} 200 L${x + 12} 18 Z`} fill="#fff" opacity=".05" filter={`url(#${id}-blur)`} />
+        </g>
+      ))}
+      <path d="M110 120 Q180 30 262 78" fill="none" stroke={a} strokeOpacity=".6" strokeDasharray="4 5" strokeWidth="2" />
+      <ellipse cx="236" cy="62" rx="11" ry="7" transform="rotate(-25 236 62)" fill="#b3261e" stroke="#fff" strokeOpacity=".7" />
+      <g transform="translate(100 104)">
+        <circle cx="0" cy="-18" r="5" fill="#e8c4a0" />
+        <path d="M-7 -12 h14 l2 14 h-18 z" fill={a} />
+        <path d="M-7 -12 h14 l2 14 h-18 z" fill="none" stroke={b} strokeWidth="2" />
+        <path d="M-5 2 l-4 16 M5 2 l14 8" stroke="#1b1b1b" strokeWidth="4" strokeLinecap="round" />
+      </g>
     </g>
   );
 }

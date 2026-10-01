@@ -1,4 +1,4 @@
-export type GameCategory = "arcade" | "puzzle" | "runner" | "trivia" | "shooter" | "sim";
+export type GameCategory = "arcade" | "puzzle" | "runner" | "trivia" | "shooter" | "sim" | "sports";
 
 export type GameStatus = "live" | "coming_soon";
 
@@ -26,6 +26,8 @@ export interface Game {
   touchControls: string;
   /** Preferred phone orientation in immersive mode. */
   orientation?: "landscape" | "any";
+  /** A one-time unlock needed to play (Sports+ games need the Sports+ pass). */
+  pass?: "sports-plus";
 }
 
 export interface LeaderboardEntry {
