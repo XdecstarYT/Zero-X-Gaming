@@ -468,6 +468,28 @@ the sharpening grade, adaptive resolution, sun or floodlights), the instanced cr
 helpers, synthesized crowd/organ sound and the menu UI. Diamond Derby and Ace Rally are registered in the
 `games` table by `20261005090000_sports_plus_derby_tennis.sql`.
 
+### Clanforge: base-building strategy
+
+An original village-builder in the Clash style (`src/games/clanforge/`), with its own names, buildings,
+troops and art. Everything is pure and driven by a timestamp, so offline progress is just `tick(v, now)`:
+
+- `data.ts`: every building (Keep, Gold Mine, Mana Well, Gold Vault, Mana Vat, Barracks, War Camp, Builder's
+  Hut, Clan Hall, Cannon, Archer Tower, Mortar, Storm Spire, Air Lance, Wall) and troop (Brawler, Ranger,
+  Raider, Brute, Sapper, Drake) with levels, costs, times and what each Keep level unlocks.
+- `village.ts`: the 40 × 40 village, builders and their timers, collectors, storage caps, the training queue,
+  clan reinforcements, loot rules, raid and defence results. Saved to `localStorage` (`zx-clanforge`).
+- `battle.ts`: the raid sim: deploy from the border (not next to a building), A* pathing that breaks
+  through walls when it's cheaper, troop target preferences, defenses with projectiles and splash, stars
+  (50%, the Keep, 100%) and loot. `simulateRaid` runs an AI raid headlessly.
+- `bases.ts`: AI villages generated from a trophy count and a seed (walled core, rings of defenses,
+  collectors outside), your village as a base, and raiders' armies.
+- `render.ts` / `index.ts`: the three.js valley on the Sports+ pipeline, low-poly models for every building
+  and level, the village HUD, shop with a placement ghost, army and clan panels, defence log, search /
+  battle HUD and results. While you're away you're raided once per unshielded three hours (up to three).
+
+Posting your trophies after a raid submits them as the score. Registered by `20261007090000_clanforge.sql`,
+which also adds the `strategy` category.
+
 ### Sign in with Zero X (OAuth 2.1)
 
 The Supabase OAuth 2.1 server lets other apps offer "Sign in with Zero X". Supabase sends players to

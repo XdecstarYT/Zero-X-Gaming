@@ -393,4 +393,10 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 111. **Career sims cheaply.** A whole career is 15+ seasons of up to 27 games; any game can be simmed from the
      player's attributes and the clubs' form, so a career is playable in an evening and every system (votes,
      draft, honours) works the same for played and simmed games.
-
+112. **Clanforge is our own game, not a copy.** The loop players asked for (build, collect, train, raid,
+     defend) is a genre, but the names, characters, art and numbers are all ours, with no Supercell marks.
+113. **Clanforge's world runs on timestamps, not a clock.** Every timer is a `busyUntil` / `done` time and
+     collectors fill from `lastTick`, so the village catches up instantly when you return, raids on you are
+     simulated for the hours you were away, and tests can fast-forward time.
+114. **Trophies are posted, not streamed.** A village lasts for weeks, so the score is your trophy count,
+     submitted when you choose after a raid; the session's play time still bounds the score rate.

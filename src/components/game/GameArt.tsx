@@ -49,6 +49,8 @@ export function GameArt({
         <Diamond id={id} a={a} b={b} />
       ) : game.slug === "ace-rally" ? (
         <Court id={id} a={a} b={b} />
+      ) : game.slug === "clanforge" ? (
+        <Village a={a} b={b} />
       ) : game.category === "sports" ? (
         <Oval id={id} a={a} b={b} />
       ) : (
@@ -401,6 +403,40 @@ function Court({ id, a, b }: { id: string; a: string; b: string }) {
       <circle cx="176" cy="96" r="3.5" fill="#d8ea3a" />
       <path d="M170 104 Q174 98 176 96" stroke="#d8ea3a" strokeOpacity=".6" fill="none" />
       <path d={`M176 96 L120 ${80}`} stroke={b} strokeOpacity=".35" strokeDasharray="3 4" filter={`url(#${id}-blur)`} />
+    </g>
+  );
+}
+
+function Village({ a, b }: { a: string; b: string }) {
+  // An isometric village: a walled Keep on a grassy diamond, a cannon, a mine, a drake overhead.
+  const iso = (x: number, y: number) => `${160 + (x - y) * 14} ${112 + (x + y) * 7}`;
+  return (
+    <g>
+      <path d={`M${iso(-6, -6)} L${iso(6, -6)} L${iso(6, 6)} L${iso(-6, 6)} Z`} fill="#3f7d3a" />
+      <path d={`M${iso(-6, 6)} L${iso(6, 6)} L${iso(6, 6)} l0 10 L${iso(-6, 6)} Z`} fill="#2a5426" />
+      <path d={`M${iso(-3, -3)} L${iso(3, -3)} L${iso(3, 3)} L${iso(-3, 3)} Z`} fill="none" stroke="#a8a29e" strokeWidth="5" strokeLinejoin="round" />
+      <g transform="translate(160 106)">
+        <path d="M-16 0 L-16 -30 L16 -30 L16 0 L0 9 Z" fill="#78716c" />
+        <path d="M0 9 L16 0 L16 -30 L0 -22 Z" fill="#57534e" />
+        <path d="M-18 -30 L0 -40 L18 -30 L0 -21 Z" fill={a} />
+        <path d="M0 -40 L0 -60" stroke="#e7e5e4" strokeWidth="1.5" />
+        <path d="M0 -60 L14 -55 L0 -50 Z" fill={b} />
+      </g>
+      <g transform={`translate(${iso(4.5, -1.5)})`}>
+        <ellipse cx="0" cy="0" rx="10" ry="5" fill="#44403c" />
+        <path d="M-2 -6 L14 -12" stroke="#1c1917" strokeWidth="5" strokeLinecap="round" />
+        <circle cx="0" cy="-5" r="5" fill="#292524" />
+      </g>
+      <g transform={`translate(${iso(-4.5, 1.5)})`}>
+        <path d="M-10 0 L0 -12 L10 0 L0 5 Z" fill="#92400e" />
+        <circle cx="0" cy="-16" r="5" fill="#facc15" />
+      </g>
+      <g transform="translate(250 48)" fill={b}>
+        <path d="M-18 0 Q0 -6 18 0 Q4 4 -18 0 Z" />
+        <path d="M-4 -2 L-14 -22 L4 -4 Z M2 -2 L16 -20 L8 -2 Z" opacity=".85" />
+        <path d="M18 0 L26 -3 L24 3 Z" />
+        <path d="M26 0 Q40 4 46 14" stroke="#fb923c" strokeWidth="4" fill="none" opacity=".8" />
+      </g>
     </g>
   );
 }

@@ -9,6 +9,7 @@ import type { BadgeDef, Game, GameCategory, PlayerSummary } from "./types";
 export const CATEGORIES: { id: GameCategory; label: string }[] = [
   { id: "shooter", label: "Shooter" },
   { id: "sim", label: "Sim" },
+  { id: "strategy", label: "Strategy" },
   { id: "sports", label: "Sports+" },
 ];
 
@@ -194,6 +195,33 @@ export const GAMES: Game[] = [
     ],
     orientation: "landscape",
     touchControls: "Left thumb moves you and aims your shot as you hit. SERVE (tap to toss, tap at the top to hit) turns into TOPSPIN in the rally; SLICE, LOB and DROP sit beside it.",
+  },
+  {
+    slug: "clanforge",
+    title: "Clanforge",
+    tagline: "Build your village. Train your army. Raid for glory.",
+    description:
+      "A base-building strategy game in a sunlit 3D valley. Found a village around your Keep, put your builders to work on mines, wells, vaults and vats, and wall it in with cannons, archer towers, mortars, storm spires and air lances. Train brawlers, rangers, raiders, brutes, sappers and drakes, ask your clan for reinforcements, then raid AI villages for gold, mana and trophies: drop troops from the edge, knock out half the village for a star, the Keep for another and everything for three. Raiders hit back while you're away, so lay out your defenses well. Climb from Unranked to Legend league.",
+    category: "strategy",
+    tags: ["base building", "3d", "raids", "army"],
+    status: "live",
+    palette: ["#d97706", "#7c3aed"],
+    rating: 0,
+    ratingCount: 0,
+    plays: 0,
+    releasedAt: "2026-10-07",
+    controls: [
+      { keys: ["Drag"], action: "Pan the map" },
+      { keys: ["Wheel", "+", "−"], action: "Zoom" },
+      { keys: ["W", "A", "S", "D"], action: "Pan" },
+      { keys: ["Click"], action: "Select a building / collect / deploy a troop" },
+      { keys: ["Hold", "drag"], action: "Deploy a stream of troops" },
+      { keys: ["1–7"], action: "Pick a troop in a raid" },
+      { keys: ["Enter"], action: "Place the building" },
+      { keys: ["Esc", "P"], action: "Pause" },
+    ],
+    orientation: "landscape",
+    touchControls: "Drag to pan, pinch to zoom. Tap a building to select or collect it, drag the ghost to place one. In a raid, pick a troop at the bottom and tap or drag along the green edge to deploy.",
   },
 ];
 

@@ -11,6 +11,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   "aussie-rules": () => import("./aussie-rules/index"),
   "diamond-derby": () => import("./diamond-derby/index"),
   "ace-rally": () => import("./ace-rally/index"),
+  clanforge: () => import("./clanforge/index"),
 };
 
 export function hasGame(slug: string) {
