@@ -430,6 +430,13 @@ export type Pose =
   | "forehand"
   | "backhand"
   | "serve"
+  // Cricket (`act` 0–1 is the action's progress).
+  | "creaseStance"
+  | "drive"
+  | "block"
+  | "bowl"
+  | "throw"
+  | "dive"
   // Holding a cup over your head.
   | "trophy";
 
@@ -807,6 +814,69 @@ function target(pose: Pose, step: number, speed: number, t: number, seed: number
       p.root(0, -0.48, 0);
       p.set("spine", 0, 0, -0.2).set("armL", 0.1, 0, 1.25).set("foreL", 0, 0, 0.5).set("armR", -0.2, 0, 0.3).set("foreR", 0, 0, 0.9);
       break;
+    case "creaseStance":
+      // Side-on at the crease, bat grounded by the back foot, eyes on the bowler.
+      locomotion(p, 0, 0, t + seed);
+      p.set("thighL", 0.18, 0, 0.22).set("shinL", 0, 0, -0.35).set("thighR", -0.16, 0, 0.18).set("shinR", 0, 0, -0.3);
+      p.set("spine", 0, 0, -0.32).set("chest", 0, -0.15, -0.08).set("head", 0, 1.2, 0.25);
+      p.set("armL", 0.05, 0.25, 0.55).set("foreL", 0, 0.25, 0.5);
+      p.set("armR", -0.15, -0.1, 0.45).set("foreR", 0, -0.2, 0.75);
+      p.root(0, -0.05, 0);
+      break;
+    case "drive": {
+      // Backlift (0–0.3), stride and bring the bat down (0.3–0.55), high follow-through.
+      const lift = ease(0, 0.3, act) * (1 - ease(0.35, 0.5, act));
+      const down = ease(0.32, 0.55, act);
+      const fin = ease(0.55, 0.9, act);
+      p.set("thighL", 0.15, 0, 0.22 + 0.55 * down).set("shinL", 0, 0, -0.35 - 0.25 * down).set("thighR", -0.16, 0, 0.18 - 0.35 * down).set("shinR", 0, 0, -0.3 - 0.3 * down);
+      p.set("hips", 0, 0.45 * down, 0);
+      p.set("spine", 0, 0.1 * down, -0.32 - 0.12 * down + 0.2 * fin);
+      p.set("chest", 0, -0.3 * lift + 0.5 * down + 0.3 * fin, -0.08);
+      p.set("head", 0, 1.2 - 0.5 * down - 0.3 * fin, 0.3);
+      p.set("armL", 0.05 - 0.3 * lift, 0.25, 0.55 + 1.2 * lift - 0.9 * down + 2.2 * fin).set("foreL", 0, 0.25, 0.5 + 0.6 * lift - 0.4 * down + 0.3 * fin);
+      p.set("armR", -0.15 - 0.4 * lift, -0.1, 0.45 + 1.4 * lift - 1.0 * down + 2.0 * fin).set("foreR", 0, -0.2, 0.75 + 0.6 * lift - 0.5 * down + 0.4 * fin);
+      p.root(0, -0.05 - 0.08 * down, 0);
+      break;
+    }
+    case "block":
+      // Forward defence: big stride, head over the ball, soft hands.
+      locomotion(p, 0, 0, t + seed);
+      p.set("thighL", 0.15, 0, 0.75).set("shinL", 0, 0, -0.6).set("thighR", -0.16, 0, -0.25).set("shinR", 0, 0, -0.5);
+      p.set("hips", 0, 0.35, 0).set("spine", 0, 0.1, -0.45).set("chest", 0, 0.2, -0.1).set("head", 0, 0.7, 0.45);
+      p.set("armL", 0.05, 0.25, 0.95).set("foreL", 0, 0.25, 0.3).set("armR", -0.15, -0.1, 0.7).set("foreR", 0, -0.2, 0.6);
+      p.root(0, -0.12, 0);
+      break;
+    case "bowl": {
+      // Delivery stride: front arm up (0–0.35), bowling arm over the top (0.35–0.6), follow through.
+      const gather = ease(0, 0.3, act);
+      const over = ease(0.3, 0.6, act);
+      const after = ease(0.6, 1, act);
+      locomotion(p, 0, 0, t + seed);
+      p.set("thighL", 0.05, 0, 0.9 * gather - 0.4 * over).set("shinL", 0, 0, -0.9 * gather + 0.6 * over);
+      p.set("thighR", -0.05, 0, -0.3 * over + 1.1 * after).set("shinR", 0, 0, -0.4 * over - 0.6 * after);
+      p.set("armL", 0.2, 0, 0.6 + 2.2 * gather - 2.4 * over).set("foreL", 0, 0, 0.3);
+      p.set("armR", -0.15, 0, -0.6 * gather + 4.0 * over + 1.6 * after).set("foreR", 0, 0, 0.1);
+      p.set("chest", 0, 0.5 * gather - 0.6 * over, 0.1 * gather - 0.5 * over - 0.2 * after).set("spine", 0, 0, -0.35 * over - 0.2 * after);
+      p.root(0, -0.06 * over, 0);
+      break;
+    }
+    case "throw": {
+      const back = ease(0, 0.3, act) * (1 - ease(0.35, 0.55, act));
+      const thr = ease(0.35, 0.6, act);
+      locomotion(p, 0, 0, t + seed);
+      p.set("armR", -0.4, 0, -1.2 * back + 2.4 * thr - 0.8 * ease(0.6, 1, act)).set("foreR", 0, 0, 1.3 * back + 0.3);
+      p.set("armL", 0.3, 0, 1.2 * back + 0.4).set("foreL", 0, 0, 0.6);
+      p.set("chest", 0, 0.5 * back - 0.6 * thr, -0.3 * thr).set("thighL", 0.1, 0, 0.5 * thr).set("shinL", 0, 0, -0.3 * thr);
+      break;
+    }
+    case "dive": {
+      const k = ease(0, 0.35, act);
+      lying(p, false);
+      p.set("root", 0, 0, (Math.PI / 2) * k);
+      p.root(0.88 * k, 0.11 * k, 0);
+      p.set("armL", 0, 0, 2.9 * k).set("armR", 0, 0, 2.9 * k).set("foreL", 0, 0, 0.1).set("foreR", 0, 0, 0.1);
+      break;
+    }
     case "tennisReady":
       // Split step: low, racket out in front.
       locomotion(p, step, speed, t + seed);
@@ -1023,7 +1093,7 @@ export function posePed(m: PedModel, pose: Pose, step: number, speed: number, t 
     a.pose = pose;
   }
   const quick =
-    pose === "kick" || pose === "handball" || pose === "mark" || pose === "tackle" || pose === "ruck" || pose === "bounce" || pose === "swing" || pose === "pitch" || pose === "forehand" || pose === "backhand" || pose === "serve";
+    pose === "kick" || pose === "handball" || pose === "mark" || pose === "tackle" || pose === "ruck" || pose === "bounce" || pose === "swing" || pose === "pitch" || pose === "drive" || pose === "bowl" || pose === "throw" || pose === "forehand" || pose === "backhand" || pose === "serve";
   a.blend = Math.min(1, a.blend + dt / (quick ? 0.1 : 0.28));
   const k = smooth(a.blend);
   for (let i = 0; i < LEN; i++) a.cur[i] = k >= 1 ? tgt[i] : a.from[i] + (tgt[i] - a.from[i]) * k;

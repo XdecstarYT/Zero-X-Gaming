@@ -12,6 +12,8 @@ export const test = base.extend({
         localStorage.setItem("zx-mega-ad-seen", "1");
         localStorage.setItem("zx-code3-ad-count", "3");
         localStorage.setItem("zx-sports-ad-count", "3");
+        localStorage.setItem("zx-cricket-ad-count", "2");
+        localStorage.setItem("zx-clanforge-ad-count", "2");
       } catch {}
     });
     await run(page);

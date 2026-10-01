@@ -400,3 +400,8 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      simulated for the hours you were away, and tests can fast-forward time.
 114. **Trophies are posted, not streamed.** A village lasts for weeks, so the score is your trophy count,
      submitted when you choose after a raid; the session's play time still bounds the score rate.
+115. **Cricket is simulated, not scripted.** Every outcome in Boundary Blitz comes from the ball's flight,
+     the shot's contact and the fielders reading that flight, so the same rules cover your batting, the AI's
+     batting against your bowling and headless sims, and the numbers were tuned against whole simulated T20s.
+116. **New spots go to the front of the queue.** One ad per visit stays the rule; the newest games' spots
+     play first (twice each) so players see what's new, then the older spots get their turns.

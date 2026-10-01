@@ -27,7 +27,7 @@ describe("queryGames", () => {
   });
 
   it("sorts newest first", () => {
-    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("clanforge");
+    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("boundary-blitz");
   });
 
   it("sorts by rating", () => {

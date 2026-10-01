@@ -463,6 +463,20 @@ sims are deterministic, so `Broadcast` fast-forwards to "now" and everyone watch
 Each channel's feed is lazy-loaded and drives the game's own view and HUD in spectator mode; the page adds
 a commentary box, the coming-up schedule, sound / quality / full-screen controls and a link to play.
 
+#### Boundary Blitz
+
+T20 cricket (`src/games/cricket/`), in the Sports+ pass. `sim.ts` is the whole match ball by ball: deliveries
+are real projectiles (launched to pitch on a target, swing in the air, seam and turn off the pitch), the bat
+meets the ball through `contact()` (aim, shot type and timing against the ball's line and length: perfect,
+early to leg, late to off, edges to the slips, played on, misses), LBW is judged by carrying the ball on to the
+stumps, fielders read the hit's predicted flight (`predict`/`planField`) to catch it or cut it off, the batters
+run what's safe before the throw (or what you push for) and throws run them out. AI batters look for gaps and
+pace their innings to the chase; AI bowlers vary pace and spin deliveries and aim off for movement. You bowl by
+choosing a delivery, a target on the pitch, a field and stopping a release meter (late is a no-ball and a free
+hit). `simulateToEnd` plays a whole match headlessly; across seeds an AI innings averages about 170 for 6 with
+20 fours and 8 sixes. Modes: T20 (2, 5 or 20 overs), super over, nets. Registered by
+`20261008090000_boundary_blitz.sql`.
+
 The Sports+ games share `src/games/sports-kit/`: the renderer pipeline (tone mapping, shadows, bloom, SMAA,
 the sharpening grade, adaptive resolution, sun or floodlights), the instanced crowd, stadium geometry
 helpers, synthesized crowd/organ sound and the menu UI. Diamond Derby and Ace Rally are registered in the
@@ -504,6 +518,13 @@ Supabase dashboard; for the `openid` scope use asymmetric JWT signing keys.
 
 Settings → Theme switches between **Classic** (dark neon) and **X-1+** (light and friendly). Both are the same CSS
 tokens in `src/app/globals.css` (`html[data-theme="x1"]` overrides them), applied before paint by `themeScript`.
+
+### Spots (ads)
+
+After the intro, at most one spot plays per visit, in a queue: Boundary Blitz, then Clanforge (two plays each),
+then Sports+ and Code 3 (three each). `useAdTurn` (`src/components/layout/ad-turn.ts`) handles the turn-taking
+through `data-*` attributes on `<html>`, the play counts in `localStorage`, the one-ad-per-visit session keys,
+and making the page inert while a spot plays. The spots are SVG and CSS, with no video files.
 
 ### Intro splash
 

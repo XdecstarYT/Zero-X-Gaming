@@ -70,6 +70,16 @@ export function SportsArt({ game, className = "" }: { game: SportsGame; classNam
             <path d="M32 18 Q40 28 32 38 M52 18 Q44 28 52 38" fill="none" stroke="#e11d48" strokeOpacity="1" />
           </>
         )}
+        {game.art === "stumps" && (
+          <>
+            <rect x="-26" y="-44" width="8" height="84" rx="2" />
+            <rect x="-4" y="-44" width="8" height="84" rx="2" />
+            <rect x="18" y="-44" width="8" height="84" rx="2" />
+            <rect x="-28" y="-52" width="24" height="5" rx="2" fill={b} transform="rotate(-18 -16 -50)" />
+            <rect x="4" y="-50" width="24" height="5" rx="2" fill={b} transform="rotate(12 16 -48)" />
+            <circle cx="44" cy="20" r="11" fill="#fff" />
+          </>
+        )}
         {game.art === "glove" && (
           <>
             <path d="M-34 -20 Q-34 -46 -4 -46 L22 -46 Q40 -46 40 -24 L40 10 Q40 30 18 30 L-14 30 Q-34 30 -34 10 Z" />

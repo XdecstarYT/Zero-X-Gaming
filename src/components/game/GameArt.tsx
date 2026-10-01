@@ -49,6 +49,8 @@ export function GameArt({
         <Diamond id={id} a={a} b={b} />
       ) : game.slug === "ace-rally" ? (
         <Court id={id} a={a} b={b} />
+      ) : game.slug === "boundary-blitz" ? (
+        <Cricket a={a} b={b} />
       ) : game.slug === "clanforge" ? (
         <Village a={a} b={b} />
       ) : game.category === "sports" ? (
@@ -437,6 +439,34 @@ function Village({ a, b }: { a: string; b: string }) {
         <path d="M18 0 L26 -3 L24 3 Z" />
         <path d="M26 0 Q40 4 46 14" stroke="#fb923c" strokeWidth="4" fill="none" opacity=".8" />
       </g>
+    </g>
+  );
+}
+
+function Cricket({ a, b }: { a: string; b: string }) {
+  // Under lights: the pitch running away, stumps flying, a white ball heading for the rope.
+  return (
+    <g>
+      <ellipse cx="160" cy="200" rx="230" ry="120" fill="#1f5f2c" />
+      <ellipse cx="160" cy="200" rx="200" ry="100" fill="none" stroke="#f8fafc" strokeOpacity=".5" strokeDasharray="3 6" />
+      <path d="M146 92 L174 92 L196 200 L124 200 Z" fill="#c9b27a" />
+      <path d="M140 172 L180 172" stroke="#fff" strokeWidth="2" />
+      <g stroke="#f1ead6" strokeWidth="4" strokeLinecap="round">
+        <path d="M150 196 L148 160" />
+        <path d="M160 196 L164 158" />
+        <path d="M170 196 L176 162" />
+      </g>
+      <path d="M142 152 l12 -6" stroke={b} strokeWidth="3" strokeLinecap="round" />
+      <path d="M170 150 l14 -2" stroke={b} strokeWidth="3" strokeLinecap="round" />
+      {[40, 90, 230, 280].map((x) => (
+        <g key={x}>
+          <path d={`M${x} 70 L${x} 18`} stroke="#9aa1aa" strokeWidth="3" />
+          <rect x={x - 10} y="10" width="20" height="9" fill="#fff8e0" />
+          <circle cx={x} cy="14" r="16" fill="#fff6d8" opacity=".25" />
+        </g>
+      ))}
+      <path d="M160 120 Q220 30 300 40" stroke={a} strokeOpacity=".7" strokeWidth="2.5" fill="none" strokeDasharray="4 4" />
+      <circle cx="300" cy="40" r="5" fill="#fff" />
     </g>
   );
 }

@@ -10,13 +10,13 @@ import { UPCOMING } from "@/lib/sports";
 
 export const metadata: Metadata = {
   title: "Sports+",
-  description: `Sports+ is the Zero X Gaming section for sports games. Unlock it once for ${SPORTS_PASS_PRICE} coins and play Screamer: Aussie Rules, Diamond Derby and Ace Rally now, watch Sports+ Live for free, with football, basketball, hockey and more on the way.`,
+  description: `Sports+ is the Zero X Gaming section for sports games. Unlock it once for ${SPORTS_PASS_PRICE} coins and play Screamer: Aussie Rules, Diamond Derby, Ace Rally and Boundary Blitz now, watch Sports+ Live for free, with football, basketball, hockey and more on the way.`,
 };
 
 export default function SportsPage() {
   const sports = new Set(UPCOMING.map((s) => s.sport)).size;
   const live = getGame("aussie-rules")!;
-  const out = ["aussie-rules", "diamond-derby", "ace-rally"].map((slug) => getGame(slug)!);
+  const out = ["aussie-rules", "diamond-derby", "ace-rally", "boundary-blitz"].map((slug) => getGame(slug)!);
   return (
     <div className="pb-8">
       <section aria-labelledby="sports-title" className="relative overflow-hidden border-b border-border">

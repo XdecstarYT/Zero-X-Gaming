@@ -17,7 +17,7 @@ export interface SportsGame {
   /** Primary and secondary colours for the card art. */
   palette: [string, string];
   /** Which pictogram the card art draws. */
-  art: "ball" | "hoop" | "puck" | "racket" | "bat" | "glove" | "flag" | "helmet";
+  art: "ball" | "hoop" | "puck" | "racket" | "bat" | "glove" | "flag" | "helmet" | "stumps";
   /** Out now: the slug of the playable game (it leaves the coming-soon line-up). */
   live?: string;
 }
@@ -90,6 +90,18 @@ export const SPORTS: SportsGame[] = [
     eta: "Season 2",
     palette: ["#f43f5e", "#3f0a16"],
     art: "bat",
+  },
+  {
+    id: "boundary-blitz",
+    title: "Boundary Blitz",
+    sport: "Cricket",
+    tagline: "T20 under lights: time the drive, clear the rope, bowl the yorker.",
+    features: ["Full T20s, super overs and the nets", "Bat with aim and timing, bowl with a meter", "Eight franchises, field settings, LBW and run-outs"],
+    status: "In development",
+    live: "boundary-blitz",
+    eta: "Season 2",
+    palette: ["#22d3ee", "#0b3d2e"],
+    art: "stumps",
   },
   {
     id: "knockout",

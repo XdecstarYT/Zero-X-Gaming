@@ -8,6 +8,7 @@ import { useAuth } from "@/store/auth";
 import { CoinIcon } from "@/components/shop/Coin";
 import { beatAt, Floodlights, Frame, LogoSlam, ScreamerShot, SportsTunnel, useTimeline } from "@/components/sports/SportsCinema";
 import { MEGA_AD_KEY } from "./MegaAd";
+import { AD_SESSION_KEYS } from "./ad-turn";
 
 /** How many times the Sports+ ad has played in this browser (at most 3). */
 export const SPORTS_AD_KEY = "zx-sports-ad-count";
@@ -29,8 +30,9 @@ const COLD = "THIS SEASON, THE GAME CHANGES.";
 /**
  * A 25-second spot for Sports+, shown after the intro on up to three visits:
  * never with the one-time mega ad, never on invite links, never to someone
- * who already owns the pass, and one ad per visit (it goes before Code 3's,
- * which waits for it via `data-sports-ad` on <html>). Unskippable like the
+ * who already owns the pass, and one ad per visit (it goes after the
+ * Boundary Blitz and Clanforge spots and before Code 3's, which waits for it
+ * via `data-sports-ad` on <html>). Unskippable like the
  * other spots; the last beat links to Sports+.
  */
 export function SportsAd() {
@@ -46,7 +48,7 @@ export function SportsAd() {
     try {
       runs = Number(localStorage.getItem(SPORTS_AD_KEY) ?? "0") || 0;
       megaDue = localStorage.getItem(MEGA_AD_KEY) !== "1";
-      thisVisit = sessionStorage.getItem(SESSION_KEY) === "1";
+      thisVisit = AD_SESSION_KEYS.some((k) => sessionStorage.getItem(k) === "1");
     } catch {
       runs = SPORTS_AD_RUNS;
     }
@@ -80,6 +82,15 @@ export function SportsAd() {
         }
         root.dataset.sportsAd = "pending";
         poll = window.setInterval(() => {
+          // The newer spots go first: Sports+ waits until Clanforge's has passed.
+          const before = root.dataset.clanforgeAd;
+          if (before === "playing" || before === "done") {
+            clearInterval(poll);
+            root.dataset.sportsAd = "done";
+            setState("done");
+            return;
+          }
+          if (before !== "skip") return;
           if (root.dataset.intro === "done" && !document.getElementById("zx-intro") && !document.getElementById("zx-mega-ad")) {
             clearInterval(poll);
             try {
