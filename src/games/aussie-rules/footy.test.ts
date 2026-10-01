@@ -148,22 +148,39 @@ describe("rules", () => {
     expect(sim.set?.id).toBe(tackler.id);
   });
 
-  it("you kick by holding and releasing: further for a longer hold", () => {
+  it("in play you kick by holding and releasing: further for a longer hold", () => {
     const ranges: number[] = [];
     for (const hold of [0.25, 0.9]) {
       const sim = make(5);
       const you = sim.you;
-      internals(sim).awardSet(you.id, 0, 0, "mark", "Mark");
-      expect(sim.human).toBe(you.id);
+      sim.phase = "play";
+      sim.stoppage = null;
+      Object.assign(sim.ball, { state: "held", holder: you.id, kick: null, ruck: false });
       run(sim, hold, { kick: true });
       expect(sim.charge).toBeGreaterThan(0);
       const ev = run(sim, 0.4);
       const k = ev.find((e) => e.kind === "kick");
       expect(k).toBeTruthy();
       ranges.push(k && k.kind === "kick" ? k.power : 0);
-      expect(sim.phase).toBe("play");
     }
     expect(ranges[1]).toBeGreaterThan(ranges[0]);
+  });
+
+  it("a set shot goes through the meter: line up, hold for power, tap for accuracy", () => {
+    const sim = make(5);
+    const you = sim.you;
+    internals(sim).awardSet(you.id, 0, 0, "mark", "Mark");
+    run(sim, 0.5);
+    expect(sim.set?.stage).toBe("aim");
+    run(sim, 0.6, { kick: true });
+    expect(sim.set?.stage).toBe("runup");
+    expect(sim.set!.power).toBeGreaterThan(0.4);
+    run(sim, DT * 2);
+    expect(sim.set?.stage).toBe("accuracy");
+    run(sim, 0.2);
+    const ev = run(sim, 0.5, { kick: true });
+    expect(ev.some((e) => e.kind === "kick" && e.shot)).toBe(true);
+    expect(sim.phase).toBe("play");
   });
 
   it("a mark before the siren still gets its kick after it", () => {

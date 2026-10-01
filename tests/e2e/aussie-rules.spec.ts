@@ -39,12 +39,12 @@ test("Screamer: unlock Sports+ for 50 coins, then play a match to full time", as
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await dismissRotate(page);
   await expect(stage.getByText("Aussie Rules · 18 a side · Four quarters")).toBeVisible();
-  await stage.getByRole("group", { name: "Opponent" }).getByRole("button", { name: /Ironbark Rams/ }).click();
+  await stage.getByRole("group", { name: "Opponent" }).getByRole("button", { name: /Collingwood Ravens/ }).click();
   await stage.getByTestId("footy-start").click();
 
   const bug = stage.getByTestId("footy-score");
-  await expect(bug).toContainText("HAR", { timeout: 60_000 });
-  await expect(bug).toContainText("IRO");
+  await expect(bug).toContainText("GEE", { timeout: 60_000 });
+  await expect(bug).toContainText("COL");
   await expect(bug).toContainText("Q1");
 
   // Fast-forward the quick match (20 s quarters, the AI playing your side) to the final siren.
@@ -79,16 +79,22 @@ test("Screamer: start a premiership season and play round 1", async ({ page }) =
   const stage = page.getByTestId("game-stage");
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await dismissRotate(page);
-  await stage.getByRole("group", { name: "Your club" }).getByRole("button", { name: /Highland Wolves/ }).click();
+  await stage.getByRole("group", { name: "Your club" }).getByRole("button", { name: /Fremantle Anchors/ }).click();
+  await stage.getByRole("group", { name: "Season length" }).getByRole("button", { name: /Short/ }).click();
   await stage.getByTestId("footy-start").click();
-  // The season hub: the ladder, then round 1.
-  await expect(stage.getByTestId("footy-ladder")).toBeVisible();
-  await expect(stage.getByTestId("footy-ladder")).toContainText("Highland Wolves");
+  // The season hub: eighteen clubs on the ladder; sim round 1, then play round 2.
+  const ladder = stage.getByTestId("footy-ladder");
+  await expect(ladder).toBeVisible();
+  await expect(ladder).toContainText("Fremantle Anchors");
+  await expect(ladder.locator("tr")).toHaveCount(19);
   await expect(stage.getByTestId("footy-start")).toContainText("Round 1");
+  await stage.getByTestId("footy-sim").click();
+  await expect(stage.getByTestId("footy-start")).toContainText("Round 2");
   await stage.getByTestId("footy-start").click();
   const bug = stage.getByTestId("footy-score");
-  await expect(bug).toContainText("HIG", { timeout: 60_000 });
-  await expect(bug).toContainText("Round 1 · Rain");
+  await expect(bug).toContainText("FRE", { timeout: 60_000 });
+  await expect(bug).toContainText("Round 2 · Rain");
+  await expect(stage.getByTestId("footy-wind")).toBeVisible();
 
   await page.waitForFunction(() => "__footyAdvance" in window);
   for (let i = 0; i < 12; i++) {
@@ -105,5 +111,39 @@ test("Screamer: start a premiership season and play round 1", async ({ page }) =
   // The quick test match is unranked, so the season doesn't move on.
   await expect(stage.getByTestId("footy-commentary")).toBeAttached();
   await results.getByRole("button", { name: "Continue" }).click();
+  expect(errors).toEqual([]);
+});
+
+/** Career: create a player, sim a game, then play one as your player. */
+test("Screamer: start a career at a local club and play as your player", async ({ page }) => {
+  test.setTimeout(360_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 10, hasPass: false, purchases: ["unlock:sports-plus"], challenges: {} }));
+    localStorage.setItem("zx-footy-prefs", JSON.stringify({ gfx: "low", minutes: 2, mode: "career" }));
+  });
+  await page.goto("/games/aussie-rules?footy=quick");
+  const stage = page.getByTestId("game-stage");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
+  await stage.getByLabel("Player name").fill("Jordan Rookie");
+  await stage.getByLabel("Guernsey number").fill("31");
+  await stage.getByRole("group", { name: "Position" }).getByRole("button", { name: /Key forward/ }).click();
+  await stage.getByTestId("career-start").click();
+  const hub = stage.getByTestId("career-hub");
+  await expect(hub).toContainText("Jordan Rookie");
+  await expect(hub).toContainText("Local League");
+  await expect(hub).toContainText("age 17");
+  await stage.getByTestId("career-sim").click();
+  await expect(hub).toContainText("This season: 1 games");
+  await stage.getByTestId("career-play").click();
+  const bug = stage.getByTestId("footy-score");
+  await expect(bug).toContainText("Local League", { timeout: 60_000 });
+  const me = await page.evaluate(() => {
+    const w = window as unknown as { __footy: { you: { name: string; number: number }; lockHuman: number | null } };
+    return { name: w.__footy.you.name, number: w.__footy.you.number, locked: w.__footy.lockHuman !== null };
+  });
+  expect(me).toEqual({ name: "Jordan Rookie", number: 31, locked: true });
   expect(errors).toEqual([]);
 });

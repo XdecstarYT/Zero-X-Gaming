@@ -387,4 +387,10 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 109. **Replays are snapshots, not a re-simulation.** The view records the visible state every 1/30 s and
      plays it back interpolated, so replays cost no sim work and can't desync; in single player the match
      holds while it plays, on Live Sports the match carries on underneath, like TV.
+110. **Real places, our own names.** Players asked for the real clubs; the National League uses the real home
+     bases and similar colours but invented nicknames and no logos or league marks, and ships a club editor so
+     anyone can rename clubs on their own device (as licensed sports games do with option files).
+111. **Career sims cheaply.** A whole career is 15+ seasons of up to 27 games; any game can be simmed from the
+     player's attributes and the clubs' form, so a career is playable in an evening and every system (votes,
+     draft, honours) works the same for played and simmed games.
 

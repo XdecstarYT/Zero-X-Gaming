@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { commentary } from "./commentary";
+import { ALL_CLUBS, applyClubEdits } from "./clubs";
 import { CLUBS, clubById, FootySim, GOAL_X, kickRange, MAX_KICK, MAX_TORP, NO_INPUT, powerFor, type KickStyle, type SimEvent } from "./sim";
 
 const DT = 1 / 60;
 const make = (seed = 1, extra: Partial<ConstructorParameters<typeof FootySim>[0]> = {}) =>
-  new FootySim({ seed, rival: clubById("sharks"), difficulty: "pro", quarterSeconds: 60, ...extra });
+  new FootySim({ seed, rival: clubById("collingwood"), difficulty: "pro", quarterSeconds: 60, ...extra });
 const run = (sim: FootySim, seconds: number) => {
   const events: SimEvent[] = [];
   for (let t = 0; t < seconds && sim.phase !== "over"; t += DT) {
@@ -17,12 +18,20 @@ const run = (sim: FootySim, seconds: number) => {
 type Internals = { awardSet: (id: number, x: number, z: number, kind: string, reason: string) => void; startKick: (p: unknown, aim: number, power: number, target: number, shot: boolean, style: KickStyle) => void };
 
 describe("the competition", () => {
-  it("has eight clubs with their own colours, and you can play as any of them", () => {
-    expect(CLUBS).toHaveLength(8);
-    expect(new Set(CLUBS.map((c) => c.id)).size).toBe(8);
-    expect(new Set(CLUBS.map((c) => c.short)).size).toBe(8);
-    const sim = make(1, { home: clubById("wolves"), rival: clubById("foxes") });
-    expect(sim.clubs.map((c) => c.name)).toEqual(["Highland Wolves", "Redgum Foxes"]);
+  it("has eighteen National League clubs, plus State and Local leagues, all distinct", () => {
+    expect(CLUBS).toHaveLength(18);
+    expect(new Set(ALL_CLUBS.map((c) => c.id)).size).toBe(34);
+    expect(new Set(ALL_CLUBS.map((c) => c.short)).size).toBe(34);
+    const sim = make(1, { home: clubById("geelong"), rival: clubById("wolves") });
+    expect(sim.clubs.map((c) => c.name)).toEqual(["Geelong Sharks", "Highland Wolves"]);
+  });
+
+  it("the club editor renames and recolours, and rejects junk", () => {
+    applyClubEdits({ geelong: { name: "My Club", short: "myc", guernsey: "#123456", hoop: "red" } });
+    expect(clubById("geelong")).toMatchObject({ name: "My Club", short: "MYC", guernsey: "#123456" });
+    expect(clubById("geelong").hoop).toBe("#f2f2f2");
+    applyClubEdits({});
+    expect(clubById("geelong").name).toBe("Geelong Sharks");
   });
 });
 
@@ -100,5 +109,84 @@ describe("player stats and votes", () => {
     const goal = events.find((e) => e.kind === "goal");
     if (goal) expect(commentary(goal, sim)).toMatch(/goal|through|six|siren|monster/i);
     expect(commentary({ kind: "over" }, sim)).toMatch(/Full time/);
+  });
+});
+
+describe("wind and kicking", () => {
+  it("the wind pushes a kick sideways, and the AI allows for it", () => {
+    const calm = make(2, { wind: 0 });
+    const windy = make(2, { wind: 8 });
+    expect(Math.hypot(calm.wind.x, calm.wind.z)).toBe(0);
+    expect(Math.hypot(windy.wind.x, windy.wind.z)).toBeCloseTo(8);
+    const p = windy.players[0];
+    p.x = 0;
+    p.z = 0;
+    const aim = 0;
+    const adj = windy.windAim(p, aim, 0.8, "punt", 1);
+    // Aim into the wind: the correction opposes the crosswind along z.
+    if (Math.abs(windy.wind.z) > 1) expect(Math.sign(adj)).toBe(-Math.sign(windy.wind.z));
+  });
+
+  it("aiming at a teammate with the mouse picks them, and the right power is truer", () => {
+    const sim = make(4);
+    const you = sim.you;
+    sim.phase = "play";
+    sim.stoppage = null;
+    Object.assign(sim.ball, { state: "held", holder: you.id, kick: null, ruck: false });
+    const mate = sim.players.find((q) => q.team === 0 && q.id !== you.id)!;
+    mate.x = you.x + 30 * sim.dir(0);
+    mate.z = you.z;
+    mate.vx = mate.vz = 0;
+    sim.step(DT, { ...NO_INPUT, aim: { x: mate.x, z: mate.z } });
+    expect(sim.kickPlan?.target).toBe(mate.id);
+    expect(sim.kickPlan!.ideal).toBeCloseTo(powerFor(30), 1);
+  });
+
+  it("a centred needle kicks straighter than a needle at the edge", () => {
+    const miss = (needleAt: number) => {
+      let off = 0;
+      for (let seed = 1; seed <= 8; seed++) {
+        const sim = make(seed, { wind: 0 });
+        const you = sim.you;
+        const gx = GOAL_X * sim.dir(0);
+        (sim as unknown as Internals).awardSet(you.id, gx - sim.dir(0) * 30, 0, "mark", "Mark");
+        for (let i = 0; i < 40; i++) sim.step(DT, NO_INPUT);
+        for (let i = 0; i < 50; i++) sim.step(DT, { ...NO_INPUT, kick: true });
+        sim.step(DT, NO_INPUT);
+        // Let the needle reach the spot we want, then tap.
+        const speed = sim.needleSpeed(you);
+        const t = Math.acos(-needleAt) / speed;
+        while ((sim.set?.needleT ?? 99) < t) sim.step(DT, NO_INPUT);
+        sim.step(DT, { ...NO_INPUT, kick: true });
+        for (let i = 0; i < 240; i++) {
+          sim.step(DT, NO_INPUT);
+          if (Math.abs(sim.ball.x) > GOAL_X - 0.5) {
+            off += Math.abs(sim.ball.z);
+            break;
+          }
+        }
+      }
+      return off;
+    };
+    expect(miss(0)).toBeLessThan(miss(0.95));
+  });
+});
+
+describe("be a pro", () => {
+  it("career: you are one player, named and numbered, and you never switch", () => {
+    const sim = make(6, { pro: { name: "Rookie Smith", number: 44, role: 12, skill: { pace: 0.8, kick: 0.8, mark: 0.8, tackle: 0.6, ruck: 0.3 }, composure: 0.6 } });
+    const me = sim.you;
+    expect(me.name).toBe("Rookie Smith");
+    expect(me.number).toBe(44);
+    expect(me.role).toBe(12);
+    expect(sim.lockHuman).toBe(me.id);
+    const events: SimEvent[] = [];
+    for (let i = 0; i < 60 * 30; i++) {
+      sim.step(DT, { ...NO_INPUT, switchPlayer: i === 60 });
+      events.push(...sim.events);
+      sim.events.length = 0;
+      expect(sim.human).toBe(me.id);
+    }
+    expect(events.some((e) => e.kind === "call")).toBe(true);
   });
 });

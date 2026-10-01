@@ -43,6 +43,17 @@ export class FootyHud {
   private lines: { node: HTMLParagraphElement; t: number }[] = [];
   private powerLabel: HTMLParagraphElement;
   private replay: HTMLDivElement;
+  private ideal: HTMLDivElement;
+  private setPanel: HTMLDivElement;
+  private setInfo: HTMLParagraphElement;
+  private setHint: HTMLParagraphElement;
+  private setPower: HTMLDivElement;
+  private needle: HTMLDivElement;
+  private wind: HTMLDivElement;
+  private windArrow: HTMLSpanElement;
+  private windText: HTMLSpanElement;
+  /** The camera's forward direction on the ground (for the wind arrow). */
+  private camFwd = { x: 1, z: 0 };
 
   constructor(
     host: HTMLElement,
@@ -95,6 +106,7 @@ export class FootyHud {
     // Kick power.
     this.powerFill = el("div", "h-full origin-left rounded-full bg-gradient-to-r from-[#facc15] via-[#fb923c] to-[#ef4444]");
     this.powerLabel = el("p", "mb-1 text-center text-[10px] font-bold uppercase tracking-[0.3em] text-white/80", "Kick power");
+    this.ideal = el("div", "absolute -top-0.5 h-3.5 w-1 -translate-x-1/2 rounded bg-white shadow-[0_0_6px_#fff]");
     this.power = el(
       "div",
       "absolute bottom-[22%] left-1/2 w-56 -translate-x-1/2 opacity-0 transition-opacity",
@@ -120,13 +132,45 @@ export class FootyHud {
       el("p", "absolute right-4 top-[11%] rounded bg-[#a3122c] px-2 py-0.5 font-display text-sm font-black italic tracking-widest", "REPLAY"),
     );
     this.replay.setAttribute("data-testid", "footy-replay");
+    // Power bar: a tick where the power matches the kick you've lined up.
+    const barEl = this.powerFill.parentElement!;
+    barEl.classList.add("relative");
+    barEl.parentElement!.style.position = "absolute";
+    const holder = el("div", "relative");
+    barEl.replaceWith(holder);
+    holder.append(barEl, this.ideal);
+    // The set shot: distance and angle, the wind, power, the accuracy needle.
+    this.setInfo = el("p", "text-sm font-black");
+    this.setHint = el("p", "text-[11px] text-white/75");
+    this.setPower = el("div", "h-full origin-left rounded-full bg-gradient-to-r from-[#facc15] via-[#fb923c] to-[#ef4444]");
+    this.needle = el("div", "absolute top-0 h-full w-1 -translate-x-1/2 rounded bg-white shadow-[0_0_8px_#fff]");
+    this.setPanel = el(
+      "div",
+      "absolute bottom-[16%] left-1/2 hidden w-72 -translate-x-1/2 rounded-lg border border-white/15 bg-black/70 p-2.5 text-center backdrop-blur-sm",
+      this.setInfo,
+      this.setHint,
+      el("p", "mt-1.5 text-left text-[9px] font-bold uppercase tracking-[0.25em] text-white/60", "Power"),
+      el("div", "h-2 overflow-hidden rounded-full border border-white/25 bg-black/50", this.setPower),
+      el("p", "mt-1.5 text-left text-[9px] font-bold uppercase tracking-[0.25em] text-white/60", "Accuracy"),
+      el(
+        "div",
+        "relative h-3 overflow-hidden rounded-full border border-white/25",
+        Object.assign(el("div", "absolute inset-0"), { style: "background: linear-gradient(90deg,#ef4444,#f59e0b 30%,#22c55e 44%,#22c55e 56%,#f59e0b 70%,#ef4444)" }),
+        this.needle,
+      ),
+    );
+    this.setPanel.setAttribute("data-testid", "footy-setshot");
+    this.windArrow = el("span", "inline-block transition-transform", "↑");
+    this.windText = el("span", "tabular-nums");
+    this.wind = el("div", "absolute right-[max(0.5rem,env(safe-area-inset-right))] top-[max(3.2rem,env(safe-area-inset-top))] flex items-center gap-1 rounded bg-black/55 px-2 py-0.5 text-[11px] font-bold", el("span", "text-white/60", "WIND"), this.windArrow, this.windText);
+    this.wind.setAttribute("data-testid", "footy-wind");
     if (opts.spectator) {
       this.ticker.hidden = true;
       this.me.hidden = true;
       this.hint.hidden = true;
       this.power.hidden = true;
     }
-    this.root.append(this.replay, this.bug, this.ticker, this.call, this.live, this.me, this.power, this.shotClock, this.hint, this.map, this.breakBox);
+    this.root.append(this.setPanel, this.wind, this.replay, this.bug, this.ticker, this.call, this.live, this.me, this.power, this.shotClock, this.hint, this.map, this.breakBox);
     host.appendChild(this.root);
   }
 
@@ -138,6 +182,12 @@ export class FootyHud {
     this.callT = seconds;
     this.call.style.opacity = "1";
     this.live.textContent = `${text} ${sub}`.trim();
+  }
+
+  /** The camera's forward on the ground, for the wind arrow. */
+  setCamera(fx: number, fz: number) {
+    const l = Math.hypot(fx, fz) || 1;
+    this.camFwd = { x: fx / l, z: fz / l };
   }
 
   /** Show or hide the replay letterbox. */
@@ -214,7 +264,36 @@ export class FootyHud {
     this.meName.textContent = `#${you.number} ${you.name}`;
     this.meRole.textContent = POSITIONS[you.role].name;
     this.stamina.style.width = `${Math.round(you.stamina * 100)}%`;
-    this.power.style.opacity = sim.charge > 0 ? "1" : "0";
+    const mySet = sim.phase === "set" && sim.set?.id === sim.human && !sim.autopilot && !this.opts.spectator ? sim.set : null;
+    this.power.style.opacity = sim.charge > 0 && !mySet ? "1" : "0";
+    const plan = sim.kickPlan;
+    this.ideal.style.display = plan && (plan.target >= 0 || plan.shot) ? "block" : "none";
+    if (plan) this.ideal.style.left = `${Math.round(Math.min(1, plan.ideal) * 100)}%`;
+    // The set-shot meter.
+    this.setPanel.style.display = mySet ? "block" : "none";
+    if (mySet) {
+      const p = sim.players[mySet.id];
+      const goal = { x: GOAL_X * sim.dir(p.team), z: 0 };
+      const d = Math.round(Math.hypot(goal.x - mySet.x, mySet.z));
+      const ang = Math.round((sim.goalAngle(mySet.x, mySet.z, p.team) * 180) / Math.PI);
+      this.setInfo.textContent = mySet.kind === "kickin" ? "Kick-in" : `${d} m out · ${ang}° of goal face · ${KICK_STYLES[sim.kickStyle].name}`;
+      const kick = this.coarse ? "KICK" : "Space / click";
+      this.setHint.textContent =
+        mySet.stage === "runup"
+          ? "Hold… release at the power you want"
+          : mySet.stage === "accuracy"
+            ? `Tap ${kick} when the needle's in the green!`
+            : `Line it up${this.coarse ? " with the stick" : " with the mouse"} (allow for the wind), then hold ${kick} to run in · ${Math.ceil(mySet.clock)}s`;
+      this.setPower.style.transform = `scaleX(${mySet.power ?? 0})`;
+      this.needle.style.left = `${50 + (mySet.needle ?? 0) * 48}%`;
+      this.needle.style.opacity = mySet.stage === "accuracy" ? "1" : "0.25";
+    }
+    // Wind: speed and direction relative to the camera.
+    const w = sim.wind;
+    const ws = Math.hypot(w.x, w.z);
+    const f = this.camFwd;
+    this.windArrow.style.transform = `rotate(${Math.atan2(w.x * -f.z + w.z * f.x, w.x * f.x + w.z * f.z)}rad)`;
+    this.windText.textContent = ws < 0.5 ? "calm" : `${Math.round(ws * 3.6)} km/h`;
     this.powerLabel.textContent = `${KICK_STYLES[sim.kickStyle].name} · power`;
     for (const l of this.lines) {
       l.t -= dt;
@@ -222,9 +301,9 @@ export class FootyHud {
     }
     while (this.lines.length && this.lines[0].t <= 0) this.lines.shift()!.node.remove();
     this.powerFill.style.transform = `scaleX(${sim.charge})`;
-    const mySet = sim.phase === "set" && sim.set?.id === sim.human;
-    this.shotClock.style.opacity = mySet ? "1" : "0";
-    if (mySet) this.shotClock.textContent = `${sim.set!.kind === "kickin" ? "Kick-in" : sim.set!.kind === "free" ? "Free kick" : "Set shot"} · ${Math.ceil(sim.set!.clock)}`;
+    const ownSet = sim.phase === "set" && sim.set?.id === sim.human;
+    this.shotClock.style.opacity = ownSet && !mySet ? "1" : "0";
+    if (ownSet) this.shotClock.textContent = `${sim.set!.kind === "kickin" ? "Kick-in" : sim.set!.kind === "free" ? "Free kick" : "Set shot"} · ${Math.ceil(sim.set!.clock)}`;
     this.hint.textContent = this.hintText();
     this.hint.style.opacity = this.hint.textContent ? "1" : "0";
     this.mapT -= dt;
@@ -243,8 +322,10 @@ export class FootyHud {
     const has = sim.ball.state === "held" && sim.ball.holder === you.id;
     const kick = this.coarse ? "hold KICK" : "hold Space";
     const style = `${KICK_STYLES[sim.kickStyle].name} (${this.coarse ? "STYLE" : "R"} to change)`;
+    if (sim.phase === "set" && sim.set?.id === you.id && !sim.autopilot) return "";
     if (sim.phase === "set" && sim.set?.id === you.id) return `Aim with ${this.coarse ? "the stick" : "WASD"} · ${kick}, release to kick · ${style} · ${this.coarse ? "SPRINT" : "Shift"} + move = play on`;
-    if (has) return `${kick} to kick · ${style} · ${this.coarse ? "HANDBALL" : "F"} to handball`;
+    if (has) return `${kick} to kick${this.coarse ? "" : " (aim with the mouse)"} · ${style} · ${this.coarse ? "HANDBALL" : "F"} to handball`;
+    if (sim.lockHuman !== null && sim.carrier && sim.carrier.team === 0) return `${this.coarse ? "CALL" : "Q"} to call for it`;
     if (sim.ball.state === "air" && !sim.ball.ruck) return `Get under it · ${this.coarse ? "LEAP" : "Space"} to mark`;
     const c = sim.carrier;
     if (c && c.team === 1 && Math.hypot(c.x - you.x, c.z - you.z) < 6) return `${this.coarse ? "TACKLE" : "E"} to tackle`;

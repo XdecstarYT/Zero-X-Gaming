@@ -109,6 +109,10 @@ export interface Act {
   dur: number;
   /** Kicks and handballs: when the ball leaves the hand / boot. */
   release?: number;
+  /** A set shot through the meter: the accuracy was already decided. */
+  precise?: boolean;
+  /** General play: how well the power matched the kick (1 = no effect, lower is truer). */
+  spreadK?: number;
   done?: boolean;
   aim?: number;
   power?: number;
@@ -240,6 +244,11 @@ export interface SetShot {
   /** The man on the mark. */
   onMark: number;
   reason: string;
+  /** Your set shot: line it up, the run-up (power), then the accuracy needle. */
+  stage?: "aim" | "runup" | "accuracy";
+  power?: number;
+  needle?: number;
+  needleT?: number;
 }
 
 export interface Stoppage {
@@ -270,8 +279,32 @@ export interface FootyInput {
   leap: boolean;
   tackle: boolean;
   switchPlayer: boolean;
+  /** Where you're aiming on the ground (the mouse), if anywhere. */
+  aim?: { x: number; z: number } | null;
+  /** Call for the ball (be-a-pro). */
+  call?: boolean;
 }
 export const NO_INPUT: FootyInput = { mx: 0, mz: 0, sprint: false, kick: false, handball: false, leap: false, tackle: false, switchPlayer: false };
+
+/** Your player in career mode: who they are and how good. */
+export interface ProPlayer {
+  name: string;
+  number: number;
+  role: number;
+  skill: { pace: number; kick: number; mark: number; tackle: number; ruck: number };
+  /** 0–1: steadiness in front of goal (slows the set-shot needle). */
+  composure: number;
+}
+
+/** What your kick will do: where it's going and the power that gets it there. */
+export interface KickPlan {
+  aim: number;
+  target: number;
+  shot: boolean;
+  ideal: number;
+  x: number;
+  z: number;
+}
 
 export type SimEvent =
   | { kind: "kick"; id: number; power: number; shot: boolean; style: KickStyle }
@@ -297,6 +330,7 @@ export type SimEvent =
   | { kind: "gather"; id: number; team: Team }
   | { kind: "cut" }
   | { kind: "quarter"; quarter: number }
+  | { kind: "call"; id: number }
   | { kind: "over" };
 
 export interface TeamStats {
@@ -324,6 +358,10 @@ export interface SimOptions {
   home?: Club;
   /** Rain: a greasy ball and a slippery ground. */
   wet?: boolean;
+  /** Wind strength (m/s); its direction comes from the seed. Default: a breeze from the seed. */
+  wind?: number;
+  /** Career: you are this player, and only this player. */
+  pro?: ProPlayer;
 }
 
 // ---------------------------------------------------------------- kicking
@@ -397,6 +435,23 @@ export const MAX_TORP = TABLES.torpedo[20].range;
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
+/** A kicked ball's acceleration for one step: gravity, drag through the moving air, the wind's push, a snap's curl. */
+export function airStep(v: { vx: number; vy: number; vz: number }, wind: { x: number; z: number }, curve: number, dt: number) {
+  if (curve) {
+    const hs = Math.hypot(v.vx, v.vz) || 1;
+    const cx = (-v.vz / hs) * curve * dt;
+    v.vz += (v.vx / hs) * curve * dt;
+    v.vx += cx;
+  }
+  const rx = v.vx - wind.x;
+  const rz = v.vz - wind.z;
+  const sp = Math.hypot(rx, v.vy, rz);
+  // The oval ball catches a crosswind more than drag alone says.
+  v.vx += (-DRAG * sp * rx + wind.x * 0.05) * dt;
+  v.vz += (-DRAG * sp * rz + wind.z * 0.05) * dt;
+  v.vy -= (G + DRAG * sp * v.vy) * dt;
+}
+
 // ------------------------------------------------------------------- sim
 
 export class FootySim {
@@ -450,6 +505,17 @@ export class FootySim {
   readonly wet: boolean;
   /** The kick you'll use (drop punt, torpedo, snap). */
   kickStyle: KickStyle = "punt";
+  /** The wind (m/s, along x and z). */
+  readonly wind: { x: number; z: number };
+  /** Career: the only player you control (null: you control whoever's on the ball). */
+  lockHuman: number | null = null;
+  readonly pro: ProPlayer | null;
+  /** Seconds left on your call for the ball. */
+  callFor = 0;
+  /** Your kick, worked out while you charge it (for the HUD and the target marker). */
+  kickPlan: KickPlan | null = null;
+  private kickPrev = false;
+  private aimPoint: { x: number; z: number } | null = null;
   private readonly perSide: number;
   private diffK: number;
 
@@ -457,6 +523,14 @@ export class FootySim {
     this.rng = createRng(o.seed);
     this.clubs = [o.home ?? HOME, o.rival];
     this.wet = !!o.wet;
+    {
+      // Wind from its own stream, so the match's own randomness is unchanged.
+      const wr = createRng((o.seed ^ 0x5bd1e995) >>> 0);
+      const a = wr.next() * Math.PI * 2;
+      const k = o.wind ?? wr.next() * wr.next() * 7;
+      this.wind = { x: Math.cos(a) * k, z: Math.sin(a) * k };
+    }
+    this.pro = o.pro ?? null;
     this.difficulty = o.difficulty;
     this.quarterSeconds = o.quarterSeconds;
     this.clock = o.quarterSeconds;
@@ -518,6 +592,16 @@ export class FootySim {
         });
         n++;
       }
+    }
+    if (this.pro) {
+      // Career: you take your position for your club.
+      const me = this.players.find((p) => p.team === 0 && p.role === this.pro!.role) ?? this.players.find((p) => p.team === 0)!;
+      me.name = this.pro.name;
+      me.number = this.pro.number;
+      for (const q of this.players) if (q.team === 0 && q !== me && q.number === me.number) q.number = 45 + (q.id % 10);
+      me.skill = { ...this.pro.skill };
+      this.lockHuman = me.id;
+      this.human = me.id;
     }
     this.centreBounceSetup();
   }
@@ -591,7 +675,7 @@ export class FootySim {
     this.set = null;
     this.tackle = null;
     this.landing = null;
-    this.human = this.players.find((p) => p.team === 0 && p.role === 17)?.id ?? 0;
+    this.human = this.lockHuman ?? this.players.find((p) => p.team === 0 && p.role === 17)?.id ?? 0;
     this.emit({ kind: "cut" });
   }
 
@@ -691,6 +775,8 @@ export class FootySim {
     this.stepOfficials(dt);
     if (this.phase === "play") this.stepTackle(dt);
     if (this.finalKick && this.ball.state !== "air" && (this.phase === "play" || this.phase === "set" || this.phase === "stoppage")) this.endQuarter();
+    this.callFor = Math.max(0, this.callFor - dt);
+    this.kickPrev = input.kick;
   }
 
   private endQuarter() {
@@ -774,19 +860,59 @@ export class FootySim {
     p.urgency = 0.3;
     const isHuman = s.id === this.human && p.team === 0 && !this.autopilot;
     if (isHuman) {
-      s.clock -= dt;
-      // Aim with the stick; sprinting off the line (or a handball) is play on.
-      if (Math.hypot(input.mx, input.mz) > 0.3 && !input.sprint) {
-        const want = Math.atan2(input.mz, input.mx);
-        s.aim = wrap(s.aim + Math.max(-1, Math.min(1, wrap(want - s.aim) * 3)) * dt * 0.8);
-      }
-      p.h = s.aim;
-      if (input.sprint && Math.hypot(input.mx, input.mz) > 0.5 && s.t > 0.4) return this.playOn();
-      if (input.handball) {
-        this.playOn();
+      const pressed = input.kick && !this.kickPrev;
+      s.stage ??= "aim";
+      if (s.stage === "aim") {
+        s.clock -= dt;
+        // Line it up: the mouse, or the stick.
+        if (input.aim) {
+          const want = Math.atan2(input.aim.z - s.z, input.aim.x - s.x);
+          s.aim = wrap(s.aim + Math.max(-1, Math.min(1, wrap(want - s.aim) * 4)) * dt * 1.6);
+        } else if (Math.hypot(input.mx, input.mz) > 0.3 && !input.sprint) {
+          const want = Math.atan2(input.mz, input.mx);
+          s.aim = wrap(s.aim + Math.max(-1, Math.min(1, wrap(want - s.aim) * 3)) * dt * 0.8);
+        }
+        p.h = s.aim;
+        if (input.sprint && Math.hypot(input.mx, input.mz) > 0.5 && s.t > 0.4) return this.playOn();
+        if (input.handball) {
+          this.playOn();
+          return;
+        }
+        if (pressed && s.t > 0.3) {
+          // Into the run-up: hold for power.
+          s.stage = "runup";
+          s.power = 0;
+          this.charging = true;
+          this.charge = 0;
+        } else if (s.clock <= 0) this.startKick(p, s.aim, 0.7, -1, s.kind !== "kickin", this.kickStyle);
         return;
       }
-      if (s.clock <= 0) this.startKick(p, s.aim, Math.max(0.6, this.charge), -1, true);
+      if (s.stage === "runup") {
+        p.tx = s.x - Math.cos(s.aim) * 1.3;
+        p.tz = s.z - Math.sin(s.aim) * 1.3;
+        p.urgency = 0.32;
+        p.h = s.aim;
+        if (input.kick) {
+          s.power = Math.min(1, (s.power ?? 0) + dt / 1.15);
+          this.charge = s.power;
+        }
+        if (!input.kick || (s.power ?? 0) >= 1) {
+          s.stage = "accuracy";
+          s.needleT = 0;
+          s.needle = -1;
+          this.charging = false;
+        }
+        return;
+      }
+      // The needle sweeps; tap again in the middle.
+      s.needleT = (s.needleT ?? 0) + dt;
+      s.needle = -Math.cos(s.needleT * this.needleSpeed(p));
+      p.h = s.aim;
+      if (pressed || s.needleT > 2.6) {
+        const err = s.needle * 0.17 * (1.25 - p.skill.kick * 0.7);
+        this.startKick(p, s.aim + err, Math.max(0.15, s.power ?? 0.6), -1, s.kind !== "kickin", this.kickStyle, true);
+        this.charge = 0;
+      }
       return;
     }
     // AI: line up, then kick (a shot if in range, else to a leading teammate).
@@ -796,7 +922,8 @@ export class FootySim {
       const dist = Math.hypot(goal.x - p.x, goal.z - p.z);
       const angle = this.goalAngle(p.x, p.z, p.team);
       if (s.kind !== "kickin" && dist < Math.min(55, MAX_KICK - 4) && angle > 0.12) {
-        this.startKick(p, Math.atan2(goal.z - p.z, goal.x - p.x), Math.min(1, powerFor(dist + 6) + 0.04), -1, true);
+        const pow = Math.min(1, powerFor(dist + 6) + 0.04);
+        this.startKick(p, this.windAim(p, Math.atan2(goal.z - p.z, goal.x - p.x), pow, "punt"), pow, -1, true);
       } else {
         const t = this.bestKickTarget(p, true);
         if (t) this.startKick(p, t.aim, t.power, t.id, false);
@@ -823,6 +950,7 @@ export class FootySim {
 
   private setHuman(id: number) {
     if (this.human === id) return;
+    if (this.lockHuman !== null && id !== this.lockHuman) return;
     this.human = id;
     this.switchLock = 0.4;
     this.charge = 0;
@@ -832,17 +960,25 @@ export class FootySim {
   private humanControl(dt: number, input: FootyInput) {
     const p = this.you;
     const b = this.ball;
+    this.aimPoint = input.aim ?? null;
+    if ((input.call || (this.lockHuman !== null && input.switchPlayer)) && this.lockHuman !== null && this.callFor <= 0) {
+      this.callFor = 2.2;
+      this.emit({ kind: "call", id: this.lockHuman });
+    }
     // Auto-switch: to whoever of ours has the ball, else the one nearest the ball.
     if (b.state === "held" && this.players[b.holder].team === 0) this.setHuman(b.holder);
-    if (input.switchPlayer) {
+    if (input.switchPlayer && this.lockHuman === null) {
       const t = this.bestChaser(0, true);
       if (t) this.setHuman(t.id);
     }
     const hasBall = b.state === "held" && b.holder === p.id;
+    // A set shot of yours goes through the meter (stepSet), not hold-and-release.
+    const metered = this.phase === "set" && this.set?.id === p.id && !this.autopilot;
+    this.kickPlan = hasBall && !metered && !this.autopilot && !p.act ? this.planKick(p, Math.max(0.12, this.charge)) : null;
     if (this.autopilot) return;
     if (this.phase === "set" || this.phase === "play" || this.phase === "stoppage" || this.phase === "bounce") {
       // Kick: hold to charge, release to kick.
-      if (hasBall && p.down <= 0 && !p.act) {
+      if (hasBall && p.down <= 0 && !p.act && !metered) {
         if (input.kick) {
           this.charging = true;
           this.charge = Math.min(1, this.charge + dt / 1.05);
@@ -872,41 +1008,113 @@ export class FootySim {
     }
   }
 
-  private humanKick(p: Player) {
-    const power = Math.max(0.12, this.charge);
+  /**
+   * Where your kick goes: at the mouse (a teammate near it, the goals near it,
+   * or open ground), or along your facing with a teammate or the goals picked
+   * from the cone; and the power that would get it there.
+   */
+  planKick(p: Player, power: number): KickPlan {
     const style = this.kickStyle;
-    let aim = p.h;
-    let target = -1;
-    let shot = false;
     const goal = this.goalOf(p.team);
     const gd = Math.hypot(goal.x - p.x, goal.z - p.z);
     const ga = Math.atan2(goal.z - p.z, goal.x - p.x);
-    const range = kickRange(power, style);
-    if (Math.abs(wrap(ga - aim)) < (style === "snap" ? 0.9 : 0.4) && gd < range + 14) {
-      // Aim assist toward the goal.
-      aim = wrap(aim + wrap(ga - aim) * 0.75);
-      shot = true;
-    } else {
-      // Or to a teammate in the cone whose lead the kick reaches.
-      let best = 0;
+    const lead = (q: Player, pow: number) => {
+      const tt = kickTime(pow, style);
+      return { x: q.x + q.vx * tt * 0.85, z: q.z + q.vz * tt * 0.85 };
+    };
+    const ap = this.aimPoint;
+    if (ap) {
+      let aim = Math.atan2(ap.z - p.z, ap.x - p.x);
+      // The goals: aim near them and it's a shot.
+      if (Math.hypot(ap.x - goal.x, ap.z - goal.z) < 16 && gd < kickRange(1, style) + 12) {
+        aim = wrap(aim + wrap(ga - aim) * 0.6);
+        return { aim, target: -1, shot: true, ideal: Math.min(1, powerFor(gd + 5, style)), x: goal.x, z: goal.z };
+      }
+      let best: { q: Player; d: number; at: { x: number; z: number } } | null = null;
       for (const q of this.players) {
         if (q.team !== p.team || q.id === p.id || q.down > 0) continue;
-        const lx = q.x + q.vx * kickTime(power, style);
-        const lz = q.z + q.vz * kickTime(power, style);
-        const d = Math.hypot(lx - p.x, lz - p.z);
-        const off = Math.abs(wrap(Math.atan2(lz - p.z, lx - p.x) - p.h));
-        if (off > 0.35 || Math.abs(d - range) > 14) continue;
-        const score = 1 - off - Math.abs(d - range) / 30 + this.freeness(lx, lz, p.team) * 0.05;
-        if (score > best) {
-          best = score;
-          target = q.id;
-          aim = wrap(p.h + wrap(Math.atan2(lz - p.z, lx - p.x) - p.h) * 0.8);
-        }
+        const at = lead(q, powerFor(Math.hypot(q.x - p.x, q.z - p.z), style));
+        const d = Math.hypot(at.x - ap.x, at.z - ap.z);
+        if (d < 9 && (!best || d < best.d)) best = { q, d, at };
+      }
+      if (best) {
+        const dist = Math.hypot(best.at.x - p.x, best.at.z - p.z);
+        return { aim: Math.atan2(best.at.z - p.z, best.at.x - p.x), target: best.q.id, shot: false, ideal: powerFor(dist, style), x: best.at.x, z: best.at.z };
+      }
+      const dist = Math.hypot(ap.x - p.x, ap.z - p.z);
+      return { aim, target: -1, shot: false, ideal: powerFor(dist, style), x: ap.x, z: ap.z };
+    }
+    // No mouse: along your facing.
+    let aim = p.h;
+    const range = kickRange(power, style);
+    if (Math.abs(wrap(ga - aim)) < (style === "snap" ? 0.9 : 0.4) && gd < kickRange(1, style) + 14) {
+      aim = wrap(aim + wrap(ga - aim) * 0.75);
+      return { aim, target: -1, shot: true, ideal: Math.min(1, powerFor(gd + 5, style)), x: goal.x, z: goal.z };
+    }
+    let best = 0;
+    let plan: KickPlan = { aim, target: -1, shot: false, ideal: power, x: p.x + Math.cos(aim) * range, z: p.z + Math.sin(aim) * range };
+    for (const q of this.players) {
+      if (q.team !== p.team || q.id === p.id || q.down > 0) continue;
+      const at = lead(q, power);
+      const d = Math.hypot(at.x - p.x, at.z - p.z);
+      const off = Math.abs(wrap(Math.atan2(at.z - p.z, at.x - p.x) - p.h));
+      if (off > 0.35 || Math.abs(d - range) > 14) continue;
+      const score = 1 - off - Math.abs(d - range) / 30 + this.freeness(at.x, at.z, p.team) * 0.05;
+      if (score > best) {
+        best = score;
+        plan = { aim: wrap(p.h + wrap(Math.atan2(at.z - p.z, at.x - p.x) - p.h) * 0.8), target: q.id, shot: false, ideal: powerFor(d, style), x: at.x, z: at.z };
       }
     }
-    if (this.set?.id === p.id && this.set.kind !== "kickin") shot = shot || gd < 60;
-    this.startKick(p, aim, power, target, shot, style);
+    return plan;
+  }
+
+  private humanKick(p: Player) {
+    const power = Math.max(0.12, this.charge);
+    const plan = this.planKick(p, power);
+    // Hit the power the kick needs and it's truer; miss it and it sprays (as well as falling short or long).
+    const miss = Math.abs(power - plan.ideal);
+    const spreadK = plan.target >= 0 || plan.shot ? 0.55 + Math.min(1.6, miss * 6) : 1;
+    const shot = plan.shot || (this.set?.id === p.id && this.set.kind !== "kickin" && Math.hypot(this.goalOf(p.team).x - p.x, p.z) < 60);
+    this.startKick(p, plan.aim, power, plan.target, shot, this.kickStyle, false, spreadK);
     this.charge = 0;
+    this.kickPlan = null;
+  }
+
+  /** The set-shot accuracy needle's speed (rad/s): nerves after the siren, steadier with composure and skill. */
+  needleSpeed(p: Player) {
+    const comp = this.pro && p.id === this.lockHuman ? this.pro.composure : 0.5;
+    const level = this.difficulty === "easy" ? 0.8 : this.difficulty === "pro" ? 1 : 1.12;
+    return 3.3 * level * (this.sirenGone ? 1.35 : 1) * (1.2 - comp * 0.4) * (1.15 - p.skill.kick * 0.3);
+  }
+
+  /** The power the set-shot guide shows while you line it up: enough to get there. */
+  setGuidePower() {
+    const s = this.set;
+    if (!s) return 0.7;
+    const p = this.players[s.id];
+    const goal = this.goalOf(p.team);
+    return Math.min(1, powerFor(Math.hypot(goal.x - s.x, goal.z - s.z) + 5, this.kickStyle) + 0.02);
+  }
+
+  /** Where a kick would land with and without the wind: the aim that allows for it. */
+  windAim(p: Player, aim: number, power: number, style: KickStyle, k = 0.8) {
+    const land = (wind: { x: number; z: number }) => {
+      const { speed, elev } = kickLaunch(power, style);
+      const v = { vx: Math.cos(aim) * Math.cos(elev) * speed, vy: Math.sin(elev) * speed, vz: Math.sin(aim) * Math.cos(elev) * speed };
+      let x = p.x;
+      let y = 0.55;
+      let z = p.z;
+      const dt = 1 / 30;
+      for (let t = 0; t < 6; t += dt) {
+        airStep(v, wind, 0, dt);
+        x += v.vx * dt;
+        y += v.vy * dt;
+        z += v.vz * dt;
+        if (v.vy < 0 && y < 1.8) break;
+      }
+      return Math.atan2(z - p.z, x - p.x);
+    };
+    return wrap(aim + wrap(land({ x: 0, z: 0 }) - land(this.wind)) * k);
   }
 
   private humanHandball(p: Player) {
@@ -917,8 +1125,8 @@ export class FootySim {
 
   // ------------------------------------------------------------ disposals
 
-  private startKick(p: Player, aim: number, power: number, target: number, shot: boolean, style: KickStyle = "punt") {
-    p.act = { kind: "kick", t: 0, dur: 0.46, release: 0.22, aim, power, target, shot, style };
+  private startKick(p: Player, aim: number, power: number, target: number, shot: boolean, style: KickStyle = "punt", precise = false, spreadK = 1) {
+    p.act = { kind: "kick", t: 0, dur: 0.46, release: 0.22, aim, power, target, shot, style, precise, spreadK };
     p.h = aim;
     if (this.phase === "set" && this.set?.id === p.id) {
       // The run-up: the mark stands, play is on once it's kicked.
@@ -936,6 +1144,8 @@ export class FootySim {
     const pressure = this.pressureOn(p);
     const setShot = this.phase === "set";
     if (setShot) {
+      // The man on the mark can't touch the kick as it goes over him.
+      if (this.set) this.players[this.set.onMark].noTouch = 0.6;
       this.phase = "play";
       this.set = null;
     }
@@ -951,7 +1161,7 @@ export class FootySim {
       const power = Math.max(0, Math.min(1, (a.power ?? 0.7) * (1 + (this.rng.next() - 0.5) * 0.05)));
       const { speed, elev } = kickLaunch(power * (this.wet ? 0.95 : 1), style);
       const styleK = style === "torpedo" ? 1.7 : style === "snap" ? 1.25 : 1;
-      const spread = ((isHuman ? 0.022 : 0.034 + (1 - skill) * 0.06) + pressure * 0.08 + power * 0.03) * styleK * (this.wet ? 1.2 : 1);
+      const spread = ((isHuman ? 0.022 : 0.034 + (1 - skill) * 0.06) + pressure * 0.08 + power * 0.03) * styleK * (this.wet ? 1.2 : 1) * (a.precise ? 0.15 : (a.spreadK ?? 1));
       const err = (this.rng.next() + this.rng.next() + this.rng.next() - 1.5) * spread * 1.4;
       let yaw = (a.aim ?? p.h) + err;
       b.curve = 0;
@@ -1048,7 +1258,7 @@ export class FootySim {
       const gain = (lx - p.x) * d;
       const free = Math.min(8, this.freeness(lx, lz, p.team));
       const toGoal = Math.hypot(g.x - lx, g.z - lz);
-      const score = gain * 0.05 + free * 0.45 - (toGoal < ARC ? -1.5 : 0) - dist * 0.01 + this.rng.next() * 0.6 + (set ? 0.2 : 0);
+      const score = gain * 0.05 + free * 0.45 - (toGoal < ARC ? -1.5 : 0) - dist * 0.01 + this.rng.next() * 0.6 + (set ? 0.2 : 0) + (q.id === this.lockHuman ? 0.35 : 0);
       if (!best || score > best.score) best = { id: q.id, aim: Math.atan2(lz - p.z, lx - p.x), power: powerFor(dist), score };
     }
     return best && best.score > 0.8 ? best : best && set ? best : null;
@@ -1062,7 +1272,7 @@ export class FootySim {
       if (dd > reach || dd < 2) continue;
       const free = Math.min(6, this.freeness(q.x, q.z, p.team));
       const off = facing === null ? 0 : Math.abs(wrap(Math.atan2(q.z - p.z, q.x - p.x) - facing));
-      const score = free * 0.5 - dd * 0.08 - off * 0.8 + (q.x - p.x) * this.dir(p.team) * 0.03;
+      const score = free * 0.5 - dd * 0.08 - off * 0.8 + (q.x - p.x) * this.dir(p.team) * 0.03 + (q.id === this.lockHuman ? 0.4 : 0);
       if (!best || score > best.score) best = { id: q.id, score };
     }
     return best;
@@ -1284,17 +1494,10 @@ export class FootySim {
     let vz = b.vz;
     const dt = 1 / 30;
     let t = 0;
+    const v = { vx, vy, vz };
     while (t < 8) {
-      const sp = Math.hypot(vx, vy, vz);
-      if (b.curve) {
-        const hs = Math.hypot(vx, vz) || 1;
-        const cx = (-vz / hs) * b.curve * dt;
-        vz += (vx / hs) * b.curve * dt;
-        vx += cx;
-      }
-      vx -= DRAG * sp * vx * dt;
-      vz -= DRAG * sp * vz * dt;
-      vy -= (G + DRAG * sp * vy) * dt;
+      airStep(v, this.wind, b.curve, dt);
+      ({ vx, vy, vz } = v);
       x += vx * dt;
       y += vy * dt;
       z += vz * dt;
@@ -1531,11 +1734,27 @@ export class FootySim {
     if (p.think > 0) return;
     p.think = 0.18;
     const react = p.team === 1 ? this.diffK : 0.95;
+    // Your call for it (be-a-pro): a teammate gets it to you if you're free.
+    if (this.callFor > 0 && this.lockHuman !== null && p.team === 0 && p.id !== this.lockHuman) {
+      const me = this.players[this.lockHuman];
+      const d = Math.hypot(me.x - p.x, me.z - p.z);
+      if (me.down <= 0 && this.freeness(me.x, me.z, 0) > 3.5 && d > 3) {
+        this.callFor = 0;
+        if (d < 16) return this.startHandball(p, me.id);
+        if (d < MAX_KICK - 6) {
+          const pow = powerFor(d);
+          const tt = kickTime(pow);
+          return this.startKick(p, Math.atan2(me.z + me.vz * tt * 0.8 - p.z, me.x + me.vx * tt * 0.8 - p.x), pow, me.id, false);
+        }
+      }
+    }
     if (dist < Math.min(50, MAX_KICK - 6) && angle > 0.1 && (press < 0.6 || dist < 30)) {
       if (p.held > 0.35 / react || press > 0.3) {
         // From a tight angle close in, a snap curls it back through.
         const style: KickStyle = angle < 0.3 && dist < 38 ? "snap" : "punt";
-        this.startKick(p, Math.atan2(g.z - p.z, g.x - p.x), Math.min(1, powerFor(dist + 5, style) + 0.05), -1, true, style);
+        const pow = Math.min(1, powerFor(dist + 5, style) + 0.05);
+        const aim = Math.atan2(g.z - p.z, g.x - p.x);
+        this.startKick(p, style === "punt" ? this.windAim(p, aim, pow, style, 0.6) : aim, pow, -1, true, style);
         return;
       }
     }
@@ -1693,17 +1912,7 @@ export class FootySim {
     if (b.state === "dead") return;
     const px = b.x;
     if (b.state === "air") {
-      const sp = Math.hypot(b.vx, b.vy, b.vz);
-      if (b.curve) {
-        const hs = Math.hypot(b.vx, b.vz) || 1;
-        const cx = (-b.vz / hs) * b.curve * dt;
-        const cz = (b.vx / hs) * b.curve * dt;
-        b.vx += cx;
-        b.vz += cz;
-      }
-      b.vx -= DRAG * sp * b.vx * dt;
-      b.vz -= DRAG * sp * b.vz * dt;
-      b.vy -= (G + DRAG * sp * b.vy) * dt;
+      airStep(b, this.wind, b.curve, dt);
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.z += b.vz * dt;
@@ -1931,13 +2140,14 @@ export class FootySim {
   /** The predicted flight of a kick the human is charging (for the aim arc). */
   aimPreview(steps = 24) {
     const p = this.you;
-    if (this.ball.holder !== p.id || !this.charging) return null;
-    const { speed, elev } = kickLaunch(Math.max(0.12, this.charge) * (this.wet ? 0.95 : 1), this.kickStyle);
+    const setStage = this.phase === "set" && this.set?.id === p.id ? this.set.stage : undefined;
+    if (this.ball.holder !== p.id || (!this.charging && setStage !== "aim" && setStage !== "runup")) return null;
+    const { speed, elev } = kickLaunch(Math.max(0.12, setStage === "aim" ? this.setGuidePower() : this.charge) * (this.wet ? 0.95 : 1), this.kickStyle);
     const pts: [number, number, number][] = [];
     let x = p.x;
     let y = 0.55;
     let z = p.z;
-    let aim = this.phase === "set" && this.set ? this.set.aim : p.h;
+    let aim = this.phase === "set" && this.set ? this.set.aim : (this.kickPlan?.aim ?? p.h);
     let curve = 0;
     if (this.kickStyle === "snap") {
       // Preview the release: out wide of the goals, curling back in.
@@ -1954,17 +2164,10 @@ export class FootySim {
     let vz = Math.sin(aim) * Math.cos(elev) * speed;
     let vy = Math.sin(elev) * speed;
     const dt = 1 / 20;
+    const v = { vx, vy, vz };
     for (let i = 0; i < 200 && pts.length < steps * 4; i++) {
-      const sp = Math.hypot(vx, vy, vz);
-      if (curve) {
-        const hs = Math.hypot(vx, vz) || 1;
-        const cx = (-vz / hs) * curve * dt;
-        vz += (vx / hs) * curve * dt;
-        vx += cx;
-      }
-      vx -= DRAG * sp * vx * dt;
-      vz -= DRAG * sp * vz * dt;
-      vy -= (G + DRAG * sp * vy) * dt;
+      airStep(v, this.wind, curve, dt);
+      ({ vx, vy, vz } = v);
       x += vx * dt;
       y += vy * dt;
       z += vz * dt;

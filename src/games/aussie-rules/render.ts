@@ -63,6 +63,9 @@ export class FootyView {
   private you: THREE.Mesh;
   private youArrow: THREE.Mesh;
   private drop: THREE.Mesh;
+  private target: THREE.Mesh;
+  private ray = new THREE.Raycaster();
+  private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private arc: THREE.Line;
   private key = new THREE.DirectionalLight("#fff4e0", 2.6);
   private fills: THREE.DirectionalLight[] = [];
@@ -177,7 +180,9 @@ export class FootyView {
     this.drop = new THREE.Mesh(new THREE.PlaneGeometry(3, 3).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: ring, color: "#ffffff", transparent: true, opacity: 0.6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6 }));
     this.arc = new THREE.Line(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(300), 3)), new THREE.LineBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.75, depthWrite: false }));
     this.arc.frustumCulled = false;
-    this.scene.add(this.you, this.youArrow, this.drop, this.arc);
+    this.target = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: ring, color: "#facc15", transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6 }));
+    this.target.visible = false;
+    this.scene.add(this.you, this.youArrow, this.drop, this.arc, this.target);
 
     this.setupLighting(high);
 
@@ -283,6 +288,13 @@ export class FootyView {
       human: sim.human,
     });
     if (this.history.length > 300) this.history.splice(0, this.history.length - 300);
+  }
+
+  /** The ground point under a screen position (normalised device coordinates). */
+  groundAt(nx: number, ny: number): { x: number; z: number } | null {
+    this.ray.setFromCamera(new THREE.Vector2(nx, ny), this.camera);
+    const hit = this.ray.ray.intersectPlane(this.groundPlane, this.tmp);
+    return hit ? { x: hit.x, z: hit.z } : null;
   }
 
   /** Replay the last few seconds now (test hook). */
@@ -774,6 +786,15 @@ export class FootyView {
     this.you.visible = this.youArrow.visible = show;
     const land = sim.ball.state === "air" && sim.landing && !sim.ball.ruck ? sim.landing : null;
     this.drop.visible = !!land && show;
+    // Where your kick's going: a teammate (gold) or open ground / the goals (white).
+    const plan = sim.kickPlan;
+    this.target.visible = !!plan && !this.opts.spectator;
+    if (plan) {
+      this.target.position.set(plan.x, 0.06, plan.z);
+      (this.target.material as THREE.MeshBasicMaterial).color.set(plan.target >= 0 ? "#facc15" : plan.shot ? "#4ade80" : "#ffffff");
+      const k = 1 + Math.sin(this.time * 8) * 0.06;
+      this.target.scale.set(k, 1, k);
+    }
     if (land) {
       this.drop.position.set(land.x, 0.05, land.z);
       const k = 1 + Math.sin(this.time * 6) * 0.08;

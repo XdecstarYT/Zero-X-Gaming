@@ -420,6 +420,19 @@ angle), **rain** (a greasy ball, skidding bounces, a slick ground and falling ra
 from behind the posts (snapshots every 1/30 s, slow motion, any button skips), a **commentary** ticker, and
 per-player stats with the umpires' **3-2-1 best-on-ground votes** on the results card.
 
+**Kicking, leagues and career.** Kicks aim at the mouse (or along your facing): a gold ring marks the teammate
+you're kicking to, and a tick on the power bar shows the power that lands it; hit it and the kick is truer.
+Set shots go through a meter: line up (allowing for the wind, shown on screen and simulated as drag through
+moving air), hold to run in for power, then tap as the accuracy needle crosses the green (quicker after the
+siren, steadier with composure). Three leagues (`clubs.ts`): the National League's 18 clubs play out of the
+real home bases with our own nicknames (no league or club marks; the **club editor** renames and recolours
+any club on the device), plus a State League and a Local League. The premiership (`season.ts`) runs 9, 17 or
+23 rounds with the real final eight (qualifying and elimination finals, semis, prelims, the Grand Final) and
+lets you play or sim any game. **Career mode** (`career.ts`): create a player, start at 17 in the Local
+League, earn a State League spot, get drafted, and play out a professional career controlling only your
+player (Q / CALL calls for the ball), with attributes bought with skill points, the medal count, honours,
+captaincy, decline after 30 and retirement.
+
 #### Diamond Derby
 
 A home run derby (`src/games/diamond-derby/`) in a full ballpark: diamond-cut grass, infield dirt, an
