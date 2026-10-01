@@ -11,6 +11,9 @@ interface PassState {
   owned: boolean | null;
   busy: boolean;
   error: string | null;
+  /** The welcome cinematic is playing (straight after buying). */
+  induction: boolean;
+  endInduction: () => void;
   refresh: () => Promise<void>;
   buy: () => Promise<boolean>;
 }
@@ -20,6 +23,8 @@ export const useSportsPassStore = create<PassState>()((set, get) => ({
   owned: null,
   busy: false,
   error: null,
+  induction: false,
+  endInduction: () => set({ induction: false }),
   refresh: async () => {
     try {
       const [owned, coins] = await Promise.all([hasSportsPass(), loadCoins()]);
@@ -34,7 +39,7 @@ export const useSportsPassStore = create<PassState>()((set, get) => ({
     set({ busy: true, error: null });
     try {
       await buySportsPass();
-      set({ owned: true, busy: false });
+      set({ owned: true, busy: false, induction: true });
       return true;
     } catch (e) {
       set({ busy: false, error: (e as Error).message });

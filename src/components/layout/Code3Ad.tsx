@@ -103,6 +103,14 @@ export function Code3Ad() {
       return () => clearTimeout(t);
     }
     const poll = window.setInterval(() => {
+      // One ad per visit: the Sports+ spot goes first; Code 3 runs only once it has passed.
+      const sports = document.documentElement.dataset.sportsAd;
+      if (sports === "playing" || sports === "done") {
+        clearInterval(poll);
+        setState("done");
+        return;
+      }
+      if (sports !== "skip") return;
       if (document.documentElement.dataset.intro === "done" && !document.getElementById("zx-intro") && !document.getElementById("zx-mega-ad")) {
         clearInterval(poll);
         try {

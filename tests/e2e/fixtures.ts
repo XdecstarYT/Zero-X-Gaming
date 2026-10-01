@@ -1,8 +1,8 @@
 import { test as base, expect } from "@playwright/test";
 
 /**
- * Default test: the intro splash and the one-time mega ad count as already
- * seen, so specs start on the page itself. Use `introTest` to exercise them.
+ * Default test: the intro splash and the one-time mega ad and the Code 3 and
+ * Sports+ spots count as already seen, so specs start on the page itself. Use `introTest` to exercise them.
  */
 export const test = base.extend({
   page: async ({ page }, run) => {
@@ -11,6 +11,7 @@ export const test = base.extend({
         sessionStorage.setItem("zx-intro-seen", "1");
         localStorage.setItem("zx-mega-ad-seen", "1");
         localStorage.setItem("zx-code3-ad-count", "3");
+        localStorage.setItem("zx-sports-ad-count", "3");
       } catch {}
     });
     await run(page);

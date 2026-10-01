@@ -363,6 +363,19 @@ unlocks every Sports+ game, now and later. Signed in, `buy_sports_pass()` takes 
 unlock in `player_unlocks`; guests pay from their device save. Games with `pass: "sports-plus"` in the catalog
 show the unlock card instead of **Play** until it's owned (`SportsPassCard`, `useSportsPass`).
 
+**The welcome.** Buying the pass plays a ~20-second cinematic (`SportsInduction`): the stadium's six light
+towers bang on one by one, the oval draws itself, SPORTS+ slams in with shockwaves and sparks, every sport flies
+past the camera ("Every sport. One pass."), Screamer kicks a goal, and you're handed a holographic all-access
+pass card with your name and number. It has its own synthesized score (booms, riser, impact, whooshes, crowd
+roar) when sound is on, can be skipped, and ends on **Play Screamer** / **See the line-up**.
+
+**The Sports+ ad.** A 25-second spot (`SportsAd`) built from the same scenes: a cold open under the lights,
+the logo, the sports fly-through, Screamer's goal, "One pass. Every sport. 50 coins, once, forever", and a
+**Get Sports+** end card. Like the Code 3 spot it plays after the intro on up to three visits and can't be
+skipped. It never plays with the one-time mega ad, on invite links or for pass owners, and a visit gets one
+ad at most: Sports+ goes first, then Code 3's spot gets its turns. All of it is SVG and CSS (`zx-sp-*` in
+`globals.css`), no video files, and it calms down for reduced motion.
+
 #### Screamer: Aussie Rules
 
 The first Sports+ game (`src/games/aussie-rules/`): an 18-a-side Australian rules football match on a full 3D

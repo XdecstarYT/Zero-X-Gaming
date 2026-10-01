@@ -21,10 +21,21 @@ test("Screamer: unlock Sports+ for 50 coins, then play a match to full time", as
   await expect(stage.getByTestId("sports-lock")).toBeVisible();
   await expect(stage.getByRole("button", { name: "Play", exact: true })).toHaveCount(0);
   await stage.getByRole("button", { name: "Unlock for 50 coins" }).click();
+
+  // The welcome cinematic plays straight away; skip to the pass card and go play.
+  const welcome = page.getByTestId("sports-induction");
+  await expect(welcome).toBeVisible();
+  expect(await page.locator("main").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
+  await welcome.getByRole("button", { name: "Skip" }).click();
+  await expect(welcome.getByRole("heading", { name: "Welcome to Sports+" })).toBeVisible();
+  await expect(welcome).toContainText("All access");
+  await welcome.getByRole("link", { name: "Play Screamer" }).click();
+  await expect(welcome).toHaveCount(0);
+  await expect(page).toHaveURL(/\/games\/aussie-rules$/);
   await expect(stage.getByTestId("sports-lock")).toHaveCount(0);
 
-  // The pass is remembered (10 coins left).
-  await page.reload();
+  // The pass is remembered (10 coins left); back to the quick test match.
+  await page.goto("/games/aussie-rules?footy=quick");
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await dismissRotate(page);
   await expect(stage.getByText("Aussie Rules · 18 a side · Four quarters")).toBeVisible();

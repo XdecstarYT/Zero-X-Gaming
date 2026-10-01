@@ -354,4 +354,11 @@ Deviations from, or interpretations of, the master prompt. Newest last.
     players, sponsors and ground are made up. You always control the ball carrier (or the player nearest the
     ball), and an assist positions your player when the stick is idle, so an 18-a-side game stays playable with
     one thumb. The simulation is pure and deterministic (seeded), so the rules are unit tested headlessly.
+100. **The Sports+ welcome and ad are code, not video.** Both are SVG and CSS scenes driven by a timeline, so
+     they cost a few kilobytes, stay sharp at any resolution, use the real line-up and price, and need no
+     hosting. The welcome is a reward, so it's skippable and its sound plays (the purchase click unlocks
+     audio); the ad, like the other spots, is silent and unskippable but capped at three runs.
+101. **One ad per visit.** With three spots (mega, Sports+, Code 3), the newest product goes first: the
+     Sports+ ad decides (and publishes its decision on `<html data-sports-ad>`), and Code 3's spot only runs on
+     visits where Sports+ skipped. Pass owners never see the Sports+ ad; it retires itself for them.
 

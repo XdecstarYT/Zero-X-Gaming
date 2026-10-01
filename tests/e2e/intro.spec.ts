@@ -6,6 +6,7 @@ const test = introTest.extend({
     await page.addInitScript(() => {
       localStorage.setItem("zx-mega-ad-seen", "1");
       localStorage.setItem("zx-code3-ad-count", "3");
+      localStorage.setItem("zx-sports-ad-count", "3");
     });
     await run(page);
   },
@@ -84,6 +85,7 @@ introTest("the Code 3 trailer plays after the intro on later visits, three times
   test.setTimeout(120_000);
   await page.addInitScript(() => {
     localStorage.setItem("zx-mega-ad-seen", "1");
+    localStorage.setItem("zx-sports-ad-count", "3");
     if (!localStorage.getItem("zx-code3-ad-count")) localStorage.setItem("zx-code3-ad-count", "2");
   });
   await page.goto("/");
@@ -100,4 +102,32 @@ introTest("the Code 3 trailer plays after the intro on later visits, three times
   await page.getByRole("dialog", { name: "Zero X Gaming intro" }).getByRole("button", { name: "Skip intro" }).click();
   await page.waitForTimeout(1500);
   await expect(page.getByTestId("code3-ad")).toHaveCount(0);
+});
+
+introTest("the Sports+ ad plays after the intro (one ad per visit, three runs at most)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    localStorage.setItem("zx-mega-ad-seen", "1");
+    localStorage.setItem("zx-code3-ad-count", "0");
+    if (!localStorage.getItem("zx-sports-ad-count")) localStorage.setItem("zx-sports-ad-count", "2");
+  });
+  await page.goto("/");
+  await page.getByRole("dialog", { name: "Zero X Gaming intro" }).getByRole("button", { name: "Skip intro" }).click();
+  const ad = page.getByTestId("sports-ad");
+  await expect(ad).toBeVisible();
+  await expect(ad).toContainText(/Ad · \d+s/);
+  expect(await page.locator("main").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
+  expect(await page.evaluate(() => localStorage.getItem("zx-sports-ad-count"))).toBe("3");
+  await expect(ad).toContainText("Sports", { timeout: 10_000 });
+  await expect(ad.getByRole("link", { name: "Get Sports+" })).toBeVisible({ timeout: 30_000 });
+  await expect(ad).toBeHidden({ timeout: 10_000 });
+  // One ad per visit: Code 3's spot doesn't follow it.
+  await page.waitForTimeout(1500);
+  await expect(page.getByTestId("code3-ad")).toHaveCount(0);
+  // Third run done: next visit the Code 3 spot gets its turn instead.
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await page.getByRole("dialog", { name: "Zero X Gaming intro" }).getByRole("button", { name: "Skip intro" }).click();
+  await expect(page.getByTestId("code3-ad")).toBeVisible();
+  await expect(page.getByTestId("sports-ad")).toHaveCount(0);
 });
