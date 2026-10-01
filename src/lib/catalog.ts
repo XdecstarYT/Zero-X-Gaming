@@ -142,6 +142,31 @@ export const GAMES: Game[] = [
     touchControls:
       "Left thumb runs. Hold KICK and release to kick (longer hold = longer kick), tap HANDBALL to dish off, MARK to leap, TACKLE when close, SWITCH to take the player nearest the ball.",
   },
+  {
+    slug: "diamond-derby",
+    title: "Diamond Derby",
+    tagline: "Ten outs. One swing at a time. Clear the wall.",
+    description:
+      "A Sports+ home run derby in a full 3D ballpark. Aim the plate coverage circle, read the pitch (riding fastballs, fading changeups, 12-to-6 curves, sweeping sliders) and time your swing. Every ball you don't hit out is an out: beat the AI slugger's mark in the quarterfinal, semifinal and final to take the title. Real batted-ball flight with drag and backspin, Statcast readouts for every swing, fireworks for every homer, day, twilight or night. Needs the Sports+ pass (50 coins, once).",
+    category: "sports",
+    tags: ["baseball", "home run derby", "3d", "sports+"],
+    status: "live",
+    palette: ["#d61f3a", "#13284d"],
+    rating: 0,
+    ratingCount: 0,
+    plays: 0,
+    releasedAt: "2026-10-05",
+    pass: "sports-plus",
+    controls: [
+      { keys: ["Mouse"], action: "Aim the plate coverage circle" },
+      { keys: ["W", "A", "S", "D"], action: "Nudge the aim" },
+      { keys: ["Click", "Space"], action: "Swing" },
+      { keys: ["C"], action: "Camera: batter / centre field" },
+      { keys: ["Esc", "P"], action: "Pause" },
+    ],
+    orientation: "landscape",
+    touchControls: "Drag anywhere to move the aim circle, tap SWING as the ball arrives. CAM switches between the batter's view and the centre-field camera.",
+  },
 ];
 
 export const FEATURED_SLUG = "trenches";

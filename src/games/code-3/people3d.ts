@@ -420,7 +420,16 @@ export type Pose =
   | "setshot"
   | "crouch"
   | "umpGoal"
-  | "umpBounce";
+  | "umpBounce"
+  // Baseball and tennis (`act` 0–1 is the action's progress).
+  | "batStance"
+  | "swing"
+  | "pitch"
+  | "catcher"
+  | "tennisReady"
+  | "forehand"
+  | "backhand"
+  | "serve";
 
 export interface PedModel {
   group: THREE.Group;
@@ -740,6 +749,98 @@ function target(pose: Pose, step: number, speed: number, t: number, seed: number
       p.set("armL", 0.35, 0, 0.5).set("foreL", 0, 0, 0.6).set("armR", -0.35, 0, 0.5).set("foreR", 0, 0, 0.6);
       p.root(0, -0.14, 0);
       break;
+    case "batStance": {
+      // Side-on in the box, weight back, hands up by the back shoulder, eyes on the pitcher.
+      locomotion(p, 0, 0, t + seed);
+      p.set("thighL", 0.2, 0, 0.3).set("shinL", 0, 0, -0.45).set("thighR", -0.2, 0, 0.3).set("shinR", 0, 0, -0.5);
+      p.set("spine", 0, 0, -0.22).set("chest", 0, -0.25, -0.05).set("head", 0, 1.15, 0.12);
+      p.set("armL", 0.15, 0.4, 1.25).set("foreL", 0, 0.3, 1.25);
+      p.set("armR", -0.75, 0, 0.75).set("foreR", 0, -0.2, 1.7);
+      p.root(0, -0.06 + Math.sin(t * 3 + seed) * 0.005, 0);
+      break;
+    }
+    case "swing": {
+      // Load (0–0.3), stride and rotate through the zone (0.3–0.55), finish high (0.55–1).
+      const load = ease(0, 0.3, act) * (1 - ease(0.3, 0.45, act));
+      const turn = ease(0.32, 0.55, act);
+      const finish = ease(0.55, 0.9, act);
+      p.set("thighL", 0.25, 0, 0.3 - 0.4 * turn).set("shinL", 0, 0, -0.45 + 0.35 * turn);
+      p.set("thighR", -0.2, 0, 0.3 + 0.2 * turn).set("shinR", 0, 0, -0.5 - 0.4 * turn).set("footR", 0, 0.8 * turn, 0);
+      p.set("hips", 0, -0.2 * load + 0.9 * turn, 0);
+      p.set("spine", 0, -0.1 * load + 0.4 * turn, -0.22 + 0.05 * finish);
+      p.set("chest", 0, -0.45 * load + 0.75 * turn + 0.3 * finish, -0.05);
+      p.set("head", 0, 1.15 - 0.9 * turn - 0.4 * finish, 0.15 - 0.1 * finish);
+      p.set("armL", 0.15 - 0.6 * turn, 0.4, 1.25 + 0.2 * turn + 0.6 * finish).set("foreL", 0, 0.3, 1.25 - 1.0 * turn + 0.9 * finish);
+      p.set("armR", -0.75 + 0.5 * turn, 0, 0.75 + 0.75 * turn + 0.5 * finish).set("foreR", 0, -0.2, 1.7 - 1.4 * turn + 1.0 * finish);
+      p.root(0, -0.06, 0);
+      break;
+    }
+    case "pitch": {
+      // Wind-up, leg kick (0.15–0.4), stride and the arm over the top (0.4–0.65), follow through.
+      const kick = ease(0.12, 0.35, act) * (1 - ease(0.38, 0.5, act));
+      const throwK = ease(0.42, 0.62, act);
+      const back = ease(0.3, 0.45, act) * (1 - throwK);
+      const after = ease(0.62, 0.9, act);
+      locomotion(p, 0, 0, t + seed);
+      p.set("thighL", 0.1, 0, 1.3 * kick + 0.6 * throwK).set("shinL", 0, 0, -1.4 * kick - 0.2 * throwK);
+      p.set("thighR", -0.05, 0, -0.35 * throwK).set("shinR", 0, 0, -0.3 * throwK);
+      p.set("chest", 0, 0.5 * back - 0.6 * throwK, -0.1 - 0.45 * throwK - 0.2 * after);
+      p.set("spine", 0, 0, -0.1 - 0.3 * throwK);
+      p.set("armR", -0.3 - 0.2 * back, 0, -0.8 * back + 3.2 * throwK - 2.1 * after).set("foreR", 0, 0, 1.6 * back + 0.2 + 0.3 * after);
+      p.set("armL", 0.3, 0, 1.0 * kick + 0.5 + 0.3 * throwK - 0.6 * after).set("foreL", 0, 0, 1.0);
+      p.root(0, -0.05 * throwK, 0);
+      break;
+    }
+    case "catcher":
+      kneelLegs(p);
+      p.set("thighL", 0.35, 0, 1.4).set("thighR", -0.35, 0, 1.4).set("shinL", 0, 0, -2.3).set("shinR", 0, 0, -2.3).set("footL", 0, 0, 0.6).set("footR", 0, 0, 0.6);
+      p.root(0, -0.48, 0);
+      p.set("spine", 0, 0, -0.2).set("armL", 0.1, 0, 1.25).set("foreL", 0, 0, 0.5).set("armR", -0.2, 0, 0.3).set("foreR", 0, 0, 0.9);
+      break;
+    case "tennisReady":
+      // Split step: low, racket out in front.
+      locomotion(p, step, speed, t + seed);
+      p.set("thighL", 0.12, 0, 0.45 + (speed > 0.5 ? 0 : 0.1)).set("shinL", 0, 0, -0.7).set("thighR", -0.12, 0, 0.45).set("shinR", 0, 0, -0.7);
+      if (speed > 0.5) locomotion(p, step, speed, t + seed);
+      p.set("spine", 0, 0, -0.25).set("armR", -0.15, 0, 0.75).set("foreR", 0, 0.2, 1.1).set("armL", 0.25, 0, 0.75).set("foreL", 0, -0.4, 1.3);
+      p.root(0, speed > 0.5 ? 0 : -0.1, 0);
+      break;
+    case "forehand": {
+      const back = ease(0, 0.4, act) * (1 - ease(0.42, 0.55, act));
+      const thru = ease(0.42, 0.62, act);
+      locomotion(p, step, Math.min(speed, 2), t + seed);
+      p.set("hips", 0, -0.4 * back + 0.5 * thru, 0);
+      p.set("chest", 0, -0.8 * back + 0.9 * thru, -0.12);
+      p.set("armR", -1.0 * back - 0.3 * (1 - thru), 0, 0.1 - 0.5 * back + 1.5 * thru).set("foreR", 0, 0.3, 0.5 + 0.9 * thru);
+      p.set("armL", 0.3, 0, 1.0 * back + 0.6).set("foreL", 0, 0, 0.6);
+      p.set("thighL", 0.1, 0, 0.4).set("shinL", 0, 0, -0.5);
+      break;
+    }
+    case "backhand": {
+      const back = ease(0, 0.4, act) * (1 - ease(0.42, 0.55, act));
+      const thru = ease(0.42, 0.62, act);
+      locomotion(p, step, Math.min(speed, 2), t + seed);
+      p.set("hips", 0, 0.4 * back - 0.4 * thru, 0);
+      p.set("chest", 0, 0.9 * back - 0.8 * thru, -0.12);
+      p.set("armR", 0.5 * back - 1.1 * thru, 0, 0.7 + 0.8 * thru).set("foreR", 0, -0.3, 1.2 * back + 0.3);
+      p.set("armL", 0.6 * back, 0, 0.8 * back + 0.3).set("foreL", 0, 0, 1.0 * back + 0.4);
+      p.set("thighR", -0.1, 0, 0.4).set("shinR", 0, 0, -0.5);
+      break;
+    }
+    case "serve": {
+      // Toss (0–0.35), trophy (0.35–0.55), up and through (0.55–0.7), follow through.
+      const toss = ease(0, 0.3, act) * (1 - ease(0.6, 0.75, act));
+      const trophy = ease(0.25, 0.5, act) * (1 - ease(0.55, 0.62, act));
+      const hit = ease(0.55, 0.66, act) * (1 - ease(0.7, 0.95, act));
+      const after = ease(0.66, 0.95, act);
+      locomotion(p, 0, 0, t + seed);
+      p.set("armL", 0.2, 0, 0.3 + 2.6 * toss).set("foreL", 0, 0, 0.1);
+      p.set("armR", -0.6 * trophy - 0.1 * hit + 0.5 * after, 0, 2.2 * trophy + 3.0 * hit + 0.6 * after).set("foreR", 0, 0, 2.2 * trophy + 0.1 * hit + 0.5 * after);
+      p.set("thighL", 0.05, 0, 0.5 * trophy).set("shinL", 0, 0, -0.8 * trophy).set("thighR", -0.05, 0, 0.5 * trophy).set("shinR", 0, 0, -0.8 * trophy);
+      p.set("chest", 0, -0.3 * trophy, 0.25 * trophy - 0.35 * after).set("head", 0, 0, 0.5 * toss + 0.3 * hit);
+      p.root(0, -0.15 * trophy + 0.12 * hit, 0);
+      break;
+    }
     case "umpGoal":
       // Goal umpire: both arms out in front, fingers pointing.
       locomotion(p, 0, 0, t + seed);
@@ -911,7 +1012,8 @@ export function posePed(m: PedModel, pose: Pose, step: number, speed: number, t 
     }
     a.pose = pose;
   }
-  const quick = pose === "kick" || pose === "handball" || pose === "mark" || pose === "tackle" || pose === "ruck" || pose === "bounce";
+  const quick =
+    pose === "kick" || pose === "handball" || pose === "mark" || pose === "tackle" || pose === "ruck" || pose === "bounce" || pose === "swing" || pose === "pitch" || pose === "forehand" || pose === "backhand" || pose === "serve";
   a.blend = Math.min(1, a.blend + dt / (quick ? 0.1 : 0.28));
   const k = smooth(a.blend);
   for (let i = 0; i < LEN; i++) a.cur[i] = k >= 1 ? tgt[i] : a.from[i] + (tgt[i] - a.from[i]) * k;
