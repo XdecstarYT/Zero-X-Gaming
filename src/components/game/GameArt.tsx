@@ -45,6 +45,10 @@ export function GameArt({
         <Trenches id={id} a={a} b={b} />
       ) : game.slug === "code-3" ? (
         <Code3 id={id} a={a} b={b} />
+      ) : game.slug === "diamond-derby" ? (
+        <Diamond id={id} a={a} b={b} />
+      ) : game.slug === "ace-rally" ? (
+        <Court id={id} a={a} b={b} />
       ) : game.category === "sports" ? (
         <Oval id={id} a={a} b={b} />
       ) : (
@@ -324,6 +328,79 @@ function Oval({ id, a, b }: { id: string; a: string; b: string }) {
         <path d="M-7 -12 h14 l2 14 h-18 z" fill="none" stroke={b} strokeWidth="2" />
         <path d="M-5 2 l-4 16 M5 2 l14 8" stroke="#1b1b1b" strokeWidth="4" strokeLinecap="round" />
       </g>
+    </g>
+  );
+}
+
+/** A floodlit ballpark from behind the plate: the diamond, the wall, a ball on its way out. */
+function Diamond({ id, a, b }: { id: string; a: string; b: string }) {
+  return (
+    <g>
+      <path d="M-10 118 Q160 60 330 118 L330 200 L-10 200 Z" fill="#1f5a2a" />
+      {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+        <path key={i} d={`M${-10 + i * 50} 200 L${60 + i * 30} 100 L${80 + i * 30} 100 L${20 + i * 50} 200 Z`} fill="#fff" opacity="0.035" />
+      ))}
+      <path d="M-10 118 Q160 60 330 118" fill="none" stroke="#14532d" strokeWidth="10" />
+      <path d="M-10 113 Q160 55 330 113" fill="none" stroke="#facc15" strokeWidth="1.5" />
+      <path d="M160 196 L250 150 L160 118 L70 150 Z" fill="#a0673f" />
+      <path d="M160 188 L232 150 L160 126 L88 150 Z" fill="#2a7334" />
+      <ellipse cx="160" cy="146" rx="12" ry="5" fill="#a0673f" />
+      {[
+        [250, 150],
+        [160, 118],
+        [70, 150],
+      ].map(([x, y]) => (
+        <rect key={x} x={x - 3} y={y - 2} width="6" height="4" fill="#fff" />
+      ))}
+      <path d="M160 196 L330 120 M160 196 L-10 120" stroke="#fff" strokeOpacity=".6" strokeWidth="1.2" />
+      {[40, 280].map((x) => (
+        <g key={x}>
+          <line x1={x} y1="14" x2={x} y2="90" stroke="#9aa3b5" strokeWidth="2" />
+          <rect x={x - 12} y="8" width="24" height="10" rx="2" fill="#fff" />
+          <path d={`M${x - 12} 18 L${x - 70} 200 L${x + 70} 200 L${x + 12} 18 Z`} fill="#fff" opacity=".05" filter={`url(#${id}-blur)`} />
+        </g>
+      ))}
+      <path d="M150 180 Q200 30 268 46" fill="none" stroke="#ffd84a" strokeWidth="2" strokeDasharray="5 4" />
+      <circle cx="268" cy="46" r="4.5" fill="#f3f1ea" stroke={a} strokeWidth="1" />
+      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+        <line key={i} x1="268" y1="46" x2={268 + Math.cos((i / 8) * Math.PI * 2) * 14} y2={46 + Math.sin((i / 8) * Math.PI * 2) * 14} stroke={b === "#13284d" ? "#fca5a5" : b} strokeOpacity=".7" strokeWidth="1.2" />
+      ))}
+      <g transform="translate(140 168)">
+        <circle cx="0" cy="-20" r="5" fill="#c68c5d" />
+        <path d="M-6 -15 h12 l2 15 h-16 z" fill={b} />
+        <path d="M-4 0 l-3 18 M4 0 l4 18" stroke="#e9e7e1" strokeWidth="4" strokeLinecap="round" />
+        <path d="M6 -14 L26 -34" stroke="#c79a5b" strokeWidth="3" strokeLinecap="round" />
+      </g>
+    </g>
+  );
+}
+
+/** Centre Court from the broadcast camera: the lines, the net, a serve at full stretch. */
+function Court({ id, a, b }: { id: string; a: string; b: string }) {
+  return (
+    <g>
+      <rect x="0" y="70" width="320" height="130" fill="#3c7a52" />
+      <path d="M90 78 L230 78 L290 196 L30 196 Z" fill="#2f5f9e" />
+      <path d="M90 78 L230 78 L290 196 L30 196 Z" fill="none" stroke="#fff" strokeOpacity=".85" strokeWidth="1.5" />
+      <path d="M106 78 L74 196 M214 78 L246 196" stroke="#fff" strokeOpacity=".7" />
+      <path d="M100 104 L220 104 M64 160 L256 160 M160 104 L160 160" stroke="#fff" strokeOpacity=".7" />
+      <path d="M58 128 L262 128" stroke="#e5e7eb" strokeWidth="3" />
+      <path d="M58 128 L58 116 M262 128 L262 116 M58 117 L262 117" stroke="#1f2937" strokeWidth="1.5" />
+      <rect x="58" y="117" width="204" height="11" fill="#111827" opacity=".35" />
+      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+        <rect key={i} x={i * 40} y="40" width="40" height="30" fill={i % 2 ? "#1e2f5a" : "#24376a"} />
+      ))}
+      <rect x="0" y="64" width="320" height="6" fill={a} opacity=".8" />
+      <g transform="translate(150 182)">
+        <circle cx="0" cy="-40" r="5" fill="#c68c5d" />
+        <path d="M-6 -35 h12 l2 18 h-16 z" fill="#f8fafc" />
+        <path d="M-4 -17 l-3 17 M4 -17 l4 17" stroke="#1e293b" strokeWidth="4" strokeLinecap="round" />
+        <path d="M5 -33 L14 -60" stroke="#c68c5d" strokeWidth="3" strokeLinecap="round" />
+        <ellipse cx="17" cy="-68" rx="5" ry="7" fill="none" stroke="#111827" strokeWidth="2" />
+      </g>
+      <circle cx="176" cy="96" r="3.5" fill="#d8ea3a" />
+      <path d="M170 104 Q174 98 176 96" stroke="#d8ea3a" strokeOpacity=".6" fill="none" />
+      <path d={`M176 96 L120 ${80}`} stroke={b} strokeOpacity=".35" strokeDasharray="3 4" filter={`url(#${id}-blur)`} />
     </g>
   );
 }

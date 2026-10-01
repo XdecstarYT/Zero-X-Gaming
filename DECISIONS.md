@@ -374,4 +374,17 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 105. **"Sign in with Zero X" uses a client-side consent page.** The app's Supabase session lives in the
      browser, so the consent page calls `supabase.auth.oauth` directly (with `skipBrowserRedirect` and an
      http(s) check before redirecting). Only online accounts can authorize apps; device accounts can't.
+106. **Live Sports is simulated, not streamed.** Each channel runs back-to-back fixed slots on the wall
+     clock; the slot's seed picks the matchup and seeds a deterministic sim, and the page fast-forwards to
+     the current second. There's no video server and nothing to host, yet everyone watching sees the same
+     match. Slot lengths sit above nearly every match's length (measured headlessly); the rare overrun is cut
+     at the slot boundary like a real schedule.
+107. **Shots are aimed, then solved.** Tennis shots and pitches pick a target and the solver finds the launch
+     that lands there under drag and spin, then scatter is applied. Players aim at places, not angles, and
+     the AI and the human share the same physics and error model.
+108. **The season sims the rest of the competition from club form.** Only your games are played out; other
+     results come from a seeded score model, so a season is quick and the ladder is reproducible.
+109. **Replays are snapshots, not a re-simulation.** The view records the visible state every 1/30 s and
+     plays it back interpolated, so replays cost no sim work and can't desync; in single player the match
+     holds while it plays, on Live Sports the match carries on underneath, like TV.
 

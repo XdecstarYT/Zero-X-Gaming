@@ -51,14 +51,8 @@ export const LEVELS: Record<Difficulty, { name: string; speed: number; pci: numb
   legend: { name: "Legend", speed: 1.06, pci: 0.09, window: 0.1, aiHr: [10, 16] },
 };
 
-export const SLUGGERS = [
-  { name: "Rico \"The Hammer\" Vargas", team: "Bayview Mariners" },
-  { name: "Tommy Okafor", team: "Riverton Kings" },
-  { name: "Jae-won Park", team: "Coastline Gulls" },
-  { name: "Dusty McAllister", team: "Ironbark Miners" },
-  { name: "Luis Santana", team: "Harbour Hawks" },
-  { name: "Big Earl Whitfield", team: "Northside Comets" },
-];
+export { SLUGGERS } from "./sluggers";
+import { SLUGGERS } from "./sluggers";
 
 export const OUTS_PER_ROUND = 10;
 export const ROUNDS = ["Quarterfinal", "Semifinal", "Final"];
@@ -452,7 +446,7 @@ export class DerbySim {
   /** Points for the leaderboard: home runs, distance, the longest, rounds won and the trophy. */
   score() {
     const rounds = this.round + (this.champion ? 1 : 0);
-    return Math.round(this.totalHrs * 100 + this.totalDist / 10 + this.longest * 0.5 + rounds * 300 + (this.champion ? 1000 : 0));
+    return Math.min(20000, Math.round(this.totalHrs * 100 + this.totalDist / 10 + this.longest * 0.5 + rounds * 300 + (this.champion ? 1000 : 0)));
   }
 
   // ---------------------------------------------------------------- autopilot

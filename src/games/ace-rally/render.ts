@@ -22,6 +22,18 @@ export interface Kit {
   female: boolean;
 }
 
+/** Kits for each draw: you (near side) and your opponent. */
+export const KITS: Record<"men" | "women", [Kit, Kit]> = {
+  men: [
+    { shirt: "#f8fafc", pants: "#1e293b", accent: "#15803d", skin: "#c68c5d", hair: "#1a1410", female: false },
+    { shirt: "#1d4ed8", pants: "#f8fafc", accent: "#facc15", skin: "#e0ac84", hair: "#4a3020", female: false },
+  ],
+  women: [
+    { shirt: "#f8fafc", pants: "#15803d", accent: "#15803d", skin: "#8d5a3b", hair: "#1a1410", female: true },
+    { shirt: "#be185d", pants: "#f8fafc", accent: "#fde68a", skin: "#f1c9a5", hair: "#b08a58", female: true },
+  ],
+};
+
 /** Felt: optic yellow with the white seam. */
 function ballTexture() {
   return canvasTexture(128, 64, (g) => {

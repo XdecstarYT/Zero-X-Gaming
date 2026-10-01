@@ -27,7 +27,7 @@ describe("queryGames", () => {
   });
 
   it("sorts newest first", () => {
-    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("aussie-rules");
+    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("ace-rally");
   });
 
   it("sorts by rating", () => {

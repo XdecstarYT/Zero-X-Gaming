@@ -7,7 +7,9 @@ test("Sports+ lists the upcoming sports games and remembers who you follow", asy
   await expect(page).toHaveURL(/\/sports$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Sports");
   const lineup = page.getByRole("list", { name: "Upcoming sports games" });
-  await expect(lineup.getByRole("article")).toHaveCount(8);
+  await expect(lineup.getByRole("article")).toHaveCount(6);
+  // Out now, so no longer "coming soon".
+  await expect(lineup.getByRole("heading", { name: "Diamond Derby" })).toHaveCount(0);
   await expect(lineup.getByRole("heading", { name: "Pitch Kings" })).toBeVisible();
   const notify = lineup.getByRole("article", { name: "Hoops X" }).getByRole("button", { name: "Notify me" });
   await notify.click();
@@ -24,11 +26,12 @@ test("the home page teases Sports+", async ({ page }) => {
   await expect(page).toHaveURL(/\/sports$/);
 });
 
-test("Sports+ shows the live game and the 50-coin unlock", async ({ page }) => {
+test("Sports+ shows the three live games, Live Sports and the 50-coin unlock", async ({ page }) => {
   await page.goto("/sports");
   const now = page.getByRole("region", { name: "Now playing" });
-  await expect(now.getByRole("heading", { name: "Screamer: Aussie Rules" })).toBeVisible();
+  for (const name of ["Screamer: Aussie Rules", "Diamond Derby", "Ace Rally"]) await expect(now.getByRole("heading", { name })).toBeVisible();
   await expect(now.getByTestId("sports-pass")).toContainText("50");
-  await now.getByRole("link", { name: "Play now" }).click();
-  await expect(page).toHaveURL(/\/games\/aussie-rules$/);
+  await expect(now.getByTestId("live-banner")).toHaveAttribute("href", "/sports/live");
+  await now.getByRole("article", { name: "Ace Rally" }).getByRole("link", { name: "Play now" }).click();
+  await expect(page).toHaveURL(/\/games\/ace-rally$/);
 });

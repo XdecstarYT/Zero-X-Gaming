@@ -5,7 +5,7 @@ import type { Detail, TimeOfDay } from "../sports-kit/look";
 import { BTN, button, card, choice, el, hero, howTo, primaryButton, read, ResolutionGovernor, stat, write } from "../sports-kit/ui";
 import { TennisAudio } from "./audio";
 import { TennisHud } from "./hud";
-import { TennisView, type Kit, type TennisCam } from "./render";
+import { KITS, TennisView, type TennisCam } from "./render";
 import { FORMATS, type MatchFormat } from "./score";
 import { LEVELS, NO_INPUT, RIVALS, SURFACES, TennisSim, type Difficulty, type ShotKind, type Surface, type TennisInput } from "./sim";
 
@@ -35,16 +35,6 @@ interface TennisRecord {
   best: number;
 }
 
-const KITS: Record<"men" | "women", [Kit, Kit]> = {
-  men: [
-    { shirt: "#f8fafc", pants: "#1e293b", accent: "#15803d", skin: "#c68c5d", hair: "#1a1410", female: false },
-    { shirt: "#1d4ed8", pants: "#f8fafc", accent: "#facc15", skin: "#e0ac84", hair: "#4a3020", female: false },
-  ],
-  women: [
-    { shirt: "#f8fafc", pants: "#15803d", accent: "#15803d", skin: "#8d5a3b", hair: "#1a1410", female: true },
-    { shirt: "#be185d", pants: "#f8fafc", accent: "#fde68a", skin: "#f1c9a5", hair: "#b08a58", female: true },
-  ],
-};
 
 /**
  * Ace Rally: singles on Centre Court at the Zero X Open. Serve with a toss

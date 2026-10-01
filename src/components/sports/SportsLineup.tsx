@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SPORTS, SPORTS_FOLLOW_KEY, type SportStatus } from "@/lib/sports";
+import { SPORTS_FOLLOW_KEY, UPCOMING, type SportStatus } from "@/lib/sports";
 import { SportsArt } from "./SportsArt";
 
 const STATUS_TONE: Record<SportStatus, string> = {
@@ -39,7 +39,7 @@ export function SportsLineup({ compact = false }: { compact?: boolean }) {
     }
   };
 
-  const list = compact ? SPORTS.slice(0, 4) : SPORTS;
+  const list = compact ? UPCOMING.slice(0, 4) : UPCOMING;
   return (
     <ul aria-label="Upcoming sports games" className={compact ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-4" : "grid gap-5 sm:grid-cols-2 lg:grid-cols-3"}>
       {list.map((g) => {

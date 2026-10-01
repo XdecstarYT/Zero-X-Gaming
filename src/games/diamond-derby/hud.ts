@@ -32,6 +32,7 @@ export class DerbyHud {
     private sim: DerbySim,
     coarse: boolean,
     youName: string,
+    private spectator = false,
   ) {
     this.root = el("div", "pointer-events-none absolute inset-0 z-[5] select-none font-sans text-white");
     this.round = el("span", "font-bold uppercase tracking-[0.2em] text-[#facc15]");
@@ -152,7 +153,7 @@ export class DerbyHud {
       if (this.statT <= 0) this.stat.style.opacity = "0";
     }
     if (s.phase === "intro") this.shout(ROUNDS[s.round], `vs ${s.opponent.name} · ${s.opponent.hrs} to beat`, 0.3);
-    this.hint.style.opacity = s.totalHrs === 0 && s.outs < 3 && s.round === 0 ? "1" : "0";
+    this.hint.style.opacity = !this.spectator && s.totalHrs === 0 && s.outs < 3 && s.round === 0 ? "1" : "0";
   }
 
   destroy() {

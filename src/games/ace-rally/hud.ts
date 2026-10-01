@@ -29,6 +29,7 @@ export class TennisHud {
     host: HTMLElement,
     private sim: TennisSim,
     private coarse: boolean,
+    private spectator = false,
   ) {
     this.root = el("div", "pointer-events-none absolute inset-0 z-[5] select-none font-sans text-white");
     const bug = el("div", "absolute left-[max(0.5rem,env(safe-area-inset-left))] top-[max(0.5rem,env(safe-area-inset-top))] overflow-hidden rounded-md border border-white/15 bg-black/75 text-[13px] shadow-lg backdrop-blur-sm");
@@ -167,7 +168,7 @@ export class TennisHud {
     this.meter.style.display = serving ? "block" : "none";
     if (serving) this.needle.style.left = `${Math.min(98, (s.phase === "toss" ? s.tossT / 1.05 : 0) * 100)}%`;
     if (s.phase === "serve" && s.phaseT < 0.1) this.shotTag.style.opacity = "0";
-    this.hint.style.opacity = sc.sets.length === 0 && sc.games[0] + sc.games[1] === 0 && sc.points[0] + sc.points[1] < 3 ? "1" : "0";
+    this.hint.style.opacity = !this.spectator && sc.sets.length === 0 && sc.games[0] + sc.games[1] === 0 && sc.points[0] + sc.points[1] < 3 ? "1" : "0";
     if (s.phase === "intro") this.shout("Zero X Open", `${s.names[0]} v ${s.names[1]}`, 0.3);
     void this.coarse;
   }

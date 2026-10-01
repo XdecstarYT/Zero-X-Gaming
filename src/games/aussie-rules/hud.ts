@@ -121,6 +121,7 @@ export class FootyHud {
     );
     this.replay.setAttribute("data-testid", "footy-replay");
     if (opts.spectator) {
+      this.ticker.hidden = true;
       this.me.hidden = true;
       this.hint.hidden = true;
       this.power.hidden = true;

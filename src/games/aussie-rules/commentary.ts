@@ -32,12 +32,14 @@ export function commentary(e: SimEvent, sim: FootySim): string | null {
       if (e.shot && e.power > 0.8) return `${name(e.id)} has a long shot...`;
       return null;
     case "tackle":
+      if (Math.floor(sim.time * 3) % 3) return null;
       return pick([`Huge tackle by ${name(e.id)}!`, `${name(e.id)} wraps up ${name(e.on)}: that's a beauty.`, `Caught! ${name(e.id)} pins the arms.`]);
     case "free":
       return `Free kick, ${name(e.id)}: ${e.reason.toLowerCase()}.`;
     case "spoil":
       return sim.time % 4 < 1 ? `Great spoil from ${name(e.id)}.` : null;
     case "brokenTackle":
+      if (Math.floor(sim.time * 2) % 2) return null;
       return pick([`${name(e.id)} breaks the tackle! Away he goes!`, `Fend-off! ${name(e.id)} shrugs them off.`]);
     case "siren":
       return e.quarter >= 4 ? null : `There's the siren: end of the ${["first", "second", "third"][e.quarter - 1]} quarter. ${score()}.`;

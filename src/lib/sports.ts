@@ -1,7 +1,6 @@
 /**
- * Sports+: the upcoming sports line-up. Nothing here is playable yet; the
- * section shows what's coming, and players can ask to be notified (stored on
- * their device).
+ * Sports+: the sports line-up. Entries marked `live` are out now; the rest
+ * are coming, and players can ask to be notified (stored on their device).
  */
 
 export type SportStatus = "In development" | "Prototype" | "Planned";
@@ -19,6 +18,8 @@ export interface SportsGame {
   palette: [string, string];
   /** Which pictogram the card art draws. */
   art: "ball" | "hoop" | "puck" | "racket" | "bat" | "glove" | "flag" | "helmet";
+  /** Out now: the slug of the playable game (it leaves the coming-soon line-up). */
+  live?: string;
 }
 
 export const SPORTS: SportsGame[] = [
@@ -70,9 +71,10 @@ export const SPORTS: SportsGame[] = [
     id: "ace-rally",
     title: "Ace Rally",
     sport: "Tennis",
-    tagline: "Swipe to swing: topspin, slice, lobs and drop shots on grass, clay and hard court.",
-    features: ["Singles and doubles", "Tournament ladder", "Touch controls built for phones"],
+    tagline: "Toss, serve, rally: topspin, slice, lobs and drop shots on grass, clay and hard court.",
+    features: ["Singles against touring pros", "Full scoring with tiebreaks", "Touch controls built for phones"],
     status: "Prototype",
+    live: "ace-rally",
     eta: "Season 2",
     palette: ["#facc15", "#3f3a0c"],
     art: "racket",
@@ -82,8 +84,9 @@ export const SPORTS: SportsGame[] = [
     title: "Diamond Derby",
     sport: "Baseball",
     tagline: "Home run derby: read the pitch, time the swing, clear the fences.",
-    features: ["Pitch types and zones", "Stadiums with short porches", "Daily derby leaderboard"],
+    features: ["Pitch types and zones", "Three rounds to the title", "Statcast readouts and fireworks"],
     status: "In development",
+    live: "diamond-derby",
     eta: "Season 2",
     palette: ["#f43f5e", "#3f0a16"],
     art: "bat",
@@ -113,3 +116,6 @@ export const SPORTS: SportsGame[] = [
 ];
 
 export const SPORTS_FOLLOW_KEY = "zx-sports-follow";
+
+/** Still to come (the coming-soon line-up). */
+export const UPCOMING = SPORTS.filter((s) => !s.live);

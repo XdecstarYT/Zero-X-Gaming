@@ -412,6 +412,49 @@ Pro or Legend), over four quarters of 2, 4 or 8 minutes, by day, at twilight or 
 - **Score:** points, margin, marks, contested marks, screamers, tackles and the result, ×1.5 on Pro and ×2 on
   Legend. `?footy=quick` runs 20-second quarters (unranked) for testing.
 
+**The mega update.** Eight clubs (pick any as yours), a **Premiership season** (`season.ts`: seven rounds,
+a ladder on 4 points a win then percentage, semi-finals 1 v 4 and 2 v 3, a Grand Final, saved on the device;
+win it and the captain lifts the cup under confetti), three **kick styles** (R / STYLE: drop punt, a
+torpedo that spirals 70 m+ but sprays, and a snap that starts wide and curls back through from a tight
+angle), **rain** (a greasy ball, skidding bounces, a slick ground and falling rain), **instant goal replays**
+from behind the posts (snapshots every 1/30 s, slow motion, any button skips), a **commentary** ticker, and
+per-player stats with the umpires' **3-2-1 best-on-ground votes** on the results card.
+
+#### Diamond Derby
+
+A home run derby (`src/games/diamond-derby/`) in a full ballpark: diamond-cut grass, infield dirt, an
+outfield wall with distance markers and foul poles, bleachers round a batter's eye, a grandstand behind LED
+boards, light towers, a scoreboard and a skyline. Pitches (four-seam fastball, changeup, curve, slider) are
+solved to cross the plate on target; you aim the plate coverage circle (mouse, keys or drag) and time the
+swing (click / Space / SWING). Contact quality from timing and aim sets exit velocity, launch angle and
+spray; the ball flies with drag and backspin lift (105 mph at 28 degrees carries about 425 ft). Every swing
+that isn't a homer is an out, so is a called strike: ten outs a round to beat the AI slugger's mark,
+quarterfinal, semifinal, final. Statcast readouts, fireworks, batter and centre-field cameras.
+
+#### Ace Rally
+
+Singles tennis (`src/games/ace-rally/`) on Centre Court: a toss-and-hit serve (hit at the top of the toss for
+pace), then topspin, slice, lob, drop and automatic smashes, each solved to land where you aim (the direction
+you hold at contact) with spin (Magnus) and drag, scattered by timing, footwork and incoming pace. Hard, clay
+(with ball marks) and grass bounce differently. Full scoring (`score.ts`: deuce, advantage, tiebreaks, one set
+or best of three, or a match tiebreak), lets, faults, Hawk-Eye on close calls, an optional spoken umpire
+(the browser's speech voice), men's and women's draws against invented touring pros, and manual or assisted
+footwork.
+
+#### Sports+ Live
+
+`/sports/live` shows three 24/7 channels, free to watch: **Screamer TV** (AI v AI footy, 12-minute slots),
+**Derby Night** (6) and **Centre Court** (24). `src/games/live/schedule.ts` splits the clock into fixed
+slots; each slot's seed (channel + slot number) picks the matchup and conditions and seeds the sim, and the
+sims are deterministic, so `Broadcast` fast-forwards to "now" and everyone watching sees the same match.
+Each channel's feed is lazy-loaded and drives the game's own view and HUD in spectator mode; the page adds
+a commentary box, the coming-up schedule, sound / quality / full-screen controls and a link to play.
+
+The Sports+ games share `src/games/sports-kit/`: the renderer pipeline (tone mapping, shadows, bloom, SMAA,
+the sharpening grade, adaptive resolution, sun or floodlights), the instanced crowd, stadium geometry
+helpers, synthesized crowd/organ sound and the menu UI. Diamond Derby and Ace Rally are registered in the
+`games` table by `20261005090000_sports_plus_derby_tennis.sql`.
+
 ### Sign in with Zero X (OAuth 2.1)
 
 The Supabase OAuth 2.1 server lets other apps offer "Sign in with Zero X". Supabase sends players to
