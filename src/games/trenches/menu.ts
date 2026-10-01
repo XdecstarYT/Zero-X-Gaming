@@ -388,11 +388,29 @@ export function buildTrenchesMenu(ctx: Ctx): () => void {
       .catch(() => list.replaceChildren(el("li", "p-3 text-center text-xs text-muted", "Couldn't load the lobby list. You can still join with a code.")));
 
     const controls = ctx.coarse
-      ? "Left thumb: move (push fully to sprint) · Right thumb: look · FIRE (drag to aim) · AIM · CRCH / PRONE · NADE · hold DIG · ARTY / SUP / RCN"
-      : "WASD move · Mouse look · Click fire · Right-click aim · Shift sprint · C crouch · X prone · Q grenade · hold G dig · B artillery · N supplies · T recon flare · 1–5 switch · R reload · Tab scores";
+      ? "Left thumb: move (push fully to sprint) · Right thumb: look · FIRE (drag to aim) · AIM · CRCH / PRONE · NADE · BAYO · MASK · hold DIG · ARTY / SUP / RCN / GAS · tap the prompt to man a gun or revive"
+      : "WASD move · Mouse look · Click fire · Right-click aim · Shift sprint · C crouch · X prone · Q grenade · V bayonet · M gas mask · E man a gun / revive (medics) · hold G dig · B artillery · N supplies · T recon flare · H gas shells · 1–5 switch · R reload · Tab scores";
+    const news = el(
+      "section",
+      "w-full max-w-2xl rounded-xl border border-[#c9a24a]/50 bg-[#c9a24a]/10 p-3 text-left",
+      el("h3", "text-xs font-semibold uppercase tracking-[0.2em] text-[#c9a24a]", "New: the Over the Top update"),
+      el(
+        "ul",
+        "mt-1 grid gap-x-4 gap-y-0.5 text-[11px] text-muted sm:grid-cols-2",
+        ...[
+          "Poison gas: shells (H) and barrages; it drifts and sinks into trenches. M for your mask",
+          "Bayonets (V): lunge at close range, charge while sprinting",
+          "Vickers guns in every front line: E to man one, fire in bursts",
+          "Medics revive the fallen (E), giving their side the ticket back",
+          "A sixth front: the Argonne Forest, autumn 1918",
+          "Four new medals in your war record",
+        ].map((t) => el("li", "", `▸ ${t}`)),
+      ),
+    );
 
     container.replaceChildren(
       header(),
+      news,
       el(
         "section",
         CARD + " max-w-2xl",

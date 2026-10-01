@@ -41,6 +41,8 @@ export interface ViewEffects {
   projectiles: { id: string; x: number; y: number; z: number }[];
   /** Explosions: `at` in world time. */
   blasts: { id: string; x: number; y: number; at: number; big: boolean }[];
+  /** Poison gas clouds: centre, radius (m) and strength 0..1. */
+  clouds?: { id: string; x: number; y: number; r: number; k: number }[];
 }
 
 /** A point of interest drawn on the minimap and in 3D (e.g. a Conquest flag). */
@@ -55,8 +57,10 @@ export interface Marker {
   r?: number;
   /** 0..1 how raised the flag is (3D). */
   raise?: number;
-  /** "enemy" = spotted by a recon flare (minimap only), "crate" = a supply crate. */
-  kind: "flag" | "ally" | "enemy" | "crate";
+  /** "enemy" = spotted by a recon flare (minimap only), "crate" = a supply crate, "mg" = an emplaced gun, "wounded" = a fallen soldier a medic can revive. */
+  kind: "flag" | "ally" | "enemy" | "crate" | "mg" | "wounded";
+  /** Facing (radians), for props such as emplaced guns. */
+  a?: number;
 }
 
 /** What the Neon Siege shell needs from a game mode (battle royale vs bots, or an online match). */
@@ -98,6 +102,10 @@ export interface ModeController {
   resultLines?(): [string, string][];
   /** Optional: an in-progress action for the HUD progress bar (e.g. digging), k in 0..1. */
   task?(): { label: string; k: number } | null;
+  /** Optional: an "E" prompt (e.g. "Man the Vickers gun"). */
+  prompt?(): string | null;
+  /** Optional: full-screen effects: wearing a gas mask (0..1) and standing in gas (0..1). */
+  screen?(): { mask: number; gas: number; heat?: number };
 }
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;

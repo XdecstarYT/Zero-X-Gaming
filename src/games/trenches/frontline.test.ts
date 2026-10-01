@@ -147,7 +147,7 @@ describe("support calls", () => {
 
   it("a supply drop restocks ammo and grenades; a recon flare marks nearby enemies", async () => {
     const { m } = await solo("conquest");
-    m["supportReady"] = { artillery: 0, supply: 0, recon: 0 };
+    m["supportReady"] = { artillery: 0, supply: 0, recon: 0, gas: 0 };
     m.me.grenades = 0;
     const gun = m.me.inventory[0];
     if (gun?.type === "weapon") gun.ammo = 0;

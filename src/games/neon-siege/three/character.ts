@@ -195,6 +195,7 @@ export class Character {
   private m: Record<string, THREE.MeshStandardMaterial>;
   private parts: { mesh: THREE.Mesh; slot: string }[] = [];
   private headgear = new THREE.Group();
+  private mask: THREE.Group | null = null;
 
   constructor(outfit: string, private wrap = "factory") {
     const o = outfitOf(outfit);
@@ -300,6 +301,37 @@ export class Character {
     if (wrap === this.wrap) return;
     this.wrap = wrap;
     this.heldKey = "";
+  }
+
+  /** Trenches: a small-box respirator over the face (goggles, snout, the hose to the satchel). */
+  setMask(on: boolean) {
+    if (on && !this.mask) {
+      const m = new THREE.Group();
+      const rubber = new THREE.MeshStandardMaterial({ color: "#4a4d3c", roughness: 0.85 });
+      const glass = new THREE.MeshStandardMaterial({ color: "#1d2a2a", roughness: 0.15, metalness: 0.4 });
+      const face = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10, -Math.PI / 2, Math.PI), rubber);
+      face.rotation.y = Math.PI / 2;
+      face.scale.set(0.9, 1.05, 1.05);
+      face.position.set(0.035, -0.015, 0);
+      m.add(face);
+      for (const z of [0.042, -0.042]) {
+        const eye = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.02, 14), glass);
+        eye.rotation.z = Math.PI / 2;
+        eye.position.set(0.118, 0.025, z);
+        m.add(eye);
+      }
+      const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 0.06, 10), rubber);
+      snout.rotation.z = Math.PI / 2;
+      snout.position.set(0.14, -0.05, 0);
+      m.add(snout);
+      const hose = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.012, 6, 14, Math.PI * 0.8), rubber);
+      hose.position.set(0.1, -0.17, 0);
+      hose.rotation.set(0, Math.PI / 2, Math.PI / 2);
+      m.add(hose);
+      this.mask = m;
+      this.headG.add(m);
+    }
+    if (this.mask) this.mask.visible = on;
   }
 
   setItem(item: Item | null) {

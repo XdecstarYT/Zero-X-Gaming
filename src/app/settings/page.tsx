@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { ConnectedApps } from "@/components/oauth/ConnectedApps";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -10,6 +11,9 @@ export default function SettingsPage() {
       <p className="mt-2 text-muted">Saved on this device.</p>
       <div className="mt-8">
         <SettingsPanel />
+      </div>
+      <div className="mt-8">
+        <ConnectedApps />
       </div>
     </div>
   );

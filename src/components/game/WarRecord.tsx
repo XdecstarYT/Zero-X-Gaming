@@ -5,7 +5,7 @@ import { useAuth } from "@/store/auth";
 import { MEDALS, readWarRecord, type WarRecord as Record } from "@/lib/war-record";
 import { FRONTS, FRONT_IDS } from "@/games/trenches/fronts";
 
-/** Trenches career: totals, battles per front, and the ten medals (earned or in progress). */
+/** Trenches career: totals, battles per front, and the medals (earned or in progress). */
 export function WarRecord() {
   const status = useAuth((s) => s.status);
   const [r, setR] = useState<Record | null>(null);

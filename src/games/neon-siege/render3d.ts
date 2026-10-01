@@ -13,11 +13,14 @@ import { activeItem, activeWeapon, DRAW_TIME, type Entity, type World } from "./
 import { Character } from "./three/character";
 import { buildConsumable, buildGun, type GunModel } from "./three/guns";
 import { buildFront, type FrontScene } from "./three/front";
-import { buildMillsBomb, buildSpade } from "./three/guns";
-import { cloudTexture, flashTexture, glowTexture, stormTexture } from "./three/textures";
+import { buildMillsBomb, buildSpade, buildVickers } from "./three/guns";
+import { cloudTexture, flashTexture, glowTexture, puffTexture, stormTexture } from "./three/textures";
 import { buildTown } from "./three/town";
 import { FOV_DEG, zoomFor, type ViewFx, type ViewRenderer } from "./view";
 import type { Marker } from "./mode";
+
+/** Seconds the fallen stay on the ground (Trenches medics can revive them meanwhile). */
+const BODY_SECONDS = 11;
 
 /**
  * The realistic three.js view: sunlit town with PBR materials, soft shadows,
@@ -100,6 +103,10 @@ export class ThreeView implements ViewRenderer {
   private scorchMat = new THREE.MeshBasicMaterial({ color: "#1c1712", transparent: true, opacity: 0.7, depthWrite: false });
   private weather: { obj: THREE.Points | THREE.LineSegments; pos: Float32Array; kind: "rain" | "snow" | "dust" } | null = null;
   private flags = new Map<string, { group: THREE.Group; cloth: THREE.Mesh; ring: THREE.Mesh }>();
+  /** Trenches: emplaced Vickers guns and drifting gas. */
+  private guns = new Map<string, THREE.Group>();
+  private gas = new Map<string, THREE.Sprite[]>();
+  private puff: THREE.Texture | null = null;
   private crates = new Map<string, THREE.Group>();
   private artillery: { sprite: THREE.Sprite; born: number } | null = null;
   private nextShell = 4;
@@ -361,7 +368,8 @@ export class ThreeView implements ViewRenderer {
     if (this.front && dug) while (this.dugSeen < dug.length) this.front.dig(dug[this.dugSeen++]);
     // Eye height follows the terrain (down into trenches) and stance.
     const floor = this.front?.floorAt(me.x, me.y) ?? 0;
-    const eyeTarget = floor + STANCE_EYE[me.stance ?? 0];
+    // On an emplaced gun you stand on the fire step, eyes over the parapet.
+    const eyeTarget = floor + STANCE_EYE[me.stance ?? 0] + (me.mounted ? 0.75 : 0);
     this.eyeY += (eyeTarget - this.eyeY) * Math.min(1, dt * 9);
     this.camera.position.set(me.x, this.eyeY + Math.sin(fx.bob * 2) * 0.035 * bobAmt - deadK * Math.min(1.2, this.eyeY - floor - 0.25), me.y);
     this.camera.rotation.order = "YXZ";
@@ -388,6 +396,8 @@ export class ThreeView implements ViewRenderer {
     this.syncTracers(world, me, fx, t);
     this.updateStorm(fx, me, t);
     this.updateFlags(fx.markers ?? [], t);
+    this.updateGuns(fx.markers ?? []);
+    this.updateGas(fx, t, dt);
     if (this.war) this.updateBattle(me, t);
     this.updateWeather(dt);
     this.updateExplosives(fx, t, dt);
@@ -410,7 +420,7 @@ export class ThreeView implements ViewRenderer {
     const t = world.time;
     for (const [id, ch] of this.characters) {
       const e = world.entities.get(id);
-      if (!e || (!e.alive && t - e.hurtAt > 3)) {
+      if (!e || (!e.alive && t - e.hurtAt > BODY_SECONDS)) {
         ch.dispose();
         this.characters.delete(id);
         this.nameTags.get(id)?.removeFromParent();
@@ -421,7 +431,7 @@ export class ThreeView implements ViewRenderer {
     }
     for (const e of world.entities.values()) {
       if (e.id === me.id) continue;
-      if (!e.alive && t - e.hurtAt > 3) continue;
+      if (!e.alive && t - e.hurtAt > BODY_SECONDS) continue;
       let ch = this.characters.get(e.id);
       if (!ch) {
         ch = new Character(e.outfit, e.kind === "human" ? "factory" : ["factory", "woodland", "sandstorm", "carbon"][e.id.length % 4]);
@@ -431,6 +441,7 @@ export class ThreeView implements ViewRenderer {
       }
       ch.setOutfit(e.outfit);
       ch.setItem(activeItem(e));
+      ch.setMask((e.masked ?? 0) > 0.5 && e.alive);
       const fy = this.front?.floorAt(e.x, e.y) ?? 0;
       const cy = (this.charY.get(e.id) ?? fy) + (fy - (this.charY.get(e.id) ?? fy)) * Math.min(1, dt * 9);
       this.charY.set(e.id, cy);
@@ -806,6 +817,72 @@ export class ThreeView implements ViewRenderer {
   }
 
   /** Conquest flags: pole, team-coloured cloth that rises with capture, and a ground ring. */
+  /** Emplaced Vickers guns on their tripods (hidden while someone's manning it: they hold it). */
+  private updateGuns(markers: Marker[]) {
+    const live = new Set<string>();
+    for (const m of markers) {
+      if (m.kind !== "mg") continue;
+      live.add(m.id);
+      let g = this.guns.get(m.id);
+      if (!g) {
+        g = buildVickers(true).group;
+        g.traverse((o) => (o.castShadow = this.quality === "high"));
+        this.guns.set(m.id, g);
+        this.scene.add(g);
+      }
+      const floor = this.front?.floorAt(m.x, m.y) ?? 0;
+      g.position.set(m.x, floor + 1.05, m.y);
+      g.rotation.y = -(m.a ?? 0);
+      g.visible = m.label !== "manned";
+    }
+    for (const [id, g] of this.guns)
+      if (!live.has(id)) {
+        g.removeFromParent();
+        this.guns.delete(id);
+      }
+  }
+
+  /** Poison gas: a cluster of soft yellow-green puffs per cloud, rolling low over the ground. */
+  private updateGas(fx: ViewFx, t: number, dt: number) {
+    const clouds = fx.effects?.clouds ?? [];
+    const live = new Set<string>();
+    if (!this.puff) this.puff = puffTexture();
+    for (const c of clouds) {
+      live.add(c.id);
+      let puffs = this.gas.get(c.id);
+      if (!puffs) {
+        puffs = [];
+        const n = this.quality === "high" ? 16 : 9;
+        for (let i = 0; i < n; i++) {
+          const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.puff, color: i % 3 ? "#b9c27a" : "#cfd08f", transparent: true, depthWrite: false, opacity: 0, fog: true }));
+          s.userData = { a: (i / n) * Math.PI * 2 + Math.random(), d: Math.sqrt(Math.random()), h: 0.4 + Math.random() * 1.4, spin: (Math.random() - 0.5) * 0.4, ph: Math.random() * 10 };
+          this.scene.add(s);
+          puffs.push(s);
+        }
+        this.gas.set(c.id, puffs);
+      }
+      for (const s of puffs) {
+        const u = s.userData as { a: number; d: number; h: number; spin: number; ph: number };
+        u.a += u.spin * dt * 0.2;
+        const rr = c.r * u.d * 0.85;
+        const floor = this.front?.floorAt(c.x + Math.cos(u.a) * rr, c.y + Math.sin(u.a) * rr) ?? 0;
+        s.position.set(c.x + Math.cos(u.a) * rr, floor + u.h + Math.sin(t * 0.5 + u.ph) * 0.15, c.y + Math.sin(u.a) * rr);
+        const size = 3 + c.r * 0.55;
+        s.scale.set(size, size * 0.6, 1);
+        (s.material as THREE.SpriteMaterial).opacity = 0.32 * c.k;
+        (s.material as THREE.SpriteMaterial).rotation = u.ph + t * u.spin * 0.1;
+      }
+    }
+    for (const [id, puffs] of this.gas)
+      if (!live.has(id)) {
+        for (const s of puffs) {
+          (s.material as THREE.SpriteMaterial).dispose();
+          s.removeFromParent();
+        }
+        this.gas.delete(id);
+      }
+  }
+
   private updateFlags(markers: Marker[], t: number) {
     const live = new Set<string>();
     for (const m of markers) {
@@ -985,6 +1062,9 @@ export class ThreeView implements ViewRenderer {
     const throwing = throwAgo < 0.7;
     const digging = !!me.digging;
     const away = Math.max(throwing ? Math.sin(Math.min(1, throwAgo / 0.7) * Math.PI) : 0, digging ? 1 : 0);
+    // Bayonet thrust: the rifle lunges forward and comes back.
+    const stabAgo = t - (me.meleeAt ?? -10);
+    const stab = stabAgo < 0.38 ? Math.sin((stabAgo / 0.38) * Math.PI) : 0;
 
     // Bolt-action / pump cycling after each shot (Great War rifles and the trench gun).
     const def = w ? weaponDef(w) : null;
@@ -994,13 +1074,15 @@ export class ThreeView implements ViewRenderer {
     const reloadP = reloading && w ? Math.min(1, 1 - (me.reloadUntil - t) / (weaponDef(w).reload * RARITY[w.rarity].reload)) : 0;
 
     if (this.vmGun) {
-      const hip = w?.kind === "pistol" ? new THREE.Vector3(0.13, -0.15, -0.42) : new THREE.Vector3(0.17, -0.17, -0.4);
-      const aimed = new THREE.Vector3(0, -this.vmGun.sightY, -0.34 + (w?.kind === "pistol" ? -0.1 : 0));
+      // The emplaced Vickers sits out in front on its tripod, low in the frame.
+      const mg = w?.era === "mg";
+      const hip = mg ? new THREE.Vector3(0.02, -0.24, -0.72) : w?.kind === "pistol" ? new THREE.Vector3(0.13, -0.15, -0.42) : new THREE.Vector3(0.17, -0.17, -0.4);
+      const aimed = mg ? new THREE.Vector3(0, -this.vmGun.sightY - 0.03, -0.66) : new THREE.Vector3(0, -this.vmGun.sightY, -0.34 + (w?.kind === "pistol" ? -0.1 : 0));
       const pos = hip.lerp(aimed, ads);
       this.vmGun.group.position.set(
         pos.x + bx + brx + this.sway * 0.4 - sk * 0.04 + cycleK * 0.015,
         pos.y + by + bry - reloadK * 0.12 - drawK * 0.25 - sk * 0.09 - away * 0.45 - cycleK * 0.02,
-        pos.z + recoil * kick + sk * 0.05,
+        pos.z + recoil * kick + sk * 0.05 - stab * 0.32,
       );
       this.vmGun.group.rotation.set(
         recoil * kick * 2.2 + reloadK * 0.5 - drawK * 0.6 - sk * 0.35 - away * 0.8,

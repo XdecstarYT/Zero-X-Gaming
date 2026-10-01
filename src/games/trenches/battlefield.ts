@@ -33,6 +33,8 @@ export interface Battlefield {
   flags: Flag[];
   /** Spawn points per team (index 0 = team 1). */
   bases: { x: number; y: number }[][];
+  /** Emplaced Vickers guns: where the gunner stands, which way it faces, whose line it's on. */
+  mgs?: { x: number; y: number; a: number; team: Team }[];
 }
 
 const BASE_W = 10;
@@ -124,12 +126,15 @@ export function generateBattlefield(id: FrontId = DEFAULT_FRONT, seed?: number):
     trench(x0 + len - 1, y + 1);
     trench(x0 + len, y + 1);
   }
-  // MG nests: sandbag blocks on the front trench's enemy lip, with room to fire around them.
+  // MG nests: sandbag blocks on the front trench's enemy lip, with room to fire around them;
+  // every other nest has an emplaced Vickers in the trench beside the sandbags.
+  const guns: { x: number; y: number }[] = [];
   for (let y = 6; y < H - 6; y += 12) {
     const x = frontAt(y) + 2;
     if (isTrench(x, y)) continue;
     setC(x, y, SOLID.sandbag);
     setC(x, y + 1, SOLID.sandbag);
+    if (((y - 6) / 12) % 2 === 0 && isTrench(x - 1, y + 2) && !isTrench(x, y + 2)) guns.push({ x: x - 1 + 0.5, y: y + 2 + 0.5 });
   }
   // Gallipoli: the Lone Pine trenches were roofed with timber.
   if (id === "gallipoli")
@@ -220,6 +225,20 @@ export function generateBattlefield(id: FrontId = DEFAULT_FRONT, seed?: number):
       craterField(nmlX0, cx - 4, 26, 0);
       scatter(SOLID.tree, 10, nmlX0, cx);
       scatter(SOLID.rock, 18, nmlX0, cx);
+      break;
+    }
+    case "argonne": {
+      // Dense autumn forest, a rocky ravine across no-man's-land, and the old mill at the centre.
+      scatter(SOLID.tree, 230, BASE_W + 2, cx - 1);
+      for (let x = nmlX0; x < cx - 4; x++) {
+        const ry = Math.round(H * 0.34 + Math.sin(x * 0.35) * 2);
+        for (const yy of [ry - 2, ry + 3]) if (free(x, yy) && rng.next() < 0.75) setC(x, yy, SOLID.rock);
+        for (let yy = ry - 1; yy <= ry + 2; yy++) if (west(x, yy) && getC(x, yy) === SOLID.tree) setC(x, yy, 0);
+      }
+      ruin({ x: cx - 7, y: cy - 6, w: 7, h: 12, material: "brick", floors: 2 });
+      addBuilding({ x: cx - 20, y: Math.floor(H * 0.72), w: 5, h: 4, material: "concrete", floors: 1 }, [[cx - 20, Math.floor(H * 0.72) + 1]]);
+      craterField(nmlX0, cx - 8, 22, 0.2);
+      scatter(SOLID.shrub, 60, nmlX0, cx - 1);
       break;
     }
     case "gallipoli": {
@@ -330,7 +349,12 @@ export function generateBattlefield(id: FrontId = DEFAULT_FRONT, seed?: number):
     decor: { craters, covered },
     dug: [],
   };
-  return { front: id, map, flags, bases: [base1, base2] };
+  // Emplaced guns: the west line's face east (team 1); mirrored ones face west (team 2).
+  const mgs = [
+    ...guns.map((g) => ({ x: g.x, y: g.y, a: 0, team: 1 as Team })),
+    ...guns.map((g) => ({ x: W - g.x, y: H - g.y, a: Math.PI, team: 2 as Team })),
+  ];
+  return { front: id, map, flags, bases: [base1, base2], mgs };
 
   // ------------------------------------------------------------- helpers
 

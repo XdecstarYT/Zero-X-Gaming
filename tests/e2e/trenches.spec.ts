@@ -11,6 +11,8 @@ test("Trenches quick battle: Conquest vs bots loads with tickets and flags", asy
   await dismissRotate(page);
 
   await expect(stage.getByText("Classic · Frontline · Breakthrough")).toBeVisible();
+  await expect(stage.getByText("New: the Over the Top update")).toBeVisible();
+  await expect(stage.getByRole("button", { name: /Argonne Forest/ }).first()).toBeVisible();
   await stage.getByRole("group", { name: "Class" }).getByRole("button", { name: /Medic/ }).click();
   await stage.getByRole("button", { name: "Quick battle vs bots" }).click();
   const hud = stage.getByTestId("siege-hud");

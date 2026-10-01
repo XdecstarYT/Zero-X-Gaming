@@ -56,8 +56,8 @@ export function isLoadout(v: unknown): v is Loadout {
   return !!l && l.primary in PRIMARIES && l.secondary in SECONDARIES && l.gadget in GADGETS;
 }
 
-/** Support calls: artillery on where you're looking, a supply drop at your feet, a recon flare. */
-export type SupportKind = "artillery" | "supply" | "recon";
+/** Support calls: artillery (or gas shells) on where you're looking, a supply drop at your feet, a recon flare. */
+export type SupportKind = "artillery" | "supply" | "recon" | "gas";
 
 export interface LobbyPlayer {
   id: string;
@@ -106,6 +106,10 @@ export interface TEntState {
   st?: 0 | 1 | 2;
   /** Frontline: redeploys left. */
   rl?: number;
+  /** Gas mask on. */
+  gm?: 1;
+  /** Manning emplaced gun #n. */
+  mg?: number;
 }
 
 export type TrenchMsg =
@@ -114,13 +118,15 @@ export type TrenchMsg =
   | { t: "chat"; name: string; text: string }
   | { t: "state"; m: number; e: TEntState[]; bots?: boolean }
   | { t: "shot"; m: number; s: string; w: WeaponKind; fx: number; fy: number; tx: number; ty: number }
-  | { t: "hit"; m: number; a: string; v: string; d: number; w: WeaponKind }
+  | { t: "hit"; m: number; a: string; v: string; d: number; w: WeaponKind | "bayonet" }
   | { t: "kill"; m: number; k: string; v: string; w: DamageSource }
   | { t: "cq"; m: number; tk: [number, number]; f: [number, number][]; time: number; win: number | null; sc?: number }
   /** A grenade left someone's hand (every client simulates it). */
   | { t: "nade"; m: number; id: string; o: string; x: number; y: number; a: number; p: number }
-  /** An artillery barrage, shells as [x, y, seconds from now] (host's, or a player's call-in `o`). */
-  | { t: "arty"; m: number; s: [number, number, number][]; o?: string }
+  /** An artillery barrage, shells as [x, y, seconds from now] (host's, or a player's call-in `o`); `g`: gas shells. */
+  | { t: "arty"; m: number; s: [number, number, number][]; o?: string; g?: 1 }
+  /** A medic brought a fallen soldier `v` back (the victim's owner respawns them where they fell). */
+  | { t: "revive"; m: number; v: string; by: string }
   /** A supply crate dropped for a team. */
   | { t: "supply"; m: number; id: string; x: number; y: number; tm: Team }
   /** A recon flare: the team sees enemies near (x, y) on the map for `d` seconds. */

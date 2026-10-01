@@ -514,3 +514,23 @@ export function cloudTexture(w = 1024, h = 256) {
   t.wrapS = THREE.RepeatWrapping;
   return t;
 }
+
+/** A soft, lumpy smoke puff (Trenches gas clouds). */
+export function puffTexture(size = 128) {
+  const c = canvas(size);
+  const g = c.getContext("2d")!;
+  const rng = createRng(77);
+  for (let i = 0; i < 14; i++) {
+    const x = size * (0.3 + rng.next() * 0.4);
+    const y = size * (0.3 + rng.next() * 0.4);
+    const r = size * (0.16 + rng.next() * 0.2);
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, "rgba(255,255,255,0.35)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, size, size);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}

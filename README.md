@@ -218,9 +218,24 @@ slug and menu) and optional `ModeController` hooks (`markers`, `tagColor`, `resu
   it owns; kills flow through the normal kill messages.
 - **Progression:** every battle (20 s or longer) earns season XP (`trenchesMatchXp`, mirrored by
   `public.trenches_match_xp`), counts toward the daily/weekly challenges and the battle pass free coin lane, and is
-  added to the player's **war record** (profile page: totals, battles per front, and ten medals from "Mentioned in
+  added to the player's **war record** (profile page: totals, battles per front, and fifteen medals from "Mentioned in
   Dispatches" to the "Victoria Cross"). Online accounts go through `record_trenches_match` (range-checked and
   rate-limited); guests and device accounts use the same rules on the device.
+- **Over the Top update** (`warfare.ts`, pure rules shared by the match, renderer and tests):
+  - **Poison gas:** one host barrage in three is gas, and H calls 3 gas shells on your aim point (3-minute
+    cooldown). Clouds grow to 7.5 m, drift with each front's wind, thin out after ~34 s and pool in trenches
+    (60% stronger: get up out of it). M pulls on a small-box respirator (1.1 s): the screen narrows to two
+    eyepieces and your aim is 30% wider, but the gas can't hurt you. Bots mask up after a moment.
+  - **Bayonets:** V lunges forward; a Lee-Enfield's bayonet kills outright, anything else (rifle butt,
+    pistol, trench gun) hurts. Sprinting in is a charge with more reach.
+  - **Vickers guns:** 3–4 emplacements on each front line. E mans one: locked to its tripod with a limited
+    traverse, steady and belt-fed, but it overheats (about 5 s of fire) and must cool. Bots man them too.
+  - **Revives:** a fallen soldier lies WOUNDED for up to 10 s when a medic is near (fire redeploys at once).
+    Medics hold E beside them for 1.6 s to bring them back at half health, and the ticket returns. Bot
+    medics do the same.
+  - **The Argonne Forest:** a sixth front (Meuse-Argonne, 1918): dense autumn forest, a rocky ravine and the
+    old mill at the centre.
+  - New medals: Cold Steel, Machine Gun Corps, Stretcher Bearer, Argonne Cross.
 - **Classes:** Rifleman, Trench Raider, Medic, Sniper, Engineer. Teams: Iron Legion and Crimson Front.
 - **Lobbies** (`lobby.ts`, `directory.ts`, `menu.ts`): create a lobby (name, front, 4v4 to 16v16, bot fill),
   browse the live list or join by code or invite link (`?lobby=CODE`). The host can change the front; players
@@ -396,6 +411,16 @@ Pro or Legend), over four quarters of 2, 4 or 8 minutes, by day, at twilight or 
   shot to open and a goal-celebration orbit.
 - **Score:** points, margin, marks, contested marks, screamers, tackles and the result, ×1.5 on Pro and ×2 on
   Legend. `?footy=quick` runs 20-second quarters (unranked) for testing.
+
+### Sign in with Zero X (OAuth 2.1)
+
+The Supabase OAuth 2.1 server lets other apps offer "Sign in with Zero X". Supabase sends players to
+`/oauth/consent?authorization_id=…` (set **Authentication → OAuth Server → Authorization Path** to
+`/oauth/consent`; it's joined to the Site URL). The page asks guests to sign in first, then shows the app,
+the account it'll see and what each scope shares in plain words, and approves or denies through
+`supabase.auth.oauth` (redirecting only to http(s) URLs). Apps already approved go straight back.
+**Settings → Connected apps** lists the apps you've allowed and removes their access. Register clients in the
+Supabase dashboard; for the `openid` scope use asymmetric JWT signing keys.
 
 ### Themes
 

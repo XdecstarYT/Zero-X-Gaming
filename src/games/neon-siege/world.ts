@@ -32,7 +32,7 @@ const ADS_SLOW = 0.7;
 export type EntityKind = "human" | "bot";
 
 /** What dealt damage: a gun, the storm, or (Trenches) a grenade / artillery shell. */
-export type DamageSource = WeaponKind | "storm" | "grenade" | "artillery";
+export type DamageSource = WeaponKind | "storm" | "grenade" | "artillery" | "bayonet" | "gas";
 
 export interface Entity {
   id: string;
@@ -81,6 +81,10 @@ export interface Entity {
   thrownAt?: number;
   /** Trenches: digging right now (animation). */
   digging?: boolean;
+  /** Trenches: gas mask on (0..1 while pulling it on), last bayonet thrust, manning an emplaced gun. */
+  masked?: number;
+  meleeAt?: number;
+  mounted?: boolean;
 }
 
 export interface LootDrop {
@@ -118,7 +122,13 @@ export type WorldEvent =
   | { type: "reload"; id: string }
   | { type: "pickup"; id: string; item: Item }
   | { type: "chest"; id: string; by: string }
-  | { type: "heal"; id: string; kind: ConsumableItem["kind"] };
+  | { type: "heal"; id: string; kind: ConsumableItem["kind"] }
+  /** Trenches: a bayonet lunge (hit = it connected; charge = sprinting in). */
+  | { type: "melee"; id: string; hit: boolean; charge: boolean }
+  /** Trenches: a gas shell burst here. */
+  | { type: "gas"; x: number; y: number }
+  /** Trenches: a medic brought someone back. */
+  | { type: "revive"; id: string; by: string };
 
 export interface World {
   map: GameMap;

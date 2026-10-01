@@ -18,6 +18,10 @@ export interface WarRecord {
   bestKills: number;
   breakthroughWins: number;
   frontlineWins: number;
+  bayonetKills: number;
+  mgKills: number;
+  revives: number;
+  gasKills: number;
   /** Fronts won at least once. */
   frontsWon: string[];
   /** Battles per front. */
@@ -36,6 +40,10 @@ export const EMPTY_RECORD: WarRecord = {
   bestKills: 0,
   breakthroughWins: 0,
   frontlineWins: 0,
+  bayonetKills: 0,
+  mgKills: 0,
+  revives: 0,
+  gasKills: 0,
   frontsWon: [],
   fronts: {},
 };
@@ -135,6 +143,38 @@ export const MEDALS: Medal[] = [
     progress: (r) => toward(fiveFronts(r), 5),
   },
   {
+    id: "cold-steel",
+    name: "Cold Steel",
+    description: "10 bayonet kills.",
+    ribbon: ["#9aa3ad", "#3b3f45", "#9aa3ad"],
+    earned: (r) => r.bayonetKills >= 10,
+    progress: (r) => toward(r.bayonetKills, 10),
+  },
+  {
+    id: "machine-gun-corps",
+    name: "Machine Gun Corps",
+    description: "25 kills on an emplaced Vickers gun.",
+    ribbon: ["#3a3f2c", "#c9a24a", "#3a3f2c"],
+    earned: (r) => r.mgKills >= 25,
+    progress: (r) => toward(r.mgKills, 25),
+  },
+  {
+    id: "stretcher-bearer",
+    name: "Stretcher Bearer",
+    description: "Revive 15 fallen soldiers as a medic.",
+    ribbon: ["#8a1c1c", "#f2f2f2", "#8a1c1c"],
+    earned: (r) => r.revives >= 15,
+    progress: (r) => toward(r.revives, 15),
+  },
+  {
+    id: "argonne-cross",
+    name: "Argonne Cross",
+    description: "Win a battle in the Argonne Forest.",
+    ribbon: ["#7a5a2e", "#2f4a2a", "#7a5a2e"],
+    earned: (r) => r.frontsWon.includes("argonne"),
+    progress: (r) => (r.frontsWon.includes("argonne") ? 1 : 0),
+  },
+  {
     id: "victoria-cross",
     name: "Victoria Cross",
     description: "12 kills in a single battle.",
@@ -175,6 +215,10 @@ export function withBattle(r: WarRecord, m: TrenchesMatch): WarRecord {
     bestKills: Math.max(r.bestKills, m.kills),
     breakthroughWins: r.breakthroughWins + (m.won && m.mode === "breakthrough" ? 1 : 0),
     frontlineWins: r.frontlineWins + (m.won && m.mode === "frontline" ? 1 : 0),
+    bayonetKills: r.bayonetKills + (m.bayonetKills ?? 0),
+    mgKills: r.mgKills + (m.mgKills ?? 0),
+    revives: r.revives + (m.revives ?? 0),
+    gasKills: r.gasKills + (m.gasKills ?? 0),
     frontsWon: m.won && !r.frontsWon.includes(m.front) ? [...r.frontsWon, m.front] : r.frontsWon,
     fronts: { ...r.fronts, [m.front]: (r.fronts[m.front] ?? 0) + 1 },
   };

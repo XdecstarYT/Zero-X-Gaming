@@ -54,9 +54,25 @@ import {
 } from "./explosives";
 import type { TrenchesMatch as BattleStats } from "@/lib/season";
 import { DEFAULT_LOADOUTS, isLoadout, type Loadout, type LobbySnapshot, type SupportKind, type TEntState, type TrenchClass, type TrenchMsg } from "./protocol";
-import { castRay } from "../neon-siege/map";
+import { castRay, lineOfSight, moveWithCollision } from "../neon-siege/map";
+import {
+  clampTraverse,
+  cloudState,
+  GAS,
+  gasAt,
+  gasDamage,
+  hasBayonet,
+  MELEE,
+  meleeTarget,
+  MG,
+  REVIVE,
+  revivable,
+  stepHeat,
+  WIND,
+  type GasCloud,
+} from "./warfare";
 
-const SUPPORT_NAMES: Record<SupportKind, string> = { artillery: "Artillery", supply: "Supply drop", recon: "Recon flare" };
+const SUPPORT_NAMES: Record<SupportKind, string> = { artillery: "Artillery", supply: "Supply drop", recon: "Recon flare", gas: "Gas shells" };
 
 /**
  * A Trenches Conquest battle, over any Transport (Supabase / BroadcastChannel
@@ -100,7 +116,10 @@ const BARRAGE_MIN = 45;
 const BARRAGE_MAX = 80;
 const BARRAGE_SHELLS = 8;
 /** Support calls: cooldown seconds (snipers recharge 40% faster). */
-export const SUPPORT_COOLDOWN: Record<SupportKind, number> = { artillery: 150, supply: 100, recon: 60 };
+export const SUPPORT_COOLDOWN: Record<SupportKind, number> = { artillery: 150, supply: 100, recon: 60, gas: 180 };
+const GAS_SHELLS = 3;
+/** One host barrage in three is gas. */
+const GAS_BARRAGE_CHANCE = 0.34;
 const STRIKE_MIN = 22;
 const STRIKE_MAX = 110;
 const STRIKE_SHELLS = 6;
@@ -163,7 +182,7 @@ export class TrenchesMatch implements ModeController {
   private myClass: TrenchClass;
   private myLoadout: Loadout;
   /** Support calls: when each is ready again (world time). */
-  private supportReady: Record<SupportKind, number> = { artillery: 30, supply: 20, recon: 10 };
+  private supportReady: Record<SupportKind, number> = { artillery: 30, supply: 20, recon: 10, gas: 45 };
   private crates: { id: string; x: number; y: number; team: Team; until: number; used: Set<string> }[] = [];
   private recons: { x: number; y: number; team: Team; until: number }[] = [];
   private artyFrom = new Map<string, number>();
@@ -175,14 +194,32 @@ export class TrenchesMatch implements ModeController {
   readonly mode: GameMode;
   private grenades: Grenade[] = [];
   private blasts: ViewEffects["blasts"] = [];
-  private shells: { x: number; y: number; at: number; warned: boolean; owner: string }[] = [];
+  private shells: { x: number; y: number; at: number; warned: boolean; owner: string; gas?: boolean }[] = [];
+  // Over the Top: gas, masks, bayonets, emplaced guns and revives.
+  private clouds: GasCloud[] = [];
+  private wind: { x: number; y: number };
+  private gasAcc = new Map<string, number>();
+  private gasSeenAt = new Map<string, number>();
+  private maskWant = new Map<string, boolean>();
+  private gasWarnAt = -10;
+  private nextMeleeAt = 0;
+  private botMeleeAt = new Map<string, number>();
+  /** Which emplaced gun each soldier mans (index into field.mgs). */
+  private mgUser = new Map<string, number>();
+  private mgSaved = new Map<string, { inventory: Entity["inventory"]; active: number }>();
+  private botMgUntil = new Map<string, number>();
+  private heat = 0;
+  private overheated = false;
+  private deadAt = new Map<string, number>();
+  private reviving: { target: string; k: number } | null = null;
+  private botReviving = new Map<string, { target: string; k: number }>();
   private nadeSeq = 0;
   private nextThrowAt = 0;
   private botThrowAt = new Map<string, number>();
   private nextBarrageAt = 0;
   private lastSector = 0;
   /** This soldier's battle, for the results screen and the war record. */
-  private tally = { captures: 0, digs: 0, grenadeKills: 0, streak: 0, bestStreak: 0 };
+  private tally = { captures: 0, digs: 0, grenadeKills: 0, streak: 0, bestStreak: 0, bayonetKills: 0, mgKills: 0, revives: 0, gasKills: 0 };
   readonly m: number;
 
   constructor(
@@ -197,6 +234,7 @@ export class TrenchesMatch implements ModeController {
       this.mode === "frontline" ? FRONTLINE_FRONT : isFrontId(snap.front) && !FRONTS[snap.front].frontlineOnly ? snap.front : DEFAULT_FRONT,
     );
     this.world = createWorld(this.field.map);
+    this.wind = WIND[this.field.front] ?? { x: 0.2, y: 0 };
     this.world.chests = [];
     this.cq = createConquest(this.field.flags, undefined, this.mode);
     this.nextBarrageAt = 30 + (snap.seed % 20);
@@ -290,7 +328,10 @@ export class TrenchesMatch implements ModeController {
       if (gap > 2.5) break;
     }
     const { x, y } = best;
-    Object.assign(e, { x, y, hp: e.maxHp, shield: 0, alive: true, reloadUntil: 0, reloadSlot: -1, lastAttacker: null, using: null, aiming: false });
+    this.dismount(e);
+    this.maskWant.set(e.id, false);
+    this.deadAt.delete(e.id);
+    Object.assign(e, { x, y, hp: e.maxHp, shield: 0, alive: true, reloadUntil: 0, reloadSlot: -1, lastAttacker: null, using: null, aiming: false, masked: 0 });
     e.angle = team === 1 ? 0 : Math.PI;
     equipClass(e, cls, e === this.me ? this.myLoadout : undefined);
   }
@@ -385,6 +426,7 @@ export class TrenchesMatch implements ModeController {
         const attacker = this.world.entities.get(msg.a) ?? { id: msg.a };
         // Friendly fire is off: ignore hits from teammates.
         if ("team" in attacker && attacker.team === victim.team) return;
+        if (msg.w === "bayonet" && "x" in attacker && Math.hypot(attacker.x - victim.x, attacker.y - victim.y) > MELEE.chargeReach + 2) return;
         damage(this.world, victim, attacker, Math.max(0, Math.min(MAX_HIT, msg.d)), msg.w);
         break;
       }
@@ -422,7 +464,7 @@ export class TrenchesMatch implements ModeController {
         } else if (from !== this.hostId) return;
         for (const [x, y, delay] of msg.s.slice(0, caller ? STRIKE_SHELLS : 16))
           if ([x, y, delay].every(Number.isFinite))
-            this.shells.push({ x, y, at: this.world.time + Math.max(0, Math.min(20, delay)), warned: false, owner: caller ?? "artillery" });
+            this.shells.push({ x, y, at: this.world.time + Math.max(0, Math.min(20, delay)), warned: false, owner: caller ?? "artillery", gas: msg.g === 1 });
         break;
       }
       case "supply": {
@@ -435,6 +477,14 @@ export class TrenchesMatch implements ModeController {
       case "recon": {
         if (![msg.x, msg.y, msg.d].every(Number.isFinite) || (msg.tm !== 1 && msg.tm !== 2)) return;
         this.recons.push({ x: msg.x, y: msg.y, team: msg.tm, until: this.world.time + Math.min(RECON_SECONDS, msg.d) });
+        break;
+      }
+      case "revive": {
+        if (typeof msg.v !== "string" || typeof msg.by !== "string") return;
+        const v = this.world.entities.get(msg.v);
+        const by = this.world.entities.get(msg.by);
+        if (!v || !by || by.team !== v.team || !by.alive || Math.hypot(by.x - v.x, by.y - v.y) > REVIVE.radius + 1.5) return;
+        this.applyRevive(v, by);
         break;
       }
       case "cq":
@@ -475,8 +525,20 @@ export class TrenchesMatch implements ModeController {
     e.stance = es.st === 1 || es.st === 2 ? es.st : 0;
     const held = e.inventory[0];
     if (!es.w) e.inventory[0] = null;
-    else if (held?.type !== "weapon" || held.kind !== es.w || held.rarity !== es.r) e.inventory[0] = makeWeapon(es.w, es.r ?? "common", "ww1");
+    else if (typeof es.mg !== "number" && (held?.type !== "weapon" || held.kind !== es.w || held.rarity !== es.r || held.era !== "ww1"))
+      e.inventory[0] = makeWeapon(es.w, es.r ?? "common", "ww1");
     if (typeof es.rl === "number") this.redeploys.set(es.id, Math.max(0, Math.min(FRONTLINE_RESPAWNS, es.rl)));
+    e.masked = es.gm === 1 ? 1 : 0;
+    const gun = typeof es.mg === "number" && this.field.mgs?.[es.mg] ? es.mg : -1;
+    if (gun >= 0) {
+      this.mgUser.set(es.id, gun);
+      e.mounted = true;
+      e.inventory[0] = makeWeapon("smg", "rare", "mg");
+    } else if (this.mgUser.has(es.id)) {
+      this.mgUser.delete(es.id);
+      e.mounted = false;
+    }
+    if (wasAlive && !es.al) this.deadAt.set(es.id, this.world.time);
     e.active = 0;
     if (!wasAlive && es.al) {
       e.x = es.x;
@@ -509,6 +571,8 @@ export class TrenchesMatch implements ModeController {
       sp: Math.round(e.speed * 10) / 10,
       st: e.stance ?? 0,
       rl: this.redeploys.get(e.id),
+      gm: (e.masked ?? 0) >= 1 ? 1 : undefined,
+      mg: this.mgUser.get(e.id),
     };
   }
 
@@ -539,7 +603,10 @@ export class TrenchesMatch implements ModeController {
 
     if (!over) {
       this.applyInput(input, dt);
+      // Wounded: wait for a medic, or redeploy now (fire).
+      if (!this.me.alive && input.fire && w.time - (this.deadAt.get(this.me.id) ?? -10) > 0.8) this.me.respawnAt = Math.min(this.me.respawnAt, w.time);
       if (!this.me.alive && w.time >= this.me.respawnAt && this.useRedeploy(this.me)) this.spawn(this.me, this.myClass);
+      this.stepGas(dt);
     } else this.digCell = -1;
 
     // Interpolate remote soldiers.
@@ -574,10 +641,20 @@ export class TrenchesMatch implements ModeController {
     const events = drainEvents(w);
     for (const ev of events) {
       if (ev.type === "kill") {
+        this.deadAt.set(ev.victim, w.time);
+        const victim = w.entities.get(ev.victim);
+        if (victim && this.owns(victim.id)) {
+          this.dismount(victim);
+          // Wounded, not gone: if a medic is near, wait for them (you can still redeploy).
+          if (this.medicNear(victim)) victim.respawnAt = w.time + REVIVE.window;
+        }
         if (ev.killer === this.me.id && ev.victim !== this.me.id) {
           this.tally.streak++;
           this.tally.bestStreak = Math.max(this.tally.bestStreak, this.tally.streak);
           if (ev.weapon === "grenade") this.tally.grenadeKills++;
+          if (ev.weapon === "bayonet") this.tally.bayonetKills++;
+          if (ev.weapon === "gas") this.tally.gasKills++;
+          if (this.me.mounted) this.tally.mgKills++;
         }
         if (ev.victim === this.me.id) this.tally.streak = 0;
       }
@@ -668,13 +745,19 @@ export class TrenchesMatch implements ModeController {
         hintPosition(w, brain, f.x, f.y, 2, this.rng);
       }
       b.spreadMult = SKILLS.normal.spreadMult * STANCE_SPREAD[b.stance ?? 0];
+      const gun = this.mgUser.get(b.id);
+      if (gun === undefined && this.botMedic(b, brain, dt)) continue;
       updateBot(w, b, brain, dt, this.rng);
       this.botGrenade(b);
+      this.botMelee(b);
+      this.botGun(b, brain);
+      this.botMask(b);
       // Stance: keep low in a trench, pop up to fire; drop prone to snipe in the open.
       const engaged = w.time - b.firedAt < 1.4;
       const still = b.speed < 0.4;
       const inTrench = this.inTrench(b);
       b.stance = !still ? 0 : inTrench ? (engaged ? 0 : 1) : engaged ? (hashId(b.id) % 3 === 0 ? 2 : 1) : 0;
+      if (b.mounted) b.stance = 0;
     }
     stepConquest(
       this.cq,
@@ -737,6 +820,27 @@ export class TrenchesMatch implements ModeController {
     const digging = this.digCell >= 0;
     me.digging = digging;
     if (input.support) this.callSupport(input.support);
+    // Gas mask: M toggles; it takes a moment to pull on.
+    if (input.mask) this.maskWant.set(me.id, !this.maskWant.get(me.id));
+    me.masked = Math.max(0, Math.min(1, (me.masked ?? 0) + (this.maskWant.get(me.id) ? dt : -dt * 2) / GAS.maskSeconds));
+    // E: man / leave an emplaced gun, or start first aid on a fallen teammate (medics).
+    if (input.interact) {
+      if (me.mounted) this.dismount(me);
+      else {
+        const gun = this.freeGunNear(me);
+        if (gun >= 0) this.mount(me, gun);
+        else if (this.myClass === "medic") {
+          const body = this.woundedNear(me);
+          if (body) this.reviving = { target: body.id, k: 0 };
+        }
+      }
+    }
+    if (me.mounted && (sprint || input.dig)) this.dismount(me);
+    this.stepMyRevive(input, dt);
+    if (input.melee && !digging && !me.mounted && w.time >= this.nextMeleeAt) {
+      this.nextMeleeAt = w.time + MELEE.cooldown;
+      this.meleeFrom(me, sprint);
+    }
     // Medics patch themselves up slowly.
     if (this.myClass === "medic" && me.hp < me.maxHp && w.time - me.hurtAt > 4) me.hp = Math.min(me.maxHp, me.hp + dt * 2);
 
@@ -745,7 +849,29 @@ export class TrenchesMatch implements ModeController {
     me.aiming = input.aim && !sprint && !digging && !!activeWeapon(me) && !me.using && me.reloadUntil <= w.time;
     // Accuracy: stance, movement, hip fire and a winded soldier all widen the cone.
     const tired = (me.stamina ?? 1) < 0.3 ? 1.35 : 1;
-    me.spreadMult = STANCE_SPREAD[me.stance ?? 0] * (moving ? 1.6 : 1) * (me.aiming ? 1 : 1.5) * tired;
+    me.spreadMult = STANCE_SPREAD[me.stance ?? 0] * (moving ? 1.6 : 1) * (me.aiming ? 1 : 1.5) * tired * ((me.masked ?? 0) > 0.5 ? GAS.maskSpread : 1);
+    if (me.mounted) {
+      // On the gun: locked to the emplacement, traverse limited, steady as a rock.
+      const gun = this.field.mgs![this.mgUser.get(me.id)!];
+      me.x = gun.x;
+      me.y = gun.y;
+      me.angle = clampTraverse(me.angle, gun.a);
+      me.stance = 0;
+      me.spreadMult = me.aiming ? 0.6 : 1;
+      const ammo = activeWeapon(me)?.ammo ?? 0;
+      if (input.fire && !this.overheated) fire(w, me, this.rng);
+      const shots = Math.max(0, ammo - (activeWeapon(me)?.ammo ?? 0));
+      this.heat = stepHeat(this.heat, shots, dt, input.fire && !this.overheated);
+      if (this.heat >= 1 && !this.overheated) {
+        this.overheated = true;
+        this.flash({ text: "GUN OVERHEATED", sub: "Let the water jacket cool…", color: "#ff9a92" }, 2);
+      }
+      if (this.overheated && this.heat <= MG.resume) this.overheated = false;
+      if (input.reload) startReload(w, me);
+      me.speed = 0;
+      return;
+    }
+    this.heat = stepHeat(this.heat, 0, dt, false);
     me.damageMult = LETHALITY;
     const speed =
       STANCE_SPEED[me.stance ?? 0] * (sprint ? SPRINT_MULT : 1) * this.groundSpeed(me) * (this.myLoadout.secondary === "none" ? 1.05 : 1);
@@ -754,6 +880,283 @@ export class TrenchesMatch implements ModeController {
     if (input.reload) startReload(w, me);
     if (input.fire && !sprint && !digging) fire(w, me, this.rng);
     if (input.throw && !digging && (me.grenades ?? 0) > 0 && w.time >= this.nextThrowAt) this.throwFrom(me, 1);
+  }
+
+  // ----------------------------------------------------------- over the top
+
+  /** Gas: clouds drift and thin; every soldier we own breathes what's around them. */
+  private stepGas(dt: number) {
+    const w = this.world;
+    this.clouds = this.clouds.filter((c) => w.time - c.born <= GAS.life);
+    if (!this.clouds.length) return;
+    for (const e of w.entities.values()) {
+      if (!e.alive || !this.owns(e.id)) continue;
+      const g = gasAt(this.clouds, w.time, this.wind, e.x, e.y, this.inTrench(e));
+      if (g > 0.02) this.gasSeenAt.set(e.id, w.time);
+      const dmg = gasDamage(g, e.masked ?? 0, dt);
+      if (dmg <= 0) continue;
+      const acc = (this.gasAcc.get(e.id) ?? 0) + dmg;
+      if (acc >= 3) {
+        // Credit the cloud's caller (barrages are nobody's).
+        let owner = "gas";
+        let best = 0;
+        for (const c of this.clouds) {
+          const s = cloudState(c, w.time, this.wind);
+          if (s && s.k * (1 - Math.min(1, Math.hypot(e.x - s.x, e.y - s.y) / s.r)) > best) {
+            best = s.k;
+            owner = c.owner === "artillery" ? "gas" : c.owner;
+          }
+        }
+        const by = w.entities.get(owner);
+        damage(w, e, by && by.team !== e.team ? by : { id: "gas" }, Math.floor(acc), "gas");
+        this.gasAcc.set(e.id, acc - Math.floor(acc));
+      } else this.gasAcc.set(e.id, acc);
+      if (e === this.me && (e.masked ?? 0) < 1 && w.time - this.gasWarnAt > 4) {
+        this.gasWarnAt = w.time;
+        this.flash({ text: "GAS! GAS! GAS!", sub: "Mask on: press M", color: "#d9e36b" }, 2.2);
+      }
+    }
+  }
+
+  /** Bots pull their masks on (after a moment) in gas, and off once the air is clear. */
+  private botMask(b: Entity) {
+    const w = this.world;
+    const seen = this.gasSeenAt.get(b.id) ?? -100;
+    const g = gasAt(this.clouds, w.time, this.wind, b.x, b.y, this.inTrench(b));
+    if (g > 0.02 && !this.maskWant.get(b.id) && this.rng.next() < 0.05) this.maskWant.set(b.id, true);
+    else if (g <= 0.02 && w.time - seen > 5) this.maskWant.set(b.id, false);
+    b.masked = Math.max(0, Math.min(1, (b.masked ?? 0) + (this.maskWant.get(b.id) ? 1 : -2) / 60 / GAS.maskSeconds));
+    b.spreadMult = (b.spreadMult ?? 1) * ((b.masked ?? 0) > 0.5 ? GAS.maskSpread : 1);
+  }
+
+  /** A bayonet lunge (or rifle butt) at whoever's in front, in reach. */
+  private meleeFrom(e: Entity, charging: boolean) {
+    const w = this.world;
+    e.meleeAt = w.time;
+    // The lunge carries you forward.
+    const step = moveWithCollision(w.map, e.x, e.y, Math.cos(e.angle) * MELEE.lunge, Math.sin(e.angle) * MELEE.lunge, 0.3);
+    e.x = step.x;
+    e.y = step.y;
+    const target = meleeTarget(e, w.entities.values(), charging, (x, y, d) => lineOfSight(w.map, e.x, e.y, x, y) || d < 1);
+    w.events.push({ type: "melee", id: e.id, hit: !!target, charge: charging });
+    if (e === this.me && charging) this.flash({ text: "CHARGE!", color: "#ffb321" }, 0.9);
+    if (!target) return;
+    const dmg = hasBayonet(activeWeapon(e)?.kind) ? MELEE.bayonet : MELEE.butt;
+    if (this.owns(target.id)) damage(w, target, e, dmg, "bayonet");
+    else this.transport.send({ t: "hit", m: this.m, a: e.id, v: target.id, d: dmg, w: "bayonet" });
+  }
+
+  private botMelee(b: Entity) {
+    const w = this.world;
+    if (b.mounted || w.time < (this.botMeleeAt.get(b.id) ?? 0) || this.rng.next() > 0.2) return;
+    const t = meleeTarget(b, w.entities.values(), false, (x, y) => lineOfSight(w.map, b.x, b.y, x, y));
+    if (!t) return;
+    this.botMeleeAt.set(b.id, w.time + MELEE.cooldown * 1.6);
+    this.meleeFrom(b, false);
+  }
+
+  /** The nearest unmanned gun of our own line within reach, or -1. */
+  private freeGunNear(e: Entity) {
+    const guns = this.field.mgs ?? [];
+    const taken = new Set([...this.mgUser.entries()].filter(([id]) => this.world.entities.get(id)?.alive).map(([, i]) => i));
+    let best = -1;
+    let bd: number = MG.reach;
+    guns.forEach((g, i) => {
+      if (g.team !== e.team || taken.has(i)) return;
+      const d = Math.hypot(g.x - e.x, g.y - e.y);
+      if (d <= bd) {
+        bd = d;
+        best = i;
+      }
+    });
+    return best;
+  }
+
+  private mount(e: Entity, gun: number) {
+    const g = this.field.mgs![gun];
+    this.mgSaved.set(e.id, { inventory: e.inventory.slice(), active: e.active });
+    e.inventory = Array.from({ length: SLOTS }, () => null);
+    e.inventory[0] = makeWeapon("smg", "rare", "mg");
+    e.active = 0;
+    e.mounted = true;
+    e.stance = 0;
+    e.x = g.x;
+    e.y = g.y;
+    e.angle = g.a;
+    this.mgUser.set(e.id, gun);
+    if (e === this.me) {
+      this.heat = 0;
+      this.overheated = false;
+      this.flash({ text: "ON THE VICKERS", sub: "Hold fire in bursts: it overheats. E to leave the gun.", color: "#ffb321" }, 2.5);
+    }
+  }
+
+  private dismount(e: Entity) {
+    if (!e.mounted) return;
+    const saved = this.mgSaved.get(e.id);
+    if (saved) {
+      e.inventory = saved.inventory;
+      e.active = saved.active;
+    }
+    this.mgSaved.delete(e.id);
+    this.mgUser.delete(e.id);
+    e.mounted = false;
+    e.reloadUntil = 0;
+  }
+
+  /** Host: defenders man their line's guns now and then, for a while. */
+  private botGun(b: Entity, brain: BotBrain) {
+    const w = this.world;
+    const gun = this.mgUser.get(b.id);
+    if (gun !== undefined) {
+      const g = this.field.mgs![gun];
+      b.x = g.x;
+      b.y = g.y;
+      b.angle = clampTraverse(b.angle, g.a);
+      b.speed = 0;
+      if (w.time >= (this.botMgUntil.get(b.id) ?? 0)) this.dismount(b);
+      return;
+    }
+    const free = this.freeGunNear(b);
+    if (free >= 0 && this.rng.next() < 0.02) {
+      this.mount(b, free);
+      this.botMgUntil.set(b.id, w.time + 25 + this.rng.next() * 35);
+      return;
+    }
+    // Sometimes head for one.
+    if (this.rng.next() < 0.0015 && (this.mode !== "frontline" || b.team !== ATTACKERS)) {
+      const guns = (this.field.mgs ?? []).filter((g) => g.team === b.team);
+      const g = guns.sort((a, c) => Math.hypot(a.x - b.x, a.y - b.y) - Math.hypot(c.x - b.x, c.y - b.y))[0];
+      if (g && Math.hypot(g.x - b.x, g.y - b.y) < 30) hintPosition(w, brain, g.x, g.y, 0.5, this.rng);
+    }
+  }
+
+  /** Is a medic of the soldier's side alive and close enough to be worth waiting for? */
+  private medicNear(e: Entity) {
+    for (const o of this.world.entities.values()) {
+      if (!o.alive || o.team !== e.team || o.id === e.id) continue;
+      if (this.classOf(o.id) === "medic" && Math.hypot(o.x - e.x, o.y - e.y) <= REVIVE.medicNear) return true;
+    }
+    return false;
+  }
+
+  private classOf(id: string): TrenchClass | undefined {
+    if (id === this.me.id) return this.myClass;
+    return this.botClass.get(id) ?? this.snap.players.find((p) => p.id === id)?.cls;
+  }
+
+  /** The nearest teammate down and still revivable within reach. */
+  private woundedNear(e: Entity, reach: number = REVIVE.radius) {
+    let best: Entity | null = null;
+    let bd = reach;
+    for (const o of this.world.entities.values()) {
+      if (o.team !== e.team || o.id === e.id || !revivable(o.alive, this.deadAt.get(o.id), this.world.time)) continue;
+      if (this.world.time >= o.respawnAt && this.owns(o.id)) continue;
+      const d = Math.hypot(o.x - e.x, o.y - e.y);
+      if (d <= bd) {
+        bd = d;
+        best = o;
+      }
+    }
+    return best;
+  }
+
+  /** My first aid: stay with them for a moment. */
+  private stepMyRevive(input: PlayerInput, dt: number) {
+    const r = this.reviving;
+    if (!r) return;
+    const t = this.world.entities.get(r.target);
+    const moving = Math.hypot(input.forward, input.strafe) > 0.2;
+    if (!t || moving || input.fire || !revivable(t.alive, this.deadAt.get(t.id), this.world.time) || Math.hypot(t.x - this.me.x, t.y - this.me.y) > REVIVE.radius + 0.3) {
+      this.reviving = null;
+      return;
+    }
+    r.k += dt / REVIVE.hold;
+    if (r.k >= 1) {
+      this.reviving = null;
+      this.doRevive(t, this.me);
+    }
+  }
+
+  /** Host: bot medics go to fallen teammates and patch them up. Returns true while busy. */
+  private botMedic(b: Entity, brain: BotBrain, dt: number) {
+    if (this.botClass.get(b.id) !== "medic") return false;
+    const job = this.botReviving.get(b.id);
+    const w = this.world;
+    if (job) {
+      const t = w.entities.get(job.target);
+      if (!t || !revivable(t.alive, this.deadAt.get(t.id), w.time) || Math.hypot(t.x - b.x, t.y - b.y) > REVIVE.radius + 0.3) {
+        this.botReviving.delete(b.id);
+        return false;
+      }
+      b.stance = 1;
+      b.speed = 0;
+      job.k += dt / REVIVE.hold;
+      if (job.k >= 1) {
+        this.botReviving.delete(b.id);
+        this.doRevive(t, b);
+      }
+      return true;
+    }
+    const near = this.woundedNear(b, REVIVE.radius);
+    if (near) {
+      this.botReviving.set(b.id, { target: near.id, k: 0 });
+      return true;
+    }
+    if (this.rng.next() < 0.05) {
+      const far = this.woundedNear(b, 22);
+      if (far) hintPosition(w, brain, far.x, far.y, 0.3, this.rng);
+    }
+    return false;
+  }
+
+  /** Bring a fallen soldier back (ours to apply, everyone hears about it). */
+  private doRevive(target: Entity, by: Entity) {
+    this.transport.send({ t: "revive", m: this.m, v: target.id, by: by.id });
+    this.applyRevive(target, by);
+    if (by === this.me) {
+      this.tally.revives++;
+      this.flash({ text: `REVIVED ${target.name.toUpperCase()}`, sub: "Back in the fight.", color: "#7dffb0" }, 2);
+    }
+  }
+
+  private applyRevive(target: Entity, by: Entity) {
+    const w = this.world;
+    if (target.alive || !revivable(false, this.deadAt.get(target.id), w.time)) return;
+    if (this.owns(target.id)) {
+      Object.assign(target, { alive: true, hp: Math.round(target.maxHp * REVIVE.hp), reloadUntil: 0, using: null, aiming: false, lastAttacker: null });
+      target.respawnAt = Infinity;
+      if (target === this.me) this.flash({ text: "REVIVED", sub: `${by.name} patched you up.`, color: "#7dffb0" }, 2.5);
+    }
+    this.deadAt.delete(target.id);
+    w.events.push({ type: "revive", id: target.id, by: by.id });
+    // The ticket that death cost comes back.
+    if (this.isHost) {
+      const team = target.team as Team;
+      this.cq.tickets[team - 1] = (this.cq.tickets[team - 1] ?? 0) + 1;
+      this.sendCq();
+    }
+  }
+
+  prompt() {
+    const me = this.me;
+    if (!me.alive || this.isOver()) return null;
+    if (me.mounted) return "Leave the Vickers gun";
+    if (this.freeGunNear(me) >= 0) return "Man the Vickers gun";
+    if (this.myClass === "medic") {
+      const body = this.woundedNear(me);
+      if (body) return `Revive ${body.name}`;
+    }
+    return null;
+  }
+
+  screen() {
+    const me = this.me;
+    return {
+      mask: me.masked ?? 0,
+      gas: this.clouds.length ? gasAt(this.clouds, this.world.time, this.wind, me.x, me.y, this.inTrench(me)) : 0,
+      heat: me.mounted ? this.heat : undefined,
+    };
   }
 
   // ------------------------------------------------------------ explosives
@@ -792,11 +1195,12 @@ export class TrenchesMatch implements ModeController {
     const f = this.rng.pick(live.length ? live : this.cq.flags);
     const cx = f.x + (this.rng.next() - 0.5) * 16;
     const cy = f.y + (this.rng.next() - 0.5) * 16;
-    const plan = planBarrage(cx, cy, BARRAGE_SHELLS, () => this.rng.next());
+    const gas = this.rng.next() < GAS_BARRAGE_CHANCE;
+    const plan = planBarrage(cx, cy, gas ? 4 : BARRAGE_SHELLS, () => this.rng.next(), gas ? 9 : undefined);
     const r = (v: number) => Math.round(v * 100) / 100;
     const s = plan.map((p) => [r(p.x), r(p.y), r(p.delay)] as [number, number, number]);
-    this.transport.send({ t: "arty", m: this.m, s });
-    for (const [x, y, delay] of s) this.shells.push({ x, y, at: this.world.time + delay, warned: false, owner: "artillery" });
+    this.transport.send(gas ? { t: "arty", m: this.m, s, g: 1 } : { t: "arty", m: this.m, s });
+    for (const [x, y, delay] of s) this.shells.push({ x, y, at: this.world.time + delay, warned: false, owner: "artillery", gas });
   }
 
   private stepExplosives(dt: number) {
@@ -810,12 +1214,24 @@ export class TrenchesMatch implements ModeController {
         sh.warned = true;
         w.events.push({ type: "incoming", x: sh.x, y: sh.y });
         if (Math.hypot(this.me.x - sh.x, this.me.y - sh.y) < 22 && this.world.time >= this.bannerUntil)
-          this.flash({ text: "INCOMING ARTILLERY", sub: "Get into a trench or go prone!", color: "#ffb321" }, 2.5);
+          this.flash(
+            sh.gas
+              ? { text: "GAS SHELLS INCOMING", sub: "Masks ready (M). Gas sinks into trenches: get up out of it!", color: "#d9e36b" }
+              : { text: "INCOMING ARTILLERY", sub: "Get into a trench or go prone!", color: "#ffb321" },
+            2.5,
+          );
       }
     }
     const landed = this.shells.filter((sh) => w.time >= sh.at);
     this.shells = this.shells.filter((sh) => w.time < sh.at);
-    for (const sh of landed) this.explode({ x: sh.x, y: sh.y, ...SHELL_BLAST }, floorAt(w.map, sh.x, sh.y), sh.owner, "artillery", true);
+    for (const sh of landed) {
+      if (sh.gas) {
+        // A dull pop and a spreading cloud.
+        this.clouds.push({ id: `${sh.owner}:${sh.at.toFixed(2)}:${sh.x.toFixed(1)}`, x: sh.x, y: sh.y, born: w.time, owner: sh.owner });
+        w.events.push({ type: "gas", x: sh.x, y: sh.y });
+        if (this.clouds.length > 24) this.clouds.shift();
+      } else this.explode({ x: sh.x, y: sh.y, ...SHELL_BLAST }, floorAt(w.map, sh.x, sh.y), sh.owner, "artillery", true);
+    }
     this.blasts = this.blasts.filter((b) => w.time - b.at < 3);
     this.crates = this.crates.filter((c) => w.time < c.until);
     this.recons = this.recons.filter((r) => w.time < r.until);
@@ -855,7 +1271,8 @@ export class TrenchesMatch implements ModeController {
     }
     const r = (v: number) => Math.round(v * 100) / 100;
     const team = this.myTeam;
-    if (kind === "artillery") {
+    if (kind === "artillery" || kind === "gas") {
+      const gas = kind === "gas";
       const hit = castRay(w.map, me.x, me.y, me.angle, STRIKE_MAX + 20);
       const d = Math.min(STRIKE_MAX, hit.dist - 1);
       if (d < STRIKE_MIN) {
@@ -864,11 +1281,16 @@ export class TrenchesMatch implements ModeController {
       }
       const x = me.x + Math.cos(me.angle) * d;
       const y = me.y + Math.sin(me.angle) * d;
-      const plan = planBarrage(x, y, STRIKE_SHELLS, () => this.rng.next(), 7).map((p) => ({ ...p, delay: p.delay + 2 }));
+      const plan = planBarrage(x, y, gas ? GAS_SHELLS : STRIKE_SHELLS, () => this.rng.next(), gas ? 8 : 7).map((p) => ({ ...p, delay: p.delay + 2 }));
       const shells = plan.map((p) => [r(p.x), r(p.y), r(p.delay)] as [number, number, number]);
-      this.transport.send({ t: "arty", m: this.m, s: shells, o: me.id });
-      for (const [sx, sy, delay] of shells) this.shells.push({ x: sx, y: sy, at: w.time + delay, warned: false, owner: me.id });
-      this.flash({ text: "FIRE MISSION", sub: `Shells on the way: ${Math.round(d)} m out. Keep clear!`, color: "#ffb321" }, 2.5);
+      this.transport.send(gas ? { t: "arty", m: this.m, s: shells, o: me.id, g: 1 } : { t: "arty", m: this.m, s: shells, o: me.id });
+      for (const [sx, sy, delay] of shells) this.shells.push({ x: sx, y: sy, at: w.time + delay, warned: false, owner: me.id, gas });
+      this.flash(
+        gas
+          ? { text: "GAS SHELLS", sub: `On the way: ${Math.round(d)} m out. Watch the wind!`, color: "#d9e36b" }
+          : { text: "FIRE MISSION", sub: `Shells on the way: ${Math.round(d)} m out. Keep clear!`, color: "#ffb321" },
+        2.5,
+      );
     } else if (kind === "supply") {
       const id = `${me.id}:crate:${Math.round(w.time * 10)}`;
       const c = { id, x: r(me.x), y: r(me.y), team, until: w.time + SUPPLY_LIFE, used: new Set<string>() };
@@ -886,7 +1308,7 @@ export class TrenchesMatch implements ModeController {
   /** "B ARTY 1:12 · N SUPPLY ✓ · T RECON ✓" */
   private supportLine() {
     const t = this.world.time;
-    const keys: Record<SupportKind, string> = { artillery: "B", supply: "N", recon: "T" };
+    const keys: Record<SupportKind, string> = { artillery: "B", supply: "N", recon: "T", gas: "H" };
     return (Object.keys(keys) as SupportKind[])
       .map((k) => {
         const left = Math.ceil(this.supportReady[k] - t);
@@ -943,6 +1365,10 @@ export class TrenchesMatch implements ModeController {
     return {
       projectiles: this.grenades.map((g) => ({ id: g.id, x: g.x, y: g.y, z: g.z })),
       blasts: this.blasts,
+      clouds: this.clouds.flatMap((c) => {
+        const s = cloudState(c, this.world.time, this.wind);
+        return s ? [{ id: c.id, ...s }] : [];
+      }),
     };
   }
 
@@ -961,6 +1387,10 @@ export class TrenchesMatch implements ModeController {
       front: this.field.front,
       mode: this.mode,
       players: this.world.entities.size,
+      bayonetKills: this.tally.bayonetKills,
+      mgKills: this.tally.mgKills,
+      revives: this.tally.revives,
+      gasKills: this.tally.gasKills,
     };
   }
 
@@ -974,6 +1404,9 @@ export class TrenchesMatch implements ModeController {
       ["Best streak", String(b.bestStreak)],
       ["Grenade kills", String(b.grenadeKills)],
       ["Trench dug", `${b.digs} m`],
+      ["Bayonet kills", String(b.bayonetKills ?? 0)],
+      ["Vickers kills", String(b.mgKills ?? 0)],
+      ["Revives", String(b.revives ?? 0)],
       ["Damage", String(b.damage)],
       ["Battle time", t],
     ];
@@ -1056,6 +1489,8 @@ export class TrenchesMatch implements ModeController {
   }
 
   task() {
+    if (this.reviving) return { label: "First aid", k: this.reviving.k };
+    if (this.me.mounted) return { label: this.overheated ? "Overheated" : "Gun heat", k: this.heat };
     return this.digCell >= 0 ? { label: "Digging", k: this.digK } : null;
   }
 
@@ -1094,7 +1529,7 @@ export class TrenchesMatch implements ModeController {
       storm: `${flags} · ${clock}`,
       stormUrgent: fl ? left < 120 || (rl !== null && rl === 0) : bt ? this.cq.tickets[0] < 30 : this.cq.tickets[this.myTeam - 1] < 30,
       detail: this.me.alive
-        ? `${STANCES[this.me.stance ?? 0]}${this.inTrench(this.me) ? " · IN TRENCH" : ""} · STAMINA ${stamina}% · GRENADES ${this.me.grenades ?? 0}\n${this.supportLine()}`
+        ? `${this.me.mounted ? "ON THE VICKERS" : STANCES[this.me.stance ?? 0]}${this.inTrench(this.me) ? " · IN TRENCH" : ""}${(this.me.masked ?? 0) >= 1 ? " · MASK ON" : ""} · STAMINA ${stamina}% · GRENADES ${this.me.grenades ?? 0}\n${this.supportLine()}`
         : "",
     };
   }
@@ -1118,6 +1553,8 @@ export class TrenchesMatch implements ModeController {
     }
     if (!this.me.alive && this.redeploysLeft() === 0 && this.world.time >= this.me.respawnAt)
       return { text: "OUT OF REDEPLOYS", sub: "Spectating: your squad fights on without you.", color: "#ff5a4f" };
+    if (!this.me.alive && this.me.respawnAt - this.world.time > 3.2 && revivable(false, this.deadAt.get(this.me.id), this.world.time))
+      return { text: "WOUNDED", sub: `A medic is near: hold on (${Math.max(0, Math.ceil(this.me.respawnAt - this.world.time))}s) · fire to redeploy now`, color: "#ff9a92" };
     if (!this.me.alive)
       return { text: this.redeploysLeft() === 0 ? "KILLED IN ACTION" : "REDEPLOYING", sub: `Back in the fight in ${Math.max(0, Math.ceil(this.me.respawnAt - this.world.time))}s`, color: "#ff5a4f" };
     const mine = this.cq.flags.find((f) => Math.hypot(f.x - this.me.x, f.y - this.me.y) <= f.r);
@@ -1155,6 +1592,13 @@ export class TrenchesMatch implements ModeController {
       else if (flares.some((r) => Math.hypot(e.x - r.x, e.y - r.y) <= RECON_RADIUS)) out.push({ id: e.id, kind: "enemy", x: e.x, y: e.y, color: "#ff3b30" });
     }
     for (const c of this.crates) out.push({ id: c.id, kind: "crate", x: c.x, y: c.y, color: c.team === this.myTeam ? "#7dffb0" : "#9a9a9a" });
+    const manned = new Set([...this.mgUser.entries()].filter(([id]) => this.world.entities.get(id)?.alive).map(([, i]) => i));
+    (this.field.mgs ?? []).forEach((g, i) =>
+      out.push({ id: `mg${i}`, kind: "mg", x: g.x, y: g.y, a: g.a, color: TEAM_COLORS[g.team], label: manned.has(i) ? "manned" : undefined }),
+    );
+    for (const e of this.world.entities.values())
+      if (e.team === this.myTeam && e.id !== this.me.id && revivable(e.alive, this.deadAt.get(e.id), this.world.time))
+        out.push({ id: `w-${e.id}`, kind: "wounded", x: e.x, y: e.y, color: "#ff3b30" });
     return out;
   }
 
@@ -1196,7 +1640,7 @@ export class TrenchesMatch implements ModeController {
   }
 
   nameOf(id: string) {
-    return this.world.entities.get(id)?.name ?? (id === "storm" ? "The Storm" : "Soldier");
+    return this.world.entities.get(id)?.name ?? (id === "storm" ? "The Storm" : id === "gas" ? "Poison gas" : "Soldier");
   }
 
   destroy() {

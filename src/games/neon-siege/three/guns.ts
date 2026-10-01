@@ -94,7 +94,8 @@ function part(g: THREE.Group, geo: THREE.BufferGeometry, m: THREE.Material, x: n
   return mesh;
 }
 
-export function buildGun(kind: WeaponKind, rarity: Rarity, wrapId: string, era?: "ww1"): GunModel {
+export function buildGun(kind: WeaponKind, rarity: Rarity, wrapId: string, era?: "ww1" | "mg"): GunModel {
+  if (era === "mg") return buildVickers();
   if (era === "ww1") return buildWW1Gun(kind);
   const g = new THREE.Group();
   const body = wrapMat(wrapId);
@@ -396,6 +397,61 @@ export function buildWW1Gun(kind: WeaponKind): GunModel {
 }
 
 /** Mills bomb (No. 5 grenade): segmented iron body, lever and ring. */
+/**
+ * The Vickers gun on its tripod: a ribbed water jacket round the barrel, the
+ * muzzle booster, a brass receiver with spade grips, the belt box and the
+ * condenser hose. `withTripod` adds the legs (the emplacement prop).
+ */
+export function buildVickers(withTripod = false): GunModel {
+  const g = new THREE.Group();
+  const muzzle = new THREE.Object3D();
+  const jacket = mat("jacket", () => new THREE.MeshStandardMaterial({ color: "#3b3f36", metalness: 0.55, roughness: 0.55 }));
+  const canvas = mat("canvasBelt", () => new THREE.MeshStandardMaterial({ color: "#6b6346", metalness: 0, roughness: 0.9 }));
+  const ammoBox = mat("ammoBox", () => new THREE.MeshStandardMaterial({ color: "#3f4a32", metalness: 0.2, roughness: 0.7 }));
+  // Water jacket, corrugated.
+  part(g, cyl(0.045, 0.56, 18), jacket, 0.33, 0, 0);
+  for (let i = 0; i < 9; i++) part(g, cyl(0.048, 0.012, 18), jacket, 0.08 + i * 0.06, 0, 0);
+  const boost = part(g, new THREE.CylinderGeometry(0.018, 0.03, 0.08, 12), blued(), 0.65, 0, 0);
+  boost.rotation.z = -Math.PI / 2;
+  muzzle.position.set(0.7, 0, 0);
+  g.add(muzzle);
+  // Receiver, top cover, brass fittings and the spade grips.
+  part(g, plainBox(0.26, 0.11, 0.1), blued(), -0.07, 0.005);
+  part(g, plainBox(0.22, 0.02, 0.09), worn(), -0.06, 0.07);
+  part(g, plainBox(0.03, 0.12, 0.105), brass(), 0.06, 0.005);
+  part(g, plainBox(0.02, 0.06, 0.13), blued(), -0.21, 0.0);
+  for (const z of [-0.055, 0.055]) {
+    const h = part(g, cyl(0.014, 0.07), walnut(), -0.245, 0.0, z);
+    h.rotation.z = Math.PI / 2;
+  }
+  part(g, plainBox(0.012, 0.05, 0.03), blued(), -0.03, 0.1); // rear sight
+  part(g, plainBox(0.012, 0.03, 0.01), blued(), 0.6, 0.06); // foresight
+  // Belt box and the belt feeding in from the left.
+  part(g, plainBox(0.16, 0.12, 0.1), ammoBox, -0.04, -0.07, -0.13);
+  part(g, plainBox(0.05, 0.012, 0.09), canvas, -0.04, 0.0, -0.08);
+  for (let i = 0; i < 5; i++) part(g, cyl(0.004, 0.05), brass(), -0.06 + i * 0.012, 0.012, -0.08);
+  // Condenser hose looping down.
+  const hose = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.008, 6, 16, Math.PI), canvas);
+  hose.position.set(0.5, -0.09, 0.05);
+  hose.rotation.x = Math.PI / 2;
+  g.add(hose);
+  if (withTripod) {
+    part(g, cyl(0.02, 0.06), blued(), 0.0, -0.08);
+    for (const [ax, az, len] of [
+      [0.7, 0, 0.75],
+      [-0.55, 0.45, 0.7],
+      [-0.55, -0.45, 0.7],
+    ]) {
+      const leg = new THREE.Mesh(cyl(0.014, len as number), blued());
+      const dir = new THREE.Vector3(ax as number, -0.55, az as number).normalize();
+      leg.position.set(0, -0.1, 0).addScaledVector(dir, (len as number) / 2);
+      leg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      g.add(leg);
+    }
+  }
+  return { group: g, muzzle, grip: new THREE.Vector3(-0.245, 0, 0.055), fore: new THREE.Vector3(-0.245, 0, -0.055), sightY: 0.09 };
+}
+
 export function buildMillsBomb() {
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 10).scale(1, 1.3, 1), blued());

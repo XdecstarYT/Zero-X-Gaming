@@ -130,6 +130,9 @@ export class SiegeHud {
   private board = el("div", "absolute top-[14%] left-1/2 hidden w-72 -translate-x-1/2 rounded-lg bg-black/80 p-3 text-xs");
   private hurt = el("div", "absolute inset-0 opacity-0");
   private stormTint = el("div", "absolute inset-0 opacity-0 transition-opacity duration-500");
+  private gasTint = el("div", "absolute inset-0 opacity-0 transition-opacity duration-700");
+  private maskView = el("div", "absolute inset-0 opacity-0");
+  private maskGlass = el("div", "absolute inset-0 opacity-0");
   private last = new Map<string, string>();
   private miniAcc = 0;
 
@@ -211,7 +214,18 @@ export class SiegeHud {
     this.progress.append(this.progressLabel, track);
     this.bannerBox.append(this.bannerText, this.bannerSub);
 
-    this.root.append(this.stormTint, this.hurt, this.scope, this.cross, this.dot, this.hitMarker, this.progress, top, bottom, this.bannerBox, this.board);
+    // Trenches: the view through a gas mask's eyepieces, and the green of gas.
+    this.gasTint.style.background = "radial-gradient(ellipse at center, rgba(170,180,90,.18) 10%, rgba(140,150,60,.55) 100%)";
+    // The facepiece: dark rubber with two round eyepieces cut out (even-odd), soft-edged.
+    this.maskView.innerHTML =
+      '<svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true">' +
+      '<defs><filter id="zx-mask-blur" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="1.6"/></filter></defs>' +
+      '<path fill="#0b0d0a" fill-rule="evenodd" filter="url(#zx-mask-blur)" d="M-10 -10H110V110H-10Z M18 47a16 27 0 1 0 32 0a16 27 0 1 0 -32 0Z M50 47a16 27 0 1 0 32 0a16 27 0 1 0 -32 0Z"/>' +
+      '<g fill="none" stroke="#2b2f27" stroke-width="2.2"><ellipse cx="34" cy="47" rx="16" ry="27"/><ellipse cx="66" cy="47" rx="16" ry="27"/></g>' +
+      "</svg>";
+    this.maskGlass.style.background =
+      "radial-gradient(ellipse 16% 27% at 34% 47%, rgba(120,140,120,.04) 55%, rgba(200,220,200,.2) 100%), radial-gradient(ellipse 16% 27% at 66% 47%, rgba(120,140,120,.04) 55%, rgba(200,220,200,.2) 100%)";
+    this.root.append(this.stormTint, this.gasTint, this.maskGlass, this.maskView, this.hurt, this.scope, this.cross, this.dot, this.hitMarker, this.progress, top, bottom, this.bannerBox, this.board);
     host.appendChild(this.root);
   }
 
@@ -354,6 +368,11 @@ export class SiegeHud {
     this.hurt.style.opacity = (me.alive ? hurtK * (me.lastAttacker === "storm" ? 0.4 : 1) : 0.6).toFixed(2);
     const inStorm = !!mode.storm && Math.hypot(me.x - mode.storm.current.x, me.y - mode.storm.current.y) > mode.storm.current.r;
     this.stormTint.style.opacity = inStorm && me.alive ? "1" : "0";
+    const scr = me.alive ? mode.screen?.() : null;
+    const mk = scr?.mask ?? 0;
+    this.maskView.style.opacity = String(mk);
+    this.maskGlass.style.opacity = String(mk);
+    this.gasTint.style.opacity = String(Math.min(0.9, (scr?.gas ?? 0) * (mk >= 1 ? 0.35 : 0.9)));
 
     // Banner
     const banner: Banner | null = f.ended && !mode.isOver() ? { text: "ELIMINATED", color: "#ff4d6d" } : mode.banner();
@@ -440,6 +459,24 @@ export class SiegeHud {
         g.arc(m.x * s, m.y * s, 2.4, 0, Math.PI * 2);
         g.fill();
         g.stroke();
+        continue;
+      }
+      if (m.kind === "mg") {
+        g.fillStyle = m.color;
+        g.strokeStyle = "rgba(0,0,0,.85)";
+        g.lineWidth = 1;
+        g.save();
+        g.translate(m.x * s, m.y * s);
+        g.rotate(m.a ?? 0);
+        g.fillRect(-1.5, -1.5, 6, 3);
+        g.strokeRect(-1.5, -1.5, 6, 3);
+        g.restore();
+        continue;
+      }
+      if (m.kind === "wounded") {
+        g.fillStyle = "#ff3b30";
+        g.fillRect(m.x * s - 3, m.y * s - 1, 6, 2);
+        g.fillRect(m.x * s - 1, m.y * s - 3, 2, 6);
         continue;
       }
       if (m.kind === "ally") {

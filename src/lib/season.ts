@@ -187,6 +187,11 @@ export interface TrenchesMatch {
   front: string;
   mode: "conquest" | "breakthrough" | "frontline";
   players: number;
+  /** Over the Top: bayonet and Vickers kills, medic revives, kills by your gas. */
+  bayonetKills?: number;
+  mgKills?: number;
+  revives?: number;
+  gasKills?: number;
 }
 
 export const TRENCHES_XP_CAP = 1500;

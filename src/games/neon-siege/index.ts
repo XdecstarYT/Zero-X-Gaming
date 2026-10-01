@@ -104,6 +104,8 @@ export class NeonSiege implements GameModule {
   private touchDig = false;
   private throwPressed = false;
   private supportPressed: PlayerInput["support"] = null;
+  private meleePressed = false;
+  private maskPressed = false;
   /** Camera shake from nearby explosions (0..1, decays). */
   private shake = 0;
   private slotPressed: number | null = null;
@@ -414,6 +416,8 @@ export class NeonSiege implements GameModule {
 
   private async startMode(controller: ModeController) {
     this.mode = controller;
+    // Test hook (?siege=shot): the running mode, for scripts.
+    if (new URLSearchParams(window.location.search).get("siege") === "shot") (window as unknown as { __siegeMode?: ModeController }).__siegeMode = controller;
     this.ended = false;
     this.killFeed = [];
     this.pings = [];
@@ -571,6 +575,21 @@ export class NeonSiege implements GameModule {
         support("ARTY", "Call artillery", "artillery", "right-[calc(4%+12.5rem)] bottom-[calc(30%+4.5rem)]"),
         support("SUP", "Call a supply drop", "supply", "right-[calc(4%+12.5rem)] bottom-[calc(30%+1rem)]"),
         support("RCN", "Fire a recon flare", "recon", "right-[calc(4%+9rem)] bottom-[calc(30%+8rem)]"),
+        support("GAS", "Call gas shells", "gas", "right-[calc(4%+12.5rem)] bottom-[calc(30%+8rem)]"),
+      );
+      const press = (label: string, aria: string, pos: string, on: () => void) => {
+        const b = round(label, `${pos} ${small}`);
+        b.setAttribute("aria-label", aria);
+        b.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          on();
+        });
+        return b;
+      };
+      extra.push(
+        press("BAYO", "Bayonet", "right-[calc(4%+2rem)] bottom-[calc(30%+7.5rem)]", () => (this.meleePressed = true)),
+        press("MASK", "Gas mask on / off", "right-[calc(4%+16rem)] bottom-[calc(30%+4.5rem)]", () => (this.maskPressed = true)),
       );
     }
     this.touchLayer = el("div", "pointer-events-none absolute inset-0 z-[5]", this.stickKnob, fire, fireL, aim, reload, ...extra);
@@ -608,7 +627,7 @@ export class NeonSiege implements GameModule {
       "KeyX",
       "KeyG",
       "KeyQ",
-      ...(this.mode?.realism ? ["KeyB", "KeyN", "KeyT"] : []),
+      ...(this.mode?.realism ? ["KeyB", "KeyN", "KeyT", "KeyV", "KeyH", "KeyM"] : []),
       "ShiftLeft",
       "ShiftRight",
       "ArrowUp",
@@ -634,6 +653,9 @@ export class NeonSiege implements GameModule {
     if (e.code === "KeyB") this.supportPressed = "artillery";
     if (e.code === "KeyN") this.supportPressed = "supply";
     if (e.code === "KeyT") this.supportPressed = "recon";
+    if (e.code === "KeyH") this.supportPressed = "gas";
+    if (e.code === "KeyV") this.meleePressed = true;
+    if (e.code === "KeyM") this.maskPressed = true;
     const slot = WEAPON_KEYS.indexOf(e.code);
     if (slot >= 0) this.slotPressed = slot;
   };
@@ -758,7 +780,12 @@ export class NeonSiege implements GameModule {
       dig: has("KeyG") || this.touchDig,
       throw: this.throwPressed,
       support: realism ? this.supportPressed : null,
+      melee: realism && this.meleePressed,
+      mask: realism && this.maskPressed,
     };
+    if (this.maskPressed) this.audio.cue("mask");
+    this.meleePressed = false;
+    this.maskPressed = false;
     this.throwPressed = false;
     this.supportPressed = null;
     this.reloadPressed = false;
@@ -809,7 +836,9 @@ export class NeonSiege implements GameModule {
               ? `${mode.nameOf(ev.victim)} was lost to the storm`
               : ev.weapon === "artillery"
                 ? `${mode.nameOf(ev.victim)} was caught by artillery`
-                : `${mode.nameOf(ev.killer)}  ${ev.weapon === "grenade" ? "💥" : "✕"}  ${mode.nameOf(ev.victim)}`;
+                : ev.weapon === "gas"
+                  ? `${mode.nameOf(ev.victim)} was gassed`
+                  : `${mode.nameOf(ev.killer)}  ${ev.weapon === "grenade" ? "💥" : ev.weapon === "bayonet" ? "🗡" : "✕"}  ${mode.nameOf(ev.victim)}`;
           this.killFeed = [
             ...this.killFeed.slice(-6),
             { text, at: t, mine: ev.killer === me.id || ev.victim === me.id },
@@ -830,6 +859,17 @@ export class NeonSiege implements GameModule {
         }
         case "heal":
           if (ev.id === me.id) this.audio.cue("heal");
+          break;
+        case "melee":
+          if (ev.id === me.id || ev.hit) this.audio.cue("stab");
+          break;
+        case "gas": {
+          const d = Math.hypot(ev.x - me.x, ev.y - me.y);
+          if (d < 60) this.audio.cue("gasAlarm");
+          break;
+        }
+        case "revive":
+          if (ev.id === me.id || ev.by === me.id) this.audio.cue("revive");
           break;
         case "blast": {
           const d = Math.hypot(ev.x - me.x, ev.y - me.y);
@@ -918,6 +958,8 @@ export class NeonSiege implements GameModule {
     const mode = this.mode!;
     const me = mode.me;
     if (!me.alive) return { text: null, color: null };
+    const special = mode.prompt?.();
+    if (special) return { text: special, color: "#ffb321" };
     const chest = nearestChest(mode.world, me);
     if (chest) return { text: "Open chest", color: "#f2c230" };
     const drop = nearestLoot(mode.world, me);
@@ -936,7 +978,7 @@ export class NeonSiege implements GameModule {
       showNames: mode.showNames,
       storm: mode.storm?.current ?? null,
       ads: this.ads,
-      markers: mode.markers?.().filter((m) => m.kind === "flag"),
+      markers: mode.markers?.().filter((m) => m.kind === "flag" || m.kind === "mg"),
       tagColor: mode.tagColor ? (id) => mode.tagColor!(id) : undefined,
       effects: mode.effects?.(),
       shake: this.opts.settings.reduceMotion ? 0 : this.shake,

@@ -59,7 +59,11 @@ export interface PlayerInput {
   /** Throw a grenade (pressed this step). */
   throw?: boolean;
   /** Call in support (Trenches): pressed this step. */
-  support?: "artillery" | "supply" | "recon" | null;
+  support?: "artillery" | "supply" | "recon" | "gas" | null;
+  /** Bayonet / melee (pressed this step). */
+  melee?: boolean;
+  /** Gas mask on / off (pressed this step). */
+  mask?: boolean;
 }
 
 export const IDLE: PlayerInput = {

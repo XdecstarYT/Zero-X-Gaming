@@ -361,4 +361,17 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 101. **One ad per visit.** With three spots (mega, Sports+, Code 3), the newest product goes first: the
      Sports+ ad decides (and publishes its decision on `<html data-sports-ad>`), and Code 3's spot only runs on
      visits where Sports+ skipped. Pass owners never see the Sports+ ad; it retires itself for them.
+102. **Over the Top rules live in one pure module.** Gas, bayonets, gun heat and revives are plain functions
+     (`trenches/warfare.ts`), so the rules are unit tested without a renderer and every client simulates the
+     same clouds from a shared spawn (position, time, front wind). As with grenades, each client only applies
+     gas and bayonet damage to the soldiers it owns.
+103. **Gas pools in trenches.** Gas is 60% stronger in a trench, which turns the usual "get in a trench"
+     instinct around and gives the gas call a purpose; the mask is the counter, at the cost of a narrow
+     view and wider aim.
+104. **Revives refund the ticket.** A revive is worth a life, so the host gives the death's ticket back.
+     The wait only happens when a medic is within 40 m, and firing always redeploys at once, so nobody is
+     stuck watching a body.
+105. **"Sign in with Zero X" uses a client-side consent page.** The app's Supabase session lives in the
+     browser, so the consent page calls `supabase.auth.oauth` directly (with `skipBrowserRedirect` and an
+     http(s) check before redirecting). Only online accounts can authorize apps; device accounts can't.
 

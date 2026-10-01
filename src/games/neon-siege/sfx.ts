@@ -5,7 +5,7 @@ import type { WeaponKind } from "./items";
  * "thump", shaped per weapon and attenuated/muffled with distance. No assets.
  */
 
-type Cue = "reload" | "pickup" | "chest" | "hitmarker" | "hurt" | "shieldHit" | "elim" | "heal" | "empty" | "storm";
+type Cue = "reload" | "pickup" | "chest" | "hitmarker" | "hurt" | "shieldHit" | "elim" | "heal" | "empty" | "storm" | "stab" | "gasAlarm" | "mask" | "cough" | "revive";
 
 const SHOT: Record<WeaponKind, { cutoff: number; decay: number; thump: number; gain: number }> = {
   pistol: { cutoff: 3200, decay: 0.12, thump: 140, gain: 0.5 },
@@ -209,6 +209,34 @@ export class SiegeAudio {
         break;
       case "storm":
         tone("sawtooth", 90, 60, 0, 0.6, 0.06);
+        break;
+      case "stab":
+        // A rush of air and a dull thud.
+        click(0, 0.25, 900);
+        click(0.04, 0.2, 600);
+        tone("sine", 120, 55, 0.08, 0.12, 0.3);
+        break;
+      case "gasAlarm":
+        // The gas gong: a struck shell case, ringing.
+        for (let i = 0; i < 4; i++) {
+          tone("triangle", 880, 860, i * 0.32, 0.3, 0.12);
+          tone("sine", 1320, 1300, i * 0.32, 0.25, 0.05);
+        }
+        break;
+      case "mask":
+        // Rubber and a breath through the filter.
+        click(0, 0.18, 500);
+        click(0.25, 0.12, 300);
+        tone("sawtooth", 70, 60, 0.3, 0.5, 0.02);
+        break;
+      case "cough":
+        click(0, 0.3, 700);
+        click(0.18, 0.25, 650);
+        click(0.4, 0.2, 600);
+        break;
+      case "revive":
+        tone("sine", 523, 659, 0, 0.18, 0.08);
+        tone("sine", 659, 784, 0.15, 0.25, 0.08);
         break;
     }
   }

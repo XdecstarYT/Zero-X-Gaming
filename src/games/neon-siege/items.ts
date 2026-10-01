@@ -138,8 +138,8 @@ export interface WeaponItem {
   kind: WeaponKind;
   rarity: Rarity;
   ammo: number;
-  /** Trenches: period weapons with their own stats, names and models. */
-  era?: "ww1";
+  /** Trenches: period weapons with their own stats, names and models ("mg": an emplaced Vickers gun). */
+  era?: "ww1" | "mg";
 }
 
 export interface ConsumableItem {
@@ -189,12 +189,33 @@ export const WW1_WEAPONS: Record<WeaponKind, WeaponDef> = {
   },
 };
 
+/**
+ * Trenches' emplaced machine gun (Vickers): fires from its tripod only, belt-fed,
+ * steady but it overheats (the match tracks heat). Rides the SMG slot rules.
+ */
+export const VICKERS: WeaponDef = {
+  ...WEAPONS.smg,
+  name: "Vickers Gun",
+  damage: 26,
+  pellets: 1,
+  interval: 0.105,
+  auto: true,
+  mag: 250,
+  reload: 6,
+  spread: 0.03,
+  adsSpread: 0.012,
+  range: 60,
+  zoom: 1.4,
+  mobility: 0,
+  tier: 5,
+};
+
 /** The stats table for a weapon item (its era). */
 export function weaponDef(w: Pick<WeaponItem, "kind" | "era">): WeaponDef {
-  return w.era === "ww1" ? WW1_WEAPONS[w.kind] : WEAPONS[w.kind];
+  return w.era === "mg" ? VICKERS : w.era === "ww1" ? WW1_WEAPONS[w.kind] : WEAPONS[w.kind];
 }
 
-export function makeWeapon(kind: WeaponKind, rarity: Rarity = "common", era?: "ww1"): WeaponItem {
+export function makeWeapon(kind: WeaponKind, rarity: Rarity = "common", era?: "ww1" | "mg"): WeaponItem {
   const w: WeaponItem = { type: "weapon", kind, rarity, ammo: 0 };
   if (era) w.era = era;
   w.ammo = weaponDef(w).mag;

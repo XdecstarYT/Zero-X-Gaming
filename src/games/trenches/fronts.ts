@@ -1,12 +1,12 @@
 import type { FrontTheme } from "../neon-siege/map";
 
 /**
- * The fronts. Five large (150–190 m) mirrored battlefields for Classic and
+ * The fronts. Six large (150–190 m) mirrored battlefields for Classic and
  * Breakthrough, each with its own layout feature and look, plus Cape Helles:
  * a 280 m landing corridor built for Frontline. Distances are metres (1 cell = 1 m).
  */
 
-export type FrontId = "gallipoli" | "somme" | "verdun" | "passchendaele" | "vimy" | "helles";
+export type FrontId = "gallipoli" | "somme" | "verdun" | "passchendaele" | "vimy" | "argonne" | "helles";
 
 export interface FrontDef {
   id: FrontId;
@@ -143,6 +143,30 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       weather: "snow",
       grass: 0.3,
       grassColor: "#b9b39a",
+    },
+  },
+  argonne: {
+    id: "argonne",
+    name: "Argonne Forest",
+    place: "Meuse-Argonne, 1918",
+    blurb: "Autumn in a dense, foggy forest. Fight through the ravine for the old mill where a battalion was cut off.",
+    width: 170,
+    height: 110,
+    frontLine: 0.4,
+    theme: {
+      id: "argonne",
+      soil: "#5f523d",
+      soil2: "#7a5a2e",
+      earth: "#4e3f2c",
+      sky: { turbidity: 16, rayleigh: 0.4, mie: 0.03, elevation: 10, azimuth: 250 },
+      sun: { color: "#ffc890", intensity: 1.25 },
+      hemi: { sky: "#a9a08e", ground: "#3e3326", intensity: 0.9 },
+      fog: { color: "#8d8676", near: 8, far: 82 },
+      exposure: 0.7,
+      clouds: "#8a857a",
+      weather: "none",
+      grass: 0.9,
+      grassColor: "#8a7a3a",
     },
   },
   helles: {
