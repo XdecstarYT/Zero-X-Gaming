@@ -473,7 +473,11 @@ stumps, fielders read the hit's predicted flight (`predict`/`planField`) to catc
 run what's safe before the throw (or what you push for) and throws run them out. AI batters look for gaps and
 pace their innings to the chase; AI bowlers vary pace and spin deliveries and aim off for movement. You bowl by
 choosing a delivery, a target on the pitch, a field and stopping a release meter (late is a no-ball and a free
-hit). `simulateToEnd` plays a whole match headlessly; across seeds an AI innings averages about 170 for 6 with
+hit). Online (`online.ts`), two people play each other in a room on the shared Realtime transports (BroadcastChannel
+with `?net=local`): the first one in hosts and runs the match, the guest's sim is a puppet fed by snapshots (15 a
+second, plus the scorecard when it changes) and sends its input back. Timing stays fair both ways: the guest flies
+each delivery on their own screen and sends their press with its delivery time while the host holds the ball at
+the bat until it arrives, and a guest bowler's meter value is the one they saw. `simulateToEnd` plays a whole match headlessly; across seeds an AI innings averages about 170 for 6 with
 20 fours and 8 sixes. Modes: T20 (2, 5 or 20 overs), super over, nets. Registered by
 `20261008090000_boundary_blitz.sql`.
 

@@ -201,7 +201,7 @@ export const GAMES: Game[] = [
     title: "Boundary Blitz",
     tagline: "T20 cricket under lights. Time it. Loft it. Clear the rope.",
     description:
-      "Sports+ T20 cricket in a full 3D stadium. Bat with an aim arrow, shot choice (along the ground, over the top or a solid block) and timing against real deliveries: swing and seam from the quicks, turn from the spinners, bouncers, yorkers and slower balls. Edges carry to the slips, fielders read the ball and take catches on the rope, and you push for the extra run at the risk of a run-out. Then bowl: pick the delivery, aim it on the pitch, set your field and hit the release meter. Full T20s (2, 5 or 20 overs), a super-over chase or the nets, eight franchises, LBWs, free hits and a crowd that goes up for every six. Needs the Sports+ pass (50 coins, once).",
+      "Sports+ T20 cricket in a full 3D stadium. Bat with an aim arrow, shot choice (along the ground, over the top or a solid block) and timing against real deliveries: swing and seam from the quicks, turn from the spinners, bouncers, yorkers and slower balls. Edges carry to the slips, fielders read the ball and take catches on the rope, and you push for the extra run at the risk of a run-out. Then bowl: pick the delivery, aim it on the pitch, set your field and hit the release meter. Full T20s (2, 5 or 20 overs) against the AI or a friend online, a super-over chase or the nets, eight franchises, LBWs, free hits and a crowd that goes up for every six. Needs the Sports+ pass (50 coins, once).",
     category: "sports",
     tags: ["cricket", "t20", "3d", "sports+"],
     status: "live",

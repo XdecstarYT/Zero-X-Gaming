@@ -8,6 +8,9 @@ import { CricketHud } from "./hud";
 import { CricketView, type CricketCam } from "./render";
 import { CricketSim, emptyInput, LEVELS, PACE_KINDS, PITCH, SPIN_KINDS, type CricketInput, type Difficulty, type FieldSet, type Kind, type Mode, type ShotType } from "./sim";
 import { TEAMS, teamById } from "./teams";
+import { BroadcastChannelTransport, normalizeRoom, randomRoom, ROOM_RE, type Transport } from "../neon-siege/net";
+import { SupabaseTransport } from "../neon-siege/net-supabase";
+import { CricketLink, GuestPump, HostPump, matchFrom, type CricketMsg, type MatchConfig } from "./online";
 
 const PREFS_KEY = "zx-cricket-prefs";
 const RECORD_KEY = "zx-cricket-record";
@@ -57,6 +60,11 @@ class CricketGame implements GameModule {
   private res = new ResolutionGovernor();
   private overAt = 0;
   private breakBox: HTMLDivElement | null = null;
+  // Online.
+  private link: CricketLink | null = null;
+  private pump: HostPump | GuestPump | null = null;
+  private online: MatchConfig | null = null;
+  private room = "";
 
   // Input.
   private inp: CricketInput = emptyInput();
@@ -198,7 +206,17 @@ class CricketGame implements GameModule {
             (v) => ((this.prefs.difficulty = v), save()),
           ),
         ),
-        card("Your team", teamChoice("Your team", p.team, (v) => ((this.prefs.team = v), save()))),
+        card(
+          "Your team",
+          teamChoice("Your team", p.team, (v) => {
+            this.prefs.team = v;
+            save();
+            if (this.link) {
+              this.link.team = v;
+              this.link.hello();
+            }
+          }),
+        ),
         card("Opponent", teamChoice("Opponent", p.opponent, (v) => ((this.prefs.opponent = v), save()))),
         card(
           "Presentation",
@@ -233,12 +251,14 @@ class CricketGame implements GameModule {
           ),
         ),
         start,
+        this.onlineCard(),
         howTo([
           ["Batting", "Aim where you want to hit it (the arrow on the ground), then play as the ball reaches you. Perfect timing goes where you aimed, and fast. Early pulls it to leg, late slices it to the off side; way off and you miss."],
           ["Shots", "SHOT keeps it on the ground, LOFT goes over the top (six, or caught in the deep), BLOCK defends a good ball. Play with the line: drive the full ones, cut and pull the short ones, and don't play across a straight one."],
           ["Out", "Bowled, caught, LBW (pad in front of the stumps) or run out. Edges fly to the keeper and slips."],
           ["Running", "Your batters run what's safe. Press RUN while the ball's in the field to push for one more: beat the throw or you're run out."],
           ["Bowling", "Pick a delivery (pace: stock, swing, bouncer, yorker, slower ball; spin: off-break, leg-break, arm ball, flight), aim the ring on the pitch, set the field, then run in and stop the meter in the green. Late is a no-ball and a free hit."],
+          ["Online", "Join the same room code as a friend (or send them the invite link). The first one in hosts and starts the match; one of you bats while the other bowls, then you swap for the chase. Online matches don't go on the leaderboard."],
           ["Score", "Your runs, 20 a wicket, 4 a six, and 150 for a win."],
         ]),
         el("p", "max-w-xl text-center text-[11px] text-white/50", controls),
@@ -272,6 +292,132 @@ class CricketGame implements GameModule {
       seed,
       target: p.mode === "superover" ? 14 + (seed % 9) : undefined,
     });
+    this.launch(test);
+  }
+
+  // ---------------------------------------------------------------- online
+
+  private onlineCard() {
+    const params = new URLSearchParams(window.location.search);
+    const input = el("input", "h-10 w-32 rounded-md border-2 border-white/15 bg-black/40 px-3 text-center font-mono text-sm uppercase tracking-[0.3em] text-white focus:border-[#22d3ee] focus:outline-none");
+    input.value = this.room || normalizeRoom(params.get("room") ?? "") || randomRoom();
+    input.maxLength = 8;
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.setAttribute("aria-label", "Room code");
+    input.setAttribute("data-testid", "cricket-room");
+    const status = el("p", "min-h-4 text-xs text-white/75");
+    status.setAttribute("role", "status");
+    status.setAttribute("data-testid", "cricket-online-status");
+    const lobby = el("div", "flex flex-col gap-2");
+    const join = button("Join room", `${BTN} border-[#22d3ee]`, () => void this.joinRoom(normalizeRoom(input.value), status, lobby, join));
+    join.setAttribute("data-testid", "cricket-join");
+    const copy = button("Copy invite link", BTN, () => {
+      const url = new URL(window.location.href);
+      url.search = "";
+      url.searchParams.set("room", normalizeRoom(input.value));
+      void navigator.clipboard?.writeText(url.toString()).then(
+        () => (status.textContent = "Invite link copied. Send it to a friend."),
+        () => (status.textContent = url.toString()),
+      );
+    });
+    if (this.link) this.renderLobby(lobby, status, join);
+    return card(
+      "Play a friend online",
+      el("p", "text-xs text-white/70", `Pick a room code and share it (or the invite link). One of you bats while the other bowls, then you swap for the chase. Uses your team and the overs above.${this.localNet() ? " Local mode: rooms work between tabs of this browser." : ""}`),
+      el("div", "flex flex-wrap items-center gap-2", input, join, copy),
+      status,
+      lobby,
+    );
+  }
+
+  private localNet() {
+    return new URLSearchParams(window.location.search).get("net") === "local" || !SupabaseTransport.available();
+  }
+
+  private async joinRoom(code: string, status: HTMLElement, lobby: HTMLElement, join: HTMLButtonElement) {
+    if (!ROOM_RE.test(code)) {
+      status.textContent = "Room codes are 4 to 8 letters or numbers.";
+      return;
+    }
+    this.link?.close();
+    this.room = code;
+    const name = this.opts.playerName ?? "Player";
+    const t: Transport<CricketMsg> = this.localNet() ? new BroadcastChannelTransport<CricketMsg>(code, name, undefined, "cricket") : new SupabaseTransport<CricketMsg>(code, name, undefined, "cricket");
+    const link = new CricketLink(t, name, this.prefs.team);
+    this.link = link;
+    join.disabled = true;
+    status.textContent = "Connecting…";
+    link.onChange = () => this.renderLobby(lobby, status, join);
+    link.onStart = (cfg) => {
+      if (!this.online) this.beginOnline(cfg, 1);
+    };
+    try {
+      await link.connect();
+    } catch (e) {
+      status.textContent = (e as Error).message;
+      join.disabled = false;
+      if (this.link === link) this.link = null;
+      return;
+    }
+    this.renderLobby(lobby, status, join);
+  }
+
+  private renderLobby(lobby: HTMLElement, status: HTMLElement, join: HTMLButtonElement) {
+    const link = this.link;
+    if (!link || this.online) return;
+    if (link.full) {
+      status.textContent = "That room already has two players. Try another code.";
+      lobby.replaceChildren();
+      return;
+    }
+    const opp = link.opponent;
+    const host = link.isHost;
+    status.textContent = !opp ? `Room ${this.room}: waiting for your opponent…` : host ? `${opp.name} is in. Start when you're ready.` : "Waiting for the host to start the match…";
+    const row = (who: string, name: string, team: string | null) =>
+      el("div", "flex items-center justify-between rounded bg-white/5 px-3 py-2 text-sm", el("span", "font-bold", `${who}: ${name}`), el("span", "text-white/70", team ? teamById(team).name : "—"));
+    const leave = button("Leave room", `${BTN} text-xs`, () => {
+      link.close();
+      this.link = null;
+      lobby.replaceChildren();
+      status.textContent = "";
+      join.disabled = false;
+    });
+    const items: HTMLElement[] = [row(host ? "You (host)" : "You", link.name, link.team), row("Opponent", opp?.name ?? "waiting…", opp?.team ?? null)];
+    if (host) {
+      const go = primaryButton(`Start online match · ${this.prefs.overs} overs`, TEAL, () => {
+        if (!link.ready) return;
+        const cfg = link.start(this.prefs.overs);
+        this.beginOnline(cfg, 0);
+      });
+      go.setAttribute("data-testid", "cricket-online-start");
+      go.disabled = !link.ready;
+      if (!link.ready) go.style.opacity = "0.5";
+      items.push(go);
+    }
+    items.push(leave);
+    lobby.replaceChildren(...items);
+    lobby.setAttribute("data-testid", "cricket-lobby");
+  }
+
+  /** Start an online match (side 0 hosts, side 1 is the guest). */
+  private beginOnline(cfg: MatchConfig, side: 0 | 1) {
+    const link = this.link;
+    if (!link) return;
+    this.audio.unlock();
+    this.menu.hidden = true;
+    this.teardown(false);
+    this.ended = false;
+    this.unranked = true;
+    this.online = cfg;
+    this.sim = matchFrom(cfg, side);
+    this.pump = side === 0 ? new HostPump(this.sim, link, cfg) : new GuestPump(this.sim, link);
+    this.launch(new URLSearchParams(window.location.search).has("cricket"));
+  }
+
+  private launch(test: boolean) {
+    const p = this.prefs;
+    if (!this.sim) return;
     this.kind = this.sim.bowler.style === "spin" ? SPIN_KINDS[0] : PACE_KINDS[0];
     if (test) {
       const w = window as unknown as { __cricket?: CricketSim; __cricketAdvance?: (s: number) => void };
@@ -283,6 +429,7 @@ class CricketGame implements GameModule {
         for (let i = 0; i < secs * 60 && sim.phase !== "done"; i++) this.update(1 / 60);
         sim.autopilot = false;
         for (let i = 0; i < 3; i++) this.view?.render(0.2, this.prefs.cam, { aim: this.aim, target: this.target, shot: this.shotType });
+        this.hud?.update(0.1, { kind: this.kind, field: this.field, shot: this.shotType });
       };
     }
     try {
@@ -308,7 +455,13 @@ class CricketGame implements GameModule {
     this.view.canvas.focus({ preventScroll: true });
   }
 
-  private teardown() {
+  private teardown(leaveRoom = true) {
+    if (leaveRoom) {
+      this.link?.close();
+      this.link = null;
+      this.online = null;
+    }
+    this.pump = null;
     this.hud?.destroy();
     this.hud = null;
     this.view?.destroy();
@@ -341,12 +494,19 @@ class CricketGame implements GameModule {
     inp.kind = this.kind;
     inp.target = this.target;
     inp.field = this.field;
-    sim.step(dt, inp);
+    let events = sim.events;
+    if (this.pump) events = this.pump.step(dt, inp, performance.now());
+    else sim.step(dt, inp);
     inp.shot = null;
     inp.bowl = false;
     inp.run = false;
     inp.next = false;
-    for (const e of sim.events) {
+    // Online: the other player left mid-match.
+    if (this.online && this.link?.opponentGone && sim.phase !== "done" && !this.ended) {
+      this.finish("Your opponent left the match.");
+      return;
+    }
+    for (const e of events) {
       this.view.onEvent(e);
       this.hud?.onEvent(e);
       this.audio.onEvent(e);
@@ -416,15 +576,16 @@ class CricketGame implements GameModule {
     this.hud?.update(dt, { kind: this.kind, field: this.field, shot: this.shotType });
   }
 
-  private finish() {
+  private finish(note?: string) {
     const sim = this.sim!;
     this.ended = true;
     this.loop.pause();
     const score = sim.score();
+    const meIdx = Math.max(0, sim.opts.human);
     const rec = read<CricketRecord>(RECORD_KEY, { played: 0, won: 0, best: 0, highScore: 0, bestBowling: "", sixes: 0 });
-    const mine = sim.innings.find((i) => i.bat === 0);
+    const mine = sim.innings.find((i) => i.bat === meIdx);
     const myTop = mine ? Math.max(0, ...mine.cards.map((c) => c.runs)) : 0;
-    const theirs = sim.innings.find((i) => i.bat === 1);
+    const theirs = sim.innings.find((i) => i.bat !== meIdx);
     const bestFig = theirs ? [...theirs.bowl.values()].sort((a, b) => b.wkts - a.wkts || a.runs - b.runs)[0] : undefined;
     if (!this.unranked) {
       rec.played++;
@@ -436,7 +597,8 @@ class CricketGame implements GameModule {
       write(RECORD_KEY, rec);
     }
     const final = { kind: "final" as const, score, durationMs: this.loop.activeMs, ranked: !this.unranked };
-    const title = sim.opts.mode === "nets" ? "Nets session over" : sim.won === true ? "You won!" : sim.won === false ? "Beaten" : "Match tied";
+    const title = note ? "Match abandoned" : sim.opts.mode === "nets" ? "Nets session over" : sim.won === true ? "You won!" : sim.won === false ? "Beaten" : "Match tied";
+    const vs = this.online ? `${this.online.names[0]} v ${this.online.names[1]} · online` : "";
     const box = el(
       "div",
       "absolute inset-0 z-20 grid place-items-center overflow-auto bg-black/80 p-4 text-white",
@@ -445,7 +607,8 @@ class CricketGame implements GameModule {
         "w-full max-w-lg rounded-xl border border-white/15 bg-[#0b0f18] p-5 text-center",
         el("p", "text-[11px] font-bold uppercase tracking-[0.35em] text-[#facc15]", sim.opts.mode === "match" ? "Full time" : sim.opts.mode === "superover" ? "Super over" : "Nets"),
         el("p", "mt-1 font-display text-3xl font-black uppercase", title),
-        el("p", "mt-1 text-sm text-white/70", sim.resultText),
+        el("p", "mt-1 text-sm text-white/70", note ?? sim.resultText),
+        vs ? el("p", "mt-1 text-xs uppercase tracking-[0.25em] text-[#22d3ee]", vs) : el("span"),
         el("div", "mt-4 grid grid-cols-2 gap-2 text-left sm:grid-cols-4", stat("Your runs", sim.humanRuns), stat("Wickets", sim.humanWkts), stat("Sixes", sim.sixes), stat("Longest six", sim.longest ? `${sim.longest} m` : "–")),
         this.topCard(0),
         sim.innings[1] ? this.topCard(1) : el("div"),

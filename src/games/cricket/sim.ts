@@ -199,6 +199,11 @@ export interface CricketInput {
   bowl: boolean;
   /** Continue past a break. */
   next: boolean;
+  /** Online: when the remote batter pressed (delivery time, s), and that they let it go. */
+  pressAt?: number;
+  leave?: boolean;
+  /** Online: the meter value the remote bowler saw when they released. */
+  meter?: number;
 }
 
 export const emptyInput = (): CricketInput => ({ aim: -20, shot: null, run: false, kind: "stock", target: { x: -0.2, z: 6 }, field: "balanced", bowl: false, next: false });
@@ -215,9 +220,11 @@ export interface MatchOptions {
   seed: number;
   /** Super over: the target to chase. */
   target?: number;
+  /** Online: the other team is a person too (their input comes in as `remote`). */
+  versus?: boolean;
 }
 
-const RUNUP_S = 1.7;
+export const RUNUP_S = 1.7;
 const deg = Math.PI / 180;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const gauss = (r: Rng) => {
@@ -427,6 +434,10 @@ export class CricketSim {
   private runPush = 0;
   private runClock = 0;
   private thrown = false;
+  /** The ball has been thrown in (the live ball is now a throw). */
+  get isThrown() {
+    return this.thrown;
+  }
   private throwFrom: V3 | null = null;
   private throwTo: V3 | null = null;
   private throwT = 0;
@@ -437,12 +448,25 @@ export class CricketSim {
   private ballWicket: string | null = null;
   private ballExtra: "wd" | "nb" | null = null;
   /** Your score for the platform. */
-  humanRuns = 0;
-  humanWkts = 0;
+  /** Per team: runs scored, wickets taken, sixes and the longest six. */
+  runsBy = [0, 0];
+  wktsBy = [0, 0];
+  sixesBy = [0, 0];
+  longestBy = [0, 0];
   won: boolean | null = null;
+  /** The winning team (null for a tie or nets). */
+  winner: 0 | 1 | null = null;
+  // Online, host: holding the ball at the bat for the remote batter's press.
+  private remoteLeft = false;
+  private holdT = 0;
+  // Online, guest: the delivery flies locally so your timing is exact.
+  puppet = false;
+  localFlight = false;
+  /** Guest: your press (delivery time), and whether the ball has passed you unplayed. */
+  localPress = -1;
+  localLeave = false;
+  netThrown = false;
   resultText = "";
-  sixes = 0;
-  longest = 0;
 
   constructor(opts: MatchOptions) {
     this.opts = opts;
@@ -472,6 +496,34 @@ export class CricketSim {
   }
   get humanBowls() {
     return !this.autopilot && this.opts.mode !== "nets" && this.opts.human === 1 - this.inn.bat;
+  }
+  /** Online: is the other person batting / bowling? */
+  get remoteBats() {
+    return !this.autopilot && !!this.opts.versus && this.opts.human !== this.inn.bat;
+  }
+  get remoteBowls() {
+    return !this.autopilot && !!this.opts.versus && this.opts.mode !== "nets" && this.opts.human !== 1 - this.inn.bat;
+  }
+  private get personBats() {
+    return this.humanBats || this.remoteBats;
+  }
+  private get personBowls() {
+    return this.humanBowls || this.remoteBowls;
+  }
+  private get me() {
+    return this.opts.human < 0 ? -1 : this.opts.human;
+  }
+  get humanRuns() {
+    return this.me < 0 ? 0 : this.runsBy[this.me];
+  }
+  get humanWkts() {
+    return this.me < 0 ? 0 : this.wktsBy[this.me];
+  }
+  get sixes() {
+    return this.me < 0 ? 0 : this.sixesBy[this.me];
+  }
+  get longest() {
+    return this.me < 0 ? 0 : this.longestBy[this.me];
   }
   get target() {
     if (this.opts.mode === "superover" && this.opts.target) return this.opts.target;
@@ -572,62 +624,67 @@ export class CricketSim {
 
   // ------------------------------------------------------------------ step
 
-  step(dt: number, input: CricketInput) {
+  step(dt: number, input: CricketInput, remote?: CricketInput) {
+    if (this.puppet) return this.stepPuppet(dt);
     this.pt += dt;
     this.t += dt;
-    if (this.humanBats) this.aim = clamp(input.aim, -180, 180);
+    const batIn = this.humanBats ? input : this.remoteBats ? (remote ?? null) : null;
+    const bowlIn = this.humanBowls ? input : this.remoteBowls ? (remote ?? null) : null;
+    if (batIn) this.aim = clamp(batIn.aim, -180, 180);
     this.stepPeople(dt);
     for (let i = 0; i < 2; i++) this.broken[i] = Math.max(0, this.broken[i] - dt * 0.15);
     switch (this.phase) {
       case "plan":
-        return this.stepPlan(input);
+        return this.stepPlan(bowlIn);
       case "runup":
-        return this.stepRunup(input);
+        return this.stepRunup(bowlIn);
       case "delivery":
-        if (input.shot && this.humanBats && this.pressAt < 0) {
-          this.pressAt = this.t;
-          this.pressShot = input.shot;
+        if (batIn?.shot && this.pressAt < 0) {
+          this.pressAt = batIn.pressAt ?? this.t;
+          this.pressShot = batIn.shot;
         }
+        if (batIn?.leave) this.remoteLeft = true;
         return this.stepDelivery(dt);
       case "live":
-        if (input.run && this.humanBats) this.pushRun();
+        if (batIn?.run) this.pushRun();
         return this.stepLive(dt);
       case "dead":
         if (this.pt > 1.6) this.nextBall();
         return;
       case "break":
-        if (input.next || this.pt > (this.opts.human >= 0 ? 45 : 3)) this.afterBreak();
+        if (input.next || remote?.next || this.pt > (this.opts.human >= 0 ? 45 : 3)) this.afterBreak();
         return;
       case "done":
         return;
     }
   }
 
-  private stepPlan(input: CricketInput) {
-    const wait = this.humanBowls ? Infinity : this.humanBats ? 0.9 : 0.5;
-    if (this.humanBowls && this.field !== input.field) this.placeField(input.field);
-    if (this.pt >= wait || (this.humanBowls && input.bowl)) {
-      this.humanPlan = this.humanBowls ? { kind: input.kind, target: { ...input.target } } : null;
+  private stepPlan(input: CricketInput | null) {
+    const person = this.personBowls && !!input;
+    const wait = person ? Infinity : this.personBats ? 0.9 : 0.5;
+    if (person && this.field !== input.field) this.placeField(input.field);
+    if (this.pt >= wait || (person && input.bowl)) {
+      this.humanPlan = person ? { kind: input.kind, target: { ...input.target } } : null;
       this.meter = 0;
       this.meterLocked = null;
       this.phase = "runup";
       this.pt = 0;
       const kind = this.humanPlan?.kind ?? this.aiKind();
-      this.delivery = this.humanBowls ? null : this.aiDelivery(kind);
+      this.delivery = person ? null : this.aiDelivery(kind);
       this.events.push({ kind: "runup", bowler: this.bowler.name, delivery: KINDS[kind].name });
       this.pendingKind = kind;
     }
   }
   private pendingKind: Kind = "stock";
 
-  private stepRunup(input: CricketInput) {
+  private stepRunup(input: CricketInput | null) {
     const k = this.pt / RUNUP_S;
-    if (this.humanBowls && this.meterLocked === null) {
+    if (this.humanPlan && this.meterLocked === null) {
       this.meter = Math.min(1, k * 1.08);
-      if (input.bowl && this.pt > 0.15) this.meterLocked = this.meter;
+      if (input?.bowl && this.pt > 0.15) this.meterLocked = clamp(input.meter ?? this.meter, 0, 1);
     }
     if (this.pt < RUNUP_S) return;
-    if (this.humanBowls) {
+    if (this.humanPlan) {
       const m = this.meterLocked ?? 0.55 + this.rng.next() * 0.3;
       this.delivery = this.humanDelivery(this.humanPlan!.kind, this.humanPlan!.target, m);
     }
@@ -701,7 +758,9 @@ export class CricketSim {
     this.contactZ = d.pz < 6.2 ? 1.95 : 1.15;
     if (d.noBall) this.events.push({ kind: "noball" });
     this.events.push({ kind: "release", speed: Math.round(d.speed * 3.6) });
-    if (!this.humanBats) this.planAiShot();
+    this.remoteLeft = false;
+    this.holdT = 0;
+    if (!this.personBats) this.planAiShot();
   }
 
   /** Where the delivery will be when it reaches the bat (no shot). */
@@ -753,7 +812,7 @@ export class CricketSim {
       this.aiPress = null;
       return;
     }
-    const sd = (0.034 + 0.07 * diff) * (1.45 - skill * 0.7) * lv.bat * (this.humanBowls ? 1 : 0.9);
+    const sd = (0.034 + 0.07 * diff) * (1.45 - skill * 0.7) * lv.bat * (this.personBowls ? 1 : 0.9);
     let dt = gauss(this.rng) * sd;
     if (d.kind === "slower" && this.rng.next() < 0.6) dt -= 0.05;
     const aim = this.findGap(nat, shot === "loft");
@@ -810,6 +869,17 @@ export class CricketSim {
     for (let i = 0; i < sub; i++) {
       const prevZ = this.ball.z;
       const h = dt / sub;
+      // Online: the remote batter sees the ball a moment later; hold it at the bat until their call arrives.
+      if (this.remoteBats && this.pressAt < 0 && !this.remoteLeft && this.holdT < 0.6) {
+        const p = { ...this.ball };
+        const v = { ...this.vel };
+        this.flightStep(p, v, h, this.bounced);
+        if (prevZ > this.contactZ && p.z <= this.contactZ) {
+          this.holdT += h;
+          this.t -= h;
+          continue;
+        }
+      }
       if (this.aiPress && this.pressAt < 0 && this.t >= this.aiPress.at) {
         this.pressAt = this.aiPress.at;
         this.pressShot = this.aiPress.shot;
@@ -950,7 +1020,7 @@ export class CricketSim {
     if (pl.kind === "boundary") this.runPlan = 2;
     else {
       const ta = pl.at + 0.75 + Math.hypot(pl.x, pl.z - (pl.z > PITCH / 2 ? PITCH : 0)) / 28;
-      const margin = this.humanBats ? 0.35 : 0.12 + (1 - this.aggression()) * 0.3;
+      const margin = this.personBats ? 0.35 : 0.12 + (1 - this.aggression()) * 0.3;
       let n = 0;
       while (n < 4 && runTime(n + 1) + margin < ta) n++;
       if (pl.kind === "catch" && pl.willCatch) n = Math.min(n, 1);
@@ -1052,8 +1122,8 @@ export class CricketSim {
         const dist = Math.round(Math.hypot(this.ball.x, this.ball.z - 0));
         this.ballRuns = six ? 6 : 4;
         if (six) {
-          this.sixes += this.humanBats ? 1 : 0;
-          this.longest = Math.max(this.longest, this.humanBats ? dist : 0);
+          this.sixesBy[this.inn.bat]++;
+          this.longestBy[this.inn.bat] = Math.max(this.longestBy[this.inn.bat], dist);
           this.events.push({ kind: "six", dist });
           this.umpires[0].pose = "six";
         } else {
@@ -1164,7 +1234,7 @@ export class CricketSim {
     if (!runOut) {
       const bc = inn.bowl.get(inn.bowler)!;
       bc.wkts++;
-      if (this.opts.human === 1 - inn.bat && !this.autopilot) this.humanWkts++;
+      this.wktsBy[1 - inn.bat]++;
     }
     this.batters[0].pose = "out";
     this.events.push({ kind: "out", how, batter: this.batTeam.players[out].name, runs: card.runs, balls: card.balls + 1 });
@@ -1197,7 +1267,7 @@ export class CricketSim {
         inn.sixes++;
       }
     }
-    if (this.humanBats) this.humanRuns += runs;
+    this.runsBy[inn.bat] += runs;
     if (legal) inn.balls++;
     const sym = this.ballWicket ? "W" : extra === "wd" ? "wd" : extra === "nb" ? `nb${runs ? "+" + runs : ""}` : runs ? String(runs) : "•";
     inn.over.push(sym);
@@ -1245,7 +1315,7 @@ export class CricketSim {
       [inn.striker, inn.nonStriker] = [inn.nonStriker, inn.striker];
       inn.lastBowler = inn.bowler;
       this.pickBowler();
-      this.placeField(this.humanBowls ? this.field : undefined);
+      this.placeField(this.personBowls ? this.field : undefined);
     }
     this.resetForBall();
   }
@@ -1283,35 +1353,38 @@ export class CricketSim {
     this.phase = "done";
     const inns = this.innings;
     const mode = this.opts.mode;
-    let won: boolean | null = null;
+    let winner: 0 | 1 | null = null;
     let text = "";
-    const me = this.opts.human;
     if (mode === "nets") {
       text = `${inns[0].runs} runs in the nets`;
     } else if (mode === "superover") {
       const need = this.target;
       const inn = inns[0];
       const ok = inn.runs >= need;
-      won = me === inn.bat ? ok : !ok;
+      winner = ok ? inn.bat : ((1 - inn.bat) as 0 | 1);
       text = ok ? `${this.teams[inn.bat].name} chased ${need} with ${6 - inn.balls} balls to spare` : `${this.teams[1 - inn.bat].name} defended ${need - 1}`;
     } else {
       const [a, b] = inns;
       if (b.runs > a.runs) {
         text = `${this.teams[b.bat].name} won by ${this.maxWkts - b.wkts} wicket${this.maxWkts - b.wkts === 1 ? "" : "s"}`;
-        won = me === b.bat;
+        winner = b.bat;
       } else if (b.runs < a.runs) {
         const by = a.runs - b.runs;
         text = `${this.teams[a.bat].name} won by ${by} run${by === 1 ? "" : "s"}`;
-        won = me === a.bat;
+        winner = a.bat;
       } else {
         text = "Match tied!";
-        won = null;
       }
     }
-    if (me < 0) won = null;
-    this.won = won;
+    this.setResult(winner, text);
+    this.events.push({ kind: "matchEnd", result: text, won: this.won });
+  }
+
+  /** The result, seen from your side. */
+  setResult(winner: 0 | 1 | null, text: string) {
+    this.winner = winner;
     this.resultText = text;
-    this.events.push({ kind: "matchEnd", result: text, won });
+    this.won = this.opts.human < 0 || this.opts.mode === "nets" || winner === null ? null : winner === this.opts.human;
   }
 
   /** Platform score: runs you made, wickets you took, a win bonus. */
@@ -1369,6 +1442,57 @@ export class CricketSim {
       }
       if (f.pose === "catch" || f.pose === "throw" || f.pose === "dive") f.act = Math.min(1, f.act + dt * 1.6);
     }
+  }
+
+  // ------------------------------------------------------------- online
+
+  /**
+   * Guest side of an online match: the host's snapshots set the state; in
+   * between, the ball and people carry on, and while you bat the delivery is
+   * flown here so the timing of your shot is exactly what you see.
+   */
+  private stepPuppet(dt: number) {
+    this.t += dt;
+    this.pt += dt;
+    if (this.phase === "delivery" && this.localFlight && this.delivery) {
+      const sub = 4;
+      for (let i = 0; i < sub; i++) {
+        const prevZ = this.ball.z;
+        const p = { ...this.ball };
+        const v = { ...this.vel };
+        if (this.flightStep(p, v, dt / sub, this.bounced)) {
+          this.bounced = true;
+          this.events.push({ kind: "bounce", onPitch: true });
+        }
+        if (prevZ > this.contactZ && p.z <= this.contactZ) {
+          // At the bat: wait here for the host's verdict if you played; otherwise it's gone past.
+          if (this.localPress >= 0 && this.lastShot?.type !== "miss") return;
+          this.localLeave = true;
+        }
+        this.ball = p;
+        this.vel = v;
+        if (this.ball.z < this.fielders[0]?.z + 0.3) {
+          this.ballVisible = false;
+          return;
+        }
+      }
+    } else if (this.phase === "live" && !this.netThrown) {
+      stepBall(this.ball, this.vel, dt);
+    }
+    if (this.phase === "runup" && this.meterLocked === null) this.meter = Math.min(1, (this.pt / RUNUP_S) * 1.08);
+    const s = this.batters[0];
+    if (s?.pose === "shot") s.act = Math.min(1, s.act + dt / 0.55);
+  }
+
+  /** Guest: you played a shot (shown straight away; the host decides what happened). */
+  localShot(shot: ShotType) {
+    if (this.localPress >= 0 || this.phase !== "delivery") return -1;
+    this.localPress = this.t;
+    const s = this.batters[0];
+    s.pose = "shot";
+    s.act = 0;
+    s.shot = shot;
+    return this.localPress;
   }
 
   // ---------------------------------------------------------- headless

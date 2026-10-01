@@ -405,3 +405,7 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      batting against your bowling and headless sims, and the numbers were tuned against whole simulated T20s.
 116. **New spots go to the front of the queue.** One ad per visit stays the rule; the newest games' spots
      play first (twice each) so players see what's new, then the older spots get their turns.
+117. **Online cricket trusts the batter's own clock.** Shot timing is measured in tens of milliseconds, less
+     than a network round trip, so the guest flies each delivery locally and sends their press with its
+     delivery time; the host waits at the bat (up to 0.6 s) for it. The guest could cheat its timing, so online
+     matches are unranked.
