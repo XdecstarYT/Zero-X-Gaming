@@ -13,6 +13,7 @@ import { scorecard } from "./scorecard";
 import { BroadcastChannelTransport, normalizeRoom, randomRoom, ROOM_RE, type Transport } from "../neon-siege/net";
 import { SupabaseTransport } from "../neon-siege/net-supabase";
 import { CricketLink, GuestPump, HostPump, matchFrom, type CricketMsg, type MatchConfig } from "./online";
+import { quickMatch } from "@/lib/matchmaking";
 
 const PREFS_KEY = "zx-cricket-prefs";
 const LEAGUE_KEY = "zx-cricket-league";
@@ -72,6 +73,9 @@ class CricketGame implements GameModule {
   private pump: HostPump | GuestPump | null = null;
   private online: MatchConfig | null = null;
   private room = "";
+  /** Quick match: leave the public directory; and start as soon as someone arrives. */
+  private qmLeave: (() => void) | null = null;
+  private quick = false;
 
   // Input.
   private inp: CricketInput = emptyInput();
@@ -451,6 +455,8 @@ class CricketGame implements GameModule {
     const lobby = el("div", "flex flex-col gap-2");
     const join = button("Join room", `${BTN} border-[#22d3ee]`, () => void this.joinRoom(normalizeRoom(input.value), status, lobby, join));
     join.setAttribute("data-testid", "cricket-join");
+    const quick = primaryButton("Quick match", "#0891b2", () => void this.quickJoin(input, status, lobby, join, quick));
+    quick.setAttribute("data-testid", "cricket-quick");
     const copy = button("Copy invite link", BTN, () => {
       const url = new URL(window.location.href);
       url.search = "";
@@ -464,10 +470,33 @@ class CricketGame implements GameModule {
     return card(
       "Play a friend online",
       el("p", "text-xs text-white/70", `Pick a room code and share it (or the invite link). One of you bats while the other bowls, then you swap for the chase. Uses your team and the overs above.${this.localNet() ? " Local mode: rooms work between tabs of this browser." : ""}`),
+      quick,
+      el("p", "text-[11px] text-white/50", "Quick match pairs you with whoever's waiting. Or play a friend with a code:"),
       el("div", "flex flex-wrap items-center gap-2", input, join, copy),
       status,
       lobby,
     );
+  }
+
+  /** Pair up with a stranger: join someone waiting, or wait for the next player. */
+  private async quickJoin(input: HTMLInputElement, status: HTMLElement, lobby: HTMLElement, join: HTMLButtonElement, quick: HTMLButtonElement) {
+    quick.disabled = true;
+    status.textContent = "Finding an opponent…";
+    this.qmLeave?.();
+    try {
+      const local = this.localNet();
+      const name = this.opts.playerName ?? "Player";
+      const dir = (n: string) => (local ? new BroadcastChannelTransport<unknown>("QUICK", n, undefined, "cricket-mm") : new SupabaseTransport<unknown>("QUICK", n, undefined, "cricket-mm"));
+      const qm = await quickMatch(dir, name, 2);
+      this.qmLeave = qm.leave;
+      this.quick = true;
+      input.value = qm.room;
+      await this.joinRoom(qm.room, status, lobby, join);
+    } catch (e) {
+      status.textContent = (e as Error).message || "Couldn't find a match.";
+    } finally {
+      quick.disabled = false;
+    }
   }
 
   private localNet() {
@@ -512,10 +541,19 @@ class CricketGame implements GameModule {
     }
     const opp = link.opponent;
     const host = link.isHost;
+    // Quick match: no waiting on a button, the host starts once the pair's ready.
+    if (this.quick && host && opp && link.ready) {
+      const cfg = link.start(this.prefs.overs);
+      this.beginOnline(cfg, 0);
+      return;
+    }
     status.textContent = !opp ? `Room ${this.room}: waiting for your opponent…` : host ? `${opp.name} is in. Start when you're ready.` : "Waiting for the host to start the match…";
     const row = (who: string, name: string, team: string | null) =>
       el("div", "flex items-center justify-between rounded bg-white/5 px-3 py-2 text-sm", el("span", "font-bold", `${who}: ${name}`), el("span", "text-white/70", team ? teamById(team).name : "—"));
     const leave = button("Leave room", `${BTN} text-xs`, () => {
+      this.qmLeave?.();
+      this.qmLeave = null;
+      this.quick = false;
       link.close();
       this.link = null;
       lobby.replaceChildren();
@@ -597,7 +635,10 @@ class CricketGame implements GameModule {
   }
 
   private teardown(leaveRoom = true) {
+    this.qmLeave?.();
+    this.qmLeave = null;
     if (leaveRoom) {
+      this.quick = false;
       this.link?.close();
       this.link = null;
       this.online = null;

@@ -2,6 +2,7 @@ import { registerOnlineMenu } from "./index";
 import { BroadcastChannelTransport, normalizeRoom, randomRoom, ROOM_RE, type Transport } from "./net";
 import { SupabaseTransport } from "./net-supabase";
 import { OnlineController, ROOM_SIZE } from "./online";
+import { quickMatch } from "@/lib/matchmaking";
 
 /**
  * "Online · Deathmatch" section of the Neon Siege menu.
@@ -28,6 +29,9 @@ function makeTransport(room: string, name: string): Transport {
   return isLocalMode() ? new BroadcastChannelTransport(room, name) : new SupabaseTransport(room, name);
 }
 
+/** The public quick-match directory for Neon Siege. */
+const directory = (name: string) => (isLocalMode() ? new BroadcastChannelTransport<unknown>("QUICK", name, undefined, "siege-mm") : new SupabaseTransport<unknown>("QUICK", name, undefined, "siege-mm"));
+
 registerOnlineMenu(({ playerName, outfit, start, container }) => {
   const params = new URLSearchParams(window.location.search);
   const initial = normalizeRoom(params.get("room") ?? "") || randomRoom();
@@ -53,6 +57,13 @@ registerOnlineMenu(({ playerName, outfit, start, container }) => {
     "Join room",
   );
   join.type = "button";
+  const quick = el(
+    "button",
+    "rounded-md bg-cyan px-4 py-2 font-display text-xs font-bold uppercase tracking-wider text-bg hover:shadow-glow-cyan disabled:opacity-50",
+    "Quick match",
+  );
+  quick.type = "button";
+  quick.dataset.testid = "siege-quick";
   const fresh = el("button", BTN, "New code");
   fresh.type = "button";
   const copy = el("button", BTN, "Copy invite link");
@@ -104,6 +115,34 @@ registerOnlineMenu(({ playerName, outfit, start, container }) => {
     if (e.key === "Enter") join.click();
   });
 
+  // Quick match: join strangers in a room with space, or open one for the next player.
+  quick.addEventListener("click", async () => {
+    quick.disabled = join.disabled = true;
+    status.textContent = "Finding players…";
+    let leave = () => {};
+    try {
+      const qm = await quickMatch(directory, playerName, ROOM_SIZE);
+      leave = qm.leave;
+      input.value = qm.room;
+      status.textContent = qm.others ? `Joining ${qm.others} player${qm.others > 1 ? "s" : ""} in ${qm.room}…` : `Opening room ${qm.room}: others will join you.`;
+      const transport = makeTransport(qm.room, playerName);
+      const close = transport.close.bind(transport);
+      transport.close = () => {
+        qm.leave();
+        close();
+      };
+      const controller = await OnlineController.join(transport, playerName, qm.room);
+      controller.me.outfit = outfit;
+      status.textContent = "";
+      start(controller);
+    } catch (e) {
+      leave();
+      status.textContent = (e as Error).message || "Couldn't find a match.";
+    } finally {
+      quick.disabled = join.disabled = false;
+    }
+  });
+
   const label = el("label", "sr-only", "Room code");
   label.htmlFor = input.id;
   const hint = el(
@@ -124,6 +163,8 @@ registerOnlineMenu(({ playerName, outfit, start, container }) => {
       "text-xs text-muted",
       `Free-for-all, up to ${ROOM_SIZE} fighters. Bots fill empty slots. Unranked. Playing as ${playerName}.`,
     ),
+    quick,
+    el("p", "text-[11px] text-subtle", "Quick match puts you in with whoever's online. Or play friends with a code:"),
     el("div", "flex flex-wrap items-center justify-center gap-2", label, input, join, fresh, copy),
     hint,
     status,

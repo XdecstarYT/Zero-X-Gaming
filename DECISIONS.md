@@ -429,3 +429,7 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 123. **Season players are fixed lists, not match-day inventions.** Medal counts and caps need the same names
      every week, so clubs and franchises get deterministic squads; simulated games hand out goals, runs,
      wickets and votes to those names by position and rating.
+124. **Quick match is a directory, not a server.** Strangers find each other through a public presence room
+     per game where everyone in a quick-match room lists their code; a newcomer joins the fullest room with
+     space or opens one for the next player. No matchmaking service to run, and it works on the same
+     transports (and the same local test mode) as the games themselves.
