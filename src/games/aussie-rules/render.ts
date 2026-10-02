@@ -145,13 +145,15 @@ export class FootyView {
         hair: HAIRS[(seed >> 5) % HAIRS.length],
         seed,
         lod: high ? "high" : "low",
-        outfit: { female: false, top: "guernsey", bottom: "shorts", socks: true, hat: "none", backpack: false, officer: false },
+        outfit: sim.women
+          ? { female: true, top: "guernsey", bottom: "shorts", socks: true, hat: "none", backpack: false, officer: false, beard: false, hair: (seed >> 2) % 3 ? "ponytail" : "short" }
+          : { female: false, top: "guernsey", bottom: "shorts", socks: true, hat: "none", backpack: false, officer: false },
         accent: club.hoop,
         shoes: "#121212",
         number: p.number,
         numberColor: club.number,
       });
-      model.group.scale.setScalar(1.05);
+      model.group.scale.setScalar(sim.women ? 0.98 : 1.05);
       this.scene.add(model.group);
       this.players.push({ model, t: Math.random() * 10 });
     }

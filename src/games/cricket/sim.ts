@@ -127,6 +127,8 @@ export interface Innings {
   over: string[];
   /** Runs at the end of each over (for the worm). */
   worm: number[];
+  /** Where each scoring shot went (the wagon wheel). */
+  shots: { x: number; z: number; runs: number }[];
 }
 
 export type Pose = "stand" | "run" | "crouch" | "keeper" | "catch" | "dive" | "throw" | "bowl" | "celebrate" | "stance" | "shot" | "out";
@@ -180,9 +182,31 @@ export type SimEvent =
   | { kind: "notout" }
   | { kind: "overEnd"; summary: string }
   | { kind: "inningsEnd"; summary: string }
-  | { kind: "matchEnd"; result: string; won: boolean | null };
+  | { kind: "matchEnd"; result: string; won: boolean | null }
+  | { kind: "powerplay"; on: boolean }
+  | { kind: "drs"; stage: "offer" | "review" | "verdict"; side: 0 | 1; text: string; out?: boolean };
 
-export type Phase = "plan" | "runup" | "delivery" | "live" | "dead" | "break" | "done";
+export type Phase = "plan" | "runup" | "delivery" | "live" | "dead" | "review" | "break" | "done";
+
+/** An LBW decision that can go upstairs: what the umpire said and what ball-tracking shows. */
+export interface DrsCase {
+  /** The side that may review (the one the decision went against). */
+  side: 0 | 1;
+  /** On the field: out? */
+  given: boolean;
+  /** Ball-tracking: out? */
+  truth: boolean;
+  pitching: "in line" | "outside off" | "outside leg" | "full toss";
+  impact: "in line" | "outside off" | "outside leg";
+  wickets: "hitting" | "umpire's call" | "missing";
+  /** The ball's path to the pad, then on to the stumps. */
+  path: V3[];
+  projected: V3[];
+  pitchAt: V3 | null;
+  impactAt: V3;
+  stage: "offer" | "review";
+  t: number;
+}
 
 export interface CricketInput {
   /** Batting: aim direction (deg, 0 = straight, + leg side). */
@@ -204,6 +228,8 @@ export interface CricketInput {
   leave?: boolean;
   /** Online: the meter value the remote bowler saw when they released. */
   meter?: number;
+  /** Send a decision upstairs (DRS). */
+  review?: boolean;
 }
 
 export const emptyInput = (): CricketInput => ({ aim: -20, shot: null, run: false, kind: "stock", target: { x: -0.2, z: 6 }, field: "balanced", bowl: false, next: false });
@@ -222,6 +248,8 @@ export interface MatchOptions {
   target?: number;
   /** Online: the other team is a person too (their input comes in as `remote`). */
   versus?: boolean;
+  /** Umpires make mistakes and each side gets a review an innings (default: on in offline matches). */
+  drs?: boolean;
 }
 
 export const RUNUP_S = 1.7;
@@ -454,6 +482,15 @@ export class CricketSim {
   sixesBy = [0, 0];
   longestBy = [0, 0];
   won: boolean | null = null;
+  /** Reviews left this innings, per team. */
+  reviews: [number, number] = [1, 1];
+  /** An LBW decision on its way upstairs (phase "review"). */
+  drs: DrsCase | null = null;
+  /** This delivery's path so far (for ball-tracking). */
+  private track: V3[] = [];
+  private pitchAt: V3 | null = null;
+  /** The furthest the ball got from the bat this ball (the wagon wheel). */
+  private reach: { x: number; z: number } | null = null;
   /** The winning team (null for a tie or nets). */
   winner: 0 | 1 | null = null;
   // Online, host: holding the ball at the bat for the remote batter's press.
@@ -538,6 +575,17 @@ export class CricketSim {
   get bowler(): Player {
     return this.bowlTeam.players[this.inn.bowler];
   }
+  /** Is DRS in use in this match? */
+  get drsOn() {
+    return this.opts.mode === "match" && !this.opts.versus && this.opts.drs !== false;
+  }
+  /** Fielding restrictions for the first 30% of the overs (whole overs). */
+  get ppBalls() {
+    return this.opts.mode === "match" ? Math.max(6, Math.round((this.ballsPerInnings * 0.3) / 6) * 6) : 0;
+  }
+  get powerplay() {
+    return this.inn.balls < this.ppBalls;
+  }
   overs(balls = this.inn.balls) {
     return `${Math.floor(balls / 6)}.${balls % 6}`;
   }
@@ -560,11 +608,14 @@ export class CricketSim {
       lastBowler: -1,
       over: [],
       worm: [],
+      shots: [],
     };
     this.innings.push(inn);
     this.cur = this.innings.length - 1;
+    this.reviews = [1, 1];
     this.pickBowler();
     this.placeField();
+    if (this.ppBalls) this.events.push({ kind: "powerplay", on: true });
     this.phase = "plan";
     this.pt = 0;
   }
@@ -609,6 +660,17 @@ export class CricketSim {
       const dd = spin && d < 22 ? d * 0.7 : d;
       return { x: Math.sin(a * deg) * dd, z: Math.cos(a * deg) * dd };
     });
+    // Powerplay: only two fielders outside the 30-yard circle.
+    if (this.powerplay) {
+      const far = spots.map((sp, i) => ({ i, d: Math.hypot(sp.x, sp.z - PITCH / 2) })).sort((a, b) => b.d - a.d);
+      far.forEach(({ i, d }, k) => {
+        if (k >= 2 && d > 26) {
+          const sp = spots[i];
+          const f = 25 / d;
+          spots[i] = { x: sp.x * f, z: PITCH / 2 + (sp.z - PITCH / 2) * f };
+        }
+      });
+    }
     const kz = spin ? -1.1 : -13;
     const list: Fielder[] = [
       { p: keeperI, role: "keeper", x: -0.3, z: kz, hx: -0.3, hz: kz, heading: 0, speed: 0, pose: "keeper", act: 0, goal: null },
@@ -651,6 +713,8 @@ export class CricketSim {
       case "dead":
         if (this.pt > 1.6) this.nextBall();
         return;
+      case "review":
+        return this.stepReview(dt, this.opts.human >= 0 && !this.autopilot ? input : null);
       case "break":
         if (input.next || remote?.next || this.pt > (this.opts.human >= 0 ? 45 : 3)) this.afterBreak();
         return;
@@ -758,6 +822,9 @@ export class CricketSim {
     this.contactZ = d.pz < 6.2 ? 1.95 : 1.15;
     if (d.noBall) this.events.push({ kind: "noball" });
     this.events.push({ kind: "release", speed: Math.round(d.speed * 3.6) });
+    this.track = [{ ...this.ball }];
+    this.pitchAt = null;
+    this.reach = null;
     this.remoteLeft = false;
     this.holdT = 0;
     if (!this.personBats) this.planAiShot();
@@ -887,8 +954,10 @@ export class CricketSim {
       }
       if (this.flightStep(this.ball, this.vel, h, this.bounced)) {
         this.bounced = true;
+        this.pitchAt = { ...this.ball };
         this.events.push({ kind: "bounce", onPitch: true });
       }
+      if (this.drsOn && this.track.length < 400) this.track.push({ ...this.ball });
       // The bat.
       if (prevZ > this.contactZ && this.ball.z <= this.contactZ) {
         if (this.batAtBall()) return;
@@ -965,23 +1034,99 @@ export class CricketSim {
     const d = this.delivery!;
     const b = { ...this.ball };
     const v = { ...this.vel };
+    const impactAt = { ...this.ball };
     // Hawk-Eye: carry on to the stumps.
-    for (let i = 0; i < 400 && b.z > 0; i++) this.flightStep(b, v, 1 / 240, true);
+    const projected: V3[] = [{ ...b }];
+    for (let i = 0; i < 400 && b.z > 0; i++) {
+      this.flightStep(b, v, 1 / 240, true);
+      if (i % 3 === 0) projected.push({ ...b });
+    }
+    projected.push({ ...b });
     const hitting = Math.abs(b.x) < STUMP_HALF + BALL_R * 0.5 && b.y < STUMP_H;
-    const outsideLeg = d.px > STUMP_HALF + BALL_R;
-    const outsideOffWithShot = this.ball.x < -STUMP_HALF - BALL_R && this.pressAt >= 0;
+    const clipping = hitting && (Math.abs(b.x) > STUMP_HALF - BALL_R * 0.6 || b.y > STUMP_H - BALL_R * 1.5);
+    const px = this.pitchAt?.x ?? d.px;
+    const edge = STUMP_HALF + BALL_R;
+    const outsideLeg = !!this.pitchAt && px > edge;
+    const outsideOffWithShot = this.ball.x < -edge && this.pressAt >= 0;
     const appeal = hitting || Math.abs(b.x) < 0.3;
     this.events.push({ kind: "pad", appeal });
     this.ballVisible = true;
     this.vel = { x: (this.rng.next() - 0.5) * 2, y: 0.5, z: 2 + this.rng.next() * 2 };
-    if (hitting && !outsideLeg && !outsideOffWithShot && !this.freeHit) {
-      this.wicket("LBW");
-      this.umpires[0].pose = "out";
-      this.endBall();
+    const truth = hitting && !outsideLeg && !outsideOffWithShot && !this.freeHit;
+    if (!appeal) return this.endBall();
+    // The umpire's call: right most of the time, less sure on the marginal ones.
+    let given = truth;
+    if (this.drsOn && !this.freeHit && this.rng.next() < (clipping ? 0.3 : Math.abs(Math.abs(b.x) - edge) < 0.12 ? 0.18 : 0.06)) given = !given;
+    const side = (given ? this.inn.bat : 1 - this.inn.bat) as 0 | 1;
+    if (this.drsOn && this.reviews[side] > 0) {
+      const pos = (x: number) => (x > edge ? "outside leg" : x < -edge ? "outside off" : "in line") as DrsCase["impact"];
+      this.drs = {
+        side,
+        given,
+        truth: clipping ? given : truth,
+        pitching: this.pitchAt ? pos(px) : "full toss",
+        impact: pos(this.ball.x),
+        wickets: !hitting ? "missing" : clipping ? "umpire's call" : "hitting",
+        path: this.track.slice(),
+        projected,
+        pitchAt: this.pitchAt ? { ...this.pitchAt } : null,
+        impactAt,
+        stage: "offer",
+        t: 0,
+      };
+      if (given) this.umpires[0].pose = "out";
+      this.phase = "review";
+      this.pt = 0;
+      const human = this.opts.human === side && !this.autopilot;
+      this.events.push({ kind: "drs", stage: "offer", side, text: given ? "Given out LBW" : "Not out", out: given });
+      if (!human) {
+        // The AI sides review when they're fairly sure it's wrong (and sometimes on a hunch).
+        const wrong = this.drs.truth !== given;
+        if (this.rng.next() < (wrong ? 0.75 : 0.08)) this.startReview();
+        else this.settleLbw(given);
+      }
       return;
     }
-    if (appeal) this.events.push({ kind: "notout" });
-    // Leg bye? Just a dead ball.
+    this.settleLbw(given);
+  }
+
+  /** Send it upstairs. */
+  startReview() {
+    const c = this.drs;
+    if (!c || c.stage !== "offer") return;
+    c.stage = "review";
+    c.t = 0;
+    this.events.push({ kind: "drs", stage: "review", side: c.side, text: `${this.teams[c.side].short} review` });
+  }
+
+  private stepReview(dt: number, input: CricketInput | null) {
+    const c = this.drs;
+    if (!c) return this.endBall();
+    c.t += dt;
+    if (c.stage === "offer") {
+      if (input?.review) this.startReview();
+      else if (c.t > 7) this.settleLbw(c.given);
+      return;
+    }
+    if (c.t < 6) return;
+    // The verdict: overturned if ball-tracking disagrees (umpire's call stands).
+    const out = c.truth;
+    const overturned = out !== c.given;
+    if (!overturned && c.wickets !== "umpire's call") this.reviews[c.side]--;
+    const text = c.wickets === "umpire's call" ? `Umpire's call: ${c.given ? "out" : "not out"}, review retained` : overturned ? `Overturned: ${out ? "OUT" : "NOT OUT"}` : `Decision stands: ${out ? "out" : "not out"}`;
+    this.events.push({ kind: "drs", stage: "verdict", side: c.side, text, out });
+    this.settleLbw(out);
+  }
+
+  private settleLbw(out: boolean) {
+    this.drs = null;
+    if (out) {
+      this.wicket("LBW");
+      this.umpires[0].pose = "out";
+    } else {
+      this.umpires[0].pose = "stand";
+      this.events.push({ kind: "notout" });
+    }
     this.endBall();
   }
 
@@ -1008,6 +1153,7 @@ export class CricketSim {
   // ------------------------------------------------------------- the field
 
   private startLive() {
+    this.reach = { x: this.ball.x, z: this.ball.z };
     this.phase = "live";
     this.pt = 0;
     this.t = 0;
@@ -1110,6 +1256,8 @@ export class CricketSim {
     this.runClock += dt;
     if (!this.thrown) {
       stepBall(this.ball, this.vel, dt);
+      const r = this.reach;
+      if (r && Math.hypot(this.ball.x, this.ball.z - CREASE) > Math.hypot(r.x, r.z - CREASE)) this.reach = { x: this.ball.x, z: this.ball.z };
     }
     // Runners: they run what they planned (+ a push).
     const runs = this.runPlan + this.runPush;
@@ -1268,6 +1416,8 @@ export class CricketSim {
       }
     }
     this.runsBy[inn.bat] += runs;
+    if (runs > 0 && this.reach && extra !== "wd") inn.shots.push({ x: Math.round(this.reach.x * 10) / 10, z: Math.round(this.reach.z * 10) / 10, runs });
+    this.reach = null;
     if (legal) inn.balls++;
     const sym = this.ballWicket ? "W" : extra === "wd" ? "wd" : extra === "nb" ? `nb${runs ? "+" + runs : ""}` : runs ? String(runs) : "•";
     inn.over.push(sym);
@@ -1314,6 +1464,7 @@ export class CricketSim {
       inn.over = [];
       [inn.striker, inn.nonStriker] = [inn.nonStriker, inn.striker];
       inn.lastBowler = inn.bowler;
+      if (inn.balls === this.ppBalls) this.events.push({ kind: "powerplay", on: false });
       this.pickBowler();
       this.placeField(this.personBowls ? this.field : undefined);
     }

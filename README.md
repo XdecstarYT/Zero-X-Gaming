@@ -472,6 +472,15 @@ visible and shows each game's score and clock, play by play, team stats, where i
 official match centre and highlights. Real broadcasts aren't free to show, so the site links out rather than
 streaming them.
 
+**Screamer, update two.** A **women's competition** (the same eighteen clubs; women's player models and a
+slightly lighter kick) for exhibitions and premierships. Every club now has a fixed list (`rosters.ts`), so a
+season keeps names: the premiership hub shows the **League Medal** count (3-2-1 votes from every
+home-and-away game, played or simulated) and the **leading goalkicker**, with an awards night at the end.
+Close calls (just inside or outside the post, or touched off the boot) go to a **score review**: the replay
+runs under a SCORE REVIEW tag and the verdict follows. And the **goalkicking challenge**: ten set shots for
+your full forward from in front out to the pockets, the field cleared, the wind and the needle against you
+(6 a goal, bonuses from 35 and 45 m).
+
 #### Fairway
 
 Golf (`src/games/fairway/`), in the Sports+ pass, on two original nine-hole courses: Saltgrass Links (dunes,
@@ -506,6 +515,18 @@ each delivery on their own screen and sends their press with its delivery time w
 the bat until it arrives, and a guest bowler's meter value is the one they saw. `simulateToEnd` plays a whole match headlessly; across seeds an AI innings averages about 170 for 6 with
 20 fours and 8 sixes. Modes: T20 (2, 5 or 20 overs), super over, nets. Registered by
 `20261008090000_boundary_blitz.sql`.
+
+**The mega update.** The **Blitz League** (`league.ts`): a season for the eight franchises, everyone once,
+two points a win then net run rate (an all-out side counts its full quota of overs), semi-finals 1 v 4 and
+2 v 3, and a final. Play your games in the stadium or sim them; everyone else's are simulated ball by ball
+from the squads' ratings, so every player has a season, and the **Orange and Purple Caps** follow the leading
+run-scorer and wicket-taker. **DRS**: umpires now miss the odd LBW (more often on the marginal ones), and each
+side gets one review an innings (V or REVIEW, seven seconds to decide; the AI reviews when it's fairly sure).
+Ball-tracking replays the delivery's real path and carries it on to the stumps, revealing pitching, impact and
+wickets in turn on a clean virtual pitch; umpire's call stands and keeps the review. The **powerplay** keeps all
+but two fielders inside the circle for the first 30% of the overs. And full **scorecards** (how out, R, B, 4s,
+6s, strike rate, extras, did not bat, bowling figures) with a **wagon wheel** of every scoring shot, at the
+innings break, at the end and any time with Tab or CARD. DRS is off online.
 
 The Sports+ games share `src/games/sports-kit/`: the renderer pipeline (tone mapping, shadows, bloom, SMAA,
 the sharpening grade, adaptive resolution, sun or floodlights), the instanced crowd, stadium geometry

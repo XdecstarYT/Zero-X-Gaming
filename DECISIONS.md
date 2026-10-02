@@ -422,3 +422,10 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 121. **Golf shots are flown, not looked up.** Fairway's distances come from the same flight model the
      ball uses, so the yardage book, the caddie, the landing camera and the autopilot can never disagree
      with what the ball actually does; the course's height is cached on a lattice so that stays cheap.
+122. **Umpires err so DRS matters.** Reviews only mean something if the call on the field can be wrong, so
+     LBWs are misjudged now and then (more on the marginal ones) and ball-tracking reads the sim's own
+     projection of the ball, so the review can never disagree with the physics. Online matches keep perfect
+     umpiring: a review would stall the other player's game.
+123. **Season players are fixed lists, not match-day inventions.** Medal counts and caps need the same names
+     every week, so clubs and franchises get deterministic squads; simulated games hand out goals, runs,
+     wickets and votes to those names by position and rating.

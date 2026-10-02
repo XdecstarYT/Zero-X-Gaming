@@ -6,7 +6,7 @@ import type { Detail, TimeOfDay } from "../sports-kit/look";
 import { buildCrowd, crowdUniforms, type Seat } from "../sports-kit/crowd";
 import { band, type Edge } from "../sports-kit/geo";
 import { adTexture, blobTexture, glowTexture, lampTexture, seatTexture } from "../aussie-rules/textures";
-import { BALL_R, CREASE, CricketSim, KINDS, PITCH, ROPE, STUMP_H, type Batter, type Fielder, type SimEvent } from "./sim";
+import { BALL_R, CREASE, CricketSim, KINDS, PITCH, ROPE, STUMP_H, STUMP_HALF, type Batter, type DrsCase, type Fielder, type SimEvent } from "./sim";
 import type { Team } from "./teams";
 
 export type CricketCam = "broadcast" | "batter";
@@ -186,6 +186,10 @@ export class CricketView {
   private teams: [Team, Team];
   private lod: "high" | "low";
   private stumpFly = [0, 0];
+  /** Ball-tracking (DRS): the path, the projection on to the stumps, the markers. */
+  private hawk = new THREE.Group();
+  private hawkFor: DrsCase | null = null;
+  private hawkParts: { path: THREE.Mesh; proj: THREE.Mesh; pitch: THREE.Mesh; impact: THREE.Mesh; ghost: THREE.Mesh; zone: THREE.LineSegments } | null = null;
 
   constructor(host: HTMLElement, sim: CricketSim, detail: Detail, tod: TimeOfDay) {
     this.sim = sim;
@@ -597,10 +601,70 @@ export class CricketView {
     this.cheer = Math.max(0, this.cheer - dt * 0.35);
     this.crowd.uTime.value = this.time;
     this.crowd.uCheer.value = this.cheer;
+    this.hawkEye();
     this.camera(dt, cam);
     this.drawBoard();
     this.pipe.follow(s.ball.x * 0.5, Math.max(0, Math.min(PITCH, s.ball.z)));
     this.pipe.render();
+  }
+
+  /** Build and reveal the ball-tracking graphic while a review is on. */
+  private hawkEye() {
+    const c = this.sim.phase === "review" && this.sim.drs?.stage === "review" ? this.sim.drs : null;
+    if (c !== this.hawkFor) {
+      this.hawkFor = c;
+      for (const ch of [...this.hawk.children]) {
+        const m = ch as THREE.Mesh;
+        m.geometry?.dispose();
+        (m.material as THREE.Material)?.dispose();
+      }
+      this.hawk.clear();
+      this.hawkParts = null;
+      if (c) {
+        if (!this.hawk.parent) this.pipe.scene.add(this.hawk);
+        const tube = (pts: { x: number; y: number; z: number }[], color: string) => {
+          const v = pts.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+          if (v.length < 2) v.push(v[0].clone().add(new THREE.Vector3(0, 0, -0.01)));
+          const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(v), Math.max(8, v.length * 2), BALL_R * 0.95, 10, false);
+          return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false }));
+        };
+        const disc = (p: { x: number; z: number } | null, color: string) => {
+          const m = new THREE.Mesh(new THREE.CircleGeometry(0.11, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false }));
+          if (p) m.position.set(p.x, 0.015, p.z);
+          m.visible = !!p;
+          return m;
+        };
+        const path = tube(c.path.filter((_, i) => i % 2 === 0).concat([c.impactAt]), "#38bdf8");
+        const proj = tube(c.projected, c.wickets === "missing" ? "#22c55e" : "#ef4444");
+        const pitch = disc(c.pitchAt, c.pitching === "in line" || c.pitching === "full toss" ? "#22c55e" : "#ef4444");
+        const impact = new THREE.Mesh(new THREE.SphereGeometry(BALL_R * 1.4, 16, 12), new THREE.MeshBasicMaterial({ color: c.impact === "in line" ? "#22c55e" : "#ef4444" }));
+        impact.position.set(c.impactAt.x, c.impactAt.y, c.impactAt.z);
+        const end = c.projected[c.projected.length - 1];
+        const ghost = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 16, 12), new THREE.MeshBasicMaterial({ color: c.wickets === "hitting" ? "#ef4444" : c.wickets === "umpire's call" ? "#f59e0b" : "#22c55e" }));
+        ghost.position.set(end.x, end.y, 0.02);
+        // The wickets zone: the stumps' width and height, outlined.
+        const w = STUMP_HALF;
+        const zg = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-w, 0, 0.03), new THREE.Vector3(-w, STUMP_H, 0.03), new THREE.Vector3(-w, STUMP_H, 0.03), new THREE.Vector3(w, STUMP_H, 0.03), new THREE.Vector3(w, STUMP_H, 0.03), new THREE.Vector3(w, 0, 0.03)]);
+        const zone = new THREE.LineSegments(zg, new THREE.LineBasicMaterial({ color: "#facc15" }));
+        this.hawk.add(path, proj, pitch, impact, ghost, zone);
+        this.hawkParts = { path, proj, pitch, impact, ghost, zone };
+      }
+    }
+    // A clean virtual pitch while it's on: the players step out of shot.
+    for (const b of [...this.fielders, ...this.batters, ...this.umpires]) b.model.group.visible = !c;
+    const h = this.hawkParts;
+    if (!h || !c) return;
+    // Reveal in step with the read-out: the path, pitching, impact, then on to the stumps.
+    const grow = (m: THREE.Mesh, k: number) => {
+      const idx = m.geometry.index;
+      if (idx) m.geometry.setDrawRange(0, Math.floor((idx.count * Math.max(0, Math.min(1, k))) / 6) * 6);
+    };
+    grow(h.path, (c.t - 0.2) / 1.2);
+    h.pitch.visible = !!c.pitchAt && c.t > 1.4;
+    h.impact.visible = c.t > 2.8;
+    grow(h.proj, (c.t - 2.9) / 1.3);
+    h.ghost.visible = c.t > 4.2;
+    h.zone.visible = c.t > 2.9;
   }
 
   private camera(dt: number, cam: CricketCam) {
@@ -609,7 +673,12 @@ export class CricketView {
     const wantPos = new THREE.Vector3();
     const wantLook = new THREE.Vector3();
     let fov = 22;
-    if (s.phase === "live" || (s.phase === "dead" && s.lastShot && s.lastShot.type !== "miss")) {
+    if (s.phase === "review" && s.drs?.stage === "review") {
+      // Ball-tracking: down the pitch from just behind and above the bowler's stumps.
+      wantPos.set(3.2, 3.6, PITCH + 4);
+      wantLook.set(0, 0.25, 1.2);
+      fov = 24;
+    } else if (s.phase === "live" || (s.phase === "dead" && s.lastShot && s.lastShot.type !== "miss")) {
       // Follow the hit: high behind the bowler's arm, looking at the ball.
       const b = s.ball;
       const far = Math.hypot(b.x, b.z - PITCH / 2);

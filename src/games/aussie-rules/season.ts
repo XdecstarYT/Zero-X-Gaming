@@ -1,5 +1,6 @@
 import { createRng } from "../engine/rng";
 import { clubById, LEAGUES, type LeagueId } from "./clubs";
+import { GOAL_WEIGHT, rosterFor, VOTE_WEIGHT } from "./rosters";
 
 /**
  * A season in any league: home-and-away rounds from repeated round robins
@@ -40,6 +41,17 @@ export interface Season {
   premier?: string;
   /** Your club's players' 3-2-1 votes over the season. */
   votes: Record<string, number>;
+  /** The women's competition. */
+  women?: boolean;
+  /** League-wide, home and away: 3-2-1 votes and goals, by "club:surname". */
+  medal?: Record<string, number>;
+  goals?: Record<string, number>;
+}
+
+/** Votes and goals from a game you played: by "club:surname". */
+export interface Awards {
+  votes: Record<string, number>;
+  goals: Record<string, number>;
 }
 
 export interface LadderRow {
@@ -88,11 +100,11 @@ export function draw(ids: string[], seed: number, rounds = ids.length - 1): Fixt
   return out;
 }
 
-export function newSeason(o: { league: LeagueId; club: string; seed: number; rounds?: number }): Season {
+export function newSeason(o: { league: LeagueId; club: string; seed: number; rounds?: number; women?: boolean }): Season {
   const lg = LEAGUES[o.league];
   const clubs = lg.clubs.map((c) => c.id);
   const rounds = Math.max(1, Math.min(o.rounds ?? lg.rounds, 30));
-  return { v: 2, seed: o.seed, league: o.league, clubs, club: o.club, rounds, round: 0, fixtures: draw(clubs, o.seed, rounds), stage: "home", finals: [], week: 0, votes: {} };
+  return { v: 2, seed: o.seed, league: o.league, clubs, club: o.club, rounds, round: 0, fixtures: draw(clubs, o.seed, rounds), stage: "home", finals: [], week: 0, votes: {}, women: !!o.women, medal: {}, goals: {} };
 }
 
 /** Each club's form this season (deterministic per season). */
@@ -202,13 +214,66 @@ function nextFinals(s: Season, order: string[]): Fixture[] | null {
   return null;
 }
 
+/** Add a game's votes and goals to the season's counts (home-and-away games only). */
+function addAwards(s: Season, a: Awards) {
+  const m = (s.medal ??= {});
+  const g = (s.goals ??= {});
+  for (const [k, v] of Object.entries(a.votes)) m[k] = (m[k] ?? 0) + v;
+  for (const [k, v] of Object.entries(a.goals)) g[k] = (g[k] ?? 0) + v;
+}
+
+/** A simulated game's votes and goal-kickers, from the clubs' lists and the score. */
+export function simAwards(s: Season, f: Fixture, salt: number): Awards {
+  const [hp, ap] = f.result!;
+  const r = createRng((s.seed * 17 + salt * 131 + f.round * 7919 + f.home.length * 31) >>> 0);
+  const out: Awards = { votes: {}, goals: {} };
+  const pick = (w: number[]) => {
+    const t = w.reduce((a, b) => a + b, 0);
+    let x = r.next() * t;
+    for (let i = 0; i < w.length; i++) if ((x -= w[i]) <= 0) return i;
+    return w.length - 1;
+  };
+  for (const [club, pts] of [
+    [f.home, hp],
+    [f.away, ap],
+  ] as [string, number][]) {
+    const list = rosterFor(club, s.women);
+    // Goals from points: about one behind for every goal and a bit.
+    const goals = Math.max(0, Math.round(pts / 7.4));
+    for (let i = 0; i < goals; i++) {
+      const k = `${club}:${list[pick(GOAL_WEIGHT)].last}`;
+      out.goals[k] = (out.goals[k] ?? 0) + 1;
+    }
+  }
+  // 3-2-1: the winners' best get most of them.
+  const pool = [...rosterFor(f.home, s.women).map((p, i) => ({ k: `${f.home}:${p.last}`, w: VOTE_WEIGHT[i] * (hp >= ap ? 2.2 : 1) })), ...rosterFor(f.away, s.women).map((p, i) => ({ k: `${f.away}:${p.last}`, w: VOTE_WEIGHT[i] * (ap >= hp ? 2.2 : 1) }))];
+  for (const v of [3, 2, 1]) {
+    const i = pick(pool.map((x) => x.w));
+    out.votes[pool[i].k] = v;
+    pool.splice(i, 1);
+  }
+  return out;
+}
+
+/** The season's count, highest first: { key, club, last, n }. */
+export function countOf(rec: Record<string, number> | undefined, n = 10) {
+  return Object.entries(rec ?? {})
+    .map(([key, v]) => ({ key, club: key.split(":")[0], last: key.split(":").slice(1).join(":"), n: v }))
+    .sort((a, b) => b.n - a.n || a.key.localeCompare(b.key))
+    .slice(0, n);
+}
+
 /** Simulate everything still to play until your next game (or the end of the season). */
 function advance(s: Season) {
   for (let guard = 0; guard < 200; guard++) {
     if (s.stage === "home") {
       const round = s.fixtures.filter((f) => f.round === s.round);
       if (round.some((f) => !f.result && (f.home === s.club || f.away === s.club))) return;
-      for (const f of round) if (!f.result) f.result = simulateGame(s, f, 1);
+      for (const f of round)
+        if (!f.result) {
+          f.result = simulateGame(s, f, 1);
+          addAwards(s, simAwards(s, f, 1));
+        }
       s.round++;
       if (s.round >= s.rounds) {
         const top = ladder(s).map((r) => r.id);
@@ -240,12 +305,14 @@ function advance(s: Season) {
 }
 
 /** Record your game's result (points for you, points against) and move the season on. */
-export function recordResult(s: Season, us: number, them: number, votes: Record<string, number> = {}) {
+export function recordResult(s: Season, us: number, them: number, votes: Record<string, number> = {}, awards?: Awards) {
   const g = nextGame(s);
   if (!g) return s;
   const f = g.fixture;
   f.result = f.home === s.club ? [us, them] : [them, us];
   for (const [name, v] of Object.entries(votes)) s.votes[name] = (s.votes[name] ?? 0) + v;
+  // Home and away only: the medal and the goalkicking count stop at the finals.
+  if (s.stage === "home") addAwards(s, awards ?? simAwards(s, f, 5));
   advance(s);
   return s;
 }
@@ -263,7 +330,7 @@ export function simulateMine(s: Season, form = 1): [number, number] {
 }
 
 /** Start a season and play out anything before your first game. */
-export function startSeason(o: { league: LeagueId; club: string; seed: number; rounds?: number }) {
+export function startSeason(o: { league: LeagueId; club: string; seed: number; rounds?: number; women?: boolean }) {
   const s = newSeason(o);
   advance(s);
   return s;

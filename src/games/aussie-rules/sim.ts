@@ -312,8 +312,9 @@ export type SimEvent =
   | { kind: "mark"; id: number; screamer: boolean; contested: boolean; team: Team }
   | { kind: "spill"; id: number }
   | { kind: "spoil"; id: number }
-  | { kind: "goal"; team: Team; by: number; dist: number; afterSiren: boolean }
-  | { kind: "behind"; team: Team; by: number; rushed: boolean; post: boolean }
+  | { kind: "goal"; team: Team; by: number; dist: number; afterSiren: boolean; close: boolean }
+  | { kind: "behind"; team: Team; by: number; rushed: boolean; post: boolean; close: boolean; touched: boolean }
+  | { kind: "practice"; shot: number; result: "goal" | "behind" | "miss"; points: number }
   | { kind: "tackle"; id: number; on: number; team: Team }
   | { kind: "brokenTackle"; id: number }
   | { kind: "free"; id: number; team: Team; reason: string }
@@ -362,6 +363,35 @@ export interface SimOptions {
   wind?: number;
   /** Career: you are this player, and only this player. */
   pro?: ProPlayer;
+  /** The women's competition: the same game, a lighter kick. */
+  women?: boolean;
+  /** Club rosters (surnames by position, per team) so a season's players keep their names. */
+  names?: [string[], string[]];
+  /** Goalkicking challenge: this many set shots from around the arc, nobody else moving. */
+  practice?: number;
+}
+
+/** One goalkicking-challenge kick: where from, and how it went. */
+export interface PracticeShot {
+  x: number;
+  z: number;
+  result?: "goal" | "behind" | "miss";
+  points?: number;
+}
+
+/**
+ * The goalkicking challenge's spots: straight in front first, then wider and
+ * longer, onto the pockets and the boundary for the last few.
+ */
+export function practiceSpots(n: number, seed: number, goalX: number): PracticeShot[] {
+  const r = createRng(seed ^ 0x2f6b);
+  const side = Math.sign(goalX) || 1;
+  return Array.from({ length: n }, (_, i) => {
+    const k = n > 1 ? i / (n - 1) : 0;
+    const dist = 18 + k * 30 + r.next() * 6;
+    const ang = (r.next() < 0.5 ? -1 : 1) * (k * 0.95 + r.next() * 0.15);
+    return { x: goalX - side * Math.cos(ang) * dist, z: Math.sin(ang) * dist };
+  });
 }
 
 // ---------------------------------------------------------------- kicking
@@ -503,6 +533,10 @@ export class FootySim {
   private finalKick = false;
   /** Rain. */
   readonly wet: boolean;
+  /** The women's competition. */
+  readonly women: boolean;
+  /** Goalkicking challenge: the shots, the one being taken, and a pause after each. */
+  practice: { shots: PracticeShot[]; i: number; wait: number; kicked: boolean } | null = null;
   /** The kick you'll use (drop punt, torpedo, snap). */
   kickStyle: KickStyle = "punt";
   /** The wind (m/s, along x and z). */
@@ -523,6 +557,7 @@ export class FootySim {
     this.rng = createRng(o.seed);
     this.clubs = [o.home ?? HOME, o.rival];
     this.wet = !!o.wet;
+    this.women = !!o.women;
     {
       // Wind from its own stream, so the match's own randomness is unchanged.
       const wr = createRng((o.seed ^ 0x5bd1e995) >>> 0);
@@ -593,6 +628,11 @@ export class FootySim {
         n++;
       }
     }
+    if (o.names)
+      for (const team of [0, 1] as Team[]) {
+        const list = o.names[team];
+        this.players.filter((q) => q.team === team).forEach((q, i) => list[i] && (q.name = list[i]));
+      }
     if (this.pro) {
       // Career: you take your position for your club.
       const me = this.players.find((p) => p.team === 0 && p.role === this.pro!.role) ?? this.players.find((p) => p.team === 0)!;
@@ -604,6 +644,104 @@ export class FootySim {
       this.human = me.id;
     }
     this.centreBounceSetup();
+    if (o.practice) {
+      this.practice = { shots: practiceSpots(o.practice, o.seed, this.goalOf(0).x), i: -1, wait: 0, kicked: false };
+      this.nextPractice();
+    }
+  }
+
+  /** Kick power to launch: a touch less in the wet and in the women's game. */
+  private get kickK() {
+    return (this.wet ? 0.95 : 1) * (this.women ? 0.92 : 1);
+  }
+
+  /** Goalkicking challenge: everyone stands still, and you line up the next one. */
+  private nextPractice() {
+    const pr = this.practice!;
+    pr.i++;
+    pr.kicked = false;
+    pr.wait = 0;
+    if (pr.i >= pr.shots.length) {
+      this.phase = "over";
+      this.over = true;
+      this.emit({ kind: "over" });
+      return;
+    }
+    const spot = pr.shots[pr.i];
+    const g = this.goalOf(0);
+    // The rest of the ground clears out: teammates up the ground, opponents behind the goals.
+    for (const q of this.players) {
+      const h = this.home(q);
+      const x = q.team === 0 ? h.x * 0.3 - Math.sign(g.x) * 20 : g.x + Math.sign(g.x) * (8 + (q.id % 6) * 2);
+      const z = q.team === 0 ? h.z : -18 + (q.id % 9) * 4.5;
+      q.x = q.tx = x;
+      q.z = q.tz = z;
+      q.vx = q.vz = q.y = q.vy = 0;
+      q.act = null;
+      q.down = 0;
+      q.celebrate = 0;
+      q.h = Math.atan2(-z, -x);
+    }
+    const kicker = this.players.find((q) => q.team === 0 && q.role === 12) ?? this.players.find((q) => q.team === 0)!;
+    this.clock = this.quarterSeconds;
+    this.sirenGone = false;
+    this.awardSet(kicker.id, spot.x, spot.z, "mark", "Goalkicking challenge");
+    // The man on the mark, on the mark.
+    const m = this.players[this.set!.onMark];
+    m.x = m.tx = spot.x;
+    m.z = m.tz = spot.z;
+  }
+
+  /** The challenge kick's result is in: score it, pause, then the next. */
+  private practiceResult(result: "goal" | "behind" | "miss") {
+    const pr = this.practice!;
+    if (pr.wait > 0) return;
+    const spot = pr.shots[pr.i];
+    const far = Math.hypot(this.goalOf(0).x - spot.x, spot.z);
+    const points = result === "goal" ? 6 + (far > 45 ? 3 : far > 35 ? 1 : 0) : result === "behind" ? 1 : 0;
+    spot.result = result;
+    spot.points = points;
+    pr.wait = 2.6;
+    this.emit({ kind: "practice", shot: pr.i + 1, result, points });
+  }
+
+  private stepPractice(dt: number, input: FootyInput) {
+    const pr = this.practice!;
+    this.time += dt;
+    this.phaseT += dt;
+    if (pr.wait > 0) {
+      // Watch it go through (or not), then reset.
+      pr.wait -= dt;
+      this.stepBall(dt);
+      this.stepOfficials(dt);
+      if (pr.wait <= 0) this.nextPractice();
+      return;
+    }
+    const n = this.events.length;
+    if (this.phase === "set") this.stepSet(dt, { ...input, handball: false, sprint: false });
+    this.humanControl(dt, { ...input, handball: false, tackle: false, switchPlayer: false });
+    this.movePlayers(dt);
+    this.stepBall(dt);
+    this.stepOfficials(dt);
+    this.clock = this.quarterSeconds;
+    const fresh = this.events.slice(n);
+    if (fresh.some((e) => e.kind === "kick")) pr.kicked = true;
+    if (!pr.kicked) return;
+    if (fresh.some((e) => e.kind === "goal")) return this.practiceResult("goal");
+    if (fresh.some((e) => e.kind === "behind")) return this.practiceResult("behind");
+    // Down in the field of play, marked, or out: a miss.
+    if (this.ball.state !== "air" || this.phase === "stoppage") this.practiceResult("miss");
+  }
+
+  /** Practice totals: goals, behinds, points. */
+  practiceTotals() {
+    const shots = this.practice?.shots ?? [];
+    return {
+      goals: shots.filter((x) => x.result === "goal").length,
+      behinds: shots.filter((x) => x.result === "behind").length,
+      points: shots.reduce((a, x) => a + (x.points ?? 0), 0),
+      taken: shots.filter((x) => x.result).length,
+    };
   }
 
   /** Which positions play (all 18, or a trimmed side with the spine and the midfield). */
@@ -734,6 +872,7 @@ export class FootySim {
 
   step(dt: number, input: FootyInput = NO_INPUT) {
     if (this.phase === "over") return;
+    if (this.practice) return this.stepPractice(dt, input);
     this.time += dt;
     this.phaseT += dt;
     this.switchLock = Math.max(0, this.switchLock - dt);
@@ -1159,7 +1298,7 @@ export class FootySim {
       const skill = p.skill.kick;
       const style = a.style ?? "punt";
       const power = Math.max(0, Math.min(1, (a.power ?? 0.7) * (1 + (this.rng.next() - 0.5) * 0.05)));
-      const { speed, elev } = kickLaunch(power * (this.wet ? 0.95 : 1), style);
+      const { speed, elev } = kickLaunch(power * this.kickK, style);
       const styleK = style === "torpedo" ? 1.7 : style === "snap" ? 1.25 : 1;
       const spread = ((isHuman ? 0.022 : 0.034 + (1 - skill) * 0.06) + pressure * 0.08 + power * 0.03) * styleK * (this.wet ? 1.2 : 1) * (a.precise ? 0.15 : (a.spreadK ?? 1));
       const err = (this.rng.next() + this.rng.next() + this.rng.next() - 1.5) * spread * 1.4;
@@ -2031,13 +2170,15 @@ export class FootySim {
     const z = Math.abs(b.z);
     const by = k?.by ?? -1;
     const post = Math.abs(z - GOAL_HALF) < 0.18 && b.y < 15;
+    // Close enough to the goal post (or touched) to go to a score review.
+    const close = Math.abs(z - GOAL_HALF) < 0.6 || (!!k?.touched && z < GOAL_HALF);
     const offBoot = !!k && k.isKick && !k.touched && k.team === team && !post;
     const quarterEnds = this.sirenGone;
     if (z < GOAL_HALF && offBoot) {
       this.score[team].goals++;
       const dist = k ? Math.hypot(side * GOAL_X - k.fromX, k.fromZ) : 0;
       if (by >= 0 && this.players[by].team === team) this.players[by].st.goals++;
-      this.emit({ kind: "goal", team, by, dist, afterSiren: k?.afterSiren ?? false });
+      this.emit({ kind: "goal", team, by, dist, afterSiren: k?.afterSiren ?? false, close });
       if (by >= 0) this.players[by].celebrate = 4;
       for (const p of this.players) if (p.team === team && Math.hypot(p.x - b.x, p.z - b.z) < 30) p.celebrate = 3.5;
       const gu = this.goalUmps[side > 0 ? 0 : 1];
@@ -2052,7 +2193,7 @@ export class FootySim {
     this.score[team].behinds++;
     const rushed = !k || k.team !== team;
     if (!rushed && by >= 0) this.players[by].st.behinds++;
-    this.emit({ kind: "behind", team, by, rushed, post });
+    this.emit({ kind: "behind", team, by, rushed, post, close: close && !rushed, touched: !!k?.touched && z < GOAL_HALF });
     const gu = this.goalUmps[side > 0 ? 0 : 1];
     gu.signal = "behind";
     gu.signalT = 2.5;
@@ -2114,6 +2255,11 @@ export class FootySim {
 
   /** Your match score for the leaderboard. */
   matchScore() {
+    if (this.practice) {
+      const t = this.practiceTotals();
+      const k = this.difficulty === "easy" ? 1 : this.difficulty === "pro" ? 1.5 : 2;
+      return Math.round((t.points * 40 + t.goals * 20) * k);
+    }
     const us = points(this.score[0]);
     const them = points(this.score[1]);
     const s = this.stats[0];
@@ -2142,7 +2288,7 @@ export class FootySim {
     const p = this.you;
     const setStage = this.phase === "set" && this.set?.id === p.id ? this.set.stage : undefined;
     if (this.ball.holder !== p.id || (!this.charging && setStage !== "aim" && setStage !== "runup")) return null;
-    const { speed, elev } = kickLaunch(Math.max(0.12, setStage === "aim" ? this.setGuidePower() : this.charge) * (this.wet ? 0.95 : 1), this.kickStyle);
+    const { speed, elev } = kickLaunch(Math.max(0.12, setStage === "aim" ? this.setGuidePower() : this.charge) * this.kickK, this.kickStyle);
     const pts: [number, number, number][] = [];
     let x = p.x;
     let y = 0.55;

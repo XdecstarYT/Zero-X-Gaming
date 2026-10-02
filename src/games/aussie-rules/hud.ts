@@ -43,6 +43,7 @@ export class FootyHud {
   private lines: { node: HTMLParagraphElement; t: number }[] = [];
   private powerLabel: HTMLParagraphElement;
   private replay: HTMLDivElement;
+  private reviewTag!: HTMLParagraphElement;
   private ideal: HTMLDivElement;
   private setPanel: HTMLDivElement;
   private setInfo: HTMLParagraphElement;
@@ -132,6 +133,9 @@ export class FootyHud {
       el("p", "absolute right-4 top-[11%] rounded bg-[#a3122c] px-2 py-0.5 font-display text-sm font-black italic tracking-widest", "REPLAY"),
     );
     this.replay.setAttribute("data-testid", "footy-replay");
+    this.reviewTag = el("p", "absolute left-1/2 top-[11%] -translate-x-1/2 rounded bg-[#facc15] px-3 py-0.5 font-display text-sm font-black tracking-[0.25em] text-black opacity-0");
+    this.reviewTag.setAttribute("data-testid", "footy-review");
+    this.replay.append(this.reviewTag);
     // Power bar: a tick where the power matches the kick you've lined up.
     const barEl = this.powerFill.parentElement!;
     barEl.classList.add("relative");
@@ -191,9 +195,11 @@ export class FootyHud {
   }
 
   /** Show or hide the replay letterbox. */
-  setReplay(on: boolean) {
+  setReplay(on: boolean, review: string | null = null) {
     this.replay.style.opacity = on ? "1" : "0";
     this.bug.style.opacity = on ? "0" : "1";
+    this.reviewTag.textContent = review ?? "";
+    this.reviewTag.style.opacity = on && review ? "1" : "0";
   }
 
   /** Add a commentary line. */

@@ -10,6 +10,8 @@ import { clubById, CLUBS, FootySim, GOAL_X, KICK_STYLES, points, type Difficulty
 import { LEAGUES, loadClubEdits, NATIONAL, saveClubEdits, type ClubEdit } from "./clubs";
 import { difficultyFor, matchRating, newCareer, nextSeason, parseCareer, recordMatch, retire, simulateMatch, spendPoint, toPro, type Career } from "./career";
 import { careerCreate, careerHub, clubEditor, clubPicker, seasonHub } from "./menus";
+import { rosterNames } from "./rosters";
+import type { Awards } from "./season";
 import { choice } from "../sports-kit/ui";
 import type { Detail } from "./stadium";
 
@@ -21,7 +23,9 @@ const CAREER_KEY = "zx-footy-career";
 const STYLES: KickStyle[] = ["punt", "torpedo", "snap"];
 
 interface Prefs {
-  mode: "exhibition" | "season" | "career";
+  mode: "exhibition" | "season" | "career" | "kicking";
+  /** The men's or the women's competition. */
+  comp: "men" | "women";
   /** Premiership season length (home-and-away rounds). */
   rounds: number;
   /** Kick aim: at the mouse pointer, or along your facing. */
@@ -43,6 +47,8 @@ interface FootyRecord {
   best: number;
   goals: number;
   flags?: number;
+  /** Goalkicking challenge: best points. */
+  kicking?: number;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", ...children: (Node | string)[]) {
@@ -113,6 +119,8 @@ class FootyGame implements GameModule {
   /** This match is the season's Grand Final / a final, and its label. */
   private fixtureLabel = "";
   private styleBtn: HTMLButtonElement | null = null;
+  /** A score on its way to review: what it was, and whether the replay's begun. */
+  private review: { verdict: string; sub: string; t: number; started: boolean } | null = null;
 
   // Input.
   private keys = new Set<string>();
@@ -130,7 +138,7 @@ class FootyGame implements GameModule {
   init(opts: GameInitOptions) {
     this.opts = opts;
     this.coarse = window.matchMedia("(pointer: coarse)").matches;
-    this.prefs = read<Prefs>(PREFS_KEY, { mode: "exhibition", rounds: 17, aim: this.coarse ? "facing" : "mouse", club: "geelong", weather: "fine", rival: "collingwood", difficulty: "pro", minutes: 4, tod: "night", gfx: this.coarse ? "low" : "high", cam: "tv" });
+    this.prefs = read<Prefs>(PREFS_KEY, { mode: "exhibition", comp: "men", rounds: 17, aim: this.coarse ? "facing" : "mouse", club: "geelong", weather: "fine", rival: "collingwood", difficulty: "pro", minutes: 4, tod: "night", gfx: this.coarse ? "low" : "high", cam: "tv" });
     if (!NATIONAL.some((c) => c.id === this.prefs.club)) this.prefs.club = "geelong";
     if (!NATIONAL.some((c) => c.id === this.prefs.rival) || this.prefs.rival === this.prefs.club) this.prefs.rival = NATIONAL.find((c) => c.id !== this.prefs.club)!.id;
     this.clubEdits = loadClubEdits();
@@ -245,6 +253,19 @@ class FootyGame implements GameModule {
           (v) => ((this.prefs.rival = v), save()),
         ),
       );
+    } else if (p.mode === "kicking") {
+      start = button("Line up", PRIMARY, () => void this.beginMatch());
+      start.setAttribute("data-testid", "footy-start");
+      modePanel = card(
+        "Goalkicking challenge",
+        el("p", "text-xs text-white/70", `Ten set shots for your club's full forward: straight in front first, then longer and wider, out to the pockets. 6 for a goal (+1 from 35 m, +3 from 45 m), 1 for a behind. Mind the wind.${rec.kicking ? ` Your best: ${rec.kicking} points.` : ""}`),
+        clubPicker(
+          "Your club",
+          NATIONAL.map((c) => c.id),
+          p.club,
+          (v) => ((this.prefs.club = v), save()),
+        ),
+      );
     } else if (p.mode === "season") {
       if (this.season) {
         modePanel = seasonHub(this.season, {
@@ -260,7 +281,7 @@ class FootyGame implements GameModule {
         });
       } else {
         start = button("Start the season", PRIMARY, () => {
-          this.season = startSeason({ league: "national", club: this.prefs.club, seed: Date.now() & 0x7fffffff, rounds: this.prefs.rounds });
+          this.season = startSeason({ league: "national", club: this.prefs.club, seed: Date.now() & 0x7fffffff, rounds: this.prefs.rounds, women: this.prefs.comp === "women" });
           write(SEASON_KEY, this.season);
           this.showMenu();
         });
@@ -348,6 +369,7 @@ class FootyGame implements GameModule {
               { value: "exhibition" as const, title: "Exhibition", sub: "One match, any two clubs" },
               { value: "season" as const, title: "Premiership", sub: "A whole season and the finals" },
               { value: "career" as const, title: "Career", sub: "From the local footy to the big time" },
+              { value: "kicking" as const, title: "Goalkicking", sub: "Ten set shots, wind and nerves" },
             ],
             p.mode,
             (v) => {
@@ -357,6 +379,20 @@ class FootyGame implements GameModule {
             },
           ),
         ),
+        p.mode === "career" || (p.mode === "season" && this.season)
+          ? el("span")
+          : card(
+              "Competition",
+              group(
+                "Competition",
+                [
+                  { value: "men" as const, title: "Men's", sub: "The National League" },
+                  { value: "women" as const, title: "Women's", sub: "The same eighteen clubs, the women's game" },
+                ],
+                p.comp ?? "men",
+                (v) => (this.prefs.comp = v),
+              ),
+            ),
         modePanel,
         ...(start ? [start] : []),
         el(
@@ -537,13 +573,23 @@ class FootyGame implements GameModule {
     this.fixtureLabel = ng ? ng.label : "";
     if (career && ng) this.fixtureLabel = `${LEAGUES[career.league].name} · ${ng.label}`;
     const wet = p.weather === "rain";
+    const kicking = p.mode === "kicking";
+    if (kicking) {
+      this.matchMode = "kicking";
+      this.fixtureLabel = "Goalkicking challenge";
+    }
+    const women = ssn && !career ? !!ssn.women : !career && p.comp === "women";
+    if (women) this.fixtureLabel = [this.fixtureLabel || "Exhibition", "Women's"].join(" · ");
     this.sim = new FootySim({
+      women,
+      names: [rosterNames(home.id, women), rosterNames(rivalId, women)],
+      practice: kicking ? 10 : undefined,
       seed: Date.now() & 0x7fffffff,
       home,
       rival: clubById(rivalId),
       difficulty: career ? difficultyFor(career.league, p.difficulty) : p.difficulty,
       pro: career ? toPro(career) : undefined,
-      quarterSeconds: quick ? 20 : p.minutes * 60,
+      quarterSeconds: kicking ? 600 : quick ? 20 : p.minutes * 60,
       wet,
     });
     if (test) {
@@ -664,16 +710,34 @@ class FootyGame implements GameModule {
     if (this.view.replaying) {
       const k = this.input();
       if (k.kick || k.handball || k.tackle || k.leap) this.view.cancelReplay();
-      this.hud?.setReplay(this.view.replaying);
+      if (this.review) this.review.started = true;
+      this.hud?.setReplay(this.view.replaying, this.review ? "SCORE REVIEW" : null);
       return;
     }
     this.hud?.setReplay(false);
+    if (this.review) {
+      // The verdict once the replay's done (or straight away if there isn't one).
+      this.review.t += dt;
+      if (this.review.started || this.review.t > 2.2) {
+        this.hud?.shout(this.review.verdict, this.review.sub, 2.6, this.review.verdict === "GOAL" ? "#facc15" : "#e5e7eb");
+        this.review = null;
+      }
+    }
     const inp = this.input();
     const moving = Math.hypot(inp.mx, inp.mz) > 0.1;
     this.idle = moving ? 0 : this.idle + dt;
     sim.assist = this.idle > 1.2;
     sim.step(dt, inp);
     for (const e of sim.events) {
+      // Close to the post or touched: the score goes upstairs while the replay runs.
+      if ((e.kind === "goal" || e.kind === "behind") && e.close && !sim.practice) {
+        this.review = { verdict: e.kind === "goal" ? "GOAL" : "BEHIND", sub: e.kind === "goal" ? "Score review: it's a goal, all clear" : e.touched ? "Score review: touched off the hands" : e.post ? "Score review: it hit the post" : "Score review: just wide of the post", t: 0, started: false };
+        if (e.kind === "behind") this.view.replayNow();
+      }
+      if (e.kind === "practice") {
+        const t = sim.practiceTotals();
+        this.hud?.shout(e.result === "goal" ? "GOAL!" : e.result === "behind" ? "BEHIND" : "MISSED", `Shot ${e.shot} of 10 · +${e.points} · ${t.points} points`, 2.4, e.result === "goal" ? "#facc15" : "#ffffff");
+      }
       this.view.onEvent(e);
       this.hud?.onEvent(e);
       this.audio.onEvent(e, (t) => t === 0);
@@ -719,8 +783,54 @@ class FootyGame implements GameModule {
     }
   }
 
+  /** The goalkicking challenge's card. */
+  private finishKicking() {
+    const sim = this.sim!;
+    this.ended = true;
+    this.loop.pause();
+    const t = sim.practiceTotals();
+    const score = sim.matchScore();
+    const rec = read<FootyRecord>(RECORD_KEY, { played: 0, wins: 0, losses: 0, draws: 0, best: 0, goals: 0 });
+    if (!this.unranked) {
+      rec.kicking = Math.max(rec.kicking ?? 0, t.points);
+      write(RECORD_KEY, rec);
+    }
+    const final = { kind: "final" as const, score, durationMs: this.loop.activeMs, ranked: !this.unranked };
+    const g = sim.goalOf(0);
+    const shots = (sim.practice?.shots ?? []).map((x, i) =>
+      el(
+        "li",
+        "flex justify-between gap-2 rounded bg-white/5 px-2 py-1",
+        el("span", "", `${i + 1}. ${Math.round(Math.hypot(g.x - x.x, x.z))} m, ${Math.round((Math.abs(Math.atan2(x.z, Math.abs(g.x - x.x))) * 180) / Math.PI)}°`),
+        el("span", x.result === "goal" ? "font-black text-[#facc15]" : "text-white/70", x.result === "goal" ? `Goal +${x.points}` : x.result === "behind" ? "Behind +1" : "Missed"),
+      ),
+    );
+    const box = el(
+      "div",
+      "absolute inset-0 z-20 grid place-items-center overflow-auto bg-black/80 p-4 text-white",
+      el(
+        "div",
+        "w-full max-w-md rounded-xl border border-white/15 bg-[#0b0f18] p-5 text-center",
+        el("p", "text-[11px] font-bold uppercase tracking-[0.35em] text-[#facc15]", "Goalkicking challenge"),
+        el("p", "mt-1 font-display text-3xl font-black uppercase", `${t.goals} goals, ${t.behinds} behinds`),
+        el("p", "mt-1 text-sm text-white/70", `${t.points} points from ten shots${rec.kicking ? ` · best ${rec.kicking}` : ""}`),
+        el("ol", "mt-3 flex flex-col gap-1 text-left text-xs", ...shots),
+        el("p", "mt-4 text-xs uppercase tracking-[0.25em] text-white/50", "Score"),
+        el("p", "font-display text-4xl font-black text-[#facc15]", String(score)),
+        button("Continue", `${PRIMARY} mt-4`, () => {
+          box.remove();
+          this.emitter.emit(final);
+        }),
+      ),
+    );
+    box.dataset.results = "";
+    box.setAttribute("data-testid", "footy-results");
+    this.host.appendChild(box);
+  }
+
   private finish() {
     const sim = this.sim!;
+    if (sim.practice) return this.finishKicking();
     this.ended = true;
     this.loop.pause();
     const us = points(sim.score[0]);
@@ -755,7 +865,11 @@ class FootyGame implements GameModule {
     if (this.matchMode === "season" && this.season && this.fixtureLabel && !this.unranked) {
       const mine: { [name: string]: number } = {};
       for (const v of votes) if (sim.players[v.id].team === 0) mine[sim.players[v.id].name] = v.votes;
-      recordResult(this.season, us, them, mine);
+      // Everyone's votes and goals for the league's count.
+      const awards: Awards = { votes: {}, goals: {} };
+      for (const v of votes) awards.votes[`${sim.clubs[sim.players[v.id].team].id}:${sim.players[v.id].name}`] = v.votes;
+      for (const pl of sim.players) if (pl.st.goals) awards.goals[`${sim.clubs[pl.team].id}:${pl.name}`] = pl.st.goals;
+      recordResult(this.season, us, them, mine, awards);
       this.saveSeason();
       seasonLine = after(this.season);
     } else if (this.matchMode === "career" && this.career && !this.unranked) {

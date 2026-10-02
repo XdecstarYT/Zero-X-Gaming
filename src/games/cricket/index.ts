@@ -8,18 +8,21 @@ import { CricketHud } from "./hud";
 import { CricketView, type CricketCam } from "./render";
 import { CricketSim, emptyInput, LEVELS, PACE_KINDS, PITCH, SPIN_KINDS, type CricketInput, type Difficulty, type FieldSet, type Kind, type Mode, type ShotType } from "./sim";
 import { TEAMS, teamById } from "./teams";
+import { advance, caps, myStatus, newLeague, nextFixture, parseLeague, recordPlayed, simMine, table, type Fixture, type League } from "./league";
+import { scorecard } from "./scorecard";
 import { BroadcastChannelTransport, normalizeRoom, randomRoom, ROOM_RE, type Transport } from "../neon-siege/net";
 import { SupabaseTransport } from "../neon-siege/net-supabase";
 import { CricketLink, GuestPump, HostPump, matchFrom, type CricketMsg, type MatchConfig } from "./online";
 
 const PREFS_KEY = "zx-cricket-prefs";
+const LEAGUE_KEY = "zx-cricket-league";
 const RECORD_KEY = "zx-cricket-record";
 const TEAL = "#0e7490";
 
 interface Prefs {
   team: string;
   opponent: string;
-  mode: Mode;
+  mode: Mode | "league";
   overs: number;
   toss: "bat" | "bowl" | "toss";
   difficulty: Difficulty;
@@ -60,6 +63,10 @@ class CricketGame implements GameModule {
   private res = new ResolutionGovernor();
   private overAt = 0;
   private breakBox: HTMLDivElement | null = null;
+  private cardBox: HTMLDivElement | null = null;
+  // The Blitz League season, and the fixture being played.
+  private league: League | null = null;
+  private leagueGame: Fixture | null = null;
   // Online.
   private link: CricketLink | null = null;
   private pump: HostPump | GuestPump | null = null;
@@ -80,6 +87,11 @@ class CricketGame implements GameModule {
     this.opts = opts;
     this.coarse = window.matchMedia("(pointer: coarse)").matches;
     this.prefs = read<Prefs>(PREFS_KEY, { team: "legends", opponent: "blaze", mode: "match", overs: 5, toss: "bat", difficulty: "pro", tod: "night", gfx: this.coarse ? "low" : "high", cam: "broadcast" });
+    try {
+      this.league = parseLeague(JSON.parse(localStorage.getItem(LEAGUE_KEY) ?? "null"));
+    } catch {
+      this.league = null;
+    }
     this.host = el("div", "absolute inset-0 overflow-hidden bg-[#05070c]");
     this.host.style.touchAction = "none";
     opts.root.appendChild(this.host);
@@ -175,9 +187,15 @@ class CricketGame implements GameModule {
               { value: "match" as const, title: "T20 match", sub: "Bat and bowl, two innings" },
               { value: "superover" as const, title: "Super over", sub: "Chase it in six balls, two wickets" },
               { value: "nets" as const, title: "Nets", sub: "Practise your shots, no outs" },
+              { value: "league" as const, title: "Blitz League", sub: "A season, semi-finals and a final" },
             ],
             p.mode,
-            (v) => ((this.prefs.mode = v), save()),
+            (v) => {
+              const was = this.prefs.mode;
+              this.prefs.mode = v;
+              save();
+              if ((was === "league") !== (v === "league")) this.showMenu();
+            },
           ),
           choice(
             "Overs",
@@ -217,7 +235,7 @@ class CricketGame implements GameModule {
             }
           }),
         ),
-        card("Opponent", teamChoice("Opponent", p.opponent, (v) => ((this.prefs.opponent = v), save()))),
+        p.mode === "league" ? el("span") : card("Opponent", teamChoice("Opponent", p.opponent, (v) => ((this.prefs.opponent = v), save()))),
         card(
           "Presentation",
           choice(
@@ -250,7 +268,7 @@ class CricketGame implements GameModule {
             (v) => ((this.prefs.gfx = v), save()),
           ),
         ),
-        start,
+        p.mode === "league" ? this.leaguePanel() : start,
         this.onlineCard(),
         howTo([
           ["Batting", "Aim where you want to hit it (the arrow on the ground), then play as the ball reaches you. Perfect timing goes where you aimed, and fast. Early pulls it to leg, late slices it to the off side; way off and you miss."],
@@ -259,6 +277,9 @@ class CricketGame implements GameModule {
           ["Running", "Your batters run what's safe. Press RUN while the ball's in the field to push for one more: beat the throw or you're run out."],
           ["Bowling", "Pick a delivery (pace: stock, swing, bouncer, yorker, slower ball; spin: off-break, leg-break, arm ball, flight), aim the ring on the pitch, set the field, then run in and stop the meter in the green. Late is a no-ball and a free hit."],
           ["Online", "Join the same room code as a friend (or send them the invite link). The first one in hosts and starts the match; one of you bats while the other bowls, then you swap for the chase. Online matches don't go on the leaderboard."],
+          ["DRS", "Umpires get the odd LBW wrong. Each side has one review an innings: press V (or REVIEW) when a decision goes against you and ball-tracking shows where it pitched, where it hit the pad and whether it was hitting the stumps. Umpire's call keeps the review."],
+          ["Powerplay", "The first 30% of the overs: only two fielders outside the circle. Go hard."],
+          ["Blitz League", "Seven rounds against the other franchises, the top four to the semi-finals and a final. Play your games or sim them; the Orange and Purple Caps go to the leading run-scorer and wicket-taker."],
           ["Score", "Your runs, 20 a wicket, 4 a six, and 150 for a win."],
         ]),
         el("p", "max-w-xl text-center text-[11px] text-white/50", controls),
@@ -268,7 +289,108 @@ class CricketGame implements GameModule {
 
   // ----------------------------------------------------------------- match
 
+  private saveLeague() {
+    write(LEAGUE_KEY, this.league);
+  }
+
+  /** The league hub: where you stand, your next game, the table, the caps. */
+  private leaguePanel() {
+    const L = this.league;
+    if (!L) {
+      const go = primaryButton("Start the Blitz League", TEAL, () => {
+        this.league = newLeague({ team: this.prefs.team, overs: this.prefs.overs, seed: Date.now() & 0x7fffffff });
+        this.saveLeague();
+        this.showMenu();
+      });
+      go.setAttribute("data-testid", "cricket-league-new");
+      return card(
+        "Blitz League",
+        el("p", "text-xs text-white/70", `Your team plays the other seven once (${this.prefs.overs} overs a side), the top four go to the semi-finals and the winners meet in the final. Two points a win, then net run rate.`),
+        go,
+      );
+    }
+    const f = nextFixture(L);
+    const opp = f ? teamById(f.a === L.team ? f.b : f.a) : null;
+    const label = f ? (f.key === "F" ? "The final" : f.key ? "Semi-final" : `Round ${f.round + 1}`) : "";
+    const play = primaryButton(f && opp ? `Play ${label} v ${opp.short}` : "Season over", TEAL, () => void this.begin());
+    play.setAttribute("data-testid", "cricket-start");
+    play.disabled = !f;
+    const sim = button("Sim this match", `${BTN} text-xs`, () => {
+      simMine(L);
+      this.saveLeague();
+      this.showMenu();
+    });
+    sim.disabled = !f;
+    sim.setAttribute("data-testid", "cricket-league-sim");
+    const rest = button("Sim the rest of the season", `${BTN} text-xs`, () => {
+      for (let i = 0; i < 20 && L.stage !== "done"; i++) {
+        if (nextFixture(L)) simMine(L);
+        else advance(L);
+      }
+      this.saveLeague();
+      this.showMenu();
+    });
+    rest.disabled = L.stage === "done";
+    const skip = button("Skip ahead", `${BTN} text-xs`, () => {
+      advance(L);
+      this.saveLeague();
+      this.showMenu();
+    });
+    skip.hidden = !!f || L.stage === "done";
+    const rows = table(L);
+    const th = (t: string, left = false) => el("th", `px-1 text-[10px] uppercase tracking-wider text-white/50 ${left ? "text-left" : "text-right"}`, t);
+    const tbl = el(
+      "table",
+      "w-full text-xs tabular-nums",
+      el("tr", "", th("", true), th("Team", true), th("P"), th("W"), th("L"), th("T"), th("NRR"), th("Pts")),
+      ...rows.map((r, i) =>
+        el(
+          "tr",
+          `${r.id === L.team ? "bg-[#22d3ee]/15 font-bold text-[#22d3ee]" : ""} ${i === 3 ? "border-b border-dashed border-white/25" : ""}`,
+          el("td", "w-4 py-0.5 text-white/50", String(i + 1)),
+          el("td", "py-0.5", teamById(r.id).name),
+          ...[r.p, r.w, r.l, r.t, (r.nrr >= 0 ? "+" : "") + r.nrr.toFixed(2), r.pts].map((v) => el("td", "px-1 text-right", String(v))),
+        ),
+      ),
+    );
+    tbl.setAttribute("data-testid", "cricket-table");
+    const cp = caps(L);
+    const capList = (title: string, color: string, list: typeof cp.orange, fmt: (x: (typeof cp.orange)[number]) => string) =>
+      el(
+        "div",
+        "rounded bg-white/5 p-2",
+        el("p", "mb-1 text-[10px] font-bold uppercase tracking-[0.2em]", Object.assign(el("span", ""), { textContent: title, style: `color:${color}` })),
+        ...(list.length ? list.slice(0, 3).map((x, i) => el("p", "truncate text-xs", `${i + 1}. ${x.name} (${teamById(x.team).short}) ${fmt(x)}`)) : [el("p", "text-xs text-white/50", "No games yet")]),
+      );
+    const po = L.playoffs.length
+      ? el(
+          "ol",
+          "flex flex-col gap-0.5 text-xs",
+          ...L.playoffs.map((x) => el("li", x.a === L.team || x.b === L.team ? "font-bold text-[#22d3ee]" : "", `${x.key === "F" ? "Final" : x.key === "SF1" ? "Semi 1" : "Semi 2"}: ${teamById(x.a).short} v ${teamById(x.b).short}${x.result ? ` · ${x.result.text}` : ""}`)),
+        )
+      : el("span");
+    const abandon = button("Abandon season", `${BTN} self-start text-xs`, () => {
+      if (!confirm("Abandon this season?")) return;
+      this.league = null;
+      write(LEAGUE_KEY, null);
+      this.showMenu();
+    });
+    const panel = card(
+      `Blitz League · ${teamById(L.team).name} · ${L.overs} overs`,
+      el("p", "text-sm font-bold", myStatus(L)),
+      el("div", "flex flex-wrap gap-2", play, sim, skip, rest),
+      tbl,
+      po,
+      el("div", "grid grid-cols-2 gap-2", capList("Orange Cap", "#fb923c", cp.orange, (x) => `${x.runs}`), capList("Purple Cap", "#c084fc", cp.purple, (x) => `${x.wkts}w`)),
+      abandon,
+    );
+    panel.setAttribute("data-testid", "cricket-league");
+    return panel;
+  }
+
   private begin() {
+    if (this.prefs.mode === "league") return this.beginLeague();
+    this.leagueGame = null;
     this.audio.unlock();
     this.menu.hidden = true;
     this.teardown();
@@ -288,11 +410,28 @@ class CricketGame implements GameModule {
       batFirst,
       overs: p.mode === "nets" ? 3 : p.overs,
       difficulty: p.difficulty,
-      mode: p.mode,
+      mode: p.mode === "league" ? "match" : p.mode,
       seed,
       target: p.mode === "superover" ? 14 + (seed % 9) : undefined,
     });
     this.launch(test);
+  }
+
+  private beginLeague() {
+    const L = this.league;
+    const f = L && nextFixture(L);
+    if (!L || !f) return;
+    this.audio.unlock();
+    this.menu.hidden = true;
+    this.teardown();
+    this.ended = false;
+    this.unranked = new URLSearchParams(window.location.search).has("cricket");
+    this.leagueGame = f;
+    const me = teamById(L.team);
+    const them = teamById(f.a === L.team ? f.b : f.a);
+    const seed = Date.now() & 0x7fffffff;
+    this.sim = new CricketSim({ teams: [me, them], human: 0, batFirst: seed % 2 ? 0 : 1, overs: L.overs, difficulty: this.prefs.difficulty, mode: "match", seed });
+    this.launch(this.unranked);
   }
 
   // ---------------------------------------------------------------- online
@@ -448,6 +587,8 @@ class CricketGame implements GameModule {
       onShot: (s) => this.playShot(s),
       onBowl: () => (this.inp.bowl = true),
       onRun: () => (this.inp.run = true),
+      onReview: () => (this.inp.review = true),
+      onCard: () => this.toggleCard(),
     });
     this.overAt = 0;
     this.lastFrame = performance.now();
@@ -468,6 +609,8 @@ class CricketGame implements GameModule {
     this.view = null;
     this.breakBox?.remove();
     this.breakBox = null;
+    this.cardBox?.remove();
+    this.cardBox = null;
     this.sim = null;
     this.host.querySelector("[data-results]")?.remove();
   }
@@ -501,6 +644,7 @@ class CricketGame implements GameModule {
     inp.bowl = false;
     inp.run = false;
     inp.next = false;
+    inp.review = false;
     // Online: the other player left mid-match.
     if (this.online && this.link?.opponentGone && sim.phase !== "done" && !this.ended) {
       this.finish("Your opponent left the match.");
@@ -540,9 +684,11 @@ class CricketGame implements GameModule {
         el("p", "mt-1 font-display text-2xl font-black", summary),
         el("p", "mt-2 text-sm text-white/75", `${chasing.name} need ${target} to win from ${sim.ballsPerInnings / 6} overs.`),
         this.topCard(0),
+        this.fullCards([0]),
         next,
       ),
     );
+    this.breakBox.firstElementChild?.classList.add("max-h-full", "overflow-auto");
     this.host.appendChild(this.breakBox);
   }
 
@@ -564,6 +710,46 @@ class CricketGame implements GameModule {
       el("div", "rounded bg-white/5 p-2", el("p", "mb-1 font-bold text-white/60", bat.short), ...top.map(({ c, k }) => el("p", "", `${bat.players[k].name.split(" ")[1]} ${c.runs}${c.out ? "" : "*"} (${c.balls})`))),
       el("div", "rounded bg-white/5 p-2", el("p", "mb-1 font-bold text-white/60", bowl.short), ...bw.map(([k, b]) => el("p", "", `${bowl.players[k].name.split(" ")[1]} ${b.wkts}-${b.runs}`))),
     );
+  }
+
+  /** Both innings' full scorecards, folded away. */
+  private fullCards(which: number[]) {
+    const sim = this.sim!;
+    const parts = which
+      .filter((i) => sim.innings[i])
+      .map((i) => {
+        const inn = sim.innings[i];
+        return el(
+          "details",
+          "mt-2 rounded bg-white/5 p-2 text-left",
+          el("summary", "cursor-pointer text-xs font-bold uppercase tracking-wider text-white/70", `${sim.teams[inn.bat].name} ${inn.runs}/${inn.wkts} · full scorecard`),
+          scorecard(inn, sim.teams[inn.bat], sim.teams[1 - inn.bat], (b) => sim.overs(b)),
+        );
+      });
+    return el("div", "", ...parts);
+  }
+
+  /** The scorecard overlay during play (Tab or CARD). */
+  private toggleCard() {
+    const sim = this.sim;
+    if (!sim) return;
+    if (this.cardBox) {
+      this.cardBox.remove();
+      this.cardBox = null;
+      return;
+    }
+    const close = button("Close", `${BTN} mt-2`, () => this.toggleCard());
+    const inns = sim.innings.map((inn) =>
+      el(
+        "section",
+        "mt-2",
+        el("p", "text-xs font-bold uppercase tracking-[0.2em] text-[#facc15]", `${sim.teams[inn.bat].name} ${inn.runs}/${inn.wkts} (${sim.overs(inn.balls)})`),
+        scorecard(inn, sim.teams[inn.bat], sim.teams[1 - inn.bat], (b) => sim.overs(b)),
+      ),
+    );
+    this.cardBox = el("div", "absolute inset-0 z-[15] grid place-items-center bg-black/70 p-3 text-white", el("div", "max-h-full w-full max-w-2xl overflow-auto rounded-xl border border-white/15 bg-[#0b0f18] p-4", ...inns, close));
+    this.cardBox.setAttribute("data-testid", "cricket-card");
+    this.host.appendChild(this.cardBox);
   }
 
   private render() {
@@ -596,6 +782,14 @@ class CricketGame implements GameModule {
       if (bestFig && (!rec.bestBowling || bestFig.wkts > Number(rec.bestBowling.split("/")[0]))) rec.bestBowling = `${bestFig.wkts}/${bestFig.runs}`;
       write(RECORD_KEY, rec);
     }
+    let leagueLine = "";
+    if (this.leagueGame && this.league && !note && sim.phase === "done") {
+      recordPlayed(this.league, this.leagueGame, sim);
+      advance(this.league);
+      this.saveLeague();
+      leagueLine = myStatus(this.league);
+      this.leagueGame = null;
+    }
     const final = { kind: "final" as const, score, durationMs: this.loop.activeMs, ranked: !this.unranked };
     const title = note ? "Match abandoned" : sim.opts.mode === "nets" ? "Nets session over" : sim.won === true ? "You won!" : sim.won === false ? "Beaten" : "Match tied";
     const vs = this.online ? `${this.online.names[0]} v ${this.online.names[1]} · online` : "";
@@ -612,6 +806,8 @@ class CricketGame implements GameModule {
         el("div", "mt-4 grid grid-cols-2 gap-2 text-left sm:grid-cols-4", stat("Your runs", sim.humanRuns), stat("Wickets", sim.humanWkts), stat("Sixes", sim.sixes), stat("Longest six", sim.longest ? `${sim.longest} m` : "–")),
         this.topCard(0),
         sim.innings[1] ? this.topCard(1) : el("div"),
+        this.fullCards([0, 1]),
+        leagueLine ? el("p", "mt-3 text-sm font-bold text-[#22d3ee]", `Blitz League: ${leagueLine}`) : el("span"),
         el("p", "mt-4 text-xs uppercase tracking-[0.25em] text-white/50", "Match score"),
         el("p", "font-display text-4xl font-black text-[#facc15]", String(score)),
         button("Continue", `${BTN} mt-4`, () => {
@@ -638,6 +834,11 @@ class CricketGame implements GameModule {
       write(PREFS_KEY, this.prefs);
     }
     if (sim.phase === "break" && (e.code === "Enter" || e.code === "Space")) this.inp.next = true;
+    if (e.code === "KeyV") this.inp.review = true;
+    if (e.code === "Tab") {
+      e.preventDefault();
+      this.toggleCard();
+    }
     if (sim.humanBats) {
       if (e.code === "Space" || e.code === "KeyW") this.playShot(e.shiftKey ? "loft" : "ground");
       if (e.code === "KeyF" || e.code === "ArrowUp") this.playShot("loft");

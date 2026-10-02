@@ -30,6 +30,13 @@ export class CricketHud {
   private freeHit: HTMLSpanElement;
   private shotLabel: HTMLSpanElement;
   private kindsKey = "";
+  private pp: HTMLSpanElement;
+  private drsTag: HTMLSpanElement;
+  private drsBox: HTMLDivElement;
+  private drsTitle: HTMLParagraphElement;
+  private drsRows: HTMLDivElement;
+  private drsBtn: HTMLButtonElement;
+  private drsKey = "";
 
   constructor(
     host: HTMLElement,
@@ -42,6 +49,8 @@ export class CricketHud {
       onShot: (s: "ground" | "loft" | "defend") => void;
       onBowl: () => void;
       onRun: () => void;
+      onReview: () => void;
+      onCard: () => void;
     },
   ) {
     this.root = el("div", "pointer-events-none absolute inset-0 z-[5] select-none font-sans text-white");
@@ -54,10 +63,15 @@ export class CricketHud {
     const team = el("span", "rounded px-1.5 py-0.5 text-xs font-black");
     team.textContent = sim.batTeam.short;
     this.root.dataset.team = "";
+    this.pp = el("span", "rounded bg-[#22d3ee] px-1 text-[10px] font-black text-black", "P");
+    this.pp.title = "Powerplay: two fielders outside the circle";
+    this.pp.setAttribute("data-testid", "cricket-powerplay");
+    this.drsTag = el("span", "rounded bg-white/15 px-1 text-[10px] font-bold");
+    this.drsTag.setAttribute("data-testid", "cricket-reviews");
     const bug = el(
       "div",
       "absolute left-[max(0.5rem,env(safe-area-inset-left))] top-[max(0.5rem,env(safe-area-inset-top))] w-64 overflow-hidden rounded-md border border-white/15 bg-black/70 text-[13px] shadow-lg backdrop-blur-sm",
-      el("div", "flex items-center gap-2 px-2 pt-1.5", team, this.score, el("span", "flex-1"), this.overs),
+      el("div", "flex items-center gap-2 px-2 pt-1.5", team, this.score, el("span", "flex-1"), this.pp, this.drsTag, this.overs),
       this.chase,
       this.over,
     );
@@ -93,7 +107,15 @@ export class CricketHud {
     this.shotLabel = el("span", "font-black text-[#facc15]");
     this.batPanel = el("div", "pointer-events-auto absolute bottom-[max(0.5rem,env(safe-area-inset-bottom))] right-14 flex flex-col items-end gap-1.5");
     this.hint = el("p", "absolute bottom-24 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-black/55 px-2 py-1 text-[11px] text-white/80");
-    this.root.append(bug, lower, this.call, this.bowlPanel, this.batPanel, this.hint);
+    // DRS: the offer (your call) and the ball-tracking read-out.
+    this.drsTitle = el("p", "font-display text-lg font-black uppercase tracking-wide");
+    this.drsRows = el("div", "mt-1 flex flex-col gap-1 text-xs");
+    this.drsBtn = this.btn("Review (V)", "mt-2 h-11 w-full border-[#facc15] bg-[#facc15]/20 text-sm", () => this.ui.onReview(), "cricket-review");
+    this.drsBox = el("div", "pointer-events-auto absolute right-[max(0.5rem,env(safe-area-inset-right))] top-16 w-56 rounded-lg border border-white/20 bg-black/75 p-3 backdrop-blur-sm", el("p", "text-[10px] font-bold uppercase tracking-[0.3em] text-[#facc15]", "Decision review"), this.drsTitle, this.drsRows, this.drsBtn);
+    this.drsBox.hidden = true;
+    this.drsBox.setAttribute("data-testid", "cricket-drs");
+    const cardBtn = this.btn("Card", "absolute right-14 top-[max(0.5rem,env(safe-area-inset-top))] h-9 px-3 text-[11px] border-white/40 bg-black/50", () => this.ui.onCard(), "cricket-card-btn");
+    this.root.append(bug, lower, this.call, this.bowlPanel, this.batPanel, this.hint, this.drsBox, cardBtn);
     host.appendChild(this.root);
     this.buildBatPanel();
   }
@@ -181,6 +203,12 @@ export class CricketHud {
       case "runs":
         if (e.n >= 2) this.show(`${e.n} runs`, "", "#ffffff", 1.2, true);
         return;
+      case "powerplay":
+        return this.show(e.on ? "Powerplay" : "Powerplay over", e.on ? "Only two fielders outside the circle" : "The field can spread", "#22d3ee", 2);
+      case "drs":
+        if (e.stage === "offer") return this.show(e.out ? "Given out!" : "Not out", s.opts.human === e.side ? "Review it? You have one review" : "", e.out ? "#ef4444" : "#e5e7eb", 2);
+        if (e.stage === "review") return this.show("Review!", e.text, "#facc15", 2);
+        return this.show(e.out ? "OUT" : "NOT OUT", e.text, e.out ? "#ef4444" : "#22c55e", 3.2);
     }
   }
 
@@ -216,6 +244,11 @@ export class CricketHud {
     const bc = inn.bowl.get(inn.bowler);
     this.bowler.textContent = `${s.bowler.name} ${bc ? `${bc.wkts}-${bc.runs} (${s.overs(bc.balls)})` : ""} · ${s.bowler.style === "spin" ? "spin" : "pace"}`;
     this.freeHit.hidden = s.result?.text !== "No ball! Free hit" || s.phase === "dead";
+    this.pp.hidden = !(s.opts.mode === "match" && s.powerplay);
+    const me = s.opts.human;
+    this.drsTag.hidden = !s.drsOn || me < 0;
+    if (me >= 0) this.drsTag.textContent = `DRS ${s.reviews[me as 0 | 1]}`;
+    this.updateDrs();
     // Controls.
     const bowling = s.humanBowls && s.phase !== "break" && s.phase !== "done";
     const batting = s.humanBats && s.phase !== "break" && s.phase !== "done";
@@ -239,6 +272,37 @@ export class CricketHud {
       this.callT -= dt;
       if (this.callT <= 0) this.call.style.opacity = "0";
     }
+  }
+
+  /** The review panel: your call to make, then pitching, impact and wickets revealed one by one. */
+  private updateDrs() {
+    const s = this.sim;
+    const c = s.phase === "review" ? s.drs : null;
+    this.drsBox.hidden = !c;
+    if (!c) {
+      this.drsKey = "";
+      return;
+    }
+    const mine = c.stage === "offer" && s.opts.human === c.side && !s.autopilot;
+    this.drsBtn.hidden = !mine;
+    this.drsTitle.textContent = c.stage === "offer" ? `${c.given ? "Out" : "Not out"} · ${mine ? `review? ${Math.max(0, Math.ceil(7 - c.t))}s` : "on the field"}` : "Ball-tracking";
+    const shown = c.stage === "review" ? (c.t > 4.2 ? 3 : c.t > 2.8 ? 2 : c.t > 1.4 ? 1 : 0) : 0;
+    const key = `${c.stage}:${shown}`;
+    if (key === this.drsKey) return;
+    this.drsKey = key;
+    const good = (v: string) => (v === "in line" || v === "hitting" || v === "full toss" ? "#22c55e" : v === "umpire's call" ? "#f59e0b" : "#ef4444");
+    const rows: [string, string][] = [
+      ["Pitching", c.pitching],
+      ["Impact", c.impact],
+      ["Wickets", c.wickets],
+    ];
+    this.drsRows.replaceChildren(
+      ...rows.map(([k, v], i) => {
+        const val = el("span", "rounded px-1.5 py-0.5 font-black uppercase text-black", i < shown ? v : "…");
+        val.style.background = i < shown ? good(v) : "rgba(255,255,255,0.2)";
+        return el("div", "flex items-center justify-between", el("span", "uppercase tracking-wider text-white/70", k), val);
+      }),
+    );
   }
 
   destroy() {

@@ -11,7 +11,8 @@ import {
   type Position,
 } from "./career";
 import { ALL_CLUBS, clubById, defaultClub, LEAGUES, NATIONAL, type ClubEdit } from "./clubs";
-import { finalName, finalsSpots, ladder, nextGame, ordinal, type Season } from "./season";
+import { countOf, finalName, finalsSpots, ladder, nextGame, ordinal, type Season } from "./season";
+import { fullName } from "./rosters";
 
 /** Menu screens for Screamer's modes: the season hub, career, the club editor. */
 
@@ -90,6 +91,41 @@ export function finalsList(s: Season) {
   return el("ol", "flex flex-col gap-0.5 text-xs", ...rows);
 }
 
+/**
+ * The count: the league medal (3-2-1 votes, home and away) and the leading
+ * goalkicker. During the season, the leaders; at the end, awards night.
+ */
+export function awardsPanel(s: Season) {
+  const medal = countOf(s.medal, 5);
+  const goals = countOf(s.goals, 5);
+  const done = s.stage !== "home";
+  const name = (c: { club: string; last: string }) => `${fullName(c.club, c.last, s.women)} (${clubById(c.club).short})`;
+  const list = (title: string, rows: ReturnType<typeof countOf>, unit: string) =>
+    el(
+      "div",
+      "rounded bg-white/5 p-2",
+      el("p", "mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#facc15]", title),
+      ...(rows.length ? rows.map((r, i) => el("p", `truncate text-xs ${r.club === s.club ? "font-bold text-[#facc15]" : ""}`, `${i + 1}. ${name(r)} · ${r.n} ${unit}`)) : [el("p", "text-xs text-white/50", "No games yet")]),
+    );
+  const top = medal[0];
+  const coleman = goals[0];
+  const night =
+    done && top && coleman
+      ? el(
+          "div",
+          "rounded-lg border border-[#facc15]/40 bg-[#facc15]/10 p-3 text-center",
+          el("p", "text-[10px] font-bold uppercase tracking-[0.3em] text-[#facc15]", "Awards night"),
+          el("p", "mt-1 font-display text-lg font-black uppercase", `League Medal: ${name(top)}`),
+          el("p", "text-xs text-white/75", `${top.n} votes${medal[1] ? `, from ${fullName(medal[1].club, medal[1].last, s.women)} on ${medal[1].n}` : ""}`),
+          el("p", "mt-2 font-display text-base font-black uppercase", `Leading goalkicker: ${name(coleman)}`),
+          el("p", "text-xs text-white/75", `${coleman.n} goals in the home and away season`),
+        )
+      : el("span");
+  const wrap = el("div", "flex flex-col gap-2", night, el("div", "grid grid-cols-1 gap-2 sm:grid-cols-2", list(done ? "League Medal · final count" : "League Medal · the leaders", medal, "votes"), list("Leading goalkicker", goals, "goals")));
+  wrap.setAttribute("data-testid", "footy-awards");
+  return wrap;
+}
+
 /** The premiership hub: the ladder, your next game, play or sim. */
 export function seasonHub(s: Season, h: { play: () => void; sim: () => void; simRound: () => void; abandon: () => void }) {
   const ng = nextGame(s);
@@ -111,11 +147,12 @@ export function seasonHub(s: Season, h: { play: () => void; sim: () => void; sim
   const simRound = button(s.stage === "home" ? "Sim to the finals" : "Sim the rest", `${BTN} text-xs`, h.simRound);
   simRound.disabled = !ng;
   return card(
-    `${LEAGUES[s.league].name} · ${s.rounds} rounds · top ${finalsSpots(s)}`,
+    `${s.women ? "Women's " : ""}${LEAGUES[s.league].name} · ${s.rounds} rounds · top ${finalsSpots(s)}`,
     el("p", "text-sm font-bold", status),
     el("div", "flex flex-wrap gap-2", play, sim, simRound),
     ladderTable(s),
     finalsList(s),
+    awardsPanel(s),
     button("Abandon season", `${BTN} self-start text-xs`, h.abandon),
   );
 }
