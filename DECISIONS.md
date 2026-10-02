@@ -415,3 +415,7 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 119. **Houses are data, merged at draw time.** A Build is walls, openings, floor tiles and furniture in plot
      coordinates; the renderer merges each house into a handful of meshes, so 48 furnished houses stay cheap,
      and collisions and "use" prompts come from the same data.
+120. **Real sport is data and links, never video.** Live broadcasts of real leagues are licensed, so there's
+     no free, legal stream to embed; the site shows free public scores, plays and stats and links out to
+     official broadcasters. Upstream calls go through our own route (cached 20 s) because the CSP only lets
+     the page talk to itself and Supabase, and so a busy page costs the free sources one call per league.

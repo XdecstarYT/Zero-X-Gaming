@@ -463,6 +463,15 @@ sims are deterministic, so `Broadcast` fast-forwards to "now" and everyone watch
 Each channel's feed is lazy-loaded and drives the game's own view and HUD in spectator mode; the page adds
 a commentary box, the coming-up schedule, sound / quality / full-screen controls and a link to play.
 
+Below the channels, **Live scores** follows real sport as it happens, from free public data only: ESPN's
+public site API (AFL, Premier League, Champions League, A-League, LaLiga, MLS, NBA, WNBA, NFL, MLB, NHL; no
+key) and TheSportsDB's free tier (cricket and rugby; key `123`, or set `THESPORTSDB_KEY`). `/api/live-scores`
+(`?league=nba`, `&event=<id>` for one game) fetches and normalises them (`src/lib/livescores.ts`) and caches
+each answer for 20 seconds, so all visitors share one upstream call. The page polls every 30 seconds while
+visible and shows each game's score and clock, play by play, team stats, where it's on TV and links to the
+official match centre and highlights. Real broadcasts aren't free to show, so the site links out rather than
+streaming them.
+
 #### Boundary Blitz
 
 T20 cricket (`src/games/cricket/`), in the Sports+ pass. `sim.ts` is the whole match ball by ball: deliveries
