@@ -689,7 +689,9 @@ regenerate `src/lib/supabase/database.types.ts`.
 ## Deploying (Vercel)
 
 1. Import the repo in Vercel. The framework preset is detected; no `vercel.json` is needed.
-2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and optionally
+2. Nothing to add for Supabase: the live project's URL and publishable key are built in (`src/lib/supabase/env.ts`;
+   both are public by design, row-level security guards the data). Set the two `NEXT_PUBLIC_SUPABASE_*` variables
+   only to point at another project, or `NEXT_PUBLIC_SUPABASE_URL=off` for guest-only mode. Optionally set
    `NEXT_PUBLIC_SITE_URL`.
 3. Add the production and preview callback URLs in Supabase (see above).
 
