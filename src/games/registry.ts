@@ -15,6 +15,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   "boundary-blitz": () => import("./cricket/index"),
   life: () => import("./life/index"),
   fairway: () => import("./fairway/index"),
+  hometown: () => import("./hometown/index"),
 };
 
 export function hasGame(slug: string) {

@@ -552,6 +552,36 @@ A life sim (`src/games/life/`) in two layers that feed each other:
   shifts, build mode). Saved in `localStorage` (`zx-life-save`). Registered by `20261009090000_life.sql`; it's the
   home page's featured game.
 
+### Hometown: the online town
+
+A persistent online town shared by everyone signed in (`src/games/hometown/`), on Life's Harbour City (its
+streets, plots, house builder and renderer). Unlike every other game here, the state lives on the server:
+
+- **The database is the game.** `20261011090000_hometown.sql` and the three files after it create the `town_*`
+  tables (citizens, inventories, the 48 lots and their builds, businesses, the order book and trades, shops and
+  shelves, elections, candidates, votes, the news log) and the `town_*` functions. Every table is read-only to
+  clients (inventories and votes only to their owner); every change is a `SECURITY DEFINER` function that reads
+  `auth.uid()`, locks what it touches and keeps money and goods conserved. Helpers (`town__*`) aren't callable.
+- **Economy.** Shifts (farm, timber yard, mine: raw goods and $10; public works: the mayor's wage from the
+  treasury) cost energy (it refills a point every two minutes; bread restores 35) and have a cooldown.
+  Businesses on your lot turn goods into products (mill, bakery, sawmill, workshop, foundry, smithy); tools
+  speed up shifts. The exchange is a limit order book: orders escrow cash or goods, match the best resting
+  price, and closed orders are kept as history (`open = false`, never removed). Shops sell from shelves at
+  the owner's price. Sellers pay the sales tax into the treasury; land sales carry the house, business and
+  shop with them.
+- **Civics.** Elections every six hours, resolved lazily (`town__tick` runs at the start of a snapshot, a vote or
+  a candidacy): a 100 filing fee, a slogan and a platform (sales tax 0–20%, public wage 20–200), one changeable
+  vote each. The winner's platform takes effect and the mayor can adjust it.
+- `economy.ts`: items, jobs, recipes and rules, plus `LocalTown`, the same rules in memory (unit-tested in
+  `economy.test.ts`). `backend.ts`: `SupabaseBackend` (thin RPC wrappers) and `LocalBackend`, the practice town
+  (a few neighbours trading, a shop, a ballot), used without an account and by the e2e tests (`?town=local`).
+- `presence.ts`: one Supabase Realtime room (`town:MAIN`) for positions (a few a second while moving), chat
+  (rate-limited, sanitised) and "dirty" pings that make everyone refresh sooner. Nothing on it is trusted.
+- `index.ts`: the 3D client. Walk Main Street (Life's shops repainted as the land office, farm co-op, timber
+  yard, mine, City Hall, exchange and Gazette), visit lots (buy, shop, business, list for sale), build (a plank
+  per wall, a piece of furniture per item), the phone (bag, market, Gazette), chat and other players' avatars
+  with name tags. The clock is shared: a day every real hour.
+
 ### Clanforge: base-building strategy
 
 An original village-builder in the Clash style (`src/games/clanforge/`), with its own names, buildings,
@@ -660,6 +690,7 @@ The platform handles loading, pause UI, fullscreen, game over, score submission,
 | `play_sessions`       | owner                           | owner (insert)                                  |
 | `daily_streaks`       | owner                           | `touch_daily_streak()` only                     |
 | `reports`             | reporter                        | `report_content()` only (rate-limited, no self) |
+| `town_*` (Hometown)   | everyone (inventory, votes: owner) | `town_*()` functions only                    |
 
 ### Moderation
 

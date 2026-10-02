@@ -433,3 +433,10 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      per game where everyone in a quick-match room lists their code; a newcomer joins the fullest room with
      space or opens one for the next player. No matchmaking service to run, and it works on the same
      transports (and the same local test mode) as the games themselves.
+125. **Hometown's server is the database.** A shared economy can't trust clients, and running a game
+     server is a cost we don't have, so every rule (escrow, matching, cooldowns, energy, tax, elections)
+     lives in Postgres functions that check `auth.uid()`. Time-based rules are lazy (energy is computed
+     when read, elections resolve on the next call after the polls close), so nothing needs a scheduler.
+     Realtime only carries what's harmless to fake: where people are standing and what they say.
+126. **Orders close, they aren't removed.** Filled and cancelled orders set `open = false` and keep their
+     row, so the book is a partial index and the history stays for the record.

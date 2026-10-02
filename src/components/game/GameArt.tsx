@@ -57,6 +57,8 @@ export function GameArt({
         <Village a={a} b={b} />
       ) : game.slug === "fairway" ? (
         <Golf a={a} b={b} />
+      ) : game.slug === "hometown" ? (
+        <TownArt a={a} b={b} />
       ) : game.category === "sports" ? (
         <Oval id={id} a={a} b={b} />
       ) : (
@@ -497,6 +499,43 @@ function Golf({ a, b }: { a: string; b: string }) {
       <path d="M212 72 L232 78 L212 84 Z" fill={a} />
       <path d="M40 190 Q130 0 206 104" stroke="#fde68a" strokeOpacity=".85" strokeWidth="2.5" fill="none" />
       <circle cx="206" cy="104" r="3.5" fill="#fff" />
+    </g>
+  );
+}
+
+function TownArt({ a, b }: { a: string; b: string }) {
+  // Dusk on a shared street: a shop, a house going up, a market ticker, a ballot box.
+  return (
+    <g>
+      <rect width="320" height="200" fill="#1c1917" />
+      <rect width="320" height="120" fill="#422006" opacity=".55" />
+      <circle cx="60" cy="54" r="24" fill={b} opacity=".8" />
+      <polyline points="150,70 175,58 198,64 222,40 246,48 270,26 300,32" fill="none" stroke="#4ade80" strokeWidth="4" strokeLinejoin="round" />
+      <path d="M296 26 L304 32 L294 36 Z" fill="#4ade80" />
+      <rect x="18" y="98" width="86" height="62" fill="#f5f5f4" />
+      <rect x="14" y="88" width="94" height="14" fill={a} />
+      <text x="61" y="99" textAnchor="middle" fontFamily="Arial" fontWeight="900" fontSize="10" fill="#fff">
+        SHOP
+      </text>
+      <rect x="28" y="112" width="30" height="22" fill="#93c5fd" />
+      <rect x="68" y="118" width="22" height="42" fill="#78350f" />
+      <g>
+        <rect x="124" y="108" width="70" height="52" fill="#e7e5e4" />
+        <path d="M118 108 L159 80 L200 108 Z" fill="#7c2d12" />
+        <rect x="150" y="128" width="16" height="32" fill="#57534e" />
+        <rect x="206" y="112" width="30" height="48" fill="none" stroke="#fbbf24" strokeWidth="3" strokeDasharray="5 4" />
+      </g>
+      <g transform="translate(250 112)">
+        <rect x="0" y="12" width="48" height="36" rx="3" fill="#1e3a8a" />
+        <rect x="14" y="10" width="20" height="4" fill="#0f172a" />
+        <rect x="16" y="-6" width="16" height="20" fill="#f8fafc" transform="rotate(-8 24 4)" />
+        <path d="M19 2 L23 7 L30 -2" stroke="#16a34a" strokeWidth="2.5" fill="none" transform="rotate(-8 24 4)" />
+      </g>
+      <rect x="0" y="160" width="320" height="40" fill="#3f3f46" />
+      <path d="M0 180 L320 180" stroke="#f8fafc" strokeDasharray="14 10" strokeWidth="2" />
+      {[0, 1, 2].map((i) => (
+        <circle key={i} cx={128 + i * 14} cy={188 - (i % 2) * 2} r="6" fill={b} stroke="#78350f" strokeWidth="1.5" />
+      ))}
     </g>
   );
 }

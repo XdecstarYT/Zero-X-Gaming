@@ -45,6 +45,45 @@ const facadeKind: Record<string, "store" | "office" | "tower" | "hospital" | "st
   office: "tower", studio: "office", cityhall: "station", school: "office", hospital: "hospital", police: "station", fire: "station", beach: "store", airport: "office",
 };
 
+export interface ViewOptions {
+  /** Shop signs to repaint (place id → text), for games that reuse the town. */
+  signs?: Partial<Record<string, string>>;
+  /** Fewer strolling neighbours (other players fill the streets). */
+  npcs?: number;
+}
+
+/** Another player in the street. */
+export interface Person {
+  id: string;
+  name: string;
+  x: number;
+  z: number;
+  heading: number;
+  speed: number;
+  pose: Pose;
+  look: Look;
+}
+
+/** A label that floats over a head or a lot. */
+function labelSprite(text: string, color: string, scale: number) {
+  const tex = canvasTexture(512, 96, (g) => {
+    g.clearRect(0, 0, 512, 96);
+    g.font = "800 44px Arial, sans-serif";
+    const w = Math.min(500, g.measureText(text).width + 40);
+    g.fillStyle = "rgba(15,23,42,0.78)";
+    g.beginPath();
+    g.roundRect(256 - w / 2, 12, w, 72, 30);
+    g.fill();
+    g.fillStyle = color;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(text, 256, 50, 480);
+  });
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }));
+  s.scale.set(scale, scale * 0.1875, 1);
+  return s;
+}
+
 export class LifeView {
   readonly pipe: SportsPipeline;
   private houses = new Map<number, HouseModel>();
@@ -73,8 +112,10 @@ export class LifeView {
   buildDist = 34;
   private camPos = new THREE.Vector3(0, 10, 20);
   private camLook = new THREE.Vector3();
+  private people = new Map<string, { m: PedModel; tag: THREE.Sprite; key: string; x: number; z: number; h: number; step: number }>();
+  private signs = new Map<number, { s: THREE.Sprite; key: string }>();
 
-  constructor(host: HTMLElement, detail: Detail, look: Look) {
+  constructor(host: HTMLElement, detail: Detail, look: Look, opts: ViewOptions = {}) {
     const high = detail !== "low";
     this.lod = high ? "high" : "low";
     setTextureDetail(high ? "high" : "low");
@@ -162,7 +203,7 @@ export class LifeView {
       return m;
     };
     const roofMat = new THREE.MeshStandardMaterial({ color: "#3f3f46", roughness: 0.9 });
-    PLACES.forEach((p, i) => this.addPlace(p, facadeKind[p.id] ?? "store", i % 4, facadeMat, roofMat));
+    PLACES.forEach((p, i) => this.addPlace({ ...p, sign: opts.signs?.[p.id] ?? p.sign }, facadeKind[p.id] ?? "store", i % 4, facadeMat, roofMat));
 
     // ---------------------------------------------------------- houses
     // (filled by setBuild)
@@ -255,7 +296,7 @@ export class LifeView {
 
     // ------------------------------------------------------- neighbours
     const shirts = ["#1e3a8a", "#7f1d1d", "#166534", "#f5f5f4", "#111827", "#a16207", "#6d28d9"];
-    for (let i = 0; i < (high ? 14 : 7); i++) {
+    for (let i = 0; i < Math.min(high ? 14 : 7, opts.npcs ?? 99); i++) {
       const m = buildPed({ skin: ["#f1c9a5", "#e0ac84", "#c68c5d", "#8d5a3b", "#5a3a28"][i % 5], shirt: shirts[i % shirts.length], pants: i % 2 ? "#1f2937" : "#374151", seed: 500 + i * 7, lod: this.lod });
       m.group.traverse((o) => (o.castShadow = true));
       scene.add(m.group);
@@ -383,6 +424,66 @@ export class LifeView {
     this.car = buildCar(kind as CarKind, color, "LIFE", this.lod);
     this.car.group.traverse((o) => (o.castShadow = true));
     this.pipe.scene.add(this.car.group);
+  }
+
+  // ------------------------------------------------------------- others
+
+  /**
+   * Other players, once a frame: avatars appear, glide to their last reported
+   * spot (positions arrive a few times a second), walk and wear name tags.
+   */
+  syncPeople(list: Person[], dt: number) {
+    const seen = new Set<string>();
+    for (const p of list) {
+      seen.add(p.id);
+      const key = `${p.name}|${p.look.sex}|${p.look.skin}|${p.look.hair}|${p.look.shirt}`;
+      let o = this.people.get(p.id);
+      if (o && o.key !== key) {
+        this.pipe.scene.remove(o.m.group, o.tag);
+        o = undefined;
+      }
+      if (!o) {
+        const l = p.look;
+        const m = buildPed({ skin: l.skin, shirt: l.shirt, pants: l.pants, hair: l.hair, seed: l.seed, lod: this.lod, outfit: { female: l.sex === "F", top: "tee", bottom: "trousers", hair: l.sex === "F" ? "long" : "short", beard: false, hat: "none", backpack: false, officer: false } });
+        m.group.traverse((c) => (c.castShadow = true));
+        const tag = labelSprite(p.name, "#ffffff", 2.4);
+        this.pipe.scene.add(m.group, tag);
+        o = { m, tag, key, x: p.x, z: p.z, h: p.heading, step: 0 };
+        this.people.set(p.id, o);
+      }
+      const k = Math.min(1, dt * 8);
+      if (Math.hypot(p.x - o.x, p.z - o.z) > 25) Object.assign(o, { x: p.x, z: p.z });
+      o.x += (p.x - o.x) * k;
+      o.z += (p.z - o.z) * k;
+      let d = p.heading - o.h;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      o.h += d * k;
+      o.step += dt * p.speed * 1.45;
+      o.m.group.position.set(o.x, p.pose === "sit" ? 0.05 : 0, o.z);
+      o.m.group.rotation.y = -(Math.PI / 2 - o.h);
+      posePed(o.m, p.pose, o.step, p.speed, this.time, dt);
+      o.tag.position.set(o.x, 2.35, o.z);
+    }
+    for (const [id, o] of this.people)
+      if (!seen.has(id)) {
+        this.pipe.scene.remove(o.m.group, o.tag);
+        this.people.delete(id);
+      }
+  }
+
+  /** A floating sign over a lot ("For sale", a shop's name), or null to clear. */
+  setPlotSign(p: Plot, text: string | null, color = "#fde68a") {
+    const old = this.signs.get(p.id);
+    const key = text ? `${text}|${color}` : "";
+    if (old?.key === key) return;
+    if (old) this.pipe.scene.remove(old.s);
+    this.signs.delete(p.id);
+    if (!text) return;
+    const s = labelSprite(text, color, 7);
+    const w = toWorld(p, PLOT_W / 2, PLOT_D - 2);
+    s.position.set(w.x, 4.2, w.z);
+    this.pipe.scene.add(s);
+    this.signs.set(p.id, { s, key });
   }
 
   // -------------------------------------------------------------- build
