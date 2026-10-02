@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 export default function SportsPage() {
   const sports = new Set(UPCOMING.map((s) => s.sport)).size;
   const live = getGame("aussie-rules")!;
-  const out = ["aussie-rules", "diamond-derby", "ace-rally", "boundary-blitz"].map((slug) => getGame(slug)!);
+  const out = ["aussie-rules", "diamond-derby", "ace-rally", "boundary-blitz", "fairway"].map((slug) => getGame(slug)!);
   return (
     <div className="pb-8">
       <section aria-labelledby="sports-title" className="relative overflow-hidden border-b border-border">

@@ -55,6 +55,8 @@ export function GameArt({
         <Cricket a={a} b={b} />
       ) : game.slug === "clanforge" ? (
         <Village a={a} b={b} />
+      ) : game.slug === "fairway" ? (
+        <Golf a={a} b={b} />
       ) : game.category === "sports" ? (
         <Oval id={id} a={a} b={b} />
       ) : (
@@ -469,6 +471,32 @@ function Cricket({ a, b }: { a: string; b: string }) {
       ))}
       <path d="M160 120 Q220 30 300 40" stroke={a} strokeOpacity=".7" strokeWidth="2.5" fill="none" strokeDasharray="4 4" />
       <circle cx="300" cy="40" r="5" fill="#fff" />
+    </g>
+  );
+}
+
+function Golf({ a, b }: { a: string; b: string }) {
+  // Down the fairway at golden hour: bunkers, the green and the flag, a ball's arc dropping in.
+  return (
+    <g>
+      <circle cx="250" cy="58" r="26" fill={b} opacity=".7" />
+      <path d="M0 96 Q60 78 120 92 T240 84 T320 90 L320 200 L0 200 Z" fill="#14532d" />
+      <path d="M0 110 Q90 96 170 108 T320 102 L320 200 L0 200 Z" fill="#166534" />
+      <path d="M110 200 Q150 150 168 118 Q176 106 196 104 L230 104 Q214 120 210 150 Q206 180 230 200 Z" fill="#4d9a3a" />
+      <path d="M128 200 Q158 160 172 128" stroke="#5fb049" strokeWidth="10" opacity=".6" fill="none" />
+      <ellipse cx="208" cy="106" rx="34" ry="9" fill="#65b84c" />
+      <ellipse cx="166" cy="114" rx="14" ry="4" fill="#e7d9ae" />
+      <ellipse cx="250" cy="112" rx="12" ry="4" fill="#e7d9ae" />
+      {[30, 60, 280, 300].map((x, i) => (
+        <g key={x}>
+          <rect x={x - 1.5} y={88 - (i % 2) * 6} width="3" height="16" fill="#3f2a1a" />
+          <circle cx={x} cy={80 - (i % 2) * 6} r={13 - (i % 2) * 3} fill="#0f3d1e" />
+        </g>
+      ))}
+      <path d="M212 106 L212 72" stroke="#f8fafc" strokeWidth="2" />
+      <path d="M212 72 L232 78 L212 84 Z" fill={a} />
+      <path d="M40 190 Q130 0 206 104" stroke="#fde68a" strokeOpacity=".85" strokeWidth="2.5" fill="none" />
+      <circle cx="206" cy="104" r="3.5" fill="#fff" />
     </g>
   );
 }

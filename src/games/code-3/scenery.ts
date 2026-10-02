@@ -275,6 +275,8 @@ export interface TreeSpot {
   x: number;
   z: number;
   s: number;
+  /** Ground height (0 if left out). */
+  y?: number;
 }
 
 interface Canopy {
@@ -430,7 +432,7 @@ export class TreeKit {
         const h = hash(t.z, t.x);
         q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), h * Math.PI * 2);
         const s = t.s * (0.9 + h * 0.2);
-        m4.compose(new THREE.Vector3(t.x, 0, t.z), q, new THREE.Vector3(s, s * (0.92 + hash(t.x, 7) * 0.16), s));
+        m4.compose(new THREE.Vector3(t.x, t.y ?? 0, t.z), q, new THREE.Vector3(s, s * (0.92 + hash(t.x, 7) * 0.16), s));
         trunk.setMatrixAt(k, m4);
         cards.setMatrixAt(k, m4);
         mass.setMatrixAt(k, m4);

@@ -419,3 +419,6 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      no free, legal stream to embed; the site shows free public scores, plays and stats and links out to
      official broadcasters. Upstream calls go through our own route (cached 20 s) because the CSP only lets
      the page talk to itself and Supabase, and so a busy page costs the free sources one call per league.
+121. **Golf shots are flown, not looked up.** Fairway's distances come from the same flight model the
+     ball uses, so the yardage book, the caddie, the landing camera and the autopilot can never disagree
+     with what the ball actually does; the course's height is cached on a lattice so that stays cheap.

@@ -472,6 +472,23 @@ visible and shows each game's score and clock, play by play, team stats, where i
 official match centre and highlights. Real broadcasts aren't free to show, so the site links out rather than
 streaming them.
 
+#### Fairway
+
+Golf (`src/games/fairway/`), in the Sports+ pass, on two original nine-hole courses: Saltgrass Links (dunes,
+fescue, pot bunkers, the sea down one side, windy) and Ironbark Hills (gum-lined parkland with lakes).
+`course.ts` builds each hole from a fixed seed: the line of play (straight or a dogleg), green, pin, bunkers,
+ponds and trees, plus two pure functions over it, `heightAt` (sampled on a 25 cm lattice as it's asked for)
+and `lieAt`, that the physics and the renderer both use. `sim.ts` flies every shot: launch speed, angle and
+backspin per club, drag and Magnus lift, a spin axis tilted by a mis-hit so it curves, wind that grows with
+height; then bounce, spin bite and roll by lie and slope, trees, lip-outs and the cup. The three-press meter
+sets power and accuracy (early fades, late draws). The caddie suggests a club and line from the yardage book
+(each club flown once on flat ground) and the "plays like" distance (rise and wind). Stroke play is against
+11 AI pros with Stableford points; closest to the pin is five balls at a par 3. The view paints each hole's
+lies into a texture (mowing stripes, first cut, sand, beach) over a detail texture on the terrain, with
+Code 3's instanced trees, grass tufts, water, a gallery, break arrows on the greens, a TV tracer and a
+camera that cuts to where the ball will land (by flying a copy ahead). `simulateToEnd` plays a round
+headlessly; the autopilot solves putts by rolling trial putts and makes pars.
+
 #### Boundary Blitz
 
 T20 cricket (`src/games/cricket/`), in the Sports+ pass. `sim.ts` is the whole match ball by ball: deliveries

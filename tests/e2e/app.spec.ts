@@ -17,7 +17,7 @@ test("home renders hero, featured game and sections", async ({ page }) => {
 
 test("library filters by search and category and syncs the URL", async ({ page }) => {
   await page.goto("/games");
-  await expect(page.getByText("9 games")).toBeVisible();
+  await expect(page.getByText("10 games")).toBeVisible();
   await page.getByLabel("Search games").fill("conquest");
   await expect(page.getByText("1 game", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/q=conquest/);

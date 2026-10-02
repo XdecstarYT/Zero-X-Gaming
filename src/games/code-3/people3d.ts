@@ -440,6 +440,10 @@ export type Pose =
   // Life: sitting on a chair or sofa, lying asleep.
   | "sit"
   | "sleep"
+  // Golf (`act` 0–1 is the swing's progress; impact at 0.5, or 0.42 for a putt).
+  | "address"
+  | "golfSwing"
+  | "putt"
   // Holding a cup over your head.
   | "trophy";
 
@@ -817,6 +821,38 @@ function target(pose: Pose, step: number, speed: number, t: number, seed: number
       p.root(0, -0.48, 0);
       p.set("spine", 0, 0, -0.2).set("armL", 0.1, 0, 1.25).set("foreL", 0, 0, 0.5).set("armR", -0.2, 0, 0.3).set("foreR", 0, 0, 0.9);
       break;
+    case "address":
+    case "golfSwing": {
+      // Side-on to the target (-z), bent from the hips, arms hanging to the ball.
+      // Takeaway and turn (0–0.42), down to impact (0.42–0.5), release and finish high (0.5–1).
+      const a = pose === "golfSwing" ? act : 0;
+      const back = ease(0, 0.4, a) * (1 - ease(0.42, 0.5, a));
+      const thru = ease(0.44, 0.52, a);
+      const fin = ease(0.52, 0.85, a);
+      p.set("thighL", -0.06 + 0.1 * fin, 0.15 * fin, 0.28 - 0.1 * fin).set("shinL", 0, 0, -0.32 + 0.2 * fin);
+      p.set("thighR", 0.06, -0.3 * fin, 0.28 + 0.15 * fin).set("shinR", 0, 0, -0.32 - 0.5 * fin).set("footR", 0, 0, 0.5 * fin);
+      p.set("hips", 0, -0.45 * back + 0.5 * thru + 0.5 * fin, 0);
+      p.set("spine", 0.1 * back, -0.3 * back + 0.3 * thru + 0.2 * fin, -0.42 + 0.3 * fin);
+      p.set("chest", 0, -0.75 * back + 0.25 * thru + 0.35 * fin, -0.08 + 0.1 * fin);
+      p.set("neck", 0, 0.5 * back - 0.3 * thru, 0);
+      p.set("head", 0, 0.45 * back - 0.25 * thru - 0.4 * fin, -0.35 + 0.35 * fin);
+      p.set("armL", -0.32 - 0.25 * back + 0.5 * fin, 0, 0.62 + 1.25 * back + 1.2 * fin).set("foreL", 0, 0, 0.08 + 0.3 * back + 0.9 * fin);
+      p.set("armR", 0.28 + 0.3 * back - 0.45 * fin, 0, 0.6 + 1.3 * back + 1.15 * fin).set("foreR", 0, 0, 0.18 + 1.0 * back - 0.1 * thru + 0.8 * fin);
+      p.set("handL", 0, 0, -0.3 - 0.6 * back + 0.3 * thru).set("handR", 0, 0, -0.3 - 0.6 * back + 0.3 * thru);
+      p.root(0, -0.06 + Math.sin(t * 1.6 + seed) * 0.003 * (1 - a), 0);
+      break;
+    }
+    case "putt": {
+      // Bent over the ball, eyes over it; the shoulders rock the arms like a pendulum along the line.
+      const sw = act < 0.42 ? -Math.sin((act / 0.42) * Math.PI) * 0.22 : Math.sin(((act - 0.42) / 0.58) * Math.PI * 0.5) * 0.26 * (1 - ease(0.85, 1, act) * 0.3);
+      p.set("thighL", -0.06, 0, 0.22).set("shinL", 0, 0, -0.26).set("thighR", 0.06, 0, 0.22).set("shinR", 0, 0, -0.26);
+      p.set("spine", 0, 0, -0.62).set("chest", 0, 0, -0.1).set("head", 0, 0, -0.35);
+      p.set("armL", -0.3 + sw, 0, 0.72).set("foreL", 0, 0, 0.18);
+      p.set("armR", 0.3 + sw, 0, 0.72).set("foreR", 0, 0, 0.28);
+      p.set("handL", 0, 0, -0.15).set("handR", 0, 0, -0.15);
+      p.root(0, -0.05, 0);
+      break;
+    }
     case "creaseStance":
       // Side-on at the crease, bat grounded by the back foot, eyes on the bowler.
       locomotion(p, 0, 0, t + seed);
@@ -1109,7 +1145,7 @@ export function posePed(m: PedModel, pose: Pose, step: number, speed: number, t 
     a.pose = pose;
   }
   const quick =
-    pose === "kick" || pose === "handball" || pose === "mark" || pose === "tackle" || pose === "ruck" || pose === "bounce" || pose === "swing" || pose === "pitch" || pose === "drive" || pose === "bowl" || pose === "throw" || pose === "forehand" || pose === "backhand" || pose === "serve";
+    pose === "kick" || pose === "handball" || pose === "mark" || pose === "tackle" || pose === "ruck" || pose === "bounce" || pose === "swing" || pose === "pitch" || pose === "drive" || pose === "bowl" || pose === "throw" || pose === "forehand" || pose === "backhand" || pose === "serve" || pose === "golfSwing" || pose === "putt";
   a.blend = Math.min(1, a.blend + dt / (quick ? 0.1 : 0.28));
   const k = smooth(a.blend);
   for (let i = 0; i < LEN; i++) a.cur[i] = k >= 1 ? tgt[i] : a.from[i] + (tgt[i] - a.from[i]) * k;

@@ -14,6 +14,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   clanforge: () => import("./clanforge/index"),
   "boundary-blitz": () => import("./cricket/index"),
   life: () => import("./life/index"),
+  fairway: () => import("./fairway/index"),
 };
 
 export function hasGame(slug: string) {
