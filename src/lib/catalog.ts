@@ -197,6 +197,34 @@ export const GAMES: Game[] = [
     touchControls: "Left thumb moves you and aims your shot as you hit. SERVE (tap to toss, tap at the top to hit) turns into TOPSPIN in the rally; SLICE, LOB and DROP sit beside it.",
   },
   {
+    slug: "life",
+    title: "Life",
+    tagline: "Be born. Grow up. Build your house. Leave a legacy.",
+    description:
+      "The Zero X flagship: a whole life in Harbour City. Year by year on your phone, you grow up, go to school and university, get jobs and promotions, fall in love, marry, have kids, buy cars and houses, take risks, deal with whatever life throws at you and choose what happens next, until you die and carry on as one of your children. Day by day, you live it in a photoreal 3D town: walk Main Street, keep your hunger, energy, hygiene and fun up with what's in your house, work real shifts at the register, the café and on pizza runs, drive your own car, and buy a plot to build your dream house wall by wall, room by room, and furnish it. Every day you play feeds back into your year.",
+    category: "sim",
+    tags: ["life sim", "building", "3d", "open world", "flagship"],
+    status: "live",
+    palette: ["#10b981", "#f59e0b"],
+    rating: 0,
+    ratingCount: 0,
+    plays: 0,
+    releasedAt: "2026-10-09",
+    controls: [
+      { keys: ["Age up"], action: "Live the next year (phone)" },
+      { keys: ["W", "A", "S", "D"], action: "Walk (Shift to run) / drive" },
+      { keys: ["Mouse drag"], action: "Look around" },
+      { keys: ["E"], action: "Use furniture · enter shops · deliver" },
+      { keys: ["F"], action: "Get in / out of your car" },
+      { keys: ["B"], action: "Build mode (your own home)" },
+      { keys: ["R"], action: "Rotate furniture (build)" },
+      { keys: ["M"], action: "End the day (back to your phone)" },
+      { keys: ["Esc", "P"], action: "Pause" },
+    ],
+    orientation: "landscape",
+    touchControls: "Your life plays on the phone screen: tap Age up, tabs and choices. In 3D, the left thumb walks or drives and dragging on the right looks around; USE, CAR, BUILD and PHONE buttons do the rest.",
+  },
+  {
     slug: "boundary-blitz",
     title: "Boundary Blitz",
     tagline: "T20 cricket under lights. Time it. Loft it. Clear the rope.",
@@ -255,7 +283,7 @@ export const GAMES: Game[] = [
   },
 ];
 
-export const FEATURED_SLUG = "trenches";
+export const FEATURED_SLUG = "life";
 
 export function getGame(slug: string): Game | undefined {
   return GAMES.find((g) => g.slug === slug);

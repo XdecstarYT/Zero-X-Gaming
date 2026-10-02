@@ -486,6 +486,25 @@ the sharpening grade, adaptive resolution, sun or floodlights), the instanced cr
 helpers, synthesized crowd/organ sound and the menu UI. Diamond Derby and Ace Rally are registered in the
 `games` table by `20261005090000_sports_plus_derby_tennis.sql`.
 
+### Life: the flagship
+
+A life sim (`src/games/life/`) in two layers that feed each other:
+
+- `life.ts`: the life, year by year (BitLife-style). Birth into a family, stats (happiness, health, smarts,
+  looks), school, high school and university degrees (`careers.ts`), jobs with ladders and promotions, money and
+  living costs, relationships (family, friends, partners, marriage, kids), random events with choices, activities
+  (gym, dates, lottery, crime and prison...), health conditions, death, ribbons, a life score, and carrying on as
+  one of your children with the inheritance.
+- `world.ts`: Harbour City in 3D (Bloxburg-style), as data and rules: Main Street's shops and workplaces, 48
+  residential plots, house builds (walls cut by doors and windows, floors, 26 furniture types), needs and the day
+  clock, collisions, the cashier, barista and pizza-delivery shifts, and arcade driving.
+- `models.ts` / `render.ts`: houses merged into a few meshes each, Code 3 facades on the shops, PBR ground, roads
+  and footpaths, trees and street lamps, the harbour, parked cars, neighbours, your character and car, a sun that
+  follows the clock, and build-mode ghosts.
+- `lifeui.ts` / `index.ts`: the phone (stats, story, tabs, events, death and heirs) and the 3D day (HUD, shops,
+  shifts, build mode). Saved in `localStorage` (`zx-life-save`). Registered by `20261009090000_life.sql`; it's the
+  home page's featured game.
+
 ### Clanforge: base-building strategy
 
 An original village-builder in the Clash style (`src/games/clanforge/`), with its own names, buildings,

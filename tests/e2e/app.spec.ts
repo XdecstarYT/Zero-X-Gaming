@@ -8,7 +8,7 @@ const BOARD = [
 test("home renders hero, featured game and sections", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Play. Compete.");
-  await expect(page.getByRole("heading", { name: "Trenches", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Life", level: 2 })).toBeVisible();
   for (const name of ["Continue playing", "Trending", "New releases", "Climb the ranks"]) {
     await expect(page.getByRole("heading", { name, level: 2 })).toBeVisible();
   }
@@ -17,7 +17,7 @@ test("home renders hero, featured game and sections", async ({ page }) => {
 
 test("library filters by search and category and syncs the URL", async ({ page }) => {
   await page.goto("/games");
-  await expect(page.getByText("8 games")).toBeVisible();
+  await expect(page.getByText("9 games")).toBeVisible();
   await page.getByLabel("Search games").fill("conquest");
   await expect(page.getByText("1 game", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/q=conquest/);

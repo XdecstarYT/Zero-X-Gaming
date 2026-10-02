@@ -43,8 +43,9 @@ export default function HomePage() {
               </span>
             </h1>
             <p className="mt-5 max-w-xl text-lg text-muted">
-              Two full 3D shooters in your browser. Dig in on five Great War fronts in Trenches, or drop into the Neon
-              Siege battle royale. Earn XP, unlock the battle pass, and play with friends on desktop or phone.
+              Live a whole life in Life, our flagship: grow up, work, love and build your house in a photoreal 3D town.
+              Then dig in on the Great War fronts in Trenches, drop into Neon Siege, or play Sports+. Earn XP, unlock the
+              battle pass, and play with friends on desktop or phone.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <LinkButton href={`/games/${featured.slug}`} size="lg">

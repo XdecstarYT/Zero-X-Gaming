@@ -27,7 +27,7 @@ describe("queryGames", () => {
   });
 
   it("sorts newest first", () => {
-    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("boundary-blitz");
+    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("life");
   });
 
   it("sorts by rating", () => {

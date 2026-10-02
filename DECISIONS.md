@@ -409,3 +409,9 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      than a network round trip, so the guest flies each delivery locally and sends their press with its
      delivery time; the host waits at the bat (up to 0.6 s) for it. The guest could cheat its timing, so online
      matches are unranked.
+118. **Life is two games joined at the year.** The phone plays a year a tap; the 3D town plays a day. A day's
+     needs, pay and shift scores are recorded into the year (`recordDay`) and shape the next Age Up, so either
+     half can be played alone and both matter.
+119. **Houses are data, merged at draw time.** A Build is walls, openings, floor tiles and furniture in plot
+     coordinates; the renderer merges each house into a handful of meshes, so 48 furnished houses stay cheap,
+     and collisions and "use" prompts come from the same data.

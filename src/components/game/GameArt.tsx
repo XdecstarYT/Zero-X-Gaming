@@ -49,6 +49,8 @@ export function GameArt({
         <Diamond id={id} a={a} b={b} />
       ) : game.slug === "ace-rally" ? (
         <Court id={id} a={a} b={b} />
+      ) : game.slug === "life" ? (
+        <LifeArt a={a} b={b} />
       ) : game.slug === "boundary-blitz" ? (
         <Cricket a={a} b={b} />
       ) : game.slug === "clanforge" ? (
@@ -467,6 +469,37 @@ function Cricket({ a, b }: { a: string; b: string }) {
       ))}
       <path d="M160 120 Q220 30 300 40" stroke={a} strokeOpacity=".7" strokeWidth="2.5" fill="none" strokeDasharray="4 4" />
       <circle cx="300" cy="40" r="5" fill="#fff" />
+    </g>
+  );
+}
+
+function LifeArt({ a, b }: { a: string; b: string }) {
+  // A sunrise over a street of houses, a phone with your life on it.
+  return (
+    <g>
+      <rect width="320" height="200" fill="#0b3b2e" />
+      <circle cx="250" cy="70" r="34" fill={b} opacity=".85" />
+      <path d="M0 120 Q80 96 160 112 T320 104 L320 200 L0 200 Z" fill="#14532d" />
+      {[20, 95, 170].map((x, i) => (
+        <g key={x}>
+          <rect x={x} y={118 - i * 2} width="60" height="38" fill="#f5f5f4" />
+          <path d={`M${x - 6} ${118 - i * 2} L${x + 30} ${96 - i * 2} L${x + 66} ${118 - i * 2} Z`} fill={["#7c2d12", "#374151", "#4b3a2f"][i]} />
+          <rect x={x + 24} y={134 - i * 2} width="12" height="22" fill="#78350f" />
+          <rect x={x + 6} y={126 - i * 2} width="12" height="10" fill="#93c5fd" />
+          <rect x={x + 42} y={126 - i * 2} width="12" height="10" fill="#93c5fd" />
+        </g>
+      ))}
+      <rect x="0" y="160" width="320" height="40" fill="#3f3f46" />
+      <path d="M0 180 L320 180" stroke="#f8fafc" strokeDasharray="14 10" strokeWidth="2" />
+      <g transform="translate(244 96) rotate(8)">
+        <rect x="0" y="0" width="54" height="96" rx="9" fill="#0f172a" />
+        <rect x="4" y="8" width="46" height="80" rx="4" fill="#f8fafc" />
+        <rect x="8" y="14" width="38" height="5" rx="2" fill={a} />
+        <rect x="8" y="23" width="30" height="4" rx="2" fill="#ef4444" />
+        <rect x="8" y="30" width="26" height="4" rx="2" fill="#3b82f6" />
+        <rect x="8" y="37" width="34" height="4" rx="2" fill="#ec4899" />
+        <rect x="8" y="70" width="38" height="12" rx="4" fill={a} />
+      </g>
     </g>
   );
 }

@@ -437,6 +437,9 @@ export type Pose =
   | "bowl"
   | "throw"
   | "dive"
+  // Life: sitting on a chair or sofa, lying asleep.
+  | "sit"
+  | "sleep"
   // Holding a cup over your head.
   | "trophy";
 
@@ -877,6 +880,19 @@ function target(pose: Pose, step: number, speed: number, t: number, seed: number
       p.set("armL", 0, 0, 2.9 * k).set("armR", 0, 0, 2.9 * k).set("foreL", 0, 0, 0.1).set("foreR", 0, 0, 0.1);
       break;
     }
+    case "sit":
+      // Seated: thighs forward, shins down, hands on the lap.
+      locomotion(p, 0, 0, t + seed);
+      p.set("thighL", 0.08, 0, Math.PI / 2).set("thighR", -0.08, 0, Math.PI / 2);
+      p.set("shinL", 0, 0, -Math.PI / 2).set("shinR", 0, 0, -Math.PI / 2);
+      p.set("footL", 0, 0, 0).set("footR", 0, 0, 0);
+      p.set("spine", 0, 0, 0.08).set("armL", 0.15, 0, 0.45).set("foreL", 0, 0, 0.9).set("armR", -0.15, 0, 0.45).set("foreR", 0, 0, 0.9);
+      p.root(0, -0.45, 0);
+      break;
+    case "sleep":
+      lying(p, false);
+      p.set("head", 0, 0.4, 0).set("armL", 0.3, 0, 0.2).set("armR", -0.3, 0, 0.2);
+      break;
     case "tennisReady":
       // Split step: low, racket out in front.
       locomotion(p, step, speed, t + seed);
