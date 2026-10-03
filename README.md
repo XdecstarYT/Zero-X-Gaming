@@ -658,6 +658,16 @@ owners can upgrade.
   mistakes cost money or goodwill. Panels for stock, prices, staff, build (place, move, rotate, sell), licences,
   marketing, the store (grow, rename, sign colour) and the books. **Bank my score** submits the business's value.
 
+**Every day is different.** About half the days bring an event (`EVENTS`, the same for a given store and day): a
+heatwave sells cold drinks, rain keeps shoppers home but sells soup and coffee, payday and street festivals bring
+crowds, health week sells fruit and vitamins, the wholesaler has a 15% sale, or a delivery strike triples delivery
+times. It shows as a banner (and rain falls outside). Three **daily goals** (serve, takings, sell a department,
+keep shoppers happy, clean up) pay cash and XP when met. **Demand follows price**: a bargain lands on more
+shopping lists, an overpriced line drops off them. Shoppers **leave mess** (spills with a wet-floor sign, litter)
+that drags everyone's mood and footfall down until you click it clean or hire a **cleaner**. Ultimate adds
+**standing orders**: keep N boxes of a line in the stockroom, topped up overnight. Shoppers show how they feel in
+speech bubbles; cars and pedestrians pass in the street; the door chimes and the till rings.
+
 **The UBusiness spot** (`UBusinessAd`, 26 s): a shutter rolls up at dawn, the logo, a COMING SOON stamp, stock
 dropping onto shelves, the till counting up to CHA-CHING, the store growing from a corner shop to a megastore,
 the two editions, and a **Take a look** end card. It's first in the ad queue (three plays).

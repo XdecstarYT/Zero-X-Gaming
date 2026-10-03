@@ -61,6 +61,15 @@ import {
   leaveMood,
   advance,
   doorOf,
+  claimGoals,
+  clean,
+  EVENTS,
+  goalProgress,
+  goalText,
+  makeMess,
+  messPenalty,
+  setAuto,
+  unitCost,
   type Campaign,
   type DayReport,
   type Fixture,
@@ -434,6 +443,7 @@ class UBusinessGame implements GameModule {
       scanned: 0,
     };
     this.shoppers.push(c);
+    this.sound("door");
   }
 
   /** Walk a shopper along their path; true when they've arrived. */
@@ -497,6 +507,7 @@ class UBusinessGame implements GameModule {
 
   private leave(c: Shopper, unhappy = false) {
     if (unhappy) c.mood -= 0.3;
+    this.departing(c);
     // Anything left in the basket goes back to the stockroom.
     for (const b of c.basket) this.s.storage[b.product] = (this.s.storage[b.product] ?? 0) + 1;
     if (unhappy) c.basket = [];
@@ -507,16 +518,25 @@ class UBusinessGame implements GameModule {
     c.path = [...this.route(c, { x: door.x, z: 1 }), { x: door.x, z: -1 }, { x: door.x + (this.rng.next() < 0.5 ? -8 : 8), z: -3.5 }];
   }
 
+  /** On the way out: a mess counts against them, they show how they feel, and some drop litter. */
+  private departing(c: Shopper) {
+    c.mood -= messPenalty(this.s);
+    c.bubble = c.mood >= 0.7 ? "😀 Great shop!" : c.mood < 0.45 ? "😠" : "🙂";
+    if (this.rng.next() < 0.07) makeMess(this.s, c.x, c.z, this.rng);
+  }
+
   /** The sale goes through: money in, mood up, off they go. */
   private complete(c: Shopper, tillError = 0) {
     const basket = c.basket;
     ringUp(this.s, basket, tillError);
+    this.sound("till");
     c.basket = [];
     c.mood += 0.1;
     this.leaveDone(c);
   }
 
   private leaveDone(c: Shopper) {
+    this.departing(c);
     leaveMood(this.s, Math.max(0, Math.min(1, c.mood)));
     c.stage = "leave";
     c.till = undefined;
@@ -556,6 +576,10 @@ class UBusinessGame implements GameModule {
               c.mood -= 0.12;
               c.bubble = "Too pricey";
             } else if (pick(this.s, f.id, c.goal.slot ?? 0)) {
+              if (this.rng.next() < 0.02) {
+                makeMess(this.s, c.x, c.z, this.rng);
+                c.bubble = "Oops!";
+              }
               c.basket.push({ product: id, price: priceOf(this.s, id) });
               if (this.rng.next() < 0.18 && c.basket.length < 8) c.list.push(id);
             }
@@ -661,6 +685,10 @@ class UBusinessGame implements GameModule {
       this.saveTimer = 0;
       this.save();
     }
+    for (const g of claimGoals(this.s)) {
+      this.toast(`🎯 Goal done: ${goalText(g)} · +${money(g.reward)}`);
+      this.sound("goal");
+    }
     this.emitter.progress(score(this.s), performance.now(), 1000);
   }
 
@@ -675,13 +703,18 @@ class UBusinessGame implements GameModule {
     this.lastFrame = now;
     if (this.mode !== "store" || !this.view || !this.s) return;
     this.res.tick(dt, now, (k) => this.view?.pipe.setResolution(k));
-    const people: Person[] = this.shoppers.map((c) => ({ id: `c${c.id}`, x: c.x, z: c.z, heading: c.heading, speed: c.speed, pose: c.pose, basket: c.basket.length > 0 || c.stage === "walk" || c.stage === "browse", seed: c.seed }));
+    const people: Person[] = this.shoppers.map((c) => ({ id: `c${c.id}`, x: c.x, z: c.z, heading: c.heading, speed: c.speed, pose: c.pose, basket: c.basket.length > 0 || c.stage === "walk" || c.stage === "browse", seed: c.seed, bubble: c.bubble }));
     // The team: cashiers behind their tills, stockers about the floor, and you at your own till.
     this.s.staff.forEach((st, i) => {
       const post = this.s.fixtures.find((f) => f.id === st.post);
       if (st.role === "cashier" && post) {
         const a = accessPoint(post, true);
         people.push({ id: `s${st.id}`, x: a.x, z: a.z, heading: Math.atan2(post.x - a.x, post.z - a.z), speed: 0, pose: "stand", staff: true, seed: st.id });
+      } else if (st.role === "cleaner") {
+        const m = this.s.mess?.[i % Math.max(1, this.s.mess.length)];
+        const t = performance.now() / 1000 + i * 5;
+        const at = m ? { x: m.x + 0.5, z: m.z } : { x: 1 + ((t * 0.3) % (sizeOf(this.s).w - 2)), z: sizeOf(this.s).d - 1.2 };
+        people.push({ id: `s${st.id}`, x: at.x, z: at.z, heading: 0, speed: m ? 0 : 0.8, pose: m ? "search" : "walk", staff: true, seed: st.id });
       } else {
         const t = performance.now() / 1000 + i * 9;
         const f = this.s.fixtures[Math.floor(t / 12) % Math.max(1, this.s.fixtures.length)];
@@ -704,6 +737,7 @@ class UBusinessGame implements GameModule {
       const ok = this.building.move ? canPlace(this.s, { kind: this.building.kind, x, z, rot: this.building.rot }, this.building.move).ok : canPlace(this.s, { kind: this.building.kind, x, z, rot: this.building.rot }).ok;
       this.view.setGhost(this.building.kind, { x, z, rot: this.building.rot, ok }, this.s);
     }
+    this.view.setRain(this.s.event === "rain", this.s);
     this.view.frame(dt, this.s, people);
     this.refreshHud();
   }
@@ -715,7 +749,8 @@ class UBusinessGame implements GameModule {
     if (this.s.minute >= CLOSE) return;
     this.s.minute = Math.max(this.s.minute, OPEN);
     this.open = true;
-    this.toast("The doors are open!");
+    const ev = this.s.event ? EVENTS[this.s.event] : null;
+    this.toast(ev ? `The doors are open! ${ev.icon} ${ev.name}: ${ev.text}` : "The doors are open!");
   }
 
   private closeDay() {
@@ -742,6 +777,8 @@ class UBusinessGame implements GameModule {
           row("Rent", `−${money(r.rent)}`),
           row("Wages", `−${money(r.wages)}`),
           row("Power", `−${money(r.power)}`),
+          ...(r.goals ? [row("Goal rewards", `+${money(r.goals)}`, "text-emerald-300")] : []),
+          ...(r.cleaned ? [row("Messes cleaned", String(r.cleaned))] : []),
           ...(r.tillError ? [row("Till errors", `${r.tillError > 0 ? "−" : "+"}${money(Math.abs(r.tillError))}`, "text-amber-300")] : []),
           row("Profit", money(r.profit), r.profit >= 0 ? "text-emerald-300 text-base" : "text-red-300 text-base"),
           row("XP", `+${r.xp}`),
@@ -750,6 +787,9 @@ class UBusinessGame implements GameModule {
       );
       const best = Object.entries(r.sold).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0];
       if (best) box.append(el("p", "mt-2 text-xs text-white/60", `Best seller: ${PRODUCTS[best[0] as ProductId].name} (${best[1]})`));
+      if (r.autoOrders) box.append(el("p", "text-xs text-white/60", `Standing orders for tomorrow: ${money(r.autoOrders)}, already in the stockroom.`));
+      const tomorrow = this.s.event ? EVENTS[this.s.event] : null;
+      if (tomorrow) box.append(el("p", "rounded-lg bg-amber-500/15 px-3 py-2 text-sm text-amber-100", `Tomorrow: ${tomorrow.icon} ${tomorrow.name}. ${tomorrow.text}`));
       const next = primaryButton(`Open day ${this.s.day}`, TEAL, () => {
         this.report = null;
         this.closePanel();
@@ -828,9 +868,13 @@ class UBusinessGame implements GameModule {
     toast.setAttribute("role", "status");
     toast.setAttribute("data-testid", "ub-toast");
     this.toastEl = toast;
+    r.goals = el("div", "pointer-events-auto absolute right-2 top-[4.5rem] flex w-52 flex-col gap-1 rounded-xl bg-black/60 p-2 text-[11px] text-white backdrop-blur-sm");
+    r.goals.setAttribute("data-testid", "ub-goals");
+    r.event = el("div", "pointer-events-none absolute bottom-16 left-2 hidden max-w-[60%] rounded-xl bg-black/60 px-3 py-1.5 text-[11px] font-bold text-amber-200 backdrop-blur-sm");
+    r.event.setAttribute("data-testid", "ub-event");
     r.build = el("div", "pointer-events-auto absolute bottom-16 left-1/2 hidden -translate-x-1/2 items-center gap-2 rounded-full bg-black/75 px-4 py-2 text-xs font-bold text-white");
     r.build.setAttribute("data-testid", "ub-build-bar");
-    this.hud = el("div", "pointer-events-none absolute inset-0 z-10", top, r.till, r.build, bar, toast);
+    this.hud = el("div", "pointer-events-none absolute inset-0 z-10", top, r.goals, r.event, r.till, r.build, bar, toast);
     this.refs = r;
     this.host.appendChild(this.hud);
   }
@@ -839,6 +883,7 @@ class UBusinessGame implements GameModule {
     const r = this.refs;
     const s = this.s;
     if (!r.cash) return;
+    const hide = this.view?.photo;
     r.name.textContent = `${s.name} · ${SIZES[s.size].name}`;
     r.time.textContent = `Day ${s.day} · ${clock(s.minute)} · ${this.open ? "OPEN" : s.minute >= CLOSE ? "CLOSED" : "Not open yet"} · ${this.shoppers.length} in store`;
     r.cash.textContent = money(s.cash);
@@ -854,7 +899,26 @@ class UBusinessGame implements GameModule {
     const waiting = mine ? this.queueAt(mine.id).filter((c) => c.stage === "queue").length : 0;
     r.till.classList.toggle("hidden", !waiting || this.panel?.dataset.kind === "till");
     r.till.textContent = `🛒 ${waiting} waiting at your till · tap or Space`;
-    const hide = this.view?.photo;
+    // Goals and the day's event (rebuilt only when they change).
+    const gk = (s.goals ?? []).map((g) => `${g.kind}${g.done}${goalProgress(s, g)}`).join("|");
+    if (r.goals.dataset.key !== gk) {
+      r.goals.dataset.key = gk;
+      r.goals.replaceChildren(
+        el("p", "font-black uppercase tracking-wider text-amber-300", "🎯 Today's goals"),
+        ...(s.goals ?? []).map((g) => {
+          const p = goalProgress(s, g);
+          const pct = g.kind === "happy" ? (p <= g.target ? 100 : 0) : Math.min(100, (p / g.target) * 100);
+          const bar = el("div", "h-1 overflow-hidden rounded-full bg-white/15", el("div", `h-full ${g.done ? "bg-emerald-400" : "bg-amber-400"}`));
+          (bar.firstChild as HTMLElement).style.width = `${g.done ? 100 : pct}%`;
+          return el("div", g.done ? "text-emerald-300" : "", el("div", "flex justify-between gap-1", el("span", "", `${g.done ? "✓ " : ""}${goalText(g)}`), el("span", "shrink-0 text-white/60", money(g.reward))), bar);
+        }),
+      );
+    }
+    const ev = s.event ? EVENTS[s.event] : null;
+    r.event.classList.toggle("hidden", !ev);
+    if (ev) r.event.textContent = `${ev.icon} ${ev.name}: ${ev.text}`;
+    for (const k of ["goals", "event"]) if (hide) r[k].classList.add("hidden");
+    if (!hide) r.goals.classList.remove("hidden");
     for (const k of ["top", "bar"]) r[k].classList.toggle("hidden", !!hide);
   }
 
@@ -924,10 +988,17 @@ class UBusinessGame implements GameModule {
             el("div", "min-w-0 flex-1", el("p", "truncate font-bold", p.name), el("p", "text-[11px] text-white/60", `${p.brand} · box of ${p.box} · ${money(p.cost)} each · sells ~${money(p.market)} · stockroom ${have} · shelves ${shelf}`)),
           );
           (row.firstChild as HTMLElement).style.background = `linear-gradient(135deg, ${p.color}, ${p.accent})`;
-          const buy = button(`+1 box ${money(p.cost * p.box)}`, "rounded-lg bg-emerald-600 px-2 py-1 text-xs font-black", () => this.act(order(this.s, id, 1), `Ordered ${p.box} × ${p.name}`));
+          const buy = button(`+1 box ${money(unitCost(this.s, id) * p.box)}`, "rounded-lg bg-emerald-600 px-2 py-1 text-xs font-black", () => this.act(order(this.s, id, 1), `Ordered ${p.box} × ${p.name}`));
           buy.setAttribute("data-testid", `ub-order-${id}`);
           row.append(buy);
-          if (ed.express) row.append(button("⚡", "rounded-lg border border-amber-400/60 px-2 py-1 text-xs", () => this.act(order(this.s, id, 1, true), "Express delivery on its way")));
+          if (ed.express) {
+            row.append(button("⚡", "rounded-lg border border-amber-400/60 px-2 py-1 text-xs", () => this.act(order(this.s, id, 1, true), "Express delivery on its way")));
+            const auto = this.s.auto?.[id] ?? 0;
+            const stand = el("span", "flex items-center gap-1 rounded-lg border border-white/15 px-1 text-[11px]", button("−", "px-1", () => this.act(setAuto(this.s, id, auto - 1))), el("span", "w-14 text-center", auto ? `auto ${auto} box${auto > 1 ? "es" : ""}` : "auto off"), button("+", "px-1", () => this.act(setAuto(this.s, id, auto + 1))));
+            stand.title = "Standing order: topped up overnight";
+            stand.setAttribute("data-testid", `ub-auto-${id}`);
+            row.append(stand);
+          }
           box.append(row);
         }
       }
@@ -1095,6 +1166,38 @@ class UBusinessGame implements GameModule {
     this.changeGiven = [];
     // Straight on to the next one.
     window.setTimeout(() => this.panel?.dataset.kind === "till" && this.rerender(), 50);
+  }
+
+  /** Little synthesised sounds: the door chime, the till, a mop, a goal. */
+  private sound(kind: "door" | "till" | "mop" | "goal") {
+    if (!this.opts.settings.sound) return;
+    try {
+      const ac = ((this as unknown as { ac?: AudioContext }).ac ??= new AudioContext());
+      const v = 0.05 * this.opts.settings.volume;
+      const tone = (f: number, at: number, len: number, type: OscillatorType = "sine", gain = v) => {
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.type = type;
+        o.frequency.value = f;
+        g.gain.setValueAtTime(gain, ac.currentTime + at);
+        g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + at + len);
+        o.connect(g).connect(ac.destination);
+        o.start(ac.currentTime + at);
+        o.stop(ac.currentTime + at + len);
+      };
+      if (kind === "door") {
+        tone(1318, 0, 0.5);
+        tone(988, 0.18, 0.7);
+      }
+      if (kind === "till") {
+        tone(2093, 0, 0.12, "square", v * 0.5);
+        tone(2637, 0.08, 0.35, "triangle");
+      }
+      if (kind === "mop") tone(220, 0, 0.18, "triangle");
+      if (kind === "goal") [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.09, 0.3, "triangle"));
+    } catch {
+      // No audio.
+    }
   }
 
   private beep() {
@@ -1365,6 +1468,11 @@ class UBusinessGame implements GameModule {
     const n = this.ndc(e);
     const hit = this.view.pick(n.x, n.y);
     if (this.building && hit.ground) return this.placeAt(hit.ground.x, hit.ground.z);
+    if (hit.mess !== null && clean(this.s, hit.mess)) {
+      this.toast("Cleaned up! +2 XP");
+      this.sound("mop");
+      return;
+    }
     if (hit.fixture) this.fixturePanel(hit.fixture);
   };
 
@@ -1390,6 +1498,9 @@ class UBusinessGame implements GameModule {
         fixtures: this.s?.fixtures.map((f) => ({ id: f.id, kind: f.kind, x: f.x, z: f.z, rot: f.rot, slots: f.slots })),
         storage: this.s?.storage,
         report: this.report,
+        event: this.s?.event ?? null,
+        goals: this.s?.goals,
+        mess: this.s?.mess,
       }),
       /** Jump the clock (minutes after midnight). */
       setMinute: (m: number) => this.s && (this.s.minute = m),
@@ -1399,6 +1510,14 @@ class UBusinessGame implements GameModule {
       },
       /** Run the clock and the shoppers faster (tests). */
       setSpeed: (n: number) => (this.speed = n),
+      /** Set today's event (tests), e.g. "rain". */
+      setEvent: (e: string | null) => this.s && (this.s.event = e as Store["event"]),
+      /** Drop a mess at a spot (tests). */
+      mess: (x: number, z: number) => this.s && makeMess(this.s, x, z, this.rng)?.id,
+      /** Click a mess, as the pointer would. */
+      clickMess: (id: number) => {
+        if (clean(this.s, id)) this.toast("Cleaned up! +2 XP");
+      },
       fixtureAt: (id: number) => {
         const f = this.s.fixtures.find((o) => o.id === id);
         return f ? accessPoint(f) : null;

@@ -470,3 +470,6 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 135. **The store runs on the player's machine.** A retail sim is single-player, so the rules, customers and save
      live in the browser (per edition), and only the score (the business's value) goes to the server like any
      other game's. The edition gate is the server's; what happens inside the store isn't.
+136. **Events and goals are seeded, not stored.** A day's event comes from the store's seed and the day number,
+     so reloading can't reroll a bad day, and tests can name the day they want. Goals are generated the same
+     way at the start of the day and saved with the store so their progress survives a reload.

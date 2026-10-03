@@ -114,3 +114,32 @@ test("UBusiness Lite: open the doors, serve at the till, order stock, build, ban
   await expect(stage).toHaveAttribute("data-phase", "over", { timeout: 15_000 });
   expect(errors).toEqual([]);
 });
+
+test("UBusiness: goals, the day's event, mess and the cleaner", async ({ page }) => {
+  test.setTimeout(180_000);
+  await guestWith(page, 0, true);
+  await page.goto("/games/ubusiness");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
+  const stage = page.getByTestId("game-stage");
+  await stage.getByTestId("ub-new").click();
+  await expect(stage.getByTestId("ub-cash")).toBeVisible({ timeout: 60_000 });
+  // Three goals for the day.
+  await expect(stage.getByTestId("ub-goals")).toContainText("Today's goals");
+  expect((await page.evaluate(() => (window as unknown as { __ubiz: { state: () => { goals: unknown[] } } }).__ubiz.state().goals)).length).toBe(3);
+  // An event shows its banner.
+  await page.evaluate(() => (window as unknown as { __ubiz: { setEvent: (e: string) => void } }).__ubiz.setEvent("heatwave"));
+  await expect(stage.getByTestId("ub-event")).toContainText("Heatwave");
+  // A mess: click it to clean it up.
+  const id = await page.evaluate(() => (window as unknown as { __ubiz: { mess: (x: number, z: number) => number } }).__ubiz.mess(4, 3));
+  await page.evaluate((id) => (window as unknown as { __ubiz: { clickMess: (id: number) => void } }).__ubiz.clickMess(id), id);
+  await expect(stage.getByTestId("ub-toast")).toContainText("Cleaned up");
+  // Ultimate: hire a cleaner, set a standing order.
+  await stage.getByTestId("ub-tool-staff").click();
+  await stage.getByTestId("ub-hire-cleaner").click();
+  await expect(stage.getByTestId("ub-panel-staff")).toContainText("Cleaner");
+  await stage.getByTestId("ub-close").click();
+  await stage.getByTestId("ub-tool-stock").click();
+  await stage.getByTestId("ub-auto-bread").getByRole("button", { name: "+" }).click();
+  await expect(stage.getByTestId("ub-auto-bread")).toContainText("auto 1 box");
+});

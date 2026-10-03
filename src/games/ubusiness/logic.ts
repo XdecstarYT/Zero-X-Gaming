@@ -197,6 +197,7 @@ export const SIZES = [
 export const STAFF = {
   cashier: { name: "Cashier", wage: 12_000, does: "Runs a checkout" },
   stocker: { name: "Stocker", wage: 10_000, does: "Refills shelves from the stockroom" },
+  cleaner: { name: "Cleaner", wage: 8_000, does: "Mops spills and picks up litter" },
 } as const;
 export type StaffRole = keyof typeof STAFF;
 
@@ -206,6 +207,61 @@ export const MARKETING = {
   billboard: { name: "Billboard", price: 400_000, boost: 1, days: 4 },
 } as const;
 export type Campaign = keyof typeof MARKETING;
+
+/** Something different about each day (after the first). */
+export interface DayEvent {
+  name: string;
+  icon: string;
+  text: string;
+  /** Footfall multiplier. */
+  footfall?: number;
+  /** Demand multipliers by category or product. */
+  boost?: Partial<Record<Category | ProductId, number>>;
+  /** Wholesale cost multiplier. */
+  cost?: number;
+  /** Delivery time in game minutes. */
+  delivery?: number;
+}
+
+export const EVENTS = {
+  heatwave: { name: "Heatwave", icon: "☀️", text: "Cold drinks, water and ice cream fly off the shelves.", boost: { cola: 2.2, water: 2.4, energy: 1.8, juice: 1.8, yoghurt: 1.5 }, footfall: 1.05 },
+  rain: { name: "Rainy day", icon: "🌧", text: "Fewer people out, but the ones who come in stock up on comfort food.", footfall: 0.75, boost: { soup: 2, coffee: 1.6, choc: 1.5, cookies: 1.5 } },
+  payday: { name: "Payday", icon: "💸", text: "Everyone's been paid: more shoppers, and the big-ticket things sell.", footfall: 1.35, boost: { electronics: 1.8, fashion: 1.6, toys: 1.4 } },
+  festival: { name: "Street festival", icon: "🎪", text: "Crowds in town: snacks, drinks and toys are in demand.", footfall: 1.25, boost: { snacks: 1.6, toys: 1.8 } },
+  health: { name: "Health week", icon: "🩺", text: "The town's on a health kick: fruit, vitamins and toothpaste.", boost: { fresh: 1.4, pharmacy: 1.9 } },
+  supplier: { name: "Wholesale sale", icon: "🏷", text: "The wholesaler is 15% off today. Stock up!", cost: 0.85 },
+  strike: { name: "Delivery strike", icon: "🚚", text: "Deliveries take three times as long today.", delivery: 90 },
+} satisfies Record<string, DayEvent>;
+export type EventId = keyof typeof EVENTS;
+
+/** Today's event: none on day 1, then about half the days have one (the same for a given store and day). */
+export function eventFor(seed: number, day: number): EventId | null {
+  if (day <= 1) return null;
+  const r = createRng(seed * 31 + day * 977);
+  if (r.next() < 0.45) return null;
+  const ids = Object.keys(EVENTS) as EventId[];
+  return ids[Math.floor(r.next() * ids.length)];
+}
+
+export type GoalKind = "serve" | "revenue" | "sell" | "happy" | "clean";
+export interface Goal {
+  kind: GoalKind;
+  target: number;
+  cat?: Category;
+  reward: number;
+  xp: number;
+  done: boolean;
+}
+
+export interface Mess {
+  id: number;
+  kind: "spill" | "litter";
+  x: number;
+  z: number;
+}
+
+/** Most mess the floor can collect before you notice. */
+export const MESS_MAX = 12;
 
 /** Opening hours in game minutes after midnight. */
 export const OPEN = 8 * 60;
@@ -257,6 +313,8 @@ export interface DayStats {
   sold: Partial<Record<ProductId, number>>;
   /** Wrong change given (cents; negative if you short-changed). */
   tillError: number;
+  /** Spills and litter cleaned up. */
+  cleaned?: number;
 }
 
 export interface DayReport extends DayStats {
@@ -267,6 +325,11 @@ export interface DayReport extends DayStats {
   profit: number;
   xp: number;
   reputation: number;
+  /** Goal rewards paid today. */
+  goals?: number;
+  /** Spent on standing orders for tomorrow. */
+  autoOrders?: number;
+  event?: EventId | null;
 }
 
 export interface Store {
@@ -292,9 +355,15 @@ export interface Store {
   history: DayReport[];
   nextId: number;
   seed: number;
+  /** Today's event. */
+  event?: EventId | null;
+  goals?: Goal[];
+  mess?: Mess[];
+  /** Standing orders (Ultimate): keep this many boxes in the stockroom, topped up each morning. */
+  auto?: Partial<Record<ProductId, number>>;
 }
 
-const freshStats = (): DayStats => ({ revenue: 0, cogs: 0, customers: 0, unhappy: 0, items: 0, sold: {}, tillError: 0 });
+const freshStats = (): DayStats => ({ revenue: 0, cogs: 0, customers: 0, unhappy: 0, items: 0, sold: {}, tillError: 0, cleaned: 0 });
 
 /** The default shelf price: the market price. */
 export const defaultPrice = (id: ProductId) => PRODUCTS[id].market;
@@ -337,6 +406,10 @@ export function newStore(tier: Tier, name = "Corner Store", seed = 1): Store {
   (["bread", "pasta", "rice", "cereal"] as ProductId[]).forEach((id, i) => assign(s, s.fixtures[1].id, i, id));
   (["soup", "coffee", "peanut", "oil"] as ProductId[]).forEach((id, i) => assign(s, s.fixtures[2].id, i, id));
   for (const f of s.fixtures) restock(s, f.id);
+  s.event = null;
+  s.goals = makeGoals(s);
+  s.mess = [];
+  s.auto = {};
   return s;
 }
 
@@ -371,9 +444,9 @@ export function order(s: Store, id: ProductId, boxes: number, express = false): 
   if (!(boxes >= 1 && boxes <= 50)) return no("1 to 50 boxes");
   const units = p.box * Math.floor(boxes);
   const fee = express ? Math.ceil(p.cost * units * 0.1) : 0;
-  const r = spend(s, p.cost * units + fee);
+  const r = spend(s, unitCost(s, id) * units + fee);
   if (!r.ok) return r;
-  const wait = express ? EXPRESS_MIN : DELIVERY_MIN;
+  const wait = express ? EXPRESS_MIN : (eventOf(s)?.delivery ?? DELIVERY_MIN);
   s.orders.push({ product: id, units, at: isOpen(s) ? absMinute(s) + wait : absMinute(s) });
   deliver(s);
   return yes;
@@ -596,7 +669,27 @@ export function footfall(s: Store, minute = s.minute) {
   const rep = 0.35 + s.reputation / 4;
   const ad = s.campaign && s.campaign.until > s.day - 1 ? 1 + MARKETING[s.campaign.kind].boost : 1;
   const decor = 1 + Math.min(0.3, appeal(s) * 0.02);
-  return 8 * curve * variety * level * rep * ad * decor;
+  const ev = eventOf(s)?.footfall ?? 1;
+  const messy = 1 - messPenalty(s) * 0.6;
+  return 8 * curve * variety * level * rep * ad * decor * ev * messy;
+}
+
+export const eventOf = (s: Store): DayEvent | null => (s.event ? EVENTS[s.event] : null);
+
+/** What a unit costs from the wholesaler today. */
+export const unitCost = (s: Store, id: ProductId) => Math.round(PRODUCTS[id].cost * (eventOf(s)?.cost ?? 1));
+
+/**
+ * How likely a product is to be on someone's list: its usual demand, today's
+ * event, and your price (a bargain gets noticed, an overpriced line gets skipped).
+ */
+export function demandOf(s: Store, id: ProductId) {
+  const p = PRODUCTS[id];
+  const ev = eventOf(s)?.boost as Partial<Record<string, number>> | undefined;
+  const boost = (ev?.[id] ?? 1) * (ev?.[p.cat] ?? 1);
+  const ratio = p.market / priceOf(s, id);
+  const price = Math.max(0.45, Math.min(1.8, ratio ** 1.6));
+  return p.demand * boost * price;
 }
 
 /** Most shoppers the floor holds at once. */
@@ -606,13 +699,14 @@ export const capacity = (s: Store) => 6 + s.size * 4;
 export function shoppingList(s: Store, rng: Rng): ProductId[] {
   const pool = PRODUCT_IDS.filter((id) => s.licences.includes(PRODUCTS[id].cat));
   if (!pool.length) return [];
-  const total = pool.reduce((a, id) => a + PRODUCTS[id].demand, 0);
+  const weights = pool.map((id) => demandOf(s, id));
+  const total = weights.reduce((a, w) => a + w, 0);
   const n = 1 + Math.floor(rng.next() ** 1.4 * 6);
   const list: ProductId[] = [];
   for (let i = 0; i < n; i++) {
     let r = rng.next() * total;
-    for (const id of pool) {
-      r -= PRODUCTS[id].demand;
+    for (const [k, id] of pool.entries()) {
+      r -= weights[k];
       if (r <= 0) {
         if (!list.includes(id)) list.push(id);
         break;
@@ -661,6 +755,148 @@ export function leaveMood(s: Store, mood: number) {
   s.reputation = Math.max(0, Math.min(5, s.reputation + (mood - 0.6) * 0.04));
 }
 
+// --------------------------------------------------------------------- mess
+
+/** How much a messy floor takes off every shopper's mood (0 to 0.3). */
+export const messPenalty = (s: Store) => Math.min(0.3, (s.mess?.length ?? 0) * 0.03);
+
+/** A shopper drops something, or knocks something over. */
+export function makeMess(s: Store, x: number, z: number, rng: Rng): Mess | null {
+  s.mess ??= [];
+  if (s.mess.length >= MESS_MAX) return null;
+  const m: Mess = { id: s.nextId++, kind: rng.next() < 0.45 ? "spill" : "litter", x, z };
+  s.mess.push(m);
+  return m;
+}
+
+/** Mop it up: a little XP, and towards today's goal. */
+export function clean(s: Store, id: number): boolean {
+  const i = s.mess?.findIndex((m) => m.id === id) ?? -1;
+  if (i < 0) return false;
+  s.mess!.splice(i, 1);
+  s.today.cleaned = (s.today.cleaned ?? 0) + 1;
+  s.xp += 2;
+  return true;
+}
+
+// -------------------------------------------------------------------- goals
+
+/** Three goals for the day, scaled to your level and what you sell. */
+export function makeGoals(s: Store): Goal[] {
+  const rng = createRng(s.seed * 7 + s.day * 131);
+  const lv = levelOf(s.xp);
+  const kinds: GoalKind[] = ["serve", "revenue", "sell", "happy", "clean"];
+  const pickFrom = [...kinds];
+  const out: Goal[] = [];
+  while (out.length < 3 && pickFrom.length) {
+    const kind = pickFrom.splice(Math.floor(rng.next() * pickFrom.length), 1)[0];
+    switch (kind) {
+      case "serve": {
+        const t = 8 + lv * 4 + s.size * 4;
+        out.push({ kind, target: t, reward: t * 400, xp: 30, done: false });
+        break;
+      }
+      case "revenue": {
+        const t = (150 + lv * 120 + s.size * 150) * 100;
+        out.push({ kind, target: t, reward: Math.round(t * 0.12), xp: 40, done: false });
+        break;
+      }
+      case "sell": {
+        const cat = s.licences[Math.floor(rng.next() * s.licences.length)];
+        const t = 6 + lv * 2;
+        out.push({ kind, target: t, cat, reward: 6_000 + lv * 1_000, xp: 25, done: false });
+        break;
+      }
+      case "happy":
+        out.push({ kind, target: Math.max(1, 3 - Math.floor(lv / 3)), reward: 8_000 + lv * 1_500, xp: 35, done: false });
+        break;
+      case "clean":
+        out.push({ kind, target: 3 + Math.floor(lv / 2), reward: 4_000 + lv * 800, xp: 20, done: false });
+        break;
+    }
+  }
+  return out;
+}
+
+/** How far along a goal is. ("Happy" counts unhappy shoppers: it's met if you end the day at or under the target.) */
+export function goalProgress(s: Store, g: Goal) {
+  const t = s.today;
+  switch (g.kind) {
+    case "serve":
+      return t.customers;
+    case "revenue":
+      return t.revenue;
+    case "sell":
+      return Object.entries(t.sold).reduce((a, [id, n]) => a + (PRODUCTS[id as ProductId].cat === g.cat ? (n ?? 0) : 0), 0);
+    case "happy":
+      return t.unhappy;
+    case "clean":
+      return t.cleaned ?? 0;
+  }
+}
+
+export function goalText(g: Goal) {
+  switch (g.kind) {
+    case "serve":
+      return `Serve ${g.target} shoppers`;
+    case "revenue":
+      return `Take ${money(g.target)}`;
+    case "sell":
+      return `Sell ${g.target} ${CATEGORIES[g.cat!].name.toLowerCase()} items`;
+    case "happy":
+      return `No more than ${g.target} unhappy shopper${g.target === 1 ? "" : "s"} all day`;
+    case "clean":
+      return `Clean up ${g.target} messes`;
+  }
+}
+
+/** Pay out goals that are met. `closing` settles the end-of-day ones. Returns those just completed. */
+export function claimGoals(s: Store, closing = false): Goal[] {
+  const out: Goal[] = [];
+  for (const g of s.goals ?? []) {
+    if (g.done) continue;
+    const p = goalProgress(s, g);
+    const met = g.kind === "happy" ? closing && p <= g.target : p >= g.target;
+    if (!met) continue;
+    g.done = true;
+    s.cash += g.reward;
+    s.xp += g.xp;
+    out.push(g);
+  }
+  return out;
+}
+
+// ----------------------------------------------------------- standing orders
+
+/** Ultimate: keep `boxes` boxes of a product in the stockroom, topped up every morning (0 stops it). */
+export function setAuto(s: Store, id: ProductId, boxes: number): Result {
+  if (!EDITIONS[s.tier].express) return no("Standing orders are Ultimate only");
+  if (!s.licences.includes(PRODUCTS[id].cat)) return no("You need the licence first");
+  s.auto ??= {};
+  const n = Math.max(0, Math.min(10, Math.floor(boxes)));
+  if (n) s.auto[id] = n;
+  else delete s.auto[id];
+  return yes;
+}
+
+/** Top the stockroom up to the standing orders, as far as the cash goes. Returns what it cost. */
+export function runAuto(s: Store) {
+  let spent = 0;
+  for (const [k, boxes] of Object.entries(s.auto ?? {})) {
+    const id = k as ProductId;
+    const p = PRODUCTS[id];
+    const want = (boxes ?? 0) * p.box - (s.storage[id] ?? 0);
+    if (want <= 0) continue;
+    const buy = Math.ceil(want / p.box);
+    const cost = buy * p.box * unitCost(s, id);
+    if (cost > s.cash) continue;
+    s.cash -= cost;
+    spent += cost;
+    s.storage[id] = (s.storage[id] ?? 0) + buy * p.box;
+  }
+  return spent;
+}
+
 // ----------------------------------------------------------------- the till
 
 /** Cash denominations, largest first (cents). */
@@ -692,6 +928,11 @@ export function makeChange(cents: number): number[] {
 
 /** Staff at work: stockers top up any slot below half from the stockroom. */
 export function staffWork(s: Store) {
+  const cleaners = s.staff.filter((o) => o.role === "cleaner").length;
+  for (let i = 0; i < cleaners * 2 && s.mess?.length; i++) {
+    s.mess.shift();
+    s.today.cleaned = (s.today.cleaned ?? 0) + 1;
+  }
   if (!s.staff.some((o) => o.role === "stocker")) return 0;
   let moved = 0;
   for (const f of s.fixtures) if (f.slots.some((sl) => sl.product && sl.qty < PRODUCTS[sl.product].slot / 2)) moved += restock(s, f.id);
@@ -708,20 +949,27 @@ export function advance(s: Store, minutes: number): Order[] {
 
 /** Close the books: rent, wages and power are paid, XP and the level move, a new day starts at 7:30. */
 export function endDay(s: Store): DayReport {
+  claimGoals(s, true);
+  const goalPay = (s.goals ?? []).filter((g) => g.done).reduce((a, g) => a + g.reward, 0);
   const t = s.today;
   const rent = sizeOf(s).rent;
   const wages = s.staff.reduce((a, st) => a + STAFF[st.role].wage, 0);
   const power = s.fixtures.reduce((a, f) => a + FIXTURES[f.kind].power, 0);
   s.cash -= rent + wages + power;
-  const profit = t.revenue - t.cogs - rent - wages - power - t.tillError;
+  const profit = t.revenue - t.cogs - rent - wages - power - t.tillError + goalPay;
   const xp = Math.max(10, Math.round(t.revenue / 1000 + t.customers * 2 - t.unhappy * 3));
   s.xp += xp;
-  const report: DayReport = { ...t, sold: { ...t.sold }, day: s.day, rent, wages, power, profit, xp, reputation: s.reputation };
-  s.history = [...s.history, report].slice(-30);
+  const report: DayReport = { ...t, sold: { ...t.sold }, day: s.day, rent, wages, power, profit, xp, reputation: s.reputation, goals: goalPay, event: s.event ?? null };
   s.day++;
   s.minute = OPEN - 30;
   s.today = freshStats();
   if (s.campaign && s.campaign.until < s.day) s.campaign = null;
+  // Overnight: the cleaners come in, standing orders arrive, and a new day brings its own event and goals.
+  s.mess = [];
+  s.event = eventFor(s.seed, s.day);
+  report.autoOrders = runAuto(s);
+  s.goals = makeGoals(s);
+  s.history = [...s.history, report].slice(-30);
   deliver(s);
   return report;
 }
@@ -832,6 +1080,12 @@ export function loadStore(raw: string | null, tier: Tier): Store | null {
     s.staff = s.staff.slice(0, EDITIONS[tier].staff);
     s.fixtures = s.fixtures.filter((f) => f.kind in FIXTURES);
     for (const f of s.fixtures) f.slots = f.slots.map((sl) => (sl.product && !(sl.product in PRODUCTS) ? { product: null, qty: 0 } : sl));
+    // Saves from before events, goals, mess and standing orders.
+    s.mess ??= [];
+    s.auto ??= {};
+    if (s.event && !(s.event in EVENTS)) s.event = null;
+    s.goals ??= makeGoals(s);
+    if (tier === "lite") s.auto = {};
     return s;
   } catch {
     return null;

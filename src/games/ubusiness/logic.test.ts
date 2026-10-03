@@ -36,6 +36,16 @@ import {
   assign,
   sellFixture,
   storeValue,
+  claimGoals,
+  clean,
+  demandOf,
+  eventFor,
+  goalText,
+  makeMess,
+  messPenalty,
+  MESS_MAX,
+  setAuto,
+  unitCost,
   type Store,
 } from "./logic";
 
@@ -286,5 +296,97 @@ describe("walking", () => {
       const j = Math.floor(p.z * 2);
       expect(g.solid[j * g.cw + i]).toBe(0);
     }
+  });
+});
+
+describe("round two: events, demand, mess, goals, standing orders", () => {
+  it("each day may bring an event, the same one for a given store and day; never on day 1", () => {
+    expect(eventFor(5, 1)).toBeNull();
+    expect(eventFor(5, 7)).toBe(eventFor(5, 7));
+    const seen = new Set(Array.from({ length: 200 }, (_, d) => eventFor(11, d + 2)));
+    expect(seen.has(null)).toBe(true);
+    expect(seen.size).toBeGreaterThan(5);
+  });
+
+  it("a heatwave sells cold drinks, rain keeps people home, a wholesale sale cuts costs, a strike slows deliveries", () => {
+    const s = opened("ultimate");
+    s.licences.push("snacks");
+    const cola = demandOf(s, "cola");
+    const foot = footfall(s, 12 * 60);
+    s.event = "heatwave";
+    expect(demandOf(s, "cola")).toBeGreaterThan(cola * 2);
+    s.event = "rain";
+    expect(footfall(s, 12 * 60)).toBeLessThan(foot);
+    s.event = "supplier";
+    expect(unitCost(s, "bread")).toBe(Math.round(PRODUCTS.bread.cost * 0.85));
+    const cash = s.cash;
+    order(s, "bread", 1);
+    expect(s.cash).toBe(cash - unitCost(s, "bread") * 12);
+    s.event = "strike";
+    const at = s.minute;
+    order(s, "pasta", 1);
+    expect(s.orders.at(-1)!.at).toBe((s.day - 1) * 1440 + at + 90);
+  });
+
+  it("bargains get on more lists; overpriced lines get skipped", () => {
+    const s = opened();
+    const usual = demandOf(s, "bread");
+    setPrice(s, "bread", Math.round(PRODUCTS.bread.market * 0.7));
+    expect(demandOf(s, "bread")).toBeGreaterThan(usual * 1.5);
+    setPrice(s, "bread", Math.round(PRODUCTS.bread.market * 1.5));
+    expect(demandOf(s, "bread")).toBeLessThan(usual * 0.6);
+  });
+
+  it("mess puts shoppers off until it's cleaned; cleaners do it for you", () => {
+    const s = opened();
+    const rng = createRng(1);
+    const foot = footfall(s, 12 * 60);
+    for (let i = 0; i < 5; i++) makeMess(s, 3, 3, rng);
+    expect(messPenalty(s)).toBeCloseTo(0.15);
+    expect(footfall(s, 12 * 60)).toBeLessThan(foot);
+    for (let i = 0; i < 20; i++) makeMess(s, 3, 3, rng);
+    expect(s.mess).toHaveLength(MESS_MAX);
+    const xp = s.xp;
+    expect(clean(s, s.mess![0].id)).toBe(true);
+    expect(s.xp).toBe(xp + 2);
+    expect(s.today.cleaned).toBe(1);
+    expect(hire(s, "cleaner").ok).toBe(true);
+    const left = s.mess!.length;
+    advance(s, 15);
+    expect(s.mess!.length).toBe(left - 2);
+  });
+
+  it("goals pay out when met; the 'happy' one is settled at closing", () => {
+    const s = opened();
+    s.goals = [
+      { kind: "serve", target: 2, reward: 1_000, xp: 10, done: false },
+      { kind: "happy", target: 1, reward: 2_000, xp: 10, done: false },
+      { kind: "sell", target: 2, cat: "grocery", reward: 500, xp: 5, done: false },
+    ];
+    for (const g of s.goals) expect(goalText(g).length).toBeGreaterThan(5);
+    ringUp(s, [{ product: "bread", price: 449 }]);
+    expect(claimGoals(s)).toEqual([]);
+    const cash = s.cash;
+    ringUp(s, [{ product: "pasta", price: 249 }]);
+    expect(claimGoals(s).map((g) => g.kind)).toEqual(["serve", "sell"]);
+    expect(s.cash).toBe(cash + 249 + 1_500);
+    // Nobody left unhappy: the last goal pays at closing, and it's in the books.
+    const r = endDay(s);
+    expect(r.goals).toBe(3_500);
+    expect(s.goals).toHaveLength(3);
+    expect(s.goals!.every((g) => !g.done)).toBe(true);
+  });
+
+  it("standing orders (Ultimate) top up the stockroom overnight, as far as the cash goes", () => {
+    const l = opened("lite");
+    expect(setAuto(l, "bread", 2).ok).toBe(false);
+    const s = opened("ultimate");
+    expect(setAuto(s, "bread", 3).ok).toBe(true);
+    s.storage.bread = 5;
+    const r = endDay(s);
+    expect(s.storage.bread).toBeGreaterThanOrEqual(36);
+    expect(r.autoOrders).toBeGreaterThan(0);
+    setAuto(s, "bread", 0);
+    expect(s.auto?.bread).toBeUndefined();
   });
 });

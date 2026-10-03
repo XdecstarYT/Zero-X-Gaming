@@ -26,6 +26,8 @@ export interface Person {
   staff?: boolean;
   basket?: boolean;
   seed: number;
+  /** A thought over their head ("Too pricey", an emoji). */
+  bubble?: string;
 }
 
 const WALL_H = 3.4;
@@ -75,6 +77,16 @@ function packTexture(id: ProductId) {
   });
   tex.set(id, t);
   return t;
+}
+
+/** A tiny seeded random for decoration. */
+function createRngLite(seed: number) {
+  let a = seed * 2654435761;
+  return () => {
+    a = (a ^ (a >>> 13)) * 1274126177;
+    a ^= a >>> 16;
+    return ((a >>> 0) % 10000) / 10000;
+  };
 }
 
 function luminance(hex: string) {
@@ -179,6 +191,34 @@ function layout(id: ProductId, width: number, depth: number, height: number) {
 export interface Pick {
   fixture: number | null;
   ground: { x: number; z: number } | null;
+  /** A spill or litter under the pointer. */
+  mess: number | null;
+}
+
+const bubbleTex = new Map<string, THREE.Texture>();
+/** A rounded speech bubble with text, cached per text. */
+function bubbleTexture(text: string) {
+  let t = bubbleTex.get(text);
+  if (t) return t;
+  t = canvasTexture(256, 96, (g) => {
+    g.clearRect(0, 0, 256, 96);
+    g.fillStyle = "rgba(255,255,255,0.95)";
+    g.beginPath();
+    g.roundRect(6, 6, 244, 64, 26);
+    g.fill();
+    g.beginPath();
+    g.moveTo(112, 68);
+    g.lineTo(128, 90);
+    g.lineTo(144, 68);
+    g.fill();
+    g.fillStyle = "#111827";
+    g.font = "bold 30px Arial";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(text.slice(0, 16), 128, 39);
+  });
+  bubbleTex.set(text, t);
+  return t;
 }
 
 export class StoreView {
@@ -189,7 +229,15 @@ export class StoreView {
   private productsGroup = new THREE.Group();
   private stockGroup = new THREE.Group();
   private fixtures = new Map<number, { group: THREE.Group; key: string; hit: THREE.Mesh }>();
-  private people = new Map<string, { m: PedModel; x: number; z: number; h: number; step: number; basket?: THREE.Object3D }>();
+  private people = new Map<string, { m: PedModel; x: number; z: number; h: number; step: number; basket?: THREE.Object3D; bubble?: THREE.Sprite; text?: string }>();
+  private messGroup = new THREE.Group();
+  private messKey = "";
+  private messSpots: { id: number; x: number; z: number }[] = [];
+  private street = new THREE.Group();
+  private cars: { g: THREE.Group; lane: number; speed: number; offset: number }[] = [];
+  private walkers: { m: PedModel; offset: number; speed: number; dir: number; lane: number; step: number }[] = [];
+  private rain: THREE.LineSegments | null = null;
+  private raining = false;
   private walls: { mesh: THREE.Group; nx: number; nz: number; cx: number; cz: number }[] = [];
   /** Things on the shop front (fascia, sign, awning) that hide when the front wall drops away. */
   private frontDressing: THREE.Object3D[] = [];
@@ -228,7 +276,7 @@ export class StoreView {
     this.pipe.scene.environment = this.envRT.texture;
     this.pipe.scene.environmentIntensity = 0.35;
     this.pipe.renderer.toneMappingExposure = 1.0;
-    this.pipe.scene.add(this.shell, this.fixturesGroup, this.productsGroup, this.stockGroup);
+    this.pipe.scene.add(this.shell, this.fixturesGroup, this.productsGroup, this.stockGroup, this.messGroup, this.street);
     this.highlight = new THREE.Mesh(new THREE.BoxGeometry(1, 0.02, 1), new THREE.MeshBasicMaterial({ color: "#facc15", transparent: true, opacity: 0.45, depthWrite: false }));
     this.highlight.visible = false;
     this.pipe.scene.add(this.highlight);
@@ -714,10 +762,25 @@ export class StoreView {
       o.m.group.rotation.y = -(Math.PI / 2 - o.h);
       if (o.basket) o.basket.visible = !!p.basket;
       posePed(o.m, p.pose, o.step, p.speed, this.time, dt);
+      if (p.bubble !== o.text) {
+        o.text = p.bubble;
+        if (o.bubble) this.pipe.scene.remove(o.bubble);
+        o.bubble = undefined;
+        if (p.bubble) {
+          // A fixed size on screen, so it's readable from any distance.
+          const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: bubbleTexture(p.bubble), depthTest: false, transparent: true, sizeAttenuation: false }));
+          sp.scale.set(0.13, 0.049, 1);
+          sp.renderOrder = 10;
+          this.pipe.scene.add(sp);
+          o.bubble = sp;
+        }
+      }
+      o.bubble?.position.set(o.x, 2.25 + Math.sin(this.time * 3) * 0.03, o.z);
     }
     for (const [id, o] of this.people)
       if (!seen.has(id)) {
         this.pipe.scene.remove(o.m.group);
+        if (o.bubble) this.pipe.scene.remove(o.bubble);
         this.people.delete(id);
       }
   }
@@ -728,7 +791,136 @@ export class StoreView {
     this.ray.setFromCamera(new THREE.Vector2(nx, ny), this.pipe.camera);
     const hits = this.ray.intersectObjects([...this.fixtures.values()].map((f) => f.hit), false);
     const g = this.ray.ray.intersectPlane(this.ground, new THREE.Vector3());
-    return { fixture: hits.length ? (hits[0].object.userData.fixture as number) : null, ground: g ? { x: g.x, z: g.z } : null };
+    let mess: number | null = null;
+    if (g) {
+      let best = 0.7;
+      for (const m of this.messSpots) {
+        const d = Math.hypot(m.x - g.x, m.z - g.z);
+        if (d < best) {
+          best = d;
+          mess = m.id;
+        }
+      }
+    }
+    return { fixture: hits.length && mess === null ? (hits[0].object.userData.fixture as number) : null, ground: g ? { x: g.x, z: g.z } : null, mess };
+  }
+
+  /** Spills (glossy puddles) and litter (crumpled packets) on the floor. */
+  private syncMess(s: Store) {
+    const list = s.mess ?? [];
+    const key = list.map((m) => m.id).join(",");
+    if (key === this.messKey) return;
+    this.messKey = key;
+    this.messSpots = list.map((m) => ({ id: m.id, x: m.x, z: m.z }));
+    for (const c of [...this.messGroup.children]) this.messGroup.remove(c);
+    const puddle = mat("puddle", () => new THREE.MeshPhysicalMaterial({ color: "#7c5a2a", roughness: 0.05, clearcoat: 1, transparent: true, opacity: 0.75 }));
+    for (const m of list) {
+      const r = createRngLite(m.id);
+      if (m.kind === "spill") {
+        const shape = new THREE.Shape();
+        const n = 9;
+        for (let i = 0; i <= n; i++) {
+          const a = (i / n) * Math.PI * 2;
+          const rr = 0.25 + r() * 0.18;
+          if (i === 0) shape.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+          else shape.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+        }
+        const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), puddle);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(m.x, 0.006, m.z);
+        mesh.receiveShadow = true;
+        this.messGroup.add(mesh);
+      } else {
+        for (let k = 0; k < 3; k++) {
+          const bit = new THREE.Mesh(new THREE.IcosahedronGeometry(0.05 + r() * 0.03, 0), std(["#f5f5f4", "#dc2626", "#facc15", "#2563eb"][Math.floor(r() * 4)], 0.8));
+          bit.position.set(m.x + (r() - 0.5) * 0.4, 0.04, m.z + (r() - 0.5) * 0.4);
+          bit.rotation.set(r() * 3, r() * 3, r() * 3);
+          bit.castShadow = true;
+          this.messGroup.add(bit);
+        }
+      }
+      // A yellow wet-floor sign by the bigger spills.
+      if (m.kind === "spill" && m.id % 3 === 0) {
+        const sign = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.55, 4), std("#facc15", 0.5));
+        sign.position.set(m.x + 0.45, 0.28, m.z);
+        sign.castShadow = true;
+        this.messGroup.add(sign);
+      }
+    }
+  }
+
+  /** Traffic on the road and people on the pavement: on the shared clock, so it never stops. */
+  private buildStreet(s: Store) {
+    if (this.cars.length) return;
+    const colours = ["#b91c1c", "#1d4ed8", "#f5f5f4", "#111827", "#a16207", "#475569", "#15803d"];
+    for (let i = 0; i < 6; i++) {
+      const g = new THREE.Group();
+      const body = std(colours[i % colours.length], 0.25, 0.6);
+      g.add(box(4.2, 0.7, 1.8, body, 0, 0.3, 0), box(2.3, 0.55, 1.6, std("#1e293b", 0.05, 0.4), -0.2, 1.0, 0));
+      for (const [x, z] of [
+        [1.3, 0.85],
+        [-1.3, 0.85],
+        [1.3, -0.85],
+        [-1.3, -0.85],
+      ]) {
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.25, 14).rotateX(Math.PI / 2), std("#0a0a0a", 0.9));
+        w.position.set(x, 0.34, z);
+        g.add(w);
+      }
+      g.add(box(0.05, 0.12, 0.3, emissive("#fff7d6", 1.4), 2.1, 0.55, 0.55), box(0.05, 0.12, 0.3, emissive("#fff7d6", 1.4), 2.1, 0.55, -0.55));
+      this.street.add(g);
+      this.cars.push({ g, lane: i % 2, speed: 9 + (i % 3) * 2.5, offset: i * 23 });
+    }
+    for (let i = 0; i < 5; i++) {
+      const m = buildPed({ skin: ["#f1c9a5", "#c68c5d", "#8d5a3b", "#e0ac84"][i % 4], shirt: ["#7f1d1d", "#1e3a8a", "#f5f5f4", "#166534", "#6d28d9"][i], pants: "#1f2937", seed: 400 + i * 17, lod: this.lod });
+      m.group.traverse((c) => (c.castShadow = true));
+      this.street.add(m.group);
+      this.walkers.push({ m, offset: i * 17, speed: 1.1 + (i % 3) * 0.2, dir: i % 2 ? 1 : -1, lane: i % 2, step: 0 });
+    }
+    void s;
+  }
+
+  private moveStreet(dt: number, w: number) {
+    const span = w + 80;
+    for (const c of this.cars) {
+      const t = (this.time * c.speed + c.offset) % span;
+      const x = c.lane ? -40 + t : w + 40 - t;
+      c.g.position.set(x, -0.12, c.lane ? -9.3 : -12.7);
+      c.g.rotation.y = c.lane ? 0 : Math.PI;
+    }
+    const walk = w + 30;
+    for (const p of this.walkers) {
+      const t = (this.time * p.speed + p.offset) % walk;
+      const x = p.dir > 0 ? -15 + t : w + 15 - t;
+      p.m.group.position.set(x, 0, p.lane ? -2.2 : -4.4);
+      p.m.group.rotation.y = p.dir > 0 ? 0 : Math.PI;
+      p.step += dt * p.speed * 1.45;
+      posePed(p.m, "walk", p.step, p.speed, this.time, dt);
+    }
+  }
+
+  /** Rain outside on a rainy day: streaks falling over the street. */
+  setRain(on: boolean, s: Store) {
+    if (on === this.raining) return;
+    this.raining = on;
+    if (this.rain) {
+      this.pipe.scene.remove(this.rain);
+      this.rain = null;
+    }
+    if (!on) return;
+    const { w } = sizeOf(s);
+    const n = this.detail === "low" ? 400 : 1400;
+    const pos = new Float32Array(n * 6);
+    for (let i = 0; i < n; i++) {
+      const x = -20 + Math.random() * (w + 40);
+      const y = Math.random() * 12;
+      const z = -22 + Math.random() * 21.5;
+      pos.set([x, y, z, x + 0.03, y - 0.45, z], i * 6);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    this.rain = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: "#cbd5e1", transparent: true, opacity: 0.35 }));
+    this.pipe.scene.add(this.rain);
   }
 
   /** Build mode: a see-through fixture, green where it fits and red where it doesn't. */
@@ -765,7 +957,13 @@ export class StoreView {
     this.syncFixtures(s);
     this.syncStock(s);
     this.syncPeople(people, dt, s.sign);
+    this.syncMess(s);
+    this.buildStreet(s);
     const { w, d } = sizeOf(s);
+    this.moveStreet(dt, w);
+    if (this.rain) {
+      this.rain.position.y = -((this.time * 14) % 6);
+    }
     // The camera: orbit the target, which stays over the shop floor.
     if (this.photo) this.yaw += dt * 0.08;
     this.target.x = Math.max(-2, Math.min(w + 2, this.target.x));
@@ -789,7 +987,8 @@ export class StoreView {
     // The sun crosses the sky with the store's clock; inside lights matter more as it gets late.
     const h = s.minute / 60;
     const sunUp = Math.max(0.05, Math.sin(((h - 6) / 14) * Math.PI));
-    this.pipe.key.intensity = 0.4 + 2.2 * sunUp;
+    const sky = this.raining ? 0.35 : 1;
+    this.pipe.key.intensity = (0.4 + 2.2 * sunUp) * sky;
     this.pipe.hemi.intensity = 0.3 + 0.55 * sunUp;
     this.pipe.renderer.toneMappingExposure = 0.78 + (1 - sunUp) * 0.2;
     this.pipe.follow(w / 2, d / 2);
