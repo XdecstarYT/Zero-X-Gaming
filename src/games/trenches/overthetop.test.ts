@@ -225,6 +225,19 @@ describe("the Argonne Forest", () => {
   });
 });
 
+describe("Belleau Wood", () => {
+  it("is a new front: wheat fields and a wood, with its own wind and medal", () => {
+    expect(FRONT_IDS).toContain("belleau");
+    const f = battlefield("belleau");
+    expect(f.map.name).toBe(FRONTS.belleau.name);
+    expect(f.map.front?.id).toBe("belleau");
+    expect([...f.map.cells].filter((c) => c === 4).length).toBeGreaterThan(40);
+    expect(WIND.belleau).toBeDefined();
+    const r = withBattle(EMPTY_RECORD, { kills: 1, deaths: 0, captures: 0, won: true, durationS: 200, damage: 100, digs: 0, grenadeKills: 0, bestStreak: 1, front: "belleau", mode: "conquest", players: 16 });
+    expect(MEDALS.find((m) => m.id === "belleau-oak")!.earned(r)).toBe(true);
+  });
+});
+
 describe("war record", () => {
   it("counts bayonet, Vickers, gas kills and revives into the new medals", () => {
     let r = EMPTY_RECORD;

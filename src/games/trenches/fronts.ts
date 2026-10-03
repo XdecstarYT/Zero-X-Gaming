@@ -1,12 +1,12 @@
 import type { FrontTheme } from "../neon-siege/map";
 
 /**
- * The fronts. Six large (150–190 m) mirrored battlefields for Classic and
+ * The fronts. Seven large (150–190 m) mirrored battlefields for Classic and
  * Breakthrough, each with its own layout feature and look, plus Cape Helles:
  * a 280 m landing corridor built for Frontline. Distances are metres (1 cell = 1 m).
  */
 
-export type FrontId = "gallipoli" | "somme" | "verdun" | "passchendaele" | "vimy" | "argonne" | "helles";
+export type FrontId = "gallipoli" | "somme" | "verdun" | "passchendaele" | "vimy" | "argonne" | "helles" | "belleau";
 
 export interface FrontDef {
   id: FrontId;
@@ -167,6 +167,30 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       weather: "none",
       grass: 0.9,
       grassColor: "#8a7a3a",
+    },
+  },
+  belleau: {
+    id: "belleau",
+    name: "Belleau Wood",
+    place: "Château-Thierry, June 1918",
+    blurb: "High summer. Cross a golden wheat field under fire, then fight tree to tree through a boulder-strewn wood for the old hunting lodge.",
+    width: 170,
+    height: 104,
+    frontLine: 0.44,
+    theme: {
+      id: "belleau",
+      soil: "#a99a5a",
+      soil2: "#c9b26a",
+      earth: "#6b5a3a",
+      sky: { turbidity: 4, rayleigh: 1.6, mie: 0.006, elevation: 44, azimuth: 160 },
+      sun: { color: "#fff3d6", intensity: 3.0 },
+      hemi: { sky: "#cfe3f7", ground: "#8a7a44", intensity: 0.85 },
+      fog: { color: "#dcd6b8", near: 28, far: 160 },
+      exposure: 0.6,
+      clouds: "#ffffff",
+      weather: "none",
+      grass: 1.6,
+      grassColor: "#d4b45a",
     },
   },
   helles: {

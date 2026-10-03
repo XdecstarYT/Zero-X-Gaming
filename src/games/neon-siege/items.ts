@@ -5,7 +5,7 @@ import type { Rng } from "../engine/rng";
  * pellets for shotguns. Values are tuned for 100 HP + up to 100 shield.
  */
 
-export type WeaponKind = "pistol" | "smg" | "ar" | "shotgun" | "sniper";
+export type WeaponKind = "pistol" | "smg" | "ar" | "shotgun" | "sniper" | "dmr" | "lmg";
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 export type ConsumableKind = "medkit" | "shield";
 
@@ -116,6 +116,38 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
     mobility: 0.88,
     tier: 3,
   },
+  dmr: {
+    kind: "dmr",
+    name: "Marksman Rifle",
+    damage: 46,
+    pellets: 1,
+    interval: 0.32,
+    auto: false,
+    mag: 12,
+    reload: 2.5,
+    spread: 0.035,
+    adsSpread: 0.004,
+    range: 38,
+    zoom: 2.2,
+    mobility: 0.92,
+    tier: 3.2,
+  },
+  lmg: {
+    kind: "lmg",
+    name: "Light Machine Gun",
+    damage: 22,
+    pellets: 1,
+    interval: 0.095,
+    auto: true,
+    mag: 60,
+    reload: 4.6,
+    spread: 0.05,
+    adsSpread: 0.022,
+    range: 20,
+    zoom: 1.35,
+    mobility: 0.82,
+    tier: 3.1,
+  },
 };
 
 export const RARITIES: Rarity[] = ["common", "uncommon", "rare", "epic", "legendary"];
@@ -187,6 +219,8 @@ export const WW1_WEAPONS: Record<WeaponKind, WeaponDef> = {
     range: 80,
     zoom: 3.2,
   },
+  dmr: { ...WEAPONS.dmr, name: "Gewehr 98", damage: 72, interval: 1.0, mag: 5, reload: 3.4, spread: 0.035, adsSpread: 0.004, range: 50, zoom: 1.6 },
+  lmg: { ...WEAPONS.lmg, name: "Lewis Gun", damage: 30, interval: 0.11, mag: 47, reload: 5.2, spread: 0.055, adsSpread: 0.025, range: 32, zoom: 1.3, mobility: 0.78 },
 };
 
 /**
@@ -265,10 +299,12 @@ export function rollChestLoot(rng: Rng): Item[] {
 
 function rollKind(rng: Rng): WeaponKind {
   const r = rng.next();
-  if (r < 0.26) return "ar";
-  if (r < 0.46) return "shotgun";
-  if (r < 0.66) return "smg";
-  if (r < 0.84) return "pistol";
+  if (r < 0.24) return "ar";
+  if (r < 0.42) return "shotgun";
+  if (r < 0.6) return "smg";
+  if (r < 0.78) return "pistol";
+  if (r < 0.86) return "dmr";
+  if (r < 0.93) return "lmg";
   return "sniper";
 }
 

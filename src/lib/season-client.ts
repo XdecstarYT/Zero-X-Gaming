@@ -440,3 +440,14 @@ export function localSeasonXp() {
   return readGuest().xp;
 }
 
+
+/** Guests and device accounts: add (or spend) coins on this device. */
+export function addGuestCoins(n: number) {
+  const g = readGuest();
+  g.coins = Math.max(0, g.coins + n);
+  writeGuest(g);
+  return g.coins;
+}
+
+/** The signed-in player's client, for other server calls (null for guests). */
+export const signedIn = signedInClient;

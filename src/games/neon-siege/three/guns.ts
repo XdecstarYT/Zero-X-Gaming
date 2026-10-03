@@ -195,6 +195,49 @@ export function buildGun(kind: WeaponKind, rarity: Rarity, wrapId: string, era?:
       sightY = 0.09;
       break;
     }
+    case "dmr": {
+      part(g, box(0.34, 0.075, 0.055), body, 0, 0); // receiver
+      part(g, box(0.28, 0.06, 0.06), polymer(), 0.3, 0.005); // free-float handguard
+      part(g, cyl(0.013, 0.26), metal(), 0.55, 0.01); // barrel
+      part(g, cyl(0.02, 0.06), metal(), 0.7, 0.01); // brake
+      part(g, box(0.05, 0.1, 0.035), polymer(), 0.06, -0.09); // straight mag
+      part(g, box(0.045, 0.11, 0.04), polymer(), -0.1, -0.09, 0, 0.3); // grip
+      part(g, box(0.28, 0.08, 0.05), body, -0.31, -0.015, 0, 0.04); // stock
+      part(g, box(0.14, 0.025, 0.052), polymer(), -0.3, 0.03); // cheek rest
+      part(g, box(0.32, 0.012, 0.056), accent, 0.02, 0.03);
+      // Low-power scope
+      part(g, cyl(0.018, 0.22, 16), polymer(), 0.02, 0.082);
+      part(g, cyl(0.026, 0.05, 16), polymer(), 0.12, 0.082);
+      part(g, cyl(0.023, 0.052, 16), glass(), 0.12, 0.082);
+      part(g, box(0.03, 0.035, 0.02), metal(), -0.03, 0.05);
+      part(g, box(0.03, 0.035, 0.02), metal(), 0.07, 0.05);
+      muzzle.position.set(0.73, 0.01, 0);
+      grip = new THREE.Vector3(-0.1, -0.08, 0);
+      fore = new THREE.Vector3(0.28, -0.03, 0);
+      sightY = 0.082;
+      break;
+    }
+    case "lmg": {
+      part(g, box(0.4, 0.1, 0.07), body, 0, 0); // receiver
+      part(g, box(0.24, 0.07, 0.07), polymer(), 0.32, 0.0); // handguard
+      part(g, cyl(0.016, 0.3), metal(), 0.55, 0.01); // heavy barrel
+      part(g, cyl(0.024, 0.06), metal(), 0.72, 0.01); // flash hider
+      part(g, box(0.12, 0.12, 0.09), polymer(), 0.04, -0.12); // box mag
+      part(g, box(0.1, 0.02, 0.092), accent, 0.04, -0.07);
+      part(g, box(0.045, 0.11, 0.04), polymer(), -0.12, -0.1, 0, 0.3); // grip
+      part(g, box(0.26, 0.08, 0.05), body, -0.32, -0.02, 0, 0.04); // stock
+      part(g, box(0.06, 0.03, 0.03), metal(), -0.02, 0.07); // carry handle
+      part(g, box(0.38, 0.012, 0.072), accent, 0.0, 0.05);
+      // Folded bipod legs under the barrel
+      part(g, box(0.2, 0.01, 0.01), metal(), 0.52, -0.03, 0.02);
+      part(g, box(0.2, 0.01, 0.01), metal(), 0.52, -0.03, -0.02);
+      part(g, box(0.07, 0.012, 0.03), metal(), 0.02, 0.075); // rear sight
+      muzzle.position.set(0.75, 0.01, 0);
+      grip = new THREE.Vector3(-0.12, -0.09, 0);
+      fore = new THREE.Vector3(0.3, -0.04, 0);
+      sightY = 0.08;
+      break;
+    }
   }
   g.add(muzzle);
   return { group: g, muzzle, grip, fore, sightY };
@@ -331,6 +374,29 @@ export function buildWW1Gun(kind: WeaponKind): GunModel {
     case "sniper":
       rifle(true);
       break;
+    case "dmr":
+      // Gewehr 98 stands in on the same long-rifle frame, iron sights only.
+      rifle(false);
+      break;
+    case "lmg": {
+      // Lewis gun: fat finned barrel shroud, flat pan magazine on top.
+      part(g, cyl(0.035, 0.42, 16), blued(), 0.3, 0.01); // cooling shroud
+      for (let i = 0; i < 5; i++) part(g, cyl(0.037, 0.008, 16), worn(), 0.14 + i * 0.07, 0.01);
+      part(g, cyl(0.01, 0.06), blued(), 0.54, 0.01); // muzzle
+      part(g, plainBox(0.24, 0.07, 0.05), blued(), -0.03, 0.0); // receiver
+      part(g, new THREE.CylinderGeometry(0.085, 0.085, 0.03, 20), blued(), -0.01, 0.055); // pan magazine
+      part(g, new THREE.CylinderGeometry(0.02, 0.02, 0.034, 12), worn(), -0.01, 0.055); // pan centre
+      part(g, plainBox(0.05, 0.1, 0.03), walnutDark(), -0.1, -0.075, 0, 0.3); // grip
+      part(g, plainBox(0.07, 0.008, 0.03), blued(), -0.08, -0.04); // trigger guard
+      part(g, stockGeo(0.3, 0.045, 0.075, 0.045, 0.04), walnut(), -0.15, -0.01); // butt
+      part(g, plainBox(0.012, 0.12, 0.04), brass(), -0.455, -0.01);
+      part(g, plainBox(0.012, 0.03, 0.012), blued(), 0.5, 0.055); // front sight
+      muzzle.position.set(0.57, 0.01, 0);
+      grip = new THREE.Vector3(-0.1, -0.06, 0);
+      fore = new THREE.Vector3(0.2, -0.03, 0);
+      sightY = 0.09;
+      break;
+    }
     case "smg": {
       // Bergmann MP18: perforated barrel jacket, side magazine, wooden stock.
       part(g, cyl(0.022, 0.24, 14), blued(), 0.2, 0.01); // jacket

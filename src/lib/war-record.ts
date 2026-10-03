@@ -175,6 +175,14 @@ export const MEDALS: Medal[] = [
     progress: (r) => (r.frontsWon.includes("argonne") ? 1 : 0),
   },
   {
+    id: "belleau-oak",
+    name: "Belleau Oak Leaf",
+    description: "Win a battle at Belleau Wood.",
+    ribbon: ["#c9b26a", "#2f4a2a", "#c9b26a"],
+    earned: (r) => r.frontsWon.includes("belleau"),
+    progress: (r) => (r.frontsWon.includes("belleau") ? 1 : 0),
+  },
+  {
     id: "victoria-cross",
     name: "Victoria Cross",
     description: "12 kills in a single battle.",

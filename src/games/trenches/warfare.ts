@@ -41,6 +41,7 @@ export const WIND: Record<FrontId, { x: number; y: number }> = {
   vimy: { x: -0.4, y: -0.05 },
   argonne: { x: 0.12, y: -0.08 },
   helles: { x: 0.3, y: 0 },
+  belleau: { x: -0.15, y: 0.1 },
 };
 
 export interface GasCloud {

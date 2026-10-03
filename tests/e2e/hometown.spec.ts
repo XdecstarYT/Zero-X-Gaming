@@ -119,3 +119,33 @@ test("Hometown: neighbours walk and talk", async ({ browser }) => {
   await expect(b.getByTestId("town-chat")).toContainText("hello neighbour");
   await ctx.close();
 });
+
+/** The Town Bank, the City Hall allowance, emotes and the minimap. */
+test("Hometown: save at the bank, collect an allowance, emote", async ({ page }) => {
+  test.setTimeout(240_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await openPractice(page);
+  const stage = page.getByTestId("game-stage");
+  await expect(stage.getByTestId("town-minimap")).toBeVisible();
+
+  await walkTo(page, "carlot", /Town Bank/);
+  await expect(stage.getByTestId("town-bank")).toBeVisible();
+  await stage.getByTestId("town-bank-amount").fill("500");
+  await stage.getByTestId("town-deposit").click();
+  await expect(stage.getByTestId("town-toast")).toContainText("Savings: $500");
+  await expect(stage.getByTestId("town-cash")).toHaveText("$1,000");
+  await stage.getByTestId("town-bank-amount").fill("200");
+  await stage.getByTestId("town-withdraw").click();
+  await expect(stage.getByTestId("town-toast")).toContainText("Savings: $300");
+  await expect(stage.getByTestId("town-cash")).toHaveText("$1,200");
+  await stage.getByTestId("town-close").click();
+
+  await walkTo(page, "cityhall", /City Hall/);
+  await stage.getByTestId("town-allowance").click();
+  await expect(stage.getByTestId("town-toast")).toContainText("allowance");
+  await stage.getByTestId("town-close").click();
+
+  await stage.getByTestId("town-emote-wave").click();
+  expect(errors).toEqual([]);
+});

@@ -15,6 +15,18 @@ test("home renders hero, featured game and sections", async ({ page }) => {
   await expect(page.getByText("Nothing here yet")).toBeVisible();
 });
 
+test("daily rewards: a guest claims day 1 once, and what's new is listed", async ({ page }) => {
+  await page.goto("/");
+  const daily = page.getByTestId("daily-rewards");
+  await expect(daily.getByTestId("daily-claim")).toHaveText("Claim 5 coins");
+  await daily.getByTestId("daily-claim").click();
+  await expect(daily.getByTestId("daily-claim")).toHaveText(/Claimed/);
+  await expect(daily.getByTestId("daily-claim")).toBeDisabled();
+  await page.reload();
+  await expect(page.getByTestId("daily-claim")).toHaveText(/Claimed/);
+  await expect(page.getByTestId("whats-new")).toContainText("Hometown");
+});
+
 test("library filters by search and category and syncs the URL", async ({ page }) => {
   await page.goto("/games");
   await expect(page.getByText("11 games")).toBeVisible();

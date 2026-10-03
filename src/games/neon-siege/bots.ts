@@ -246,6 +246,12 @@ export function chooseSlot(bot: Entity, dist: number): number {
       case "sniper":
         s = dist > 14 ? 9 : 2;
         break;
+      case "dmr":
+        s = dist > 10 ? 8 : 4;
+        break;
+      case "lmg":
+        s = dist < 16 ? 7 : 5;
+        break;
       default:
         s = 3;
     }
@@ -408,7 +414,7 @@ export function updateBot(world: World, bot: Entity, brain: BotBrain, dt: number
         brain.strafeUntil = world.time + rng.range(0.5, 1.2);
       }
       const ideal: [number, number] =
-        w?.kind === "shotgun" ? [1.5, 4] : w?.kind === "sniper" ? [12, 30] : w?.kind === "smg" ? [3, 8] : [4, 12];
+        w?.kind === "shotgun" ? [1.5, 4] : w?.kind === "sniper" ? [12, 30] : w?.kind === "dmr" ? [8, 22] : w?.kind === "smg" ? [3, 8] : [4, 12];
       const fwd = dist > ideal[1] ? 1 : dist < ideal[0] ? -0.8 : 0;
       move(world, bot, fwd, bot.aiming ? 0 : brain.strafeDir * 0.8, dt, 0.85);
 

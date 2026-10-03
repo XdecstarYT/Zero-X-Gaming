@@ -104,7 +104,8 @@ and unit tested. It's drawn by a three.js 3D view, or a Canvas 2D raycaster when
   partitions, windows), roads, a forest, a quarry, crate yards, chests, loot spots, and 24 spawns. It also does DDA
   raycasting, line of sight, and collision.
 - `path.ts` is A* pathfinding.
-- `items.ts` defines five weapons (pistol, SMG, assault rifle, pump shotgun, sniper), rarities from common to
+- `items.ts` defines seven weapons (pistol, SMG, assault rifle, pump shotgun, sniper, Marksman Rifle, Light
+  Machine Gun; in Trenches the last two are the Gewehr 98 and the Lewis Gun), rarities from common to
   legendary (damage and reload bonuses), med kits, and shield potions.
 - `world.ts` covers fighters, a 5-slot inventory, hitscan with pellets and falloff, shields, loot, chests, and
   consumables.
@@ -236,6 +237,9 @@ slug and menu) and optional `ModeController` hooks (`markers`, `tagColor`, `resu
   - **The Argonne Forest:** a sixth front (Meuse-Argonne, 1918): dense autumn forest, a rocky ravine and the
     old mill at the centre.
   - New medals: Cold Steel, Machine Gun Corps, Stretcher Bearer, Argonne Cross.
+  - **Belleau Wood:** a seventh front (Château-Thierry, June 1918): open summer wheat fields in front of a
+    thick wood of trees and boulders, a hunting lodge in ruins and a barn. Its medal is the Belleau Oak Leaf.
+    `20261014090200_trenches_belleau.sql` lets the server record matches there.
 - **Classes:** Rifleman, Trench Raider, Medic, Sniper, Engineer. Teams: Iron Legion and Crimson Front.
 - **Lobbies** (`lobby.ts`, `directory.ts`, `menu.ts`): create a lobby (name, front, 4v4 to 16v16, bot fill),
   browse the live list or join by code or invite link (`?lobby=CODE`). The host can change the front; players
@@ -567,7 +571,9 @@ A life sim (`src/games/life/`) in two layers that feed each other:
   and footpaths, trees and street lamps, the harbour, parked cars, neighbours, your character and car, a sun that
   follows the clock, and build-mode ghosts.
 - `lifeui.ts` / `index.ts`: the phone (stats, story, tabs, events, death and heirs) and the 3D day (HUD, shops,
-  shifts, build mode). Saved in `localStorage` (`zx-life-save`). Registered by `20261009090000_life.sql`; it's the
+  shifts, build mode). Investments (shares that move with a yearly market, rental property bought with 20% down
+  and a loan rent pays off), pets, followers from posting and collabs, and trips abroad live on the Assets tab
+  and count toward the life score. Saved in `localStorage` (`zx-life-save`). Registered by `20261009090000_life.sql`; it's the
   home page's featured game.
 
 ### Hometown: the online town
@@ -599,6 +605,10 @@ streets, plots, house builder and renderer). Unlike every other game here, the s
   yard, mine, City Hall, exchange and Gazette), visit lots (buy, shop, business, list for sale), build (a plank
   per wall, a piece of furniture per item), the phone (bag, market, Gazette), chat and other players' avatars
   with name tags. The clock is shared: a day every real hour.
+- **Town Bank and allowance** (`20261014090100_hometown_bank.sql`): `town_bank` deposits or withdraws savings,
+  which earn 2% a day paid lazily from the treasury when your savings are next touched (and only while the
+  treasury can pay). `town_allowance` pays the public wage from the treasury once every 20 hours at City Hall.
+  The HUD has a minimap and emotes (keys 1–5) that neighbours see through the presence pose.
 
 ### Clanforge: base-building strategy
 
@@ -687,6 +697,10 @@ The platform handles loading, pause UI, fullscreen, game over, score submission,
   today's board, All-Rounder). It returns the PB flag, XP gained, the new total, today's rank, and newly unlocked
   badges.
 
+- **`claim_daily_reward(p_peek)`** (`20261014090000_daily_rewards.sql`) is the home page's daily rewards: 5, 5,
+  10, 10, 15, 20 and 50 coins over a 7-day cycle, one claim per UTC day, back to day 1 after a missed day. Paid
+  through `add_coins` with a `daily` ledger entry; guests keep the same cycle in `localStorage`
+  (`src/lib/daily.ts`). The "What's new" list under it comes from `src/lib/updates.ts`.
 - **`touch_daily_streak()`** runs once per session. The first visit each UTC day earns `10 × streak` XP (max 70),
   and a 7-day streak unlocks "On Fire".
 - **`get_leaderboard(game | null, 'daily' | 'weekly' | 'all', limit)`** returns read-only boards of best score per

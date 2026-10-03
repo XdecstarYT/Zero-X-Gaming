@@ -151,6 +151,26 @@ describe("Hometown economy", () => {
   });
 });
 
+describe("the Town Bank", () => {
+  it("pays 2% a day from the treasury, withdraws what you have, and an allowance every 20 hours", () => {
+    const { town, tick } = fresh();
+    town.join("a", "Alice");
+    expect(town.bank("a", 1000)).toEqual({ savings: 1000 });
+    expect(town.me("a").cash).toBe(RULES.startCash - 1000);
+    const t0 = town.treasuryNow;
+    tick(86_400_000);
+    expect(town.me("a").savings).toBe(1020);
+    expect(town.treasuryNow).toBe(t0 - 20);
+    expect(() => town.bank("a", -5000)).toThrow(/that much saved/);
+    town.bank("a", -520);
+    expect(town.me("a")).toMatchObject({ cash: RULES.startCash - 480, savings: 500 });
+    expect(town.allowance("a")).toBe(60);
+    expect(() => town.allowance("a")).toThrow(/comes again in 20h 00m/);
+    tick(RULES.allowanceMs);
+    expect(town.allowance("a")).toBe(60);
+  });
+});
+
 describe("the practice town", () => {
   it("has neighbours trading, a shop and a ballot", async () => {
     const b = new LocalBackend();

@@ -23,6 +23,15 @@ import {
   type Interaction,
   type Life,
   type Stat,
+  adoptPet,
+  buyProperty,
+  investValue,
+  petCare,
+  PETS,
+  PROPERTIES,
+  sellProperty,
+  tradeShares,
+  type PetKind,
 } from "./life";
 import { PLOTS } from "./world";
 
@@ -317,8 +326,77 @@ export class LifeScreen {
         })
       : [el("p", "text-sm text-slate-500", "You can drive at 16.")];
     parts.push(this.section("Cars", ...(cars.length ? cars : [el("p", "text-sm text-slate-500", "No car yet.")]), ...shop));
+    parts.push(...this.extrasSections(l));
     parts.push(this.section("Record", el("p", "text-sm text-slate-600", l.record.length ? `Criminal record: ${l.record.join(", ")}` : "Clean record."), el("p", "text-sm text-slate-600", l.conditions.length ? `Health: ${l.conditions.join(", ")}` : "No health conditions."), el("p", "text-sm text-slate-600", `Fame: ${l.fame}%`)));
     this.body.replaceChildren(...parts);
+  }
+
+  /** Investments, rental property, pets, fame and travel. */
+  private extrasSections(l: Life): Node[] {
+    const act = (fn: () => string) => () => {
+      const t = fn();
+      if (t) this.hooks.toast(t);
+      this.hooks.changed();
+    };
+    const out: Node[] = [];
+    const v = l.invest;
+    const hist = v?.history ?? [];
+    const inv: Node[] = [
+      el("div", "rounded-xl border border-slate-200 bg-white p-3", el("p", "font-bold", `Invested: ${money(investValue(l))}`), el("p", "text-[11px] text-slate-500", `Index fund ${money(v?.shares ?? 0)}${hist.length ? ` · the market, recent years: ${hist.map((h) => `${h > 0 ? "+" : ""}${h}%`).join(", ")}` : " · shares rise most years and crash now and then"}`)),
+    ];
+    if (isAdult(l)) {
+      const row = el("div", "grid grid-cols-3 gap-1.5");
+      for (const n of [1000, 10_000, 100_000]) {
+        const b = button(`+${money(n)}`, BTN, act(() => tradeShares(l, n)), `life-invest-${n}`);
+        (b as HTMLButtonElement).disabled = l.money < n;
+        row.append(b);
+      }
+      const sell = button("Sell all shares", BTN, act(() => tradeShares(l, -(v?.shares ?? 0))), "life-sell-shares");
+      (sell as HTMLButtonElement).disabled = !(v?.shares ?? 0);
+      inv.push(row, sell);
+      for (const [i, p] of (v?.property ?? []).entries())
+        inv.push(button(el("span", "flex w-full justify-between", `🏘 ${p.name}`, el("span", "text-[11px] font-normal text-slate-500", `worth ${money(p.value)}${p.debt ? ` · owe ${money(p.debt)}` : ""} · sell`)), BTN, act(() => sellProperty(l, i)), `life-sell-prop-${i}`));
+      for (const [i, p] of PROPERTIES.entries()) {
+        const b = button(el("span", "flex w-full justify-between", `Buy: ${p.name}`, el("span", "text-[11px] font-normal text-slate-500", `${money(p.price)} · ${money(p.rent)}/yr rent · 20% down`)), BTN, act(() => buyProperty(l, i)), `life-buy-prop-${i}`);
+        (b as HTMLButtonElement).disabled = l.money < p.price * 0.2;
+        inv.push(b);
+      }
+    } else inv.push(el("p", "text-sm text-slate-500", "You can invest at 18."));
+    out.push(this.section("Investments", ...inv));
+
+    const pets: Node[] = [];
+    for (const [i, p] of (l.pets ?? []).entries()) {
+      const k = PETS[p.kind];
+      if (!p.alive) {
+        pets.push(el("p", "text-xs text-slate-400", `🌈 ${p.name} the ${k.name.toLowerCase()} (${p.age})`));
+        continue;
+      }
+      pets.push(el("div", "flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2", el("span", "text-2xl", k.icon), el("div", "min-w-0 flex-1", el("p", "font-bold", `${p.name}`), el("p", "text-[11px] text-slate-500", `${k.name}, ${p.age} · bond ${p.bond}%`)), button("Play", `${BTN} w-auto px-2 py-1 text-xs`, act(() => petCare(l, i, "play")), `life-pet-play-${i}`), button("Vet", `${BTN} w-auto px-2 py-1 text-xs`, act(() => petCare(l, i, "vet")))));
+    }
+    if (l.me.age >= 8)
+      pets.push(
+        el(
+          "div",
+          "grid grid-cols-2 gap-1.5",
+          ...(Object.keys(PETS) as PetKind[]).map((kind) => {
+            const k = PETS[kind];
+            const b = button(el("span", "flex w-full justify-between", `${k.icon} ${k.name}`, el("span", "text-[11px] font-normal text-slate-500", money(k.cost))), BTN, act(() => adoptPet(l, kind)), `life-adopt-${kind}`);
+            (b as HTMLButtonElement).disabled = l.money < k.cost;
+            return b;
+          }),
+        ),
+      );
+    else pets.push(el("p", "text-sm text-slate-500", "You can have a pet of your own at 8."));
+    out.push(this.section("Pets", ...pets));
+
+    out.push(
+      this.section(
+        "Fame & travel",
+        el("p", "text-sm text-slate-600", `📱 ${(l.followers ?? 0).toLocaleString("en-US")} followers · fame ${Math.round(l.fame)}%${(l.followers ?? 0) >= 10_000 ? " · sponsors pay you every year" : " · 10,000 followers and sponsors start paying"}`),
+        el("p", "text-sm text-slate-600", l.travels?.length ? `✈️ Been to: ${[...new Set(l.travels)].join(", ")}` : "✈️ Nowhere yet. Book a trip in Do → Travel."),
+      ),
+    );
+    return out;
   }
 
   private renderDeath(l: Life) {

@@ -29,6 +29,9 @@ export interface TownBackend {
   run(slogan: string, salesTax: number, publicWage: number): Promise<void>;
   vote(candidate: string): Promise<void>;
   setPolicy(salesTax: number, publicWage: number): Promise<void>;
+  /** The Town Bank: deposit (positive) or withdraw (negative). */
+  bank(amount: number): Promise<{ savings: number }>;
+  allowance(): Promise<number>;
 }
 
 type Rpc = (fn: string, args?: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
@@ -66,6 +69,8 @@ export class SupabaseBackend implements TownBackend {
   run = (slogan: string, salesTax: number, publicWage: number) => this.rpc<void>("town_run", { p_slogan: slogan, p_sales_tax: salesTax, p_public_wage: publicWage });
   vote = (candidate: string) => this.rpc<void>("town_vote", { p_candidate: candidate });
   setPolicy = (salesTax: number, publicWage: number) => this.rpc<void>("town_set_policy", { p_sales_tax: salesTax, p_public_wage: publicWage });
+  bank = (amount: number) => this.rpc<{ savings: number }>("town_bank", { p_amount: amount });
+  allowance = () => this.rpc<number>("town_allowance");
 }
 
 /** Postgres errors arrive as plain messages; tidy the odd technical one. */
@@ -186,5 +191,7 @@ export class LocalBackend implements TownBackend {
   run = (slogan: string, salesTax: number, publicWage: number) => this.act(() => this.town.run(this.userId, slogan, salesTax, publicWage));
   vote = (candidate: string) => this.act(() => this.town.vote(this.userId, candidate));
   setPolicy = (salesTax: number, publicWage: number) => this.act(() => this.town.setPolicy(this.userId, salesTax, publicWage));
+  bank = (amount: number) => this.act(() => this.town.bank(this.userId, amount));
+  allowance = () => this.act(() => this.town.allowance(this.userId));
 }
 

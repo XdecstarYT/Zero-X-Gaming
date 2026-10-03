@@ -241,6 +241,18 @@ export function generateBattlefield(id: FrontId = DEFAULT_FRONT, seed?: number):
       scatter(SOLID.shrub, 60, nmlX0, cx - 1);
       break;
     }
+    case "belleau": {
+      // The wheat field: open, golden, waist-high (shrubs hide you, they don't stop bullets).
+      for (let x = nmlX0; x < cx - 26; x++) for (let y = 3; y < H - 3; y++) if (free(x, y) && rng.next() < 0.16) setC(x, y, SOLID.shrub);
+      // The wood: dense trees and big boulders from the field's edge to the centre.
+      scatter(SOLID.tree, 210, cx - 26, cx - 1);
+      scatter(SOLID.rock, 40, cx - 24, cx - 1);
+      // The hunting lodge in a clearing at the centre, and a stone barn at the wood's edge.
+      ruin({ x: cx - 7, y: cy - 6, w: 7, h: 12, material: "brick", floors: 2 });
+      addBuilding({ x: cx - 27, y: Math.floor(H * 0.2), w: 5, h: 5, material: "brick", floors: 1 }, [[cx - 27, Math.floor(H * 0.2) + 2]]);
+      craterField(nmlX0, cx - 26, 12, 0);
+      break;
+    }
     case "gallipoli": {
       // Scrub, rocky gullies and a few stunted pines.
       scatter(SOLID.shrub, 150, BASE_W + 1, cx - 1);

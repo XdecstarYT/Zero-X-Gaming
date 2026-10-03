@@ -37,6 +37,8 @@ const ICONS: Record<string, string> = {
   ar: "M2 8h52v5H39l-3 9h-6l2-9h-9l-2 6h-5l1-6H11l-5 5H2z",
   shotgun: "M2 9h58v4H29l-3 3H15l-9 5H2z",
   sniper: "M2 10h60v3H35l-3 2H19l-11 6H2zM25 4h16v4H25z",
+  dmr: "M2 9h54v4H36l-2 6h-6l1-6H19l-10 6H2zM24 4h12v4H24z",
+  lmg: "M2 7h58v6H40l-2 3h-8v5h-10v-5h-3l-2 6h-6l1-6H8l-4 4H2z",
   medkit: "M18 4h28v18H18zM29 8h6v4h4v4h-4v4h-6v-4h-4v-4h4z",
   shield: "M28 2h8v4h3l4 5v11H21V11l4-5h3z",
 };

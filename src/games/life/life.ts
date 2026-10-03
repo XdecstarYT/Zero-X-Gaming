@@ -82,6 +82,13 @@ export interface Life {
   record: string[];
   conditions: string[];
   fame: number;
+  /** Investments: an index fund (its value) and rental properties, with the market's recent years. */
+  invest?: { shares: number; property: Property[]; history: number[] };
+  pets?: Pet[];
+  /** Social media followers. */
+  followers?: number;
+  /** Places you've been. */
+  travels?: string[];
   /** Events waiting for a choice. */
   pending: string[];
   /** Activities done this year (once a year each). */
@@ -282,6 +289,8 @@ export function ageUp(l: Life): string[] {
       bump(l, "happiness", -10);
     }
   }
+  // Investments, pets and fame.
+  yearExtras(l, r, add);
   // Body and mind.
   if (l.me.age > 45) bump(l, "health", -(0.5 + (l.me.age - 45) / 25) - r.next() * 1.5);
   if (l.me.age > 40) bump(l, "looks", -r.next() * 1.2);
@@ -368,6 +377,12 @@ function workYear(l: Life, r: Rng, add: (t: string) => void) {
 }
 
 export function die(l: Life, cause: string) {
+  // The estate: investments are sold for the heirs.
+  const estate = investValue(l);
+  if (estate > 0) {
+    l.money += estate;
+    l.invest = { shares: 0, property: [], history: l.invest?.history ?? [] };
+  }
   l.me.alive = false;
   l.me.cause = cause;
   l.pending = [];
@@ -802,12 +817,31 @@ export function interact(l: Life, npcId: number, what: Interaction): string {
 export interface Activity {
   id: string;
   name: string;
-  group: "Mind & Body" | "Love" | "Money" | "Crime" | "Education" | "Career" | "Assets";
+  group: "Mind & Body" | "Love" | "Money" | "Crime" | "Education" | "Career" | "Assets" | "Travel" | "Fame";
   minAge: number;
   cost?: number;
   can?: (l: Life) => boolean | string;
   run: (l: Life, r: Rng) => string;
 }
+
+export interface Destination {
+  id: string;
+  name: string;
+  icon: string;
+  cost: number;
+  happy: number;
+  health: number;
+  /** What happened there. */
+  moments: string[];
+}
+export const DESTINATIONS: Destination[] = [
+  { id: "coast", name: "Road trip up the coast", icon: "🚐", cost: 900, happy: 8, health: 1, moments: ["surfed at dawn", "ate fish and chips on the pier", "camped under the stars"] },
+  { id: "bali", name: "Bali", icon: "🌴", cost: 3_500, happy: 14, health: 3, moments: ["learned to surf", "hiked a volcano at sunrise", "did yoga in the rice terraces"] },
+  { id: "tokyo", name: "Tokyo", icon: "🗼", cost: 5_500, happy: 15, health: 1, moments: ["sang karaoke till 4am", "saw the cherry blossoms", "ate the best ramen of my life"] },
+  { id: "europe", name: "Europe by train", icon: "🚆", cost: 9_000, happy: 18, health: 2, moments: ["watched the sun set over Lisbon", "got lost in Venice", "saw a concert in Berlin"] },
+  { id: "safari", name: "African safari", icon: "🦁", cost: 12_000, happy: 20, health: 2, moments: ["saw a lion up close", "watched the great migration", "slept in a tent by a watering hole"] },
+  { id: "antarctica", name: "Antarctica", icon: "🐧", cost: 30_000, happy: 25, health: 1, moments: ["walked among penguins", "saw a glacier calve", "swam in the polar plunge"] },
+];
 
 export const ACTIVITIES: Activity[] = [
   { id: "gym", name: "Go to the gym", group: "Mind & Body", minAge: 12, cost: 30, run: (l) => (bump(l, "health", 5), bump(l, "looks", 2), bump(l, "happiness", 2), "I worked out at Harbour Fitness.") },
@@ -820,7 +854,24 @@ export const ACTIVITIES: Activity[] = [
       return `The doctor treated my ${c}.`;
     } },
   { id: "salon", name: "Salon & spa", group: "Mind & Body", minAge: 12, cost: 120, run: (l) => (bump(l, "looks", 5), bump(l, "happiness", 4), "New haircut, new me.") },
-  { id: "holiday", name: "Go on holiday", group: "Mind & Body", minAge: 18, cost: 3500, run: (l, r) => (bump(l, "happiness", 15), bump(l, "health", 3), `I had an amazing week in ${r.pick(["Bali", "Tokyo", "Lisbon", "New Zealand", "Mexico City", "Iceland"])}.`) },
+  ...DESTINATIONS.map(
+    (d): Activity => ({
+      id: `trip-${d.id}`,
+      name: `${d.icon} ${d.name}`,
+      group: "Travel",
+      minAge: 18,
+      cost: d.cost,
+      run: (l, r) => travel(l, r, d),
+    }),
+  ),
+  { id: "post", name: "Post on social media", group: "Fame", minAge: 13, run: (l, r) => postOnline(l, r, false) },
+  { id: "viral", name: "Try to go viral (a stunt)", group: "Fame", minAge: 16, cost: 300, run: (l, r) => postOnline(l, r, true) },
+  { id: "collab", name: "Collab with an influencer", group: "Fame", minAge: 16, cost: 1500, can: (l) => ((l.followers ?? 0) >= 5000 ? true : "Get 5,000 followers first."), run: (l, r) => {
+      const gain = Math.round((l.followers ?? 0) * (0.15 + r.next() * 0.5));
+      l.followers = (l.followers ?? 0) + gain;
+      l.fame = clamp(l.fame + 3);
+      return `A collab with @${r.pick(["sunnyside", "bigbrekkie", "harbourhype", "gymbro", "chefzara"])}: +${gain.toLocaleString("en-US")} followers.`;
+    } },
   {
     id: "date",
     name: "Go on a date",
@@ -1058,11 +1109,214 @@ export const ribbonsOf = (l: Life) => RIBBONS.filter((r) => r.test(l));
 export function lifeScore(l: Life) {
   return Math.max(
     0,
-    Math.round(l.me.age * 10 + Math.min(5000, Math.max(0, l.money) / 400) + l.totals.kids * 120 + l.degrees.length * 150 + l.totals.promotions * 80 + l.stats.happiness * 4 + ribbonsOf(l).length * 250 + l.totals.daysPlayed * 15 + l.totals.housesBuilt * 200),
+    Math.round(l.me.age * 10 + Math.min(5000, Math.max(0, l.money + investValue(l)) / 400) + (l.travels?.length ?? 0) * 40 + (l.pets?.length ?? 0) * 60 + Math.min(1500, (l.followers ?? 0) / 1000) + l.totals.kids * 120 + l.degrees.length * 150 + l.totals.promotions * 80 + l.stats.happiness * 4 + ribbonsOf(l).length * 250 + l.totals.daysPlayed * 15 + l.totals.housesBuilt * 200),
   );
 }
 
 export function parseLife(raw: unknown): Life | null {
   const l = raw as Life | null;
   return l && l.v === 1 && l.me && Array.isArray(l.relations) ? l : null;
+}
+
+// ------------------------------------------------- investing, pets, fame, travel
+
+export interface Property {
+  name: string;
+  /** What you paid. */
+  price: number;
+  /** What it's worth now. */
+  value: number;
+  /** Rent a year (after costs). */
+  rent: number;
+  /** Still owed to the bank (rent pays it off first). */
+  debt: number;
+}
+
+/** Rental properties for sale (price, rent a year after costs). */
+export const PROPERTIES: { name: string; price: number; rent: number }[] = [
+  { name: "Studio flat in the city", price: 180_000, rent: 8_500 },
+  { name: "Townhouse on Elm Street", price: 420_000, rent: 18_000 },
+  { name: "Beach house", price: 950_000, rent: 36_000 },
+  { name: "Shopping strip", price: 2_400_000, rent: 105_000 },
+];
+
+export type PetKind = "dog" | "cat" | "rabbit" | "parrot" | "horse";
+export interface Pet {
+  name: string;
+  kind: PetKind;
+  age: number;
+  /** 0–100: how much you two love each other. */
+  bond: number;
+  alive: boolean;
+}
+export const PETS: Record<PetKind, { name: string; icon: string; cost: number; lifespan: number; joy: number }> = {
+  dog: { name: "Dog", icon: "🐶", cost: 600, lifespan: 13, joy: 6 },
+  cat: { name: "Cat", icon: "🐱", cost: 300, lifespan: 16, joy: 5 },
+  rabbit: { name: "Rabbit", icon: "🐰", cost: 120, lifespan: 9, joy: 3 },
+  parrot: { name: "Parrot", icon: "🦜", cost: 900, lifespan: 40, joy: 4 },
+  horse: { name: "Horse", icon: "🐴", cost: 12_000, lifespan: 28, joy: 8 },
+};
+const PET_NAMES = ["Biscuit", "Luna", "Milo", "Pepper", "Ziggy", "Maple", "Rocket", "Olive", "Bruno", "Coco", "Nugget", "Pickles"];
+
+const ensureInvest = (l: Life) => (l.invest ??= { shares: 0, property: [], history: [] });
+
+/** Everything invested, at today's value. */
+export function investValue(l: Life) {
+  const v = l.invest;
+  return v ? Math.round(v.shares + v.property.reduce((a, p) => a + p.value - (p.debt ?? 0), 0)) : 0;
+}
+
+/** Put money into (positive) or take it out of (negative) the index fund. */
+export function tradeShares(l: Life, amount: number) {
+  if (!isAdult(l)) return "You need to be 18 to invest.";
+  const v = ensureInvest(l);
+  if (amount > 0) {
+    if (l.money < amount) return `You only have ${money(l.money)}.`;
+    l.money -= amount;
+    v.shares += amount;
+    return say(l, `I invested ${money(amount)} in the share market.`);
+  }
+  const out = Math.min(v.shares, -amount);
+  if (out <= 0) return "Nothing invested to sell.";
+  v.shares -= out;
+  l.money += Math.round(out);
+  return say(l, `I sold ${money(out)} of shares.`);
+}
+
+export function buyProperty(l: Life, i: number) {
+  const p = PROPERTIES[i];
+  if (!p) return "";
+  if (!isAdult(l)) return "You need to be 18 to buy property.";
+  // A 20% deposit and the bank lends the rest (paid off out of the rent).
+  const deposit = Math.round(p.price * 0.2);
+  if (l.money < deposit) return `The deposit is ${money(deposit)}.`;
+  l.money -= deposit;
+  ensureInvest(l).property.push({ name: p.name, price: p.price, value: p.price, rent: p.rent, debt: p.price - deposit });
+  return say(l, `I bought a ${p.name.toLowerCase()} for ${money(p.price)} (${money(deposit)} down, the bank lent the rest) to rent out.`);
+}
+
+export function sellProperty(l: Life, i: number) {
+  const v = l.invest;
+  const p = v?.property[i];
+  if (!v || !p) return "";
+  v.property.splice(i, 1);
+  const net = Math.round(p.value - (p.debt ?? 0));
+  l.money += net;
+  const gain = p.value - p.price;
+  return say(l, `I sold the ${p.name.toLowerCase()} for ${money(p.value)}, ${money(net)} after paying off the loan (${gain >= 0 ? "a profit" : "a loss"} of ${money(Math.abs(gain))} on the price).`);
+}
+
+export function adoptPet(l: Life, kind: PetKind, r: Rng = rngFor(l, 77 + (l.pets?.length ?? 0))) {
+  const k = PETS[kind];
+  if (l.me.age < 8) return "You're too young for a pet of your own.";
+  if (l.money < k.cost) return `A ${k.name.toLowerCase()} costs ${money(k.cost)}.`;
+  if ((l.pets ?? []).filter((p) => p.alive).length >= 4) return "Four pets is plenty.";
+  l.money -= k.cost;
+  const pet: Pet = { name: r.pick(PET_NAMES), kind, age: kind === "horse" ? 4 : 0, bond: 60, alive: true };
+  (l.pets ??= []).push(pet);
+  bump(l, "happiness", 8);
+  return say(l, `I brought home a ${k.name.toLowerCase()} called ${pet.name}! ${k.icon}`);
+}
+
+export function petCare(l: Life, i: number, what: "play" | "vet") {
+  const p = l.pets?.[i];
+  if (!p || !p.alive) return "";
+  const key = `pet-${i}-${what}`;
+  if (l.doneThisYear.includes(key)) return "Already done this year.";
+  if (what === "vet") {
+    if (l.money < 250) return "The vet costs $250.";
+    l.money -= 250;
+    p.bond = clamp(p.bond + 5);
+    l.doneThisYear.push(key);
+    return say(l, `${p.name} had a check-up at the vet. All good.`);
+  }
+  p.bond = clamp(p.bond + 12);
+  bump(l, "happiness", 4);
+  l.doneThisYear.push(key);
+  return say(l, `I spent the afternoon playing with ${p.name}.`);
+}
+
+function travel(l: Life, r: Rng, d: Destination) {
+  bump(l, "happiness", d.happy);
+  bump(l, "health", d.health);
+  (l.travels ??= []).push(d.name);
+  let out = `I went to ${d.name} and ${r.pick(d.moments)}.`;
+  if (!partner(l) && r.next() < 0.12) {
+    const p = newNpc(l, r, { age: Math.max(18, l.me.age + Math.round((r.next() - 0.5) * 8)) });
+    l.relations.push({ npc: p, kind: "partner", closeness: 65 });
+    l.totals.partners++;
+    out += ` And I met ${fullName(p)}: a holiday romance that came home with me!`;
+  }
+  if ((l.followers ?? 0) > 1000) {
+    const gain = Math.round((l.followers ?? 0) * 0.04 + r.next() * 300);
+    l.followers = (l.followers ?? 0) + gain;
+    out += ` The photos got me ${gain.toLocaleString("en-US")} new followers.`;
+  }
+  return out;
+}
+
+function postOnline(l: Life, r: Rng, stunt: boolean) {
+  const f = l.followers ?? 0;
+  const appeal = (l.stats.looks + l.stats.smarts + l.fame * 2) / 400;
+  if (stunt && r.next() < 0.12) {
+    bump(l, "health", -10);
+    bump(l, "happiness", -5);
+    return "The stunt went wrong. I ended up in hospital, and the video got 40 views.";
+  }
+  const viral = r.next() < (stunt ? 0.25 : 0.03) + appeal * 0.05;
+  const gain = viral ? Math.round(5000 + r.next() * 50_000 * (0.5 + appeal) + f * 0.3) : Math.round(10 + r.next() * 200 * (0.4 + appeal) + f * 0.02);
+  l.followers = f + gain;
+  l.fame = clamp(Math.max(l.fame, Math.log10(l.followers + 1) * 14 - 30));
+  bump(l, "happiness", viral ? 10 : 2);
+  return viral ? `I WENT VIRAL! ${gain.toLocaleString("en-US")} new followers overnight.` : `I posted a ${r.pick(["selfie", "recipe video", "dance", "hot take", "sunset"])}: +${gain.toLocaleString("en-US")} followers.`;
+}
+
+/** Once a year: the market moves, rent comes in, pets grow up, followers come and go (and sponsors pay). */
+export function yearExtras(l: Life, r: Rng, add: (t: string) => void) {
+  const v = l.invest;
+  if (v) {
+    // The market: mostly up, sometimes a crash.
+    const ret = r.next() < 0.12 ? -0.1 - r.next() * 0.25 : -0.05 + r.next() * 0.27;
+    v.history = [...v.history, Math.round(ret * 1000) / 10].slice(-10);
+    if (v.shares > 0) {
+      const before = v.shares;
+      v.shares = Math.round(v.shares * (1 + ret));
+      if (Math.abs(v.shares - before) >= 1000) add(ret >= 0 ? `My shares grew ${(ret * 100).toFixed(1)}% this year (${money(v.shares - before)}).` : `The market fell ${(-ret * 100).toFixed(1)}%. My shares lost ${money(before - v.shares)}.`);
+    }
+    let rent = 0;
+    for (const p of v.property) {
+      p.value = Math.round(p.value * (1 + (r.next() * 0.1 - 0.02)));
+      // The rent pays down the loan first.
+      const toLoan = Math.min(p.debt ?? 0, p.rent);
+      p.debt = (p.debt ?? 0) - toLoan;
+      rent += p.rent - toLoan;
+    }
+    if (rent) {
+      l.money += rent;
+      l.totals.earned += rent;
+    }
+  }
+  for (const p of l.pets ?? []) {
+    if (!p.alive) continue;
+    p.age++;
+    p.bond = clamp(p.bond - 6);
+    bump(l, "happiness", (PETS[p.kind].joy * p.bond) / 100);
+    const life = PETS[p.kind].lifespan;
+    if (p.age > life - 3 && r.next() < (p.age - (life - 3)) / 6) {
+      p.alive = false;
+      bump(l, "happiness", -12);
+      add(`My ${PETS[p.kind].name.toLowerCase()} ${p.name} died at ${p.age}. I'll never forget them.`);
+    }
+  }
+  const f = l.followers ?? 0;
+  if (f > 0) {
+    // Followers drift away unless you keep posting.
+    l.followers = Math.max(0, Math.round(f * (0.88 + r.next() * 0.06)));
+    if (l.followers >= 10_000) {
+      const deal = Math.round((l.followers / 1000) * (150 + r.next() * 200));
+      l.money += deal;
+      l.totals.earned += deal;
+      add(`Sponsorships from my ${l.followers.toLocaleString("en-US")} followers paid ${money(deal)}.`);
+    }
+  }
 }

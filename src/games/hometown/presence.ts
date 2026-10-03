@@ -42,7 +42,8 @@ export interface ChatLine {
   me?: boolean;
 }
 
-const POSES = new Set<Pose>(["walk", "stand", "sit", "talk"]);
+/** Poses a neighbour may show: walking about, and the emotes. */
+const POSES = new Set<Pose>(["walk", "stand", "sit", "talk", "handsup", "celebrate", "point", "phone"]);
 const CHAT_MAX = 120;
 /** Seconds of silence before a ghost avatar is dropped. */
 const STALE_S = 20;

@@ -11,6 +11,8 @@ import { FEATURED_SLUG, GAMES, getGame } from "@/lib/catalog";
 import { queryGames } from "@/lib/game-query";
 import { formatCompact } from "@/lib/format";
 import { SportsLineup } from "@/components/sports/SportsLineup";
+import { DailyRewards } from "@/components/home/DailyRewards";
+import { WhatsNew } from "@/components/home/WhatsNew";
 
 export default function HomePage() {
   const featured = getGame(FEATURED_SLUG) ?? GAMES[0];
@@ -94,6 +96,14 @@ export default function HomePage() {
           </article>
         </div>
       </section>
+
+      <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <DailyRewards />
+      </div>
+
+      <Section title="What's new" eyebrow="The mega update">
+        <WhatsNew />
+      </Section>
 
       <Section title="Continue playing" eyebrow="Jump back in">
         <ContinuePlaying />

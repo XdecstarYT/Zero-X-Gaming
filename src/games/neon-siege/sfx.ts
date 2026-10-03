@@ -13,6 +13,8 @@ const SHOT: Record<WeaponKind, { cutoff: number; decay: number; thump: number; g
   ar: { cutoff: 2600, decay: 0.16, thump: 110, gain: 0.55 },
   shotgun: { cutoff: 1600, decay: 0.32, thump: 70, gain: 0.8 },
   sniper: { cutoff: 2000, decay: 0.55, thump: 60, gain: 0.9 },
+  dmr: { cutoff: 2300, decay: 0.3, thump: 90, gain: 0.7 },
+  lmg: { cutoff: 3000, decay: 0.12, thump: 120, gain: 0.5 },
 };
 
 export class SiegeAudio {

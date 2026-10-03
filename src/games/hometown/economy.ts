@@ -53,6 +53,10 @@ export const RULES = {
   /** One energy point every two minutes. */
   energyMsPerPoint: 120_000,
   businessCost: 800,
+  /** The Town Bank: interest a day on savings, paid by the treasury. */
+  savingsRate: 0.02,
+  /** The allowance (the public wage) comes once every this long. */
+  allowanceMs: 20 * 3600_000,
   shopCost: 200,
   filingFee: 100,
   maxPlots: 3,
@@ -79,6 +83,9 @@ export interface TownMe {
   id: string;
   name: string;
   cash: number;
+  /** In the Town Bank (older servers leave it out). */
+  savings?: number;
+  allowanceAt?: string | null;
   energy: number;
   workedAt: string | null;
   look: Record<string, unknown>;
@@ -134,7 +141,7 @@ export function quote(snap: TownSnapshot, item: ItemId) {
 
 /** What you're worth: cash, goods at the last price (or their base) and your land. */
 export function netWorth(me: TownMe, snap: TownSnapshot | null) {
-  let n = me.cash;
+  let n = me.cash + (me.savings ?? 0);
   for (const [k, q] of Object.entries(me.inventory)) n += (q ?? 0) * (snap?.last[k as ItemId] ?? ITEM_INFO[k as ItemId].base);
   for (const o of me.orders) if (o.side === "buy") n += o.price * o.qty;
   else n += o.qty * (snap?.last[o.item] ?? ITEM_INFO[o.item].base);
@@ -153,6 +160,9 @@ interface Citizen {
   workedAt: number | null;
   look: Record<string, unknown>;
   inv: Partial<Record<ItemId, number>>;
+  savings: number;
+  savedAt: number;
+  allowanceAt: number | null;
 }
 
 interface LocalOrder extends Order {
@@ -260,21 +270,63 @@ export class LocalTown {
   join(id: string, name: string, look: Record<string, unknown> = {}) {
     this.tick();
     if (!this.citizens.has(id)) {
-      this.citizens.set(id, { id, name: name.slice(0, 20), cash: RULES.startCash, energy: 100, energyAt: this.now(), workedAt: null, look, inv: { bread: 3 } });
+      this.citizens.set(id, { id, name: name.slice(0, 20), cash: RULES.startCash, energy: 100, energyAt: this.now(), workedAt: null, look, inv: { bread: 3 }, savings: 0, savedAt: this.now(), allowanceAt: null });
       this.say("arrival", `${name} moved to town`);
     } else if (Object.keys(look).length) this.c(id).look = look;
     return this.me(id);
   }
 
+  /** Pay the interest owed since the last look (from the treasury, as far as it goes). */
+  private interest(id: string) {
+    const c = this.c(id);
+    const owed = Math.floor((c.savings * RULES.savingsRate * (this.now() - c.savedAt)) / 86_400_000);
+    if (owed > 0) {
+      const paid = Math.min(owed, this.state.treasury);
+      this.state.treasury -= paid;
+      c.savings += paid;
+      c.savedAt = this.now();
+    } else if (!c.savings) c.savedAt = this.now();
+    return c.savings;
+  }
+
+  /** The Town Bank: deposit (positive) or withdraw (negative). */
+  bank(id: string, amount: number) {
+    if (!amount || !Number.isFinite(amount) || Math.abs(amount) > 100_000_000) fail("How much?");
+    const bal = this.interest(id);
+    if (amount < 0 && bal + amount < 0) fail("You don't have that much saved");
+    this.cash(id, -amount);
+    const c = this.c(id);
+    c.savings += amount;
+    c.savedAt = this.now();
+    return { savings: c.savings };
+  }
+
+  /** The allowance: the public wage from the treasury, once every 20 hours. */
+  allowance(id: string) {
+    const c = this.c(id);
+    if (c.allowanceAt && c.allowanceAt > this.now() - RULES.allowanceMs) {
+      const left = c.allowanceAt + RULES.allowanceMs - this.now();
+      fail(`Your allowance comes again in ${Math.floor(left / 3600_000)}h ${String(Math.floor((left % 3600_000) / 60_000)).padStart(2, "0")}m`);
+    }
+    const pay = this.state.publicWage;
+    this.treasury(-pay);
+    this.cash(id, pay);
+    c.allowanceAt = this.now();
+    return pay;
+  }
+
   me(id: string): TownMe {
     const c = this.c(id);
     const e = this.energy(id);
+    const savings = this.interest(id);
     const inventory: Partial<Record<ItemId, number>> = {};
     for (const [k, q] of Object.entries(c.inv)) if (q) inventory[k as ItemId] = q;
     return {
       id,
       name: c.name,
       cash: c.cash,
+      savings,
+      allowanceAt: c.allowanceAt ? new Date(c.allowanceAt).toISOString() : null,
       energy: e,
       workedAt: c.workedAt ? new Date(c.workedAt).toISOString() : null,
       look: c.look,

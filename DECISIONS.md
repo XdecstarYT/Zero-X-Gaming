@@ -446,3 +446,9 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      Plans, speeches and changes nudge those numbers; they never script a result.
 128. **Saves grow, never break.** Dynasty fields (year, honours, momentum, round-by-round votes) are optional
      on the existing season format, so a season saved before the update loads and plays on unchanged.
+129. **Daily rewards ride the coin ledger.** A claim is a `daily` row in `coin_ledger` with the date in its
+     reference, so the streak is read back from the ledger instead of kept in a new table, an advisory lock
+     makes double clicks harmless, and guests get the same cycle locally without touching the server.
+130. **Town interest is paid when touched, from the treasury.** Like energy and elections, savings interest
+     needs no scheduler: it's settled whenever your savings are read or moved, and it comes out of the
+     treasury (capped by what's there), so the bank can never mint money the town doesn't have.

@@ -1043,7 +1043,7 @@ export class ThreeView implements ViewRenderer {
     const bx = Math.sin(fx.bob) * 0.012 * bobAmt;
     const by = -Math.abs(Math.cos(fx.bob)) * 0.01 * bobAmt;
     const recoil = Math.max(0, 1 - (t - me.firedAt) / (w?.kind === "sniper" || w?.kind === "shotgun" ? 0.25 : 0.09));
-    const kick = w ? (w.kind === "sniper" ? 0.09 : w.kind === "shotgun" ? 0.08 : w.kind === "pistol" ? 0.035 : 0.025) : 0;
+    const kick = w ? (w.kind === "sniper" ? 0.09 : w.kind === "dmr" ? 0.06 : w.kind === "shotgun" ? 0.08 : w.kind === "pistol" ? 0.035 : 0.025) : 0;
     const reloading = me.reloadUntil > t;
     const reloadK = reloading ? Math.sin(Math.min(1, 1 - (me.reloadUntil - t) / (w ? weaponDef(w).reload * RARITY[w.rarity].reload : 1)) * Math.PI) : 0;
     const drawK = Math.max(0, 1 - (t - this.drawnAt) / DRAW_TIME);

@@ -22,6 +22,7 @@ import {
   PLOT_W,
   PLOTS,
   removeAt,
+  ROADS,
   spawnFor,
   starterBuild,
   toLocal,
@@ -47,7 +48,7 @@ const HAIRS = ["#1f140d", "#4a2f1b", "#a16207", "#d6b37a", "#7f1d1d", "#111111"]
 const SHIRTS = ["#1e3a8a", "#065f46", "#7c2d12", "#f5f5f4", "#6d28d9", "#be123c", "#0f172a"];
 const INPUT = "h-9 w-full rounded-md border-2 border-white/15 bg-black/40 px-2 text-sm text-white focus:border-amber-400 focus:outline-none";
 
-type Role = "land" | "farm" | "forest" | "mine" | "hall" | "exchange" | "gazette";
+type Role = "land" | "farm" | "forest" | "mine" | "hall" | "exchange" | "gazette" | "bank";
 /** Main Street, repurposed: Life's shops become the town's job sites and offices. */
 const SITES: Partial<Record<string, { role: Role; name: string; sign: string }>> = {
   realty: { role: "land", name: "Town Land Office", sign: "LAND OFFICE" },
@@ -57,7 +58,17 @@ const SITES: Partial<Record<string, { role: Role; name: string; sign: string }>>
   cityhall: { role: "hall", name: "City Hall", sign: "CITY HALL" },
   office: { role: "exchange", name: "Town Exchange", sign: "TOWN EXCHANGE" },
   cafe: { role: "gazette", name: "The Hometown Gazette", sign: "THE GAZETTE" },
+  carlot: { role: "bank", name: "Town Bank", sign: "TOWN BANK" },
 };
+
+/** Emotes: a pose held for a few seconds, seen by everyone nearby. */
+const EMOTES: { id: string; label: string; pose: Pose; key: string }[] = [
+  { id: "wave", label: "👋 Wave", pose: "handsup", key: "Digit1" },
+  { id: "cheer", label: "🎉 Cheer", pose: "celebrate", key: "Digit2" },
+  { id: "point", label: "👉 Point", pose: "point", key: "Digit3" },
+  { id: "phone", label: "📱 Phone", pose: "phone", key: "Digit4" },
+  { id: "talk", label: "💬 Chat", pose: "talk", key: "Digit5" },
+];
 const JOB_OF: Partial<Record<Role, Job>> = { farm: "farm", forest: "forest", mine: "mine" };
 
 type Tool = "wall" | "door" | "window" | "floor" | "item" | "delete";
@@ -119,6 +130,8 @@ class HometownGame implements GameModule {
   private act: (() => void) | null = null;
   private marker: { x: number; z: number; color: string } | null = null;
   private phoneTab: PhoneTab = "bag";
+  private emote: { pose: Pose; t: number } | null = null;
+  private mapT = 0;
   private marketItem: ItemId = "wheat";
 
   // Build mode.
@@ -521,7 +534,22 @@ class HometownGame implements GameModule {
       el("div", "flex items-center gap-1.5 text-xs", el("span", "", "⚡"), el("div", "h-2 w-24 overflow-hidden rounded-full bg-white/15", r.energy), r.energyText),
       r.bag,
     );
-    const right = el("div", "absolute right-2 top-2 rounded-xl bg-black/55 px-3 py-2 text-right text-white backdrop-blur-sm", r.online);
+    r.map = el("canvas", "mt-1 block h-[120px] w-[160px] rounded-lg");
+    (r.map as HTMLCanvasElement).width = 320;
+    (r.map as HTMLCanvasElement).height = 240;
+    r.map.setAttribute("data-testid", "town-minimap");
+    r.map.setAttribute("aria-label", "Town map: you are the yellow arrow");
+    const right = el("div", "absolute right-2 top-2 flex flex-col items-end rounded-xl bg-black/55 px-3 py-2 text-right text-white backdrop-blur-sm", r.online, r.map);
+    const emotes = (r.emotes = el(
+      "div",
+      `absolute ${this.coarse ? "bottom-40 right-2" : "bottom-16 right-14"} flex flex-wrap justify-end gap-1`,
+      ...EMOTES.map((e) => {
+        const b = button(e.label, "pointer-events-auto rounded-full border border-white/20 bg-black/55 px-2 py-1 text-[11px] font-bold text-white hover:border-amber-400", () => this.doEmote(e.pose));
+        b.setAttribute("data-testid", `town-emote-${e.id}`);
+        b.title = `${e.label.slice(3)} (${e.key.slice(5)})`;
+        return b;
+      }),
+    ));
     const toast = el("div", "pointer-events-none absolute left-1/2 top-16 max-w-[80%] -translate-x-1/2 rounded-lg bg-black/80 px-4 py-2 text-center text-sm font-bold text-white opacity-0 transition-opacity");
     toast.setAttribute("role", "status");
     toast.setAttribute("data-testid", "town-toast");
@@ -552,7 +580,7 @@ class HometownGame implements GameModule {
     r.knob = el("div", "absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/60");
     r.stick.append(r.knob);
     if (this.coarse) r.stick.classList.remove("hidden");
-    this.hud = el("div", "pointer-events-none absolute inset-0 z-10", top, right, r.prompt, chatBox, r.buildPanel, buttons, r.stick, toast);
+    this.hud = el("div", "pointer-events-none absolute inset-0 z-10", top, right, r.prompt, chatBox, r.buildPanel, emotes, buttons, r.stick, toast);
     this.hud.setAttribute("data-testid", "town-hud");
     this.refs = r;
     this.host.appendChild(this.hud);
@@ -699,6 +727,7 @@ class HometownGame implements GameModule {
     if (site.role === "exchange") return this.phone("market");
     if (site.role === "gazette") return this.phone("news");
     if (site.role === "land") return this.landPanel();
+    if (site.role === "bank") return this.bankPanel();
   }
 
   private jobPanel(title: string, job: Job) {
@@ -733,6 +762,8 @@ class HometownGame implements GameModule {
       );
       const wait = this.cooldown(me.workedAt, RULES.shiftCooldownMs);
       box.append(this.opt(wait ? `Back to work in ${wait}s` : "Public works shift", `${cash(s.state.publicWage)} from the treasury · −${RULES.shiftEnergy} energy`, () => void this.run((b) => b.work("public"), (r) => `Paid ${cash(r.cash)} by the town`), "town-work-public", wait > 0 || me.energy < RULES.shiftEnergy));
+      const due = me.allowanceAt ? Date.parse(me.allowanceAt) + RULES.allowanceMs - Date.now() : 0;
+      box.append(this.opt(due > 0 ? `Allowance again in ${Math.floor(due / 3600_000)}h ${Math.floor((due % 3600_000) / 60_000)}m` : "Collect your allowance", `${cash(s.state.publicWage)} from the treasury, every 20 hours`, () => void this.run((b) => b.allowance(), (n) => `+${cash(n)} allowance`), "town-allowance", due > 0));
       const ballot = this.section(`Election · polls close in ${h}h ${m}m`);
       ballot.setAttribute("data-testid", "town-ballot");
       if (!el2.candidates.length) ballot.append(el("p", "text-sm text-white/60", "Nobody's standing yet. Be the first."));
@@ -786,6 +817,27 @@ class HometownGame implements GameModule {
           ),
         );
       }
+    });
+  }
+
+  /** The Town Bank: savings that earn interest from the treasury. */
+  private bankPanel() {
+    this.openPanel("Town Bank", "town-bank", (box) => {
+      const me = this.meInfo!;
+      const saved = me.savings ?? 0;
+      const amount = this.field("number", Math.min(me.cash, 500), "Amount", "town-bank-amount", { min: "1" });
+      const go = (sign: 1 | -1) => () => {
+        const n = Math.round(Number(amount.value));
+        if (!(n > 0)) return this.toast("How much?");
+        void this.run((b) => b.bank(sign * n), (r) => `Savings: ${cash(r.savings)}`);
+      };
+      box.append(
+        el("div", "grid grid-cols-2 gap-2", el("div", "rounded-lg bg-white/5 p-3", el("p", "text-[10px] uppercase tracking-wider text-white/50", "Cash"), el("p", "font-display text-2xl font-black text-amber-300", cash(me.cash))), el("div", "rounded-lg bg-white/5 p-3", el("p", "text-[10px] uppercase tracking-wider text-white/50", "Savings"), el("p", "font-display text-2xl font-black text-emerald-300", cash(saved)))),
+        el("p", "text-sm text-white/70", `Savings earn ${RULES.savingsRate * 100}% a day, paid by the town treasury (${cash(this.snap?.state.treasury ?? 0)} in it). Cash in your pocket earns nothing.`),
+        el("label", "text-xs text-white/60", "Amount", amount),
+        el("div", "grid grid-cols-2 gap-2", this.small("Deposit", go(1), "town-deposit", "border-emerald-400/60"), this.small("Withdraw", go(-1), "town-withdraw", "border-amber-400/60")),
+        el("div", "flex flex-wrap gap-2", this.small("Deposit all my cash", () => me.cash > 0 && void this.run((b) => b.bank(me.cash), (r) => `Savings: ${cash(r.savings)}`)), this.small("Take it all out", () => saved > 0 && void this.run((b) => b.bank(-saved), () => `Withdrew ${cash(saved)}`))),
+      );
     });
   }
 
@@ -912,7 +964,7 @@ class HometownGame implements GameModule {
   private bagTab(box: HTMLElement) {
     const me = this.meInfo!;
     const s = this.snap;
-    box.append(el("p", "text-sm", `${cash(me.cash)} cash · worth ${cash(netWorth(me, s))} · ⚡ ${me.energy}`));
+    box.append(el("p", "text-sm", `${cash(me.cash)} cash · ${cash(me.savings ?? 0)} in the bank · worth ${cash(netWorth(me, s))} · ⚡ ${me.energy}`));
     const goods = ITEMS.filter((i) => me.inventory[i]);
     if (!goods.length) box.append(el("p", "text-sm text-white/60", "Your bag is empty. Work a shift at the farm, timber yard or mine on Main Street."));
     for (const i of goods) {
@@ -1012,6 +1064,8 @@ class HometownGame implements GameModule {
     const panel = this.refs.buildPanel;
     if (!panel) return;
     panel.classList.toggle("hidden", !on);
+    // The emote bar would sit over the build tools.
+    this.refs.emotes?.classList.toggle("hidden", on);
     if (on) this.renderBuildPanel();
   }
 
@@ -1199,12 +1253,75 @@ class HometownGame implements GameModule {
       this.me.pose = "walk";
     } else {
       this.me.speed = 0;
-      this.me.pose = "stand";
+      this.me.pose = this.emote ? this.emote.pose : "stand";
     }
+    if (this.emote && (this.emote.t -= dt) <= 0) this.emote = null;
+    if ((mx || mz) && this.emote) this.emote = null;
     if (this.marker && Math.hypot(this.marker.x - this.me.x, this.marker.z - this.me.z) < 3) this.marker = null;
     this.presence?.update(this.me, this.prefs.look ?? { sex: "F", skin: 1, hair: 0, shirt: 0 });
     this.findPrompt();
     if (this.building) this.buildPreview();
+  }
+
+  private doEmote(pose: Pose) {
+    if (this.building) return;
+    this.emote = { pose, t: 3.5 };
+  }
+
+  /** The minimap: roads, buildings, lots (yours gold, owned white, for sale green), neighbours and you. */
+  private drawMap() {
+    const c = this.refs.map as HTMLCanvasElement | undefined;
+    const g = c?.getContext("2d");
+    if (!c || !g) return;
+    const W = c.width;
+    const H = c.height;
+    const x0 = -245;
+    const z0 = -110;
+    const sx = W / 490;
+    const sz = H / 300;
+    const X = (x: number) => (x - x0) * sx;
+    const Z = (z: number) => (z - z0) * sz;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = "#1f3b1f";
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = "#1e3a5f";
+    g.fillRect(0, 0, W, Z(-84));
+    g.fillStyle = "#6b7280";
+    for (const r of ROADS) g.fillRect(X(r.x), Z(r.z), Math.max(2, r.w * sx), Math.max(2, r.d * sz));
+    for (const p of PLACES) {
+      g.fillStyle = SITES[p.id] ? "#fbbf24" : "#9ca3af";
+      g.fillRect(X(p.x), Z(p.z), p.w * sx, p.d * sz);
+    }
+    for (const p of PLOTS) {
+      const info = this.snap?.plots[p.id];
+      g.fillStyle = info?.owner === this.meInfo?.id ? "#f59e0b" : info?.owner ? "#e5e7eb" : info?.salePrice != null || !info?.owner ? "#166534" : "#e5e7eb";
+      g.fillRect(X(p.x) + 1, Z(p.z) + 1, p.w * sx - 2, p.d * sz - 2);
+    }
+    g.fillStyle = "#38bdf8";
+    for (const o of this.presence?.others.values() ?? []) {
+      g.beginPath();
+      g.arc(X(o.x), Z(o.z), 4, 0, Math.PI * 2);
+      g.fill();
+    }
+    if (this.marker) {
+      g.strokeStyle = "#f59e0b";
+      g.lineWidth = 3;
+      g.beginPath();
+      g.arc(X(this.marker.x), Z(this.marker.z), 7, 0, Math.PI * 2);
+      g.stroke();
+    }
+    // You: an arrow the way you face.
+    g.save();
+    g.translate(X(this.me.x), Z(this.me.z));
+    g.rotate(-this.me.heading + Math.PI);
+    g.fillStyle = "#facc15";
+    g.beginPath();
+    g.moveTo(0, -9);
+    g.lineTo(6, 7);
+    g.lineTo(-6, 7);
+    g.closePath();
+    g.fill();
+    g.restore();
   }
 
   private findPrompt() {
@@ -1264,6 +1381,11 @@ class HometownGame implements GameModule {
       this.building ? PLOTS[this.buildPlot] : null,
     );
     this.refreshHud();
+    this.mapT -= dt;
+    if (this.mapT <= 0) {
+      this.mapT = 0.25;
+      this.drawMap();
+    }
     if (this.meInfo) this.emitter.progress(Math.round(netWorth(this.meInfo, this.snap)), now, 1000);
   }
 
@@ -1280,6 +1402,8 @@ class HometownGame implements GameModule {
     if (e.code === "KeyB") this.setBuilding(!this.building);
     if (e.code === "KeyM") this.phone(this.phoneTab);
     if (e.code === "KeyR" && this.building) this.rot = (this.rot + 1) % 4;
+    const em = EMOTES.find((x) => x.key === e.code);
+    if (em) this.doEmote(em.pose);
     if (e.code === "Enter" || e.code === "KeyT") {
       e.preventDefault();
       this.keys.clear();

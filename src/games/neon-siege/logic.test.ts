@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../engine/rng";
 import { applySkill, chooseSlot, createBrain, SKILLS, updateBot, type Difficulty } from "./bots";
-import { damageAt, makeConsumable, makeWeapon, RARITY, rollRarity, weaponStats, WEAPONS } from "./items";
+import { damageAt, makeConsumable, makeWeapon, RARITY, rollChestLoot, rollRarity, weaponStats, WEAPONS, WW1_WEAPONS } from "./items";
 import { castRay, floorCells, generateTown, isWall, lineOfSight, moveWithCollision, parseMap, SOLID } from "./map";
 import { findPath } from "./path";
 import { createRoyale, IDLE, matchStats, placementBonus, royaleScore, stepRoyale, type PlayerInput, type RoyaleState } from "./royale";
@@ -73,6 +73,17 @@ describe("weapons & items", () => {
     const legendary = weaponStats(makeWeapon("ar", "legendary"));
     expect(legendary.damage).toBeCloseTo(common.damage * RARITY.legendary.damage, 5);
     expect(legendary.reload).toBeLessThan(common.reload);
+  });
+
+  it("the Marksman Rifle and Light Machine Gun drop from loot, with Great War versions", () => {
+    expect(WEAPONS.dmr.damage).toBeGreaterThan(WEAPONS.ar.damage);
+    expect(WEAPONS.dmr.damage).toBeLessThan(WEAPONS.sniper.damage);
+    expect(WEAPONS.lmg.auto && WEAPONS.lmg.mag).toBeGreaterThan(WEAPONS.ar.mag);
+    expect(WW1_WEAPONS.lmg.name).toBe("Lewis Gun");
+    const rng = createRng(3);
+    const kinds = new Set<string>();
+    for (let i = 0; i < 400; i++) for (const it of rollChestLoot(rng)) if (it.type === "weapon") kinds.add(it.kind);
+    expect(kinds.has("dmr") && kinds.has("lmg")).toBe(true);
   });
 
   it("damage falls off beyond range to at most half", () => {
