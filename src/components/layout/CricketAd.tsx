@@ -121,7 +121,7 @@ function SixShot({ t }: { t: number }) {
  * beat links to the game.
  */
 export function CricketAd() {
-  const ad = useAdTurn({ name: "cricketAd", elementId: "zx-cricket-ad", countKey: CRICKET_AD_KEY, sessionKey: "zx-cricket-ad-session", runs: CRICKET_AD_RUNS, seconds: CRICKET_AD_S });
+  const ad = useAdTurn({ name: "cricketAd", elementId: "zx-cricket-ad", countKey: CRICKET_AD_KEY, sessionKey: "zx-cricket-ad-session", runs: CRICKET_AD_RUNS, seconds: CRICKET_AD_S, after: "ubusinessAd" });
   const t = useTimeline(ad.playing);
   if (!ad.playing) return null;
   const beat = beatAt(BEATS, t);

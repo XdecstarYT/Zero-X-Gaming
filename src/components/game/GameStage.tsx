@@ -17,6 +17,8 @@ import { SignInButton } from "@/components/layout/SignInButton";
 import { GameArt } from "./GameArt";
 import { SportsPassCard } from "@/components/sports/SportsPassCard";
 import { useSportsPass } from "@/components/sports/use-sports-pass";
+import { UBusinessCard } from "@/components/ubusiness/UBusinessCard";
+import { useUBusiness } from "@/components/ubusiness/use-ubusiness";
 
 const noopSubscribe = () => () => {};
 
@@ -82,7 +84,9 @@ export function GameStage({ game }: { game: Game }) {
   const pauseKey = useSettings((s) => s.keybindings.pause);
   const needsPass = game.pass === "sports-plus";
   const pass = useSportsPass();
-  const locked = needsPass && pass.owned !== true;
+  const needsEdition = game.pass === "ubusiness";
+  const edition = useUBusiness(needsEdition);
+  const locked = (needsPass && pass.owned !== true) || (needsEdition && !edition.tier);
   const playable = game.status === "live" && game.slug in GAME_LOADERS;
   // Keep Play disabled until hydrated, so an early click is never silently lost.
   const hydrated = useSyncExternalStore(
@@ -261,7 +265,17 @@ export function GameStage({ game }: { game: Game }) {
           <Overlay dim>
             <div data-testid="sports-lock" className="w-full max-w-lg text-left">
               <p className="mb-3 text-center font-display text-xl font-black uppercase tracking-wider sm:text-2xl">{game.title}</p>
-              {pass.owned === null ? <p className="text-center text-sm text-muted">Checking your Sports+ pass…</p> : <SportsPassCard compact />}
+              {needsEdition ? (
+                edition.tier === undefined ? (
+                  <p className="text-center text-sm text-muted">Checking your UBusiness edition…</p>
+                ) : (
+                  <UBusinessCard compact />
+                )
+              ) : pass.owned === null ? (
+                <p className="text-center text-sm text-muted">Checking your Sports+ pass…</p>
+              ) : (
+                <SportsPassCard compact />
+              )}
             </div>
           </Overlay>
         )}

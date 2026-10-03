@@ -16,6 +16,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   life: () => import("./life/index"),
   fairway: () => import("./fairway/index"),
   hometown: () => import("./hometown/index"),
+  ubusiness: () => import("./ubusiness/index"),
 };
 
 export function hasGame(slug: string) {

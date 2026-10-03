@@ -630,6 +630,38 @@ streets, plots, house builder and renderer). Unlike every other game here, the s
 - **Touch stick** (`life/touchstick.ts`, shared with Life): the ring jumps under your thumb and the knob follows
   it exactly; walking is camera-relative (`cameraMove` in `life/world.ts`).
 
+### UBusiness: run your own store
+
+A photoreal retail sim (`src/games/ubusiness/`), sold in two editions through `player_unlocks`
+(`20261016090000_ubusiness.sql`): **Lite** for 5 coins and **Ultimate** for 30 (25 more from Lite), with Ultimate
+free for anyone holding this season's battle pass. `ubusiness_tier()` answers which edition you have,
+`buy_ubusiness(tier)` takes the coins (guests pay from their device save, like Sports+). The game page shows the
+two-edition card (`UBusinessCard`) instead of **Play** until you own one, and under the game afterwards so Lite
+owners can upgrade.
+
+- `logic.ts`: the rules, in cents. 45 products across 8 departments (licences unlock by level), fixtures (shelves,
+  glass fridges, produce stands, clothing rails, tech displays, checkouts, self-checkouts, decor), the wholesaler
+  and the stockroom (deliveries take 30 game minutes, 5 express), prices and what shoppers will pay (around the
+  usual price, more at a well-liked store), footfall over the day, staff (cashiers, stockers), six store sizes,
+  marketing, the till (customers tender the next note up; change in the fewest notes), the evening books (rent,
+  wages, power), XP and levels, saves, and a walk grid with BFS paths. Tested in `logic.test.ts`.
+- **Editions:** Lite sells grocery, snacks, household and fresh, grows to a Mini Market and has one member of
+  staff. Ultimate adds health and beauty, toys, fashion and electronics, six sizes up to a Megastore, six staff,
+  self-checkouts, marketing, express delivery, 3× speed, custom signs and photo mode.
+- `render.ts`: a doll's-house view of the shop (walls between the camera and the floor drop away; the fascia and
+  awning hide with the front wall). Polished concrete with clearcoat reflections, an interior reflection map
+  (`RoomEnvironment`), down-facing LED panels and a few real lights, glass shop front with the physical sky and
+  the street outside, a stockroom with a box stack per product line, and every product instanced (one draw per
+  line) with its own printed packaging. Shoppers and staff are the articulated people from Code 3.
+- `index.ts`: shoppers walk in, follow their list, judge each price, queue (patience runs out), and pay. Your own
+  till is a mini-game: scan each item (Space), then approve the card or count out the change from the drawer;
+  mistakes cost money or goodwill. Panels for stock, prices, staff, build (place, move, rotate, sell), licences,
+  marketing, the store (grow, rename, sign colour) and the books. **Bank my score** submits the business's value.
+
+**The UBusiness spot** (`UBusinessAd`, 26 s): a shutter rolls up at dawn, the logo, a COMING SOON stamp, stock
+dropping onto shelves, the till counting up to CHA-CHING, the store growing from a corner shop to a megastore,
+the two editions, and a **Take a look** end card. It's first in the ad queue (three plays).
+
 ### Clanforge: base-building strategy
 
 An original village-builder in the Clash style (`src/games/clanforge/`), with its own names, buildings,
@@ -669,8 +701,8 @@ tokens in `src/app/globals.css` (`html[data-theme="x1"]` overrides them), applie
 
 ### Spots (ads)
 
-After the intro, at most one spot plays per visit, in a queue: Boundary Blitz, then Clanforge (two plays each),
-then Sports+ and Code 3 (three each). `useAdTurn` (`src/components/layout/ad-turn.ts`) handles the turn-taking
+After the intro, at most one spot plays per visit, in a queue: UBusiness (three plays), Boundary Blitz, then
+Clanforge (two plays each), then Sports+ and Code 3 (three each). `useAdTurn` (`src/components/layout/ad-turn.ts`) handles the turn-taking
 through `data-*` attributes on `<html>`, the play counts in `localStorage`, the one-ad-per-visit session keys,
 and making the page inert while a spot plays. The spots are SVG and CSS, with no video files.
 

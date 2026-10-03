@@ -26,8 +26,8 @@ export interface Game {
   touchControls: string;
   /** Preferred phone orientation in immersive mode. */
   orientation?: "landscape" | "any";
-  /** A one-time unlock needed to play (Sports+ games need the Sports+ pass). */
-  pass?: "sports-plus";
+  /** A one-time unlock needed to play (Sports+ games need the Sports+ pass; UBusiness needs an edition). */
+  pass?: "sports-plus" | "ubusiness";
 }
 
 export interface LeaderboardEntry {

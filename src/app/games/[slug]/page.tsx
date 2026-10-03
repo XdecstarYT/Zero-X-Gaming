@@ -6,6 +6,7 @@ import { formatCompact } from "@/lib/format";
 import { Badge } from "@/components/ui/Badge";
 import { Rating } from "@/components/ui/Rating";
 import { GameStage } from "@/components/game/GameStage";
+import { UBusinessEdition } from "@/components/ubusiness/UBusinessEdition";
 import { LeaderboardTabs } from "@/components/game/LeaderboardTabs";
 import { FavoriteButton } from "@/components/game/FavoriteButton";
 
@@ -43,6 +44,7 @@ export default async function GamePage(props: PageProps<"/games/[slug]">) {
       <div className="grid gap-8 lg:grid-cols-[1fr_22rem]">
         <div className="min-w-0">
           <GameStage game={game} />
+          {game.pass === "ubusiness" && <UBusinessEdition />}
 
           <div className="mt-6 flex flex-wrap items-start justify-between gap-4">
             <div>

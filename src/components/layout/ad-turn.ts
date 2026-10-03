@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { MEGA_AD_KEY } from "./MegaAd";
 
 /** Every spot's "played this visit" key: one ad per visit, whichever it was. */
-export const AD_SESSION_KEYS = ["zx-cricket-ad-session", "zx-clanforge-ad-session", "zx-sports-ad-session", "zx-code3-ad-session"];
+export const AD_SESSION_KEYS = ["zx-ubusiness-ad-session", "zx-cricket-ad-session", "zx-clanforge-ad-session", "zx-sports-ad-session", "zx-code3-ad-session"];
 
 /**
  * Whose turn it is to play an ad after the intro. Spots queue up in order

@@ -17,6 +17,11 @@ export const BATTLE_PASS_PRICE = 200;
 /** Sports+ is a one-time unlock: every Sports+ game, now and later. */
 export const SPORTS_PASS_PRICE = 50;
 export const SPORTS_PASS_ID = "sports-plus";
+/** UBusiness editions: Lite 5 coins, Ultimate 30 (25 more from Lite), Ultimate free with the battle pass. */
+export const UBUSINESS_PRICES = { lite: 5, ultimate: 30 } as const;
+export type UBusinessTier = keyof typeof UBUSINESS_PRICES;
+/** What Ultimate costs you now. */
+export const ubusinessPrice = (tier: UBusinessTier, owned: UBusinessTier | null) => (tier === "ultimate" && owned === "lite" ? UBUSINESS_PRICES.ultimate - UBUSINESS_PRICES.lite : UBUSINESS_PRICES[tier]);
 
 /** Is the Nth ranked match of the season (1-based) a Cash Cup? */
 export function isCashCup(matchNumber: number) {

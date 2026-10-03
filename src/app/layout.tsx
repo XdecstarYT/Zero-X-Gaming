@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/Toaster";
 import { IntroSplash, introGateScript } from "@/components/layout/IntroSplash";
 import { MegaAd } from "@/components/layout/MegaAd";
 import { Code3Ad } from "@/components/layout/Code3Ad";
+import { UBusinessAd } from "@/components/layout/UBusinessAd";
 import { SportsAd } from "@/components/layout/SportsAd";
 import { CricketAd } from "@/components/layout/CricketAd";
 import { ClanforgeAd } from "@/components/layout/ClanforgeAd";
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-full flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] font-sans md:pb-0">
         <IntroSplash />
         <MegaAd />
+        <UBusinessAd />
         <CricketAd />
         <ClanforgeAd />
         <SportsAd />

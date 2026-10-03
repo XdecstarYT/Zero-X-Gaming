@@ -4,7 +4,7 @@ import { OUTFITS, WRAPS } from "@/games/neon-siege/cosmetics";
 import { readLoadout, writeLoadout, type Loadout } from "@/games/neon-siege/loadout";
 import { useAuth } from "@/store/auth";
 import { useWallet } from "@/store/wallet";
-import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE } from "./economy";
+import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE, ubusinessPrice, type UBusinessTier } from "./economy";
 import { deviceSaveSuffix } from "./device-accounts";
 import { getSupabaseBrowser } from "./supabase/client";
 import {
@@ -398,6 +398,41 @@ export async function buySportsPass(): Promise<{ coins: number }> {
   writeGuest(g);
   useWallet.getState().set(g.coins);
   return { coins: g.coins };
+}
+
+/** The UBusiness edition you can play: Ultimate (bought, or with this season's battle pass), Lite, or none. */
+export async function ubusinessTier(): Promise<UBusinessTier | null> {
+  const auth = signedInClient();
+  if (!auth) {
+    const g = readGuest();
+    if (g.hasPass || g.purchases.includes("unlock:ubusiness-ultimate")) return "ultimate";
+    return g.purchases.includes("unlock:ubusiness-lite") ? "lite" : null;
+  }
+  const { data, error } = await (auth.supabase as unknown as { rpc: (f: string) => PromiseLike<{ data: unknown; error: { message: string } | null }> }).rpc("ubusiness_tier");
+  if (error) throw new Error(error.message);
+  return data === "ultimate" || data === "lite" ? data : null;
+}
+
+/** Buy a UBusiness edition with coins (Ultimate is 25 if you already have Lite). */
+export async function buyUBusiness(tier: UBusinessTier): Promise<{ coins: number; tier: UBusinessTier }> {
+  const auth = signedInClient();
+  if (auth) {
+    const { data, error } = await (auth.supabase as unknown as { rpc: (f: string, a: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> }).rpc("buy_ubusiness", { p_tier: tier });
+    if (error) throw buyError(error.message);
+    const r = data as { coins: number; tier: UBusinessTier };
+    useWallet.getState().set(r.coins);
+    return r;
+  }
+  const g = readGuest();
+  const owned: UBusinessTier | null = g.hasPass || g.purchases.includes("unlock:ubusiness-ultimate") ? "ultimate" : g.purchases.includes("unlock:ubusiness-lite") ? "lite" : null;
+  if (owned === "ultimate" || owned === tier) throw buyError("already owned");
+  const price = ubusinessPrice(tier, owned);
+  if (g.coins < price) throw buyError("not enough coins");
+  g.coins -= price;
+  g.purchases.push(`unlock:ubusiness-${tier}`);
+  writeGuest(g);
+  useWallet.getState().set(g.coins);
+  return { coins: g.coins, tier };
 }
 
 export async function saveLoadout(l: Loadout & { banner: string }) {

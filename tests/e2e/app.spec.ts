@@ -29,7 +29,7 @@ test("daily rewards: a guest claims day 1 once, and what's new is listed", async
 
 test("library filters by search and category and syncs the URL", async ({ page }) => {
   await page.goto("/games");
-  await expect(page.getByText("11 games")).toBeVisible();
+  await expect(page.getByText("12 games")).toBeVisible();
   await page.getByLabel("Search games").fill("conquest");
   await expect(page.getByText("1 game", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/q=conquest/);

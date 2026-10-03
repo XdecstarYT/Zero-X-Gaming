@@ -463,3 +463,10 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      so catalogue pieces are lists of primitive parts in a data file with no three.js in it. The rules read the
      same file for footprints and prices, a test checks every part stays inside its footprint, and adding a
      piece is one line. The server stores builds as opaque JSON, so new pieces need no migration.
+134. **Editions are unlocks, the battle pass is a check.** Lite and Ultimate are rows in `player_unlocks` like
+     Sports+, but "free with the battle pass" isn't stored anywhere: `ubusiness_tier()` looks at this season's
+     pass each time, so it lasts exactly as long as the pass does and needs no clean-up. Lite owners pay the
+     difference, so nobody pays more than 30 for Ultimate.
+135. **The store runs on the player's machine.** A retail sim is single-player, so the rules, customers and save
+     live in the browser (per edition), and only the score (the business's value) goes to the server like any
+     other game's. The edition gate is the server's; what happens inside the store isn't.

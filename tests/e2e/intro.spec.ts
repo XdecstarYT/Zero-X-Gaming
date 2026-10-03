@@ -9,6 +9,7 @@ const test = introTest.extend({
       localStorage.setItem("zx-sports-ad-count", "3");
       localStorage.setItem("zx-cricket-ad-count", "2");
       localStorage.setItem("zx-clanforge-ad-count", "2");
+      localStorage.setItem("zx-ubusiness-ad-count", "3");
     });
     await run(page);
   },
@@ -90,6 +91,7 @@ introTest("the Code 3 trailer plays after the intro on later visits, three times
     localStorage.setItem("zx-sports-ad-count", "3");
     localStorage.setItem("zx-cricket-ad-count", "2");
     localStorage.setItem("zx-clanforge-ad-count", "2");
+      localStorage.setItem("zx-ubusiness-ad-count", "3");
     if (!localStorage.getItem("zx-code3-ad-count")) localStorage.setItem("zx-code3-ad-count", "2");
   });
   await page.goto("/");
@@ -115,6 +117,7 @@ introTest("the Sports+ ad plays after the intro (one ad per visit, three runs at
     localStorage.setItem("zx-code3-ad-count", "0");
     localStorage.setItem("zx-cricket-ad-count", "2");
     localStorage.setItem("zx-clanforge-ad-count", "2");
+      localStorage.setItem("zx-ubusiness-ad-count", "3");
     if (!localStorage.getItem("zx-sports-ad-count")) localStorage.setItem("zx-sports-ad-count", "2");
   });
   await page.goto("/");
@@ -144,6 +147,7 @@ introTest("the Boundary Blitz and Clanforge spots go first, one per visit, twice
     localStorage.setItem("zx-mega-ad-seen", "1");
     if (!localStorage.getItem("zx-cricket-ad-count")) localStorage.setItem("zx-cricket-ad-count", "1");
     if (!localStorage.getItem("zx-clanforge-ad-count")) localStorage.setItem("zx-clanforge-ad-count", "1");
+    localStorage.setItem("zx-ubusiness-ad-count", "3");
   });
   await page.goto("/");
   await page.getByRole("dialog", { name: "Zero X Gaming intro" }).getByRole("button", { name: "Skip intro" }).click();
@@ -170,4 +174,26 @@ introTest("the Boundary Blitz and Clanforge spots go first, one per visit, twice
   await expect(clan).toContainText("Build.", { timeout: 12_000 });
   await expect(clan.getByRole("link", { name: "Build your village" })).toBeVisible({ timeout: 30_000 });
   await expect(clan).toBeHidden({ timeout: 10_000 });
+});
+
+introTest("the UBusiness coming-soon spot plays first, one ad per visit", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    localStorage.setItem("zx-mega-ad-seen", "1");
+    if (!localStorage.getItem("zx-ubusiness-ad-count")) localStorage.setItem("zx-ubusiness-ad-count", "2");
+  });
+  await page.goto("/");
+  await page.getByRole("dialog", { name: "Zero X Gaming intro" }).getByRole("button", { name: "Skip intro" }).click();
+  const ad = page.getByTestId("ubusiness-ad");
+  await expect(ad).toBeVisible();
+  await expect(ad).toContainText(/Ad · \d+s/);
+  expect(await page.locator("main").evaluate((el) => (el as HTMLElement).inert)).toBe(true);
+  expect(await page.evaluate(() => localStorage.getItem("zx-ubusiness-ad-count"))).toBe("3");
+  await expect(ad).toContainText("Coming soon", { timeout: 15_000 });
+  await expect(ad.getByRole("link", { name: "Take a look" })).toBeVisible({ timeout: 30_000 });
+  await expect(ad).toBeHidden({ timeout: 10_000 });
+  // One ad per visit: Boundary Blitz waits for the next one.
+  await page.waitForTimeout(1500);
+  await expect(page.getByTestId("cricket-ad")).toHaveCount(0);
+  expect(await page.locator("main").evaluate((el) => (el as HTMLElement).inert)).toBe(false);
 });

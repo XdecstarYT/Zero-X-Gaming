@@ -1141,3 +1141,64 @@ html[data-reduce-motion="true"] .zx-intro {
     transform: translateX(40vw);
   }
 }
+
+/* UBusiness spot: the shutter goes up, stock drops onto the shelves, the till counts, the store grows. */
+.zx-ub-shutter {
+  animation: zx-ub-shutter 2.6s cubic-bezier(0.5, 0, 0.3, 1) 0.9s both;
+}
+@keyframes zx-ub-shutter {
+  to {
+    transform: translateY(-104%);
+  }
+}
+.zx-ub-drop {
+  animation: zx-ub-drop 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes zx-ub-drop {
+  from {
+    transform: translateY(-60vh) rotate(-14deg);
+    opacity: 0;
+  }
+}
+.zx-ub-grow {
+  transform-origin: bottom center;
+  animation: zx-ub-grow 0.8s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes zx-ub-grow {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+}
+.zx-ub-scan {
+  animation: zx-ub-scan 0.45s ease-out both;
+}
+@keyframes zx-ub-scan {
+  0% {
+    transform: translateX(-30vw);
+    opacity: 0;
+  }
+  60% {
+    opacity: 1;
+  }
+}
+.zx-ub-laser {
+  animation: zx-ub-laser 0.45s steps(2) infinite;
+}
+@keyframes zx-ub-laser {
+  50% {
+    opacity: 0.2;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zx-ub-shutter,
+  .zx-ub-drop,
+  .zx-ub-grow,
+  .zx-ub-scan,
+  .zx-ub-laser {
+    animation: none;
+  }
+  .zx-ub-shutter {
+    transform: translateY(-104%);
+  }
+}
