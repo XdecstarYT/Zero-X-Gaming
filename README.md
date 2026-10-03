@@ -11,8 +11,8 @@ has:
   callouts, traffic stops, pursuits, arrests, careers)
 - a cinematic intro splash on each visitor's first page load in a session, and a one-time "mega ad" for every
   game right after the very first one
-- ZXG accounts (account name + password, no email): online when Supabase is connected, otherwise saved on the
-  device, so sign-up always works
+- ZXG accounts (account name + password; an email is optional, for password resets and signing in with it):
+  online when Supabase is connected, otherwise saved on the device, so sign-up always works
 - server-validated scores
 - XP, levels, badges, and streaks
 - live leaderboards
@@ -723,8 +723,11 @@ other). To moderate, review `public.reports` in the Supabase dashboard (filter `
 
 One-time dashboard setup, which can't be done from code:
 
-1. **Auth → Sign In / Providers → Email:** turn **off** "Confirm email". ZXG accounts sign in with an account
-   name and password (stored as `<name>@zxg-acc.invalid`), so no confirmation email can ever arrive.
+1. **Accounts need no dashboard switch.** Auth's own sign-up rejects the hidden `<name>@zxg-acc.invalid`
+   addresses, so accounts are created, already confirmed, by `zxg_create_account` (an optional real email goes
+   in its place). `zxg_login_email` lets the account name sign in to an account with an email (it returns the
+   address only for the right password), and `zxg_set_email` adds, changes or removes it from Settings.
+   "Forgot password?" mails a reset link (Supabase's mailer) back to `/auth/callback?next=/settings?reset=1`.
 2. **Auth → URL Configuration:** set the Site URL to the production URL. Add redirect URLs for
    `http://localhost:3000/auth/callback`, `https://<prod-domain>/auth/callback`, and the Vercel preview pattern.
 3. **Auth → Providers → Google / Discord (optional, not used by the sign-in dialog):** create OAuth apps with the redirect URI

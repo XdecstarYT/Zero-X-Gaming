@@ -48,7 +48,7 @@ test("unknown game shows 404", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Game over" })).toBeVisible();
 });
 
-test("ZXG account modal: no email, validates, switches mode and closes with Escape", async ({ page }) => {
+test("ZXG account modal: email optional, validates, switches mode and closes with Escape", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Sign in" }).first().click();
   const dialog = page.getByRole("dialog", { name: "Sign in to ZXG" });
@@ -68,6 +68,11 @@ test("ZXG account modal: no email, validates, switches mode and closes with Esca
   await signUp.getByLabel("Confirm password").fill("different1");
   await signUp.getByRole("button", { name: "Create account" }).click();
   await expect(signUp.getByRole("alert")).toHaveText("Passwords don't match.");
+  // An email is optional, but has to look like one if you give it.
+  await signUp.getByLabel(/Email/).fill("not-an-email");
+  await signUp.getByLabel("Confirm password").fill("12345678");
+  await signUp.getByRole("button", { name: "Create account" }).click();
+  await expect(signUp.getByRole("alert")).toHaveText("That email address doesn't look right.");
 
   await page.keyboard.press("Escape");
   await expect(signUp).toBeHidden();
