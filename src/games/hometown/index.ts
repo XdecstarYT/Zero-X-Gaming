@@ -27,6 +27,7 @@ import {
   starterBuild,
   toLocal,
   toWorld,
+  cameraMove,
   walk,
   type Build,
   type Colliders,
@@ -1238,13 +1239,7 @@ class HometownGame implements GameModule {
     } else if ((mx || mz) && !this.panel) {
       const run = k("ShiftLeft", "ShiftRight") || Math.hypot(mx, mz) > 0.95 ? 4.8 : 2.3;
       const yaw = this.view.yaw;
-      const fx = -Math.sin(yaw);
-      const fz = -Math.cos(yaw);
-      let dx = fx * -mz + -fz * -mx;
-      let dz = fz * -mz + fx * -mx;
-      const len = Math.hypot(dx, dz) || 1;
-      dx /= len;
-      dz /= len;
+      const { dx, dz } = cameraMove(yaw, mx, mz)!;
       walk(this.col, this.me, dx * run * dt, dz * run * dt);
       let d = Math.atan2(dx, dz) - this.me.heading;
       d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -1482,7 +1477,7 @@ class HometownGame implements GameModule {
 
   private hooks() {
     (window as unknown as Record<string, unknown>).__town = {
-      state: () => ({ mode: this.mode, me: this.me, info: this.meInfo, prompt: this.prompt, building: this.building, others: this.presence?.others.size ?? 0, online: this.backend?.online ?? null }),
+      state: () => ({ mode: this.mode, me: this.me, info: this.meInfo, prompt: this.prompt, yaw: this.view?.yaw ?? 0, building: this.building, others: this.presence?.others.size ?? 0, online: this.backend?.online ?? null }),
       snap: () => this.snap,
       goTo: (x: number, z: number) => Object.assign(this.me, { x, z }),
       door: (id: string) => placeById(id)?.door,

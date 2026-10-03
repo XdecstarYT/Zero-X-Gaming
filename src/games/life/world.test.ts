@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../engine/rng";
 import {
-  addItem, addOpening, addWall, buildCost, buildFor, changeDue, checkItem, clockText, customerTotal, decayNeeds, driveStep, emptyBuild, freshNeeds, moodOf, newCustomer, newDelivery, newOrder, orderMatches, paintFloor,
+  addItem, addOpening, cameraMove, addWall, buildCost, buildFor, changeDue, checkItem, clockText, customerTotal, decayNeeds, driveStep, emptyBuild, freshNeeds, moodOf, newCustomer, newDelivery, newOrder, orderMatches, paintFloor,
   PLACES, PLOTS, PLOT_D, PLOT_W, removeAt, ROADS, serveScore, spawnFor, starterBuild, sunAt, toLocal, toWorld, townSolid, applyFurniture,
 } from "./world";
 
@@ -144,5 +144,32 @@ describe("collisions", () => {
     const bed = b.items.find((i) => i.type === "bed")!;
     const near = toWorld(p, bed.x + 1.2, bed.z);
     expect(usableNear(b, p, near.x, near.z)?.type).toBe("bed");
+  });
+});
+
+describe("walking with the stick", () => {
+  /** Where the camera sees things: its forward and screen-right in world space. */
+  const axes = (yaw: number) => ({ fwd: [-Math.sin(yaw), -Math.cos(yaw)], right: [Math.cos(yaw), -Math.sin(yaw)] });
+  const dot = (a: { dx: number; dz: number }, b: number[]) => a.dx * b[0] + a.dz * b[1];
+
+  it("goes where you push, whichever way the camera faces", () => {
+    for (const yaw of [0, 0.7, Math.PI / 2, Math.PI, -2.3]) {
+      const { fwd, right } = axes(yaw);
+      expect(dot(cameraMove(yaw, 0, -1)!, fwd)).toBeCloseTo(1); // up: away from the camera
+      expect(dot(cameraMove(yaw, 0, 1)!, fwd)).toBeCloseTo(-1); // down: towards it
+      expect(dot(cameraMove(yaw, 1, 0)!, right)).toBeCloseTo(1); // right: screen-right
+      expect(dot(cameraMove(yaw, -1, 0)!, right)).toBeCloseTo(-1); // left: screen-left
+      const diag = cameraMove(yaw, 1, -1)!; // up-right: halfway between
+      expect(dot(diag, fwd)).toBeCloseTo(Math.SQRT1_2);
+      expect(dot(diag, right)).toBeCloseTo(Math.SQRT1_2);
+    }
+    expect(cameraMove(1, 0, 0)).toBeNull();
+  });
+
+  it("screen-right is really to the right of the view (camera behind, looking ahead)", () => {
+    // Camera at +z looking towards -z (yaw 0): the right of the screen is +x.
+    const m = cameraMove(0, 1, 0)!;
+    expect(m.dx).toBeCloseTo(1);
+    expect(m.dz).toBeCloseTo(0);
   });
 });

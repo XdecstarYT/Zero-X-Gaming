@@ -700,6 +700,20 @@ export function blocked(c: Colliders, x: number, z: number, r = 0.3) {
   return false;
 }
 
+/**
+ * Turn stick or WASD input into a world direction relative to the chase camera.
+ * The camera sits at (sin yaw, cos yaw) behind you, so forward is (-sin yaw, -cos yaw)
+ * and screen-right is (cos yaw, -sin yaw). `mx` is right-positive, `mz` down/back-positive
+ * (screen axes). Returns a unit vector, or null with no input.
+ */
+export function cameraMove(yaw: number, mx: number, mz: number): { dx: number; dz: number } | null {
+  if (!mx && !mz) return null;
+  const dx = -Math.sin(yaw) * -mz + Math.cos(yaw) * mx;
+  const dz = -Math.cos(yaw) * -mz - Math.sin(yaw) * mx;
+  const len = Math.hypot(dx, dz) || 1;
+  return { dx: dx / len, dz: dz / len };
+}
+
 /** Walk with sliding along walls. */
 export function walk(c: Colliders, pos: { x: number; z: number }, dx: number, dz: number) {
   if (!blocked(c, pos.x + dx, pos.z + dz)) {

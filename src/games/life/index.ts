@@ -54,6 +54,7 @@ import {
   townSolid,
   usableNear,
   applyFurniture,
+  cameraMove,
   walk,
   type Build,
   type Car,
@@ -1065,16 +1066,8 @@ class LifeGame implements GameModule {
       if (this.using) this.stopUsing();
       const run = k("ShiftLeft", "ShiftRight") || Math.hypot(mx, mz) > 0.95 ? 4.6 : 2.2;
       const yaw = this.view.yaw;
-      // Camera-relative: forward is away from the camera.
-      const fx = -Math.sin(yaw);
-      const fz = -Math.cos(yaw);
-      const rx = -fz;
-      const rz = fx;
-      let dx = fx * -mz + rx * -mx;
-      let dz = fz * -mz + rz * -mx;
-      const len = Math.hypot(dx, dz) || 1;
-      dx /= len;
-      dz /= len;
+      // Camera-relative: forward is away from the camera, right is screen-right.
+      const { dx, dz } = cameraMove(yaw, mx, mz)!;
       walk(this.col, this.me, dx * run * dt, dz * run * dt);
       const want = Math.atan2(dx, dz);
       let d = want - this.me.heading;

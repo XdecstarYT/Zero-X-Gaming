@@ -149,3 +149,29 @@ test("Hometown: save at the bank, collect an allowance, emote", async ({ page })
   await stage.getByTestId("town-emote-wave").click();
   expect(errors).toEqual([]);
 });
+
+/** Pushing right walks to the right of the screen, up walks away from the camera. */
+test("Hometown: you walk the way you push", async ({ page }) => {
+  test.setTimeout(180_000);
+  await openPractice(page);
+  type S = { me: { x: number; z: number }; yaw: number };
+  const read = () => page.evaluate(() => (window as unknown as { __town: { state: () => S } }).__town.state()) as Promise<S>;
+  const hold = async (key: string) => {
+    const a = await read();
+    await page.keyboard.down(key);
+    await page.waitForTimeout(500);
+    await page.keyboard.up(key);
+    const b = await read();
+    const right = [Math.cos(a.yaw), -Math.sin(a.yaw)];
+    const fwd = [-Math.sin(a.yaw), -Math.cos(a.yaw)];
+    const d = [b.me.x - a.me.x, b.me.z - a.me.z];
+    return { right: d[0] * right[0] + d[1] * right[1], fwd: d[0] * fwd[0] + d[1] * fwd[1] };
+  };
+  await page.getByTestId("game-stage").click({ position: { x: 450, y: 300 } });
+  const r = await hold("KeyD");
+  expect(r.right).toBeGreaterThan(0.3);
+  const l = await hold("KeyA");
+  expect(l.right).toBeLessThan(-0.3);
+  const f = await hold("KeyW");
+  expect(f.fwd).toBeGreaterThan(0.3);
+});
