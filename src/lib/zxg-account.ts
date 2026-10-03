@@ -4,8 +4,9 @@
  * Supabase Auth identifies users by email, so each account gets a hidden,
  * undeliverable address: `<name>@zxg-acc.invalid`. The `.invalid` TLD is
  * reserved (RFC 2606) and can never receive mail, so nothing is ever sent.
- * This needs "Confirm email" turned off in Supabase Auth (otherwise sign-up
- * waits for a confirmation that can't arrive; see ACTIVATION_HINT).
+ * Auth's own sign-up refuses those addresses, so accounts are created by the
+ * database function `zxg_sign_up` (already confirmed) and then signed in
+ * with the ordinary password sign-in.
  */
 
 import { USERNAME_RE } from "./auth";
@@ -50,8 +51,8 @@ export function accountError(err: { message?: string; code?: string } | null | u
   if (code === "user_already_exists" || msg.includes("already registered")) return "That account name is taken. Try another.";
   if (code === "email_not_confirmed" || msg.includes("email not confirmed") || msg.includes("confirmation"))
     return ACTIVATION_HINT;
-  if (code === "email_address_invalid" || msg.includes("email address") || code === "email_provider_disabled" || msg.includes("signups not allowed"))
-    return "Account sign-ups are switched off on this site right now.";
+  if (code === "email_provider_disabled" || msg.includes("signups not allowed")) return "Account sign-ups are switched off on this site right now.";
+  if (code === "22023") return err.message ?? "Check your account name and password.";
   if (code === "weak_password") return "That password is too weak. Try a longer one.";
   if (code === "over_request_rate_limit" || msg.includes("rate limit")) return "Too many attempts. Wait a minute and try again.";
   if (msg.includes("failed to fetch") || msg.includes("network")) return "Can't reach the server. Check your connection.";

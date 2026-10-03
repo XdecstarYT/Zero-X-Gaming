@@ -92,14 +92,24 @@ export function SignInModal({
       setBusy(false);
       return setError("That account name is taken. Try another.");
     }
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { username: name.trim() } },
-    });
-    setBusy(false);
-    if (error) return setError(accountError(error));
-    if (!data.session) return setError(ACTIVATION_HINT);
+    // Accounts are made by the database (zxg_sign_up): Auth's own sign-up won't take the hidden addresses and
+    // would wait on a confirmation email. Then it's an ordinary password sign-in.
+    const untyped = supabase as unknown as { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ error: { message: string; code?: string } | null }> };
+    const made = await untyped.rpc("zxg_sign_up", { p_name: name.trim(), p_password: password });
+    if (made.error?.code === "PGRST202") {
+      // A backend without that function (an older fork): fall back to Auth's sign-up.
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { username: name.trim() } } });
+      setBusy(false);
+      if (error) return setError(accountError(error));
+      if (!data.session) return setError(ACTIVATION_HINT);
+    } else if (made.error) {
+      setBusy(false);
+      return setError(accountError(made.error));
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      setBusy(false);
+      if (error) return setError(accountError(error));
+    }
     toast(`Welcome to Zero X, ${name.trim()}!`, { description: "Your ZXG account is ready.", tone: "success" });
     close();
     router.refresh();

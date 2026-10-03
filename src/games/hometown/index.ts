@@ -337,7 +337,9 @@ class HometownGame implements GameModule {
     if (online && userId) {
       const sb = getSupabaseBrowser();
       if (!sb) return this.showMenu("Online play isn't configured.");
-      const rpc = (fn: string, args?: Record<string, unknown>) => (sb.rpc as unknown as (f: string, a?: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }>)(fn, args);
+      // Through the client (rpc needs its `this`); the town_* functions aren't in the generated types.
+      const untyped = sb as unknown as { rpc: (f: string, a?: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> };
+      const rpc = (fn: string, args?: Record<string, unknown>) => untyped.rpc(fn, args);
       backend = new SupabaseBackend(rpc, userId);
     } else backend = new LocalBackend("me", name === "Guest" ? "You" : name);
     this.menu.replaceChildren(el("div", "m-auto text-center text-lg font-bold text-white/80", online ? "Moving to town…" : "Opening the practice town…"));
