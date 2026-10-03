@@ -1,4 +1,5 @@
 import type { GameFactory, GameInitOptions, GameModule, ScoreListener } from "../types";
+import { TouchStick } from "../life/touchstick";
 import { GameLoop } from "../engine/loop";
 import { ScoreEmitter } from "../engine/emitter";
 import type { Detail } from "../sports-kit/look";
@@ -38,7 +39,8 @@ import {
 import { BroadcastChannelTransport, randomId } from "../neon-siege/net";
 import { SupabaseTransport } from "../neon-siege/net-supabase";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
-import { LocalBackend, SupabaseBackend, type TownBackend } from "./backend";
+import { DEFAULT_SERVERS, loadServers, LocalBackend, roomFor, setServerLocked, SupabaseBackend, type Rpc, type TownBackend, type TownServer } from "./backend";
+import { npcAt, npcChatter, npcCount, npcGreeting, townsfolk, type NpcPose, type Townsperson } from "./npcs";
 import { ITEM_INFO, ITEMS, JOBS, netWorth, quote, RECIPES, RULES, type BusinessKind, type ItemId, type Job, type PlotInfo, type TownMe, type TownSnapshot } from "./economy";
 import { TownPresence, type TownMsg, type WireLook } from "./presence";
 
@@ -78,6 +80,7 @@ type PhoneTab = "bag" | "market" | "news";
 interface Prefs {
   gfx?: Detail;
   look?: WireLook;
+  server?: string;
 }
 
 const lookOf = (l: WireLook, seed: number): Look => ({ sex: l.sex, skin: SKINS[l.skin % SKINS.length], hair: HAIRS[l.hair % HAIRS.length], shirt: SHIRTS[l.shirt % SHIRTS.length], pants: "#1f2937", seed });
@@ -132,6 +135,13 @@ class HometownGame implements GameModule {
   private marker: { x: number; z: number; color: string } | null = null;
   private phoneTab: PhoneTab = "bag";
   private emote: { pose: Pose; t: number } | null = null;
+  /** Which street (server) you're on, and its townsfolk. */
+  private server: TownServer = DEFAULT_SERVERS[0];
+  private folk: Townsperson[] = [];
+  private folkNow: (NpcPose & { name: string })[] = [];
+  private chatSlot = -1;
+  /** Server clock minus ours, so everyone's townsfolk stand in the same place. */
+  private skew = 0;
   private mapT = 0;
   private marketItem: ItemId = "wheat";
 
@@ -156,7 +166,7 @@ class HometownGame implements GameModule {
 
   // Input.
   private keys = new Set<string>();
-  private stick: { id: number; x0: number; y0: number; x: number; y: number } | null = null;
+  private stick: TouchStick | null = null;
   private orbit: { id: number; x: number; y: number } | null = null;
 
   init(opts: GameInitOptions) {
@@ -257,11 +267,22 @@ class HometownGame implements GameModule {
     }
   }
 
+  /** The Supabase RPC call (through the client, so it keeps its `this`), or null offline. */
+  private rpcFn(): Rpc | null {
+    const sb = this.localOnly ? null : getSupabaseBrowser();
+    if (!sb) return null;
+    const untyped = sb as unknown as { rpc: (f: string, a?: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> };
+    return (fn, args) => untyped.rpc(fn, args);
+  }
+
   private async showMenu(note?: string) {
     this.mode = "menu";
     this.menu.hidden = false;
     const user = await this.signedInUser();
+    const list = await loadServers(this.rpcFn());
     if (this.mode !== "menu") return;
+    const pick = list.servers.find((x) => x.id === this.prefs.server && (!x.locked || list.owner)) ?? list.servers.find((x) => !x.locked) ?? DEFAULT_SERVERS[0];
+    this.server = pick;
     const look: WireLook = { sex: "F", skin: 1, hair: 0, shirt: 0, ...this.prefs.look };
     const swatches = (label: string, list: string[], key: "skin" | "hair" | "shirt") => {
       const row = el("div", "flex flex-wrap items-center gap-1.5", el("span", "w-12 text-xs text-white/60", label));
@@ -309,6 +330,44 @@ class HometownGame implements GameModule {
     if (user) live.setAttribute("data-testid", "town-live");
     const practice = button("Practice town (offline)", `${BTN} w-full`, () => go(false));
     practice.setAttribute("data-testid", "town-practice");
+    // Servers: separate streets of the one town. Dev servers stay shut until the owner opens them.
+    const servers = el("div", "flex flex-col gap-1.5", el("p", "text-xs font-bold uppercase tracking-wider text-white/60", "Server"));
+    servers.setAttribute("data-testid", "town-servers");
+    for (const sv of list.servers) {
+      const usable = !sv.locked || list.owner;
+      const on = sv.id === this.server.id;
+      const row = button(
+        "",
+        `flex w-full items-center justify-between gap-2 rounded-xl border-2 px-3 py-2 text-left ${on ? "border-amber-400 bg-amber-500/10" : "border-white/15"} ${usable ? "" : "cursor-not-allowed opacity-60"}`,
+        () => {
+          if (!usable) return;
+          this.prefs.server = sv.id;
+          this.savePrefs();
+          void this.showMenu();
+        },
+      );
+      row.disabled = !usable;
+      row.setAttribute("data-testid", `town-server-${sv.id}`);
+      row.append(
+        el("span", "flex flex-col", el("span", "text-sm font-black", `${sv.locked ? "🔒 " : "🟢 "}${sv.name}`), el("span", "text-[11px] text-white/60", sv.locked ? "In development: locked" : sv.blurb)),
+        el("span", "text-[11px] font-bold text-amber-300", on ? "Selected" : ""),
+      );
+      const line = el("div", "flex items-center gap-1.5", row);
+      if (list.owner && sv.id !== "main") {
+        const rpc = this.rpcFn();
+        const t = button(sv.locked ? "Unlock" : "Lock", "shrink-0 rounded-lg border border-white/20 px-2 py-2 text-xs font-bold", () => {
+          if (!rpc) return;
+          t.disabled = true;
+          setServerLocked(rpc, sv.id, !sv.locked).then(
+            () => void this.showMenu(`${sv.name} is now ${sv.locked ? "open to everyone" : "locked"}.`),
+            (e) => void this.showMenu((e as Error).message),
+          );
+        });
+        t.setAttribute("data-testid", `town-server-toggle-${sv.id}`);
+        line.append(t);
+      }
+      servers.append(line);
+    }
     const gfx = el("div", "flex items-center gap-1.5 text-xs", el("span", "w-12 text-white/60", "Graphics"));
     for (const g of ["low", "high"] as Detail[]) {
       const b = button(g, `rounded-full border-2 px-3 py-1 font-bold capitalize ${(this.prefs.gfx ?? (this.coarse ? "low" : "high")) === g ? "border-amber-400" : "border-white/20"}`, () => {
@@ -329,7 +388,7 @@ class HometownGame implements GameModule {
         "div",
         "grid gap-4 md:grid-cols-2",
         el("div", "flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-4", el("h2", "text-lg font-black", "Your citizen"), sexRow, swatches("Skin", SKINS, "skin"), swatches("Hair", HAIRS, "hair"), swatches("Shirt", SHIRTS, "shirt"), gfx),
-        el("div", "flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-4", el("h2", "text-lg font-black", user ? `Welcome back, ${this.opts.playerName ?? "citizen"}` : "Play"), live, practice, el("p", "text-xs text-white/50", "The practice town runs in this tab with a few neighbours trading. Nothing there is saved.")),
+        el("div", "flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-4", el("h2", "text-lg font-black", user ? `Welcome back, ${this.opts.playerName ?? "citizen"}` : "Play"), servers, live, practice, el("p", "text-xs text-white/50", "The practice town runs in this tab with a few neighbours trading. Nothing there is saved.")),
       ),
       howTo([
         ["Work", "Shifts at the farm, timber yard and mine pay a little cash and raw goods. Public works at City Hall pay the wage the mayor sets."],
@@ -369,7 +428,7 @@ class HometownGame implements GameModule {
       try {
         const signs: Record<string, string> = {};
         for (const [id, s] of Object.entries(SITES)) signs[id] = s!.sign;
-        this.view = new LifeView(this.host, this.prefs.gfx ?? (this.coarse ? "low" : "high"), look, { signs, npcs: 4 });
+        this.view = new LifeView(this.host, this.prefs.gfx ?? (this.coarse ? "low" : "high"), look, { signs, npcs: 0 });
       } catch {
         this.backend = null;
         return this.showMenu("3D graphics aren't available on this device (WebGL is off).");
@@ -390,7 +449,11 @@ class HometownGame implements GameModule {
     this.me = { x: at.x, z: at.z, heading: at.heading, speed: 0, pose: "stand" };
     this.view.yaw = Math.PI * 0.85;
     // Neighbours: the live room online, other tabs in the practice town.
-    const transport = online ? new SupabaseTransport<TownMsg>("MAIN", name, this.meInfo.id, "town") : new BroadcastChannelTransport<TownMsg>("MAIN", name, randomId(), "town-local");
+    const transport = online ? new SupabaseTransport<TownMsg>(roomFor(this.server.id), name, this.meInfo.id, "town") : new BroadcastChannelTransport<TownMsg>(roomFor(this.server.id), name, randomId(), "town-local");
+    this.folk = townsfolk(this.server.id);
+    this.chatSlot = -1;
+    this.skew = this.snap.now ? Date.parse(this.snap.now) - Date.now() : 0;
+    if (!Number.isFinite(this.skew)) this.skew = 0;
     this.presence = new TownPresence(transport, name);
     this.presence.onDirty = () => (this.refreshSoon = Math.max(this.refreshSoon, 0.8));
     this.presence.onChat = () => this.renderChat();
@@ -511,6 +574,7 @@ class HometownGame implements GameModule {
     r.bag = el("div", "flex flex-wrap gap-1 text-[11px]");
     r.bag.setAttribute("data-testid", "town-bag");
     r.online = el("span", "text-[11px] text-white/60");
+    r.online.setAttribute("data-testid", "town-online");
     r.prompt = el("div", "pointer-events-auto absolute bottom-24 left-1/2 hidden -translate-x-1/2 cursor-pointer rounded-full bg-black/70 px-4 py-2 text-sm font-bold text-white shadow-lg backdrop-blur-sm");
     r.prompt.setAttribute("data-testid", "town-prompt");
     r.prompt.addEventListener("click", () => this.act?.());
@@ -577,10 +641,9 @@ class HometownGame implements GameModule {
     });
     r.chatInput = input;
     const chatBox = el("div", `absolute left-2 flex w-72 max-w-[60%] flex-col gap-1 ${this.coarse ? "bottom-40" : "bottom-3"}`, r.chatLog, input);
-    r.stick = el("div", "absolute bottom-6 left-6 hidden h-28 w-28 rounded-full border-2 border-white/30 bg-black/25");
-    r.knob = el("div", "absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/60");
-    r.stick.append(r.knob);
-    if (this.coarse) r.stick.classList.remove("hidden");
+    // Touch stick.
+    this.stick = new TouchStick(this.coarse);
+    r.stick = this.stick.ring;
     this.hud = el("div", "pointer-events-none absolute inset-0 z-10", top, right, r.prompt, chatBox, r.buildPanel, emotes, buttons, r.stick, toast);
     this.hud.setAttribute("data-testid", "town-hud");
     this.refs = r;
@@ -619,7 +682,7 @@ class HometownGame implements GameModule {
       r.bag.replaceChildren(...ITEMS.filter((i) => me.inventory[i]).map((i) => el("span", "rounded bg-white/10 px-1.5 py-0.5", `${ITEM_INFO[i].icon} ${me.inventory[i]}`)));
     }
     const n = (this.presence?.others.size ?? 0) + 1;
-    r.online.textContent = `${this.backend?.online ? "🟢 Live" : "🟡 Practice"} · ${n} here${this.snap ? ` · ${this.snap.citizens} citizens` : ""}`;
+    r.online.textContent = `${this.backend?.online ? "🟢 Live" : "🟡 Practice"} · ${this.server.name} · ${n} here · ${npcCount(this.presence?.others.size ?? 0)} townsfolk${this.snap ? ` · ${this.snap.citizens} citizens` : ""}`;
     r.prompt.textContent = this.prompt;
     r.prompt.classList.toggle("hidden", !this.prompt);
     r.buildBtn.hidden = !this.building && this.ownLotHere() < 0;
@@ -1227,10 +1290,7 @@ class HometownGame implements GameModule {
     const k = (...c: string[]) => c.some((x) => this.keys.has(x));
     let mx = (k("KeyD", "ArrowRight") ? 1 : 0) - (k("KeyA", "ArrowLeft") ? 1 : 0);
     let mz = (k("KeyS", "ArrowDown") ? 1 : 0) - (k("KeyW", "ArrowUp") ? 1 : 0);
-    if (this.stick) {
-      mx = Math.max(-1, Math.min(1, (this.stick.x - this.stick.x0) / 45));
-      mz = Math.max(-1, Math.min(1, (this.stick.y - this.stick.y0) / 45));
-    }
+    if (this.stick?.active) ({ mx, mz } = this.stick.value());
     if (this.building) {
       const yaw = this.view.yaw;
       const s = 16 * dt;
@@ -1292,6 +1352,13 @@ class HometownGame implements GameModule {
       g.fillStyle = info?.owner === this.meInfo?.id ? "#f59e0b" : info?.owner ? "#e5e7eb" : info?.salePrice != null || !info?.owner ? "#166534" : "#e5e7eb";
       g.fillRect(X(p.x) + 1, Z(p.z) + 1, p.w * sx - 2, p.d * sz - 2);
     }
+    // Townsfolk are small white dots; real players blue.
+    g.fillStyle = "#f5f5f4";
+    for (const n of this.folkNow) {
+      g.beginPath();
+      g.arc(X(n.x), Z(n.z), 2.5, 0, Math.PI * 2);
+      g.fill();
+    }
     g.fillStyle = "#38bdf8";
     for (const o of this.presence?.others.values() ?? []) {
       g.beginPath();
@@ -1341,6 +1408,12 @@ class HometownGame implements GameModule {
       this.act = () => this.lotPanel(p.id);
       return;
     }
+    for (const n of this.folkNow)
+      if (Math.hypot(n.x - me.x, n.z - me.z) < 2.5) {
+        this.prompt = `E · Talk to ${n.name}`;
+        this.act = () => this.toast(npcGreeting(n.name, Date.now() / 1000));
+        return;
+      }
   }
 
   private render() {
@@ -1353,7 +1426,18 @@ class HometownGame implements GameModule {
     const minutes = this.test ? 720 : ((Date.now() / 60_000) * 24) % 1440;
     const lot = this.building ? this.buildPlot : this.ownLotHere();
     const people = [...(this.presence?.others.values() ?? [])].map((o) => ({ id: o.id, name: o.name, x: o.x, z: o.z, heading: o.heading, speed: o.speed, pose: o.pose, look: lookOf(o.look, hash(o.id)) }));
+    // The townsfolk: as many as fit with the real players, up to twelve, all on the shared clock.
+    const t = (Date.now() + this.skew) / 1000;
+    const out = this.folk.slice(0, npcCount(this.presence?.others.size ?? 0));
+    this.folkNow = out.map((f) => ({ ...npcAt(f, t), name: f.name }));
+    out.forEach((f, i) => people.push({ ...this.folkNow[i], id: f.id, look: lookOf(f.look, hash(f.id)) }));
     this.view.syncPeople(people, dt);
+    // Now and then one of them says something (everyone on the server sees the same line).
+    const said = npcChatter(this.server.id, t, out.length);
+    if (said && said.id !== this.chatSlot) {
+      if (this.chatSlot !== -1) this.presence?.note(said.name, said.text);
+      this.chatSlot = said.id;
+    }
     // Lot signs for the town's empty lots nearby, so you can see what's for sale.
     if (this.snap)
       for (const p of PLOTS) {
@@ -1410,7 +1494,7 @@ class HometownGame implements GameModule {
   };
   private clearInput = () => {
     this.keys.clear();
-    this.stick = null;
+    this.stick?.end();
     this.orbit = null;
   };
 
@@ -1428,8 +1512,8 @@ class HometownGame implements GameModule {
       if (g) this.buildClick(g.x, g.z);
       if (e.pointerType !== "touch") return;
     }
-    if (e.pointerType === "touch" && !this.building && e.clientX - rect.left < rect.width * 0.4 && !this.stick) {
-      this.stick = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY };
+    if (e.pointerType === "touch" && !this.building && e.clientX - rect.left < rect.width * 0.4 && this.stick && !this.stick.active) {
+      this.stick.start(e.pointerId, e.clientX, e.clientY, rect);
       return;
     }
     this.orbit = { id: e.pointerId, x: e.clientX, y: e.clientY };
@@ -1441,11 +1525,8 @@ class HometownGame implements GameModule {
       const g = this.view.groundAt(this.ndc(e).x, this.ndc(e).y);
       if (g) this.cursor = g;
     }
-    if (this.stick && e.pointerId === this.stick.id) {
-      this.stick.x = e.clientX;
-      this.stick.y = e.clientY;
-      const k = this.refs.knob;
-      if (k) k.style.transform = `translate(calc(-50% + ${Math.max(-40, Math.min(40, e.clientX - this.stick.x0))}px), calc(-50% + ${Math.max(-40, Math.min(40, e.clientY - this.stick.y0))}px))`;
+    if (this.stick?.owns(e.pointerId)) {
+      this.stick.move(e.clientX, e.clientY);
       return;
     }
     if (this.orbit && e.pointerId === this.orbit.id && (!this.building || e.buttons & 2 || e.pointerType === "touch")) {
@@ -1459,10 +1540,7 @@ class HometownGame implements GameModule {
   };
 
   private onPointerUp = (e: PointerEvent) => {
-    if (this.stick && e.pointerId === this.stick.id) {
-      this.stick = null;
-      if (this.refs.knob) this.refs.knob.style.transform = "";
-    }
+    if (this.stick?.owns(e.pointerId)) this.stick.end();
     if (this.orbit && e.pointerId === this.orbit.id) this.orbit = null;
   };
 
@@ -1477,8 +1555,10 @@ class HometownGame implements GameModule {
 
   private hooks() {
     (window as unknown as Record<string, unknown>).__town = {
-      state: () => ({ mode: this.mode, me: this.me, info: this.meInfo, prompt: this.prompt, yaw: this.view?.yaw ?? 0, building: this.building, others: this.presence?.others.size ?? 0, online: this.backend?.online ?? null }),
+      state: () => ({ mode: this.mode, me: this.me, info: this.meInfo, prompt: this.prompt, yaw: this.view?.yaw ?? 0, server: this.server.id, folk: this.folkNow.map((n) => ({ name: n.name, x: n.x, z: n.z })), building: this.building, others: this.presence?.others.size ?? 0, online: this.backend?.online ?? null }),
       snap: () => this.snap,
+      /** A ground point (default: your feet) on screen, -1..1 with y up, through the real camera. */
+      onScreen: (x = this.me.x, z = this.me.z) => this.view?.toScreen(x, 0, z) ?? null,
       goTo: (x: number, z: number) => Object.assign(this.me, { x, z }),
       door: (id: string) => placeById(id)?.door,
       lot: (id: number) => spawnFor(id),

@@ -34,7 +34,7 @@ export interface TownBackend {
   allowance(): Promise<number>;
 }
 
-type Rpc = (fn: string, args?: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
+export type Rpc = (fn: string, args?: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
 
 /** The live town: thin wrappers over the town_* RPCs. */
 export class SupabaseBackend implements TownBackend {
@@ -72,6 +72,43 @@ export class SupabaseBackend implements TownBackend {
   bank = (amount: number) => this.rpc<{ savings: number }>("town_bank", { p_amount: amount });
   allowance = () => this.rpc<number>("town_allowance");
 }
+
+/** A street of the town: its own room of players; the economy is shared. */
+export interface TownServer {
+  id: string;
+  name: string;
+  blurb: string;
+  locked: boolean;
+}
+
+/** What the menu shows when the server list can't be fetched (offline, or no Supabase). */
+export const DEFAULT_SERVERS: TownServer[] = [
+  { id: "main", name: "Main Street", blurb: "The live town. Open to everyone.", locked: false },
+  { id: "harbour", name: "Harbour Side", blurb: "In development: opening soon.", locked: true },
+  { id: "hillcrest", name: "Hillcrest", blurb: "In development: opening soon.", locked: true },
+];
+
+/** The servers, and whether you're the site owner (who alone can open or close them). */
+export async function loadServers(rpc: Rpc | null): Promise<{ owner: boolean; servers: TownServer[] }> {
+  if (!rpc) return { owner: false, servers: DEFAULT_SERVERS };
+  try {
+    const { data, error } = await rpc("town_server_list");
+    const d = data as { owner?: boolean; servers?: TownServer[] } | null;
+    if (error || !d?.servers?.length) return { owner: false, servers: DEFAULT_SERVERS };
+    return { owner: !!d.owner, servers: d.servers };
+  } catch {
+    return { owner: false, servers: DEFAULT_SERVERS };
+  }
+}
+
+/** Site owner only: open (unlock) or close a server. */
+export async function setServerLocked(rpc: Rpc, id: string, locked: boolean) {
+  const { error } = await rpc("town_set_server", { p_id: id, p_locked: locked });
+  if (error) throw new Error(cleanError(error.message));
+}
+
+/** The Realtime room for a server (Main Street keeps its original room). */
+export const roomFor = (server: string) => (server === "main" ? "MAIN" : server.toUpperCase());
 
 /** Postgres errors arrive as plain messages; tidy the odd technical one. */
 export function cleanError(msg: string) {

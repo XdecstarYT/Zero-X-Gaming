@@ -159,6 +159,11 @@ export class TownPresence {
     return null;
   }
 
+  /** A line from one of the townsfolk: shown here only (every player computes the same one). */
+  note(name: string, text: string) {
+    this.push({ from: "npc", name, text: cleanChat(text), at: Date.now() });
+  }
+
   /** Tell everyone the town changed (a trade, a sale, a new house). */
   dirty() {
     if (this.connected) this.t.send({ t: "dirty" });

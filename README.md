@@ -609,6 +609,19 @@ streets, plots, house builder and renderer). Unlike every other game here, the s
   which earn 2% a day paid lazily from the treasury when your savings are next touched (and only while the
   treasury can pay). `town_allowance` pays the public wage from the treasury once every 20 hours at City Hall.
   The HUD has a minimap and emotes (keys 1–5) that neighbours see through the presence pose.
+- **Servers** (`20261015090000_hometown_servers_npcs.sql`): `town_servers` lists three streets of the one town,
+  Main Street (open), Harbour Side and Hillcrest (in development, locked). Each server is its own Realtime room
+  (you see the players on yours); land, money and elections are shared. Only the site owner's account (by its
+  email, `town__owner()`) can open or close the dev servers, from the Hometown menu (`town_set_server`).
+- **Townsfolk** (`npcs.ts`): up to twelve NPC citizens pace the footpaths, rest, chat and answer when you press
+  E beside them. They make way for real players (twelve on the street at most). Where each one is comes from the
+  shared clock (offset to the server's), so everyone on a server sees the same person in the same place with no
+  network traffic. On the server the same townsfolk run the market while nobody is playing: `town__npcs()` (run
+  by `town__tick`) catches up every quiet ten minutes since the last visit, buying a fair ask from a player
+  (paid by the treasury) or selling from their stall (`town_npc_stock`) into a fair bid, so money only moves
+  between players and the treasury.
+- **Touch stick** (`life/touchstick.ts`, shared with Life): the ring jumps under your thumb and the knob follows
+  it exactly; walking is camera-relative (`cameraMove` in `life/world.ts`).
 
 ### Clanforge: base-building strategy
 

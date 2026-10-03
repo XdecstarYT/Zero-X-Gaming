@@ -452,3 +452,10 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 130. **Town interest is paid when touched, from the treasury.** Like energy and elections, savings interest
      needs no scheduler: it's settled whenever your savings are read or moved, and it comes out of the
      treasury (capped by what's there), so the bank can never mint money the town doesn't have.
+131. **Townsfolk come from the clock, not the network.** Twelve walking NPCs sent over Realtime would cost
+     messages every second for every player and need someone to own them. Instead each one paces a fixed
+     stretch of footpath as a pure function of time (seeded per server), so every client draws the same
+     person in the same spot for free. Their market activity is server-side and lazy, like elections.
+132. **Servers are rooms, not shards.** Splitting the economy three ways would split an already small
+     market, so servers only separate who you see; land, money and elections stay one town. The lock is a
+     row in `town_servers` that only the owner's account can change.

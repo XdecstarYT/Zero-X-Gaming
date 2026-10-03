@@ -7,6 +7,7 @@ export interface Update {
 }
 
 export const UPDATES: Update[] = [
+  { tag: "Hometown", title: "Townsfolk and servers", body: "Twelve townsfolk walk the streets, chat and keep the market trading while you're away. Pick your server from the menu: two more are on the way.", href: "/games/hometown" },
   { tag: "Mega update", title: "Daily rewards", body: "Coins every day you come back, 50 on day 7.", href: "/" },
   { tag: "Hometown", title: "The Town Bank", body: "Save your cash for interest, claim the daily allowance, wave and cheer at your neighbours, find your way with the minimap.", href: "/games/hometown" },
   { tag: "Life", title: "Invest, adopt, go viral", body: "Shares and property that rise and fall, pets that love you back, fame on social media and holidays around the world.", href: "/games/life" },

@@ -530,6 +530,12 @@ export class LifeView {
     void o;
   }
 
+  /** Where a world point lands on screen (-1..1, y up): what the player actually sees. */
+  toScreen(x: number, y: number, z: number) {
+    const v = new THREE.Vector3(x, y, z).project(this.pipe.camera);
+    return { x: v.x, y: v.y };
+  }
+
   /** Ground point under a screen position. */
   groundAt(nx: number, ny: number) {
     this.ray.setFromCamera(new THREE.Vector2(nx, ny), this.pipe.camera);

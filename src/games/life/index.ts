@@ -1,4 +1,5 @@
 import type { GameFactory, GameInitOptions, GameModule, ScoreListener } from "../types";
+import { TouchStick } from "./touchstick";
 import { GameLoop } from "../engine/loop";
 import { ScoreEmitter } from "../engine/emitter";
 import { createRng } from "../engine/rng";
@@ -146,7 +147,7 @@ class LifeGame implements GameModule {
 
   // Input.
   private keys = new Set<string>();
-  private stick: { id: number; x0: number; y0: number; x: number; y: number } | null = null;
+  private stick: TouchStick | null = null;
   private orbit: { id: number; x: number; y: number } | null = null;
   private jumpTo: ((x: number, z: number) => void) | null = null;
 
@@ -529,10 +530,8 @@ class LifeGame implements GameModule {
     r.buildPanel = el("div", "pointer-events-auto absolute bottom-3 left-2 right-36 hidden max-h-[45%] overflow-y-auto rounded-xl bg-black/75 p-2 text-white backdrop-blur-sm");
     r.buildPanel.setAttribute("data-testid", "life-build-panel");
     // Touch stick.
-    r.stick = el("div", "absolute bottom-6 left-6 hidden h-28 w-28 rounded-full border-2 border-white/30 bg-black/25");
-    r.knob = el("div", "absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/60");
-    r.stick.append(r.knob);
-    if (this.coarse) r.stick.classList.remove("hidden");
+    this.stick = new TouchStick(this.coarse);
+    r.stick = this.stick.ring;
     this.hud = el("div", "pointer-events-none absolute inset-0 z-10", top, right, r.shift, r.prompt, r.buildPanel, buttons, r.stick, toast);
     this.hud.setAttribute("data-testid", "life-hud");
     this.refs = r;
@@ -1047,10 +1046,7 @@ class LifeGame implements GameModule {
     const k = (...c: string[]) => c.some((x) => this.keys.has(x));
     let mx = (k("KeyD", "ArrowRight") ? 1 : 0) - (k("KeyA", "ArrowLeft") ? 1 : 0);
     let mz = (k("KeyS", "ArrowDown") ? 1 : 0) - (k("KeyW", "ArrowUp") ? 1 : 0);
-    if (this.stick) {
-      mx = Math.max(-1, Math.min(1, (this.stick.x - this.stick.x0) / 45));
-      mz = Math.max(-1, Math.min(1, (this.stick.y - this.stick.y0) / 45));
-    }
+    if (this.stick?.active) ({ mx, mz } = this.stick.value());
     if (this.building) {
       // Pan the build camera.
       const yaw = this.view.yaw;
@@ -1224,7 +1220,7 @@ class LifeGame implements GameModule {
   };
   private clearInput = () => {
     this.keys.clear();
-    this.stick = null;
+    this.stick?.end();
     this.orbit = null;
   };
 
@@ -1241,8 +1237,8 @@ class LifeGame implements GameModule {
       if (g) this.buildClick(g.x, g.z);
       if (e.pointerType !== "touch") return;
     }
-    if (e.pointerType === "touch" && !this.building && e.clientX - rect.left < rect.width * 0.4 && !this.stick) {
-      this.stick = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY };
+    if (e.pointerType === "touch" && !this.building && e.clientX - rect.left < rect.width * 0.4 && this.stick && !this.stick.active) {
+      this.stick.start(e.pointerId, e.clientX, e.clientY, rect);
       return;
     }
     this.orbit = { id: e.pointerId, x: e.clientX, y: e.clientY };
@@ -1254,11 +1250,8 @@ class LifeGame implements GameModule {
       const g = this.view.groundAt(this.ndc(e).x, this.ndc(e).y);
       if (g) this.cursor = g;
     }
-    if (this.stick && e.pointerId === this.stick.id) {
-      this.stick.x = e.clientX;
-      this.stick.y = e.clientY;
-      const k = this.refs.knob;
-      if (k) k.style.transform = `translate(calc(-50% + ${Math.max(-40, Math.min(40, e.clientX - this.stick.x0))}px), calc(-50% + ${Math.max(-40, Math.min(40, e.clientY - this.stick.y0))}px))`;
+    if (this.stick?.owns(e.pointerId)) {
+      this.stick.move(e.clientX, e.clientY);
       return;
     }
     if (this.orbit && e.pointerId === this.orbit.id && (!this.building || e.buttons & 2 || e.pointerType === "touch")) {
@@ -1272,10 +1265,7 @@ class LifeGame implements GameModule {
   };
 
   private onPointerUp = (e: PointerEvent) => {
-    if (this.stick && e.pointerId === this.stick.id) {
-      this.stick = null;
-      if (this.refs.knob) this.refs.knob.style.transform = "";
-    }
+    if (this.stick?.owns(e.pointerId)) this.stick.end();
     if (this.orbit && e.pointerId === this.orbit.id) this.orbit = null;
   };
 
