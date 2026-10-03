@@ -131,6 +131,17 @@ export class FootyAudio {
     o.stop(t + dur + 0.02);
   }
 
+  /** Grand Final day: a sustained roar of 100,000. */
+  roar(seconds = 4) {
+    this.burst(seconds, 900, 520, 0.55, 0.6);
+  }
+
+  /** A firework: the thump of the launch, then the crackle of the burst. */
+  firework() {
+    this.tone("sine", 140, 50, 0.25, 0.25);
+    this.burst(0.9, 2400, 900, 0.18, 0.02, "highpass", 0.4);
+  }
+
   /** The umpire's whistle: a pea-whistle trill. */
   whistle(long = false) {
     const ctx = this.ctx;

@@ -19,9 +19,11 @@ test("Screamer: a women's premiership with the medal count", async ({ page }) =>
   await stage.getByRole("group", { name: "Season length" }).getByRole("button", { name: /Short/ }).click();
   await stage.getByTestId("footy-start").click();
   await expect(stage.getByText(/Women's National League/)).toBeVisible();
+  await stage.getByTestId("tab-awards").click();
   const awards = stage.getByTestId("footy-awards");
   await expect(awards).toContainText("League Medal");
   await stage.getByTestId("footy-sim").click();
+  await stage.getByTestId("tab-awards").click();
   await expect(awards).toContainText(/1\. .+ · \d+ votes/);
   await expect(awards).toContainText(/1\. .+ · \d+ goals/);
   expect(errors).toEqual([]);

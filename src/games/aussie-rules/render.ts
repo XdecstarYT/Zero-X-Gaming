@@ -108,6 +108,10 @@ export class FootyView {
   private confetti: THREE.Points | null = null;
   private confettiV: Float32Array | null = null;
   private celebrateTeam = -1;
+  // Grand Final day: the build-up's orbit, and fireworks over the stands.
+  private introT = 0;
+  private introLen = 1;
+  private fw: { pts: THREE.Points; vel: Float32Array; life: Float32Array; next: number; until: number; cursor: number } | null = null;
 
   constructor(
     private host: HTMLElement,
@@ -448,6 +452,96 @@ export class FootyView {
     this.cheer = 1;
   }
 
+  /**
+   * Grand Final day: a sweeping orbit of the ground for `intro` seconds (the
+   * build-up) and fireworks over the stands for as long as `fireworks` says.
+   */
+  grandFinal(intro: number) {
+    this.introT = this.introLen = Math.max(0.01, intro);
+    this.fireworks(intro + 2);
+  }
+  /** Is the build-up still rolling? */
+  get intro() {
+    return this.introT > 0;
+  }
+  skipIntro() {
+    this.introT = 0;
+  }
+  /** Run the build-up's clock (from the game's update, so it runs headless too). */
+  tickIntro(dt: number) {
+    this.introT = Math.max(0, this.introT - dt);
+  }
+
+  /** Fireworks for `seconds` more. */
+  fireworks(seconds: number) {
+    if (!this.fw) {
+      const n = 3000;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 3).fill(-999), 3));
+      g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+      const pts = new THREE.Points(g, new THREE.PointsMaterial({ size: 1.6, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      pts.frustumCulled = false;
+      this.scene.add(pts);
+      this.fw = { pts, vel: new Float32Array(n * 3), life: new Float32Array(n), next: 0, until: 0, cursor: 0 };
+    }
+    this.fw.until = Math.max(this.fw.until, this.time + seconds);
+  }
+
+  private stepFireworks(dt: number) {
+    const f = this.fw;
+    if (!f) return;
+    const pos = f.pts.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const col = f.pts.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const p = pos.array as Float32Array;
+    const c = col.array as Float32Array;
+    const n = f.life.length;
+    f.next -= dt;
+    if (this.time < f.until && f.next <= 0) {
+      f.next = 0.25 + Math.random() * 0.45;
+      // A shell bursts over the stands, in one of the clubs' colours (or gold).
+      const a = Math.random() * Math.PI * 2;
+      const cx = Math.cos(a) * (95 + Math.random() * 20);
+      const cz = Math.sin(a) * (75 + Math.random() * 15);
+      const cy = 55 + Math.random() * 35;
+      const clubs = this.sim.clubs;
+      const pal = [clubs[0].guernsey, clubs[0].hoop, clubs[1].guernsey, clubs[1].hoop, "#facc15", "#ffffff"];
+      const colour = new THREE.Color(pal[Math.floor(Math.random() * pal.length)]);
+      for (let k = 0; k < 160; k++) {
+        const i = f.cursor;
+        f.cursor = (f.cursor + 1) % n;
+        const u = Math.random() * 2 - 1;
+        const th = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(1 - u * u);
+        const sp = 16 + Math.random() * 10;
+        p.set([cx, cy, cz], i * 3);
+        f.vel.set([r * Math.cos(th) * sp, u * sp, r * Math.sin(th) * sp], i * 3);
+        c.set([colour.r * 1.6, colour.g * 1.6, colour.b * 1.6], i * 3);
+        f.life[i] = 1.6 + Math.random() * 0.6;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      if (f.life[i] <= 0) continue;
+      f.life[i] -= dt;
+      const j = i * 3;
+      if (f.life[i] <= 0) {
+        p[j + 1] = -999;
+        continue;
+      }
+      f.vel[j] *= 1 - dt * 1.2;
+      f.vel[j + 1] = f.vel[j + 1] * (1 - dt * 1.2) - 9 * dt;
+      f.vel[j + 2] *= 1 - dt * 1.2;
+      p[j] += f.vel[j] * dt;
+      p[j + 1] += f.vel[j + 1] * dt;
+      p[j + 2] += f.vel[j + 2] * dt;
+      const fade = Math.min(1, f.life[i]);
+      c[j] *= 0.995 + 0.005 * fade;
+      c[j + 1] *= 0.995 + 0.005 * fade;
+      c[j + 2] *= 0.995 + 0.005 * fade;
+    }
+    pos.needsUpdate = true;
+    col.needsUpdate = true;
+  }
+
   /** The captain: the winning side's player nearest the centre. */
   private captain() {
     const team = this.celebrateTeam;
@@ -663,6 +757,7 @@ export class FootyView {
     this.updateMarkers();
     this.updateCamera(dt, mode);
     this.stepCelebration(dt);
+    this.stepFireworks(dt);
     this.updateShadow();
     this.drawScreen();
 
@@ -830,7 +925,18 @@ export class FootyView {
     const set = sim.set;
     const scorer = sim.phase === "goal" && this.lastScorer >= 0 ? sim.players[this.lastScorer] : null;
     let fov = 30;
-    if (this.cup) {
+    if (this.introT > 0) {
+      // Grand Final day: a helicopter sweep round the packed ground, dropping toward the centre.
+      const k2 = 1 - this.introT / this.introLen;
+      const a = -Math.PI / 2 + k2 * Math.PI * 1.4;
+      const r = 92 - k2 * 44;
+      want.set(Math.cos(a) * r, 46 - k2 * 30, Math.sin(a) * r * 0.75);
+      look.set(0, 4, 0);
+      fov = 42;
+      this.cheer = Math.max(this.cheer, 0.7);
+      this.camPos.copy(want);
+      this.camLook.copy(look);
+    } else if (this.cup) {
       // The premiers: a slow orbit round the captain and the cup.
       const cap = this.captain();
       const a = this.time * 0.25;

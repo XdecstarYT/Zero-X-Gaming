@@ -481,6 +481,24 @@ runs under a SCORE REVIEW tag and the verdict follows. And the **goalkicking cha
 your full forward from in front out to the pockets, the field cleared, the wind and the needle against you
 (6 a goal, bonuses from 35 and 45 m).
 
+**Screamer, update three: the coach and the big day.**
+
+- **Coach mode** (`coach.ts`, `coachui.ts`): run a National League club.
+  - **The list:** thirty players: the club's eighteen plus depth, each with an age, a rating, potential, form, fitness and injuries.
+  - **Before each game:** pick the eighteen (six backs, five mids, six forwards, a ruck), a game plan and the week's training. Game plans counter each other in a circle: attack beats the flood, the flood beats pressure, pressure beats possession, possession beats attack. Training is fitness, skills, match prep or recovery.
+  - **Match day:** coach each game a quarter at a time in the match centre (`CoachMatch`), with a speech and changes at every break, or play it yourself in 3D.
+  - **The board:** sets a target from where the club's tipped and sacks you if its patience runs out.
+  - **The off-season:** the year in review, Coach of the Year, the trade period, a two-round national draft (reverse ladder, scout grades), job offers, ageing, development, retirements and rookies.
+- **The premiership** (`premiership.ts`, `season.ts`) is now a dynasty. `nextYear` carries an honour board on.
+  - **Form:** clubs' form drifts with results (`momentum`); there are form guides and streaks.
+  - **The competition:** round-by-round results with talking points (`headlines`) and a finals bracket.
+  - **Grand Final week:** the tale of the tape.
+  - **Awards night:** reads the League Medal count out live, round by round (`medalRounds`), plus the All-League team.
+- **Grand Final day:**
+  - **Before the bounce:** the 3D view sweeps the packed ground through the build-up (banners, anthem, fireworks over the stands; `grandFinal`, `fireworks`).
+  - **At the siren:** the winners, whoever they are, get the cup, confetti and fireworks.
+  - **The presentation** (`ceremony.ts`): the flag, the cup, quarter-by-quarter scores, the Grand Final Medal and every premiership player's medal. It runs whether the final was played, coached or simmed.
+
 #### Fairway
 
 Golf (`src/games/fairway/`), in the Sports+ pass, on two original nine-hole courses: Saltgrass Links (dunes,

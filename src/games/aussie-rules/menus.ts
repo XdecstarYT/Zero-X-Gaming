@@ -11,19 +11,14 @@ import {
   type Position,
 } from "./career";
 import { ALL_CLUBS, clubById, defaultClub, LEAGUES, NATIONAL, type ClubEdit } from "./clubs";
-import { countOf, finalName, finalsSpots, ladder, nextGame, ordinal, type Season } from "./season";
-import { fullName } from "./rosters";
+import { finalName, finalsSpots, finish, nextGame, ordinal, type Season } from "./season";
+import { awardsNight, chip, finalsBracket, grandFinalWeek, honourBoard, ladderTable, roundPanel, tabs } from "./premiership";
 
 /** Menu screens for Screamer's modes: the season hub, career, the club editor. */
 
 const RED = "#a3122c";
 
-export function chip(id: string) {
-  const c = clubById(id);
-  const s = el("span", "mr-1.5 inline-block h-3 w-1.5 shrink-0 rounded-sm align-middle");
-  s.style.background = `linear-gradient(${c.guernsey} 0 40%, ${c.hoop} 40% 60%, ${c.guernsey} 60%)`;
-  return s;
-}
+export { chip, ladderTable } from "./premiership";
 
 /** A club picker: compact buttons with the colours. */
 export function clubPicker(label: string, ids: string[], current: string, pick: (id: string) => void) {
@@ -50,29 +45,6 @@ export function clubPicker(label: string, ids: string[], current: string, pick: 
   return wrap;
 }
 
-/** The ladder (top `rows`, plus your club if it's below), with the finals line. */
-export function ladderTable(s: Season, rows = 99) {
-  const all = ladder(s);
-  const spots = finalsSpots(s);
-  const table = el("table", "w-full text-xs tabular-nums");
-  table.setAttribute("data-testid", "footy-ladder");
-  table.append(el("tr", "text-[10px] uppercase tracking-wider text-white/50", ...["", "Club", "P", "W", "L", "D", "%", "Pts"].map((h, i) => el("th", i < 2 ? "py-0.5 text-left" : "px-1 text-right", h))));
-  all.forEach((r, i) => {
-    const mine = r.id === s.club;
-    if (i >= rows && !mine) return;
-    table.append(
-      el(
-        "tr",
-        `${mine ? "bg-[#facc15]/15 font-bold text-[#facc15]" : ""} ${i === spots - 1 ? "border-b border-dashed border-white/25" : ""}`,
-        el("td", "w-5 py-0.5 text-white/50", String(i + 1)),
-        el("td", "py-0.5", chip(r.id), clubById(r.id).name),
-        ...[r.played, r.won, r.lost, r.drawn, r.pct.toFixed(1), r.points].map((v) => el("td", "px-1 text-right", String(v))),
-      ),
-    );
-  });
-  return table;
-}
-
 /** The finals so far, week by week. */
 export function finalsList(s: Season) {
   if (!s.finals.length) return el("span");
@@ -91,49 +63,18 @@ export function finalsList(s: Season) {
   return el("ol", "flex flex-col gap-0.5 text-xs", ...rows);
 }
 
-/**
- * The count: the league medal (3-2-1 votes, home and away) and the leading
- * goalkicker. During the season, the leaders; at the end, awards night.
- */
-export function awardsPanel(s: Season) {
-  const medal = countOf(s.medal, 5);
-  const goals = countOf(s.goals, 5);
-  const done = s.stage !== "home";
-  const name = (c: { club: string; last: string }) => `${fullName(c.club, c.last, s.women)} (${clubById(c.club).short})`;
-  const list = (title: string, rows: ReturnType<typeof countOf>, unit: string) =>
-    el(
-      "div",
-      "rounded bg-white/5 p-2",
-      el("p", "mb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#facc15]", title),
-      ...(rows.length ? rows.map((r, i) => el("p", `truncate text-xs ${r.club === s.club ? "font-bold text-[#facc15]" : ""}`, `${i + 1}. ${name(r)} · ${r.n} ${unit}`)) : [el("p", "text-xs text-white/50", "No games yet")]),
-    );
-  const top = medal[0];
-  const coleman = goals[0];
-  const night =
-    done && top && coleman
-      ? el(
-          "div",
-          "rounded-lg border border-[#facc15]/40 bg-[#facc15]/10 p-3 text-center",
-          el("p", "text-[10px] font-bold uppercase tracking-[0.3em] text-[#facc15]", "Awards night"),
-          el("p", "mt-1 font-display text-lg font-black uppercase", `League Medal: ${name(top)}`),
-          el("p", "text-xs text-white/75", `${top.n} votes${medal[1] ? `, from ${fullName(medal[1].club, medal[1].last, s.women)} on ${medal[1].n}` : ""}`),
-          el("p", "mt-2 font-display text-base font-black uppercase", `Leading goalkicker: ${name(coleman)}`),
-          el("p", "text-xs text-white/75", `${coleman.n} goals in the home and away season`),
-        )
-      : el("span");
-  const wrap = el("div", "flex flex-col gap-2", night, el("div", "grid grid-cols-1 gap-2 sm:grid-cols-2", list(done ? "League Medal · final count" : "League Medal · the leaders", medal, "votes"), list("Leading goalkicker", goals, "goals")));
-  wrap.setAttribute("data-testid", "footy-awards");
-  return wrap;
-}
+/** The count (kept for older callers): awards night. */
+export const awardsPanel = awardsNight;
 
-/** The premiership hub: the ladder, your next game, play or sim. */
-export function seasonHub(s: Season, h: { play: () => void; sim: () => void; simRound: () => void; abandon: () => void }) {
+/** The premiership hub: your next game, play or sim, and the whole competition in tabs. */
+export function seasonHub(s: Season, h: { play: () => void; sim: () => void; simRound: () => void; abandon: () => void; next: () => void }) {
   const ng = nextGame(s);
+  const year = s.year ? `${s.year} ` : "";
   const status =
     s.stage === "done"
       ? s.premier === s.club
-        ? `PREMIERS! ${clubById(s.club).name} have won the flag.`
-        : `Season over. ${clubById(s.premier ?? "").name} are the premiers.`
+        ? `PREMIERS! ${clubById(s.club).name} have won the ${year}flag.`
+        : `Season over. ${clubById(s.premier ?? "").name} are the ${year}premiers. You: ${finish(s)}.`
       : ng
         ? `${ng.label}: ${ng.fixture.home === s.club ? "home" : "away"} v ${clubById(ng.opponent).name}`
         : "";
@@ -146,14 +87,24 @@ export function seasonHub(s: Season, h: { play: () => void; sim: () => void; sim
   sim.setAttribute("data-testid", "footy-sim");
   const simRound = button(s.stage === "home" ? "Sim to the finals" : "Sim the rest", `${BTN} text-xs`, h.simRound);
   simRound.disabled = !ng;
+  const next = button(`Start the ${(s.year ?? 2027) + 1} season`, `rounded-md px-5 py-2.5 font-display font-black uppercase tracking-[0.15em] text-white`, h.next);
+  next.style.background = RED;
+  next.setAttribute("data-testid", "footy-next-season");
+  const gfw = grandFinalWeek(s);
+  const flags = (s.honours ?? []).filter((x) => x.premier === s.club).length + (s.stage === "done" && s.premier === s.club ? 1 : 0);
   return card(
-    `${s.women ? "Women's " : ""}${LEAGUES[s.league].name} · ${s.rounds} rounds · top ${finalsSpots(s)}`,
+    `${s.women ? "Women's " : ""}${LEAGUES[s.league].name} · ${year}${s.rounds} rounds · top ${finalsSpots(s)}${flags ? ` · ${flags} flag${flags > 1 ? "s" : ""}` : ""}`,
     el("p", "text-sm font-bold", status),
-    el("div", "flex flex-wrap gap-2", play, sim, simRound),
-    ladderTable(s),
-    finalsList(s),
-    awardsPanel(s),
-    button("Abandon season", `${BTN} self-start text-xs`, h.abandon),
+    ...(gfw ? [gfw] : []),
+    el("div", "flex flex-wrap gap-2", ...(s.stage === "done" ? [next] : [play, sim, simRound])),
+    tabs("season", [
+      { id: "ladder", label: "Ladder", body: () => ladderTable(s) },
+      { id: "round", label: "Results", body: () => roundPanel(s) },
+      { id: "finals", label: "Finals", body: () => finalsBracket(s) },
+      { id: "awards", label: "Awards", body: () => awardsNight(s) },
+      { id: "honours", label: "Honour board", body: () => honourBoard(s.honours, s.club) },
+    ]),
+    button("Abandon this premiership", `${BTN} self-start text-xs`, h.abandon),
   );
 }
 

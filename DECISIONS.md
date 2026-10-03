@@ -440,3 +440,9 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      Realtime only carries what's harmless to fake: where people are standing and what they say.
 126. **Orders close, they aren't removed.** Filled and cancelled orders set `open = false` and keep their
      row, so the book is a partial index and the history stays for the record.
+127. **A coached match is the season engine with levers.** The coaches' box plays a quarter at a time from
+     the same strengths the season uses, with your eighteen's ratings, form and fitness standing in for
+     the club's form, so a coached game, a simmed one and the rest of the round all live on one scale.
+     Plans, speeches and changes nudge those numbers; they never script a result.
+128. **Saves grow, never break.** Dynasty fields (year, honours, momentum, round-by-round votes) are optional
+     on the existing season format, so a season saved before the update loads and plays on unchanged.

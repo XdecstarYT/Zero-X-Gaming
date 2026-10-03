@@ -5,12 +5,15 @@ import { ScoreEmitter } from "../engine/emitter";
 import { FootyAudio } from "./audio";
 import { FootyHud, leaderLine } from "./hud";
 import { FootyView, type CamMode, type TimeOfDay } from "./render";
-import { finish as seasonFinish, ladder, nextGame, ordinal, parseSeason, premiers, recordResult, simulateMine, startSeason, type Season } from "./season";
+import { finish as seasonFinish, ladder, nextGame, nextYear, ordinal, parseSeason, premiers, recordResult, simulateMine, startSeason, type Season } from "./season";
 import { clubById, CLUBS, FootySim, GOAL_X, KICK_STYLES, points, type Difficulty, type FootyInput, type KickStyle } from "./sim";
 import { LEAGUES, loadClubEdits, NATIONAL, saveClubEdits, type ClubEdit } from "./clubs";
 import { difficultyFor, matchRating, newCareer, nextSeason, parseCareer, recordMatch, retire, simulateMatch, spendPoint, toPro, type Career } from "./career";
 import { careerCreate, careerHub, clubEditor, clubPicker, seasonHub } from "./menus";
-import { rosterNames } from "./rosters";
+import { fullName, rosterNames } from "./rosters";
+import { fieldOrder, newCoach, parseCoach, recordCoachGame, simCoachGame, type Coach } from "./coach";
+import { coachCreate, coachHub, matchCentre } from "./coachui";
+import { premiershipCeremony } from "./ceremony";
 import type { Awards } from "./season";
 import { choice } from "../sports-kit/ui";
 import type { Detail } from "./stadium";
@@ -20,10 +23,11 @@ const PREFS_KEY = "zx-footy-prefs";
 const RECORD_KEY = "zx-footy-record";
 const SEASON_KEY = "zx-footy-season2";
 const CAREER_KEY = "zx-footy-career";
+const COACH_KEY = "zx-footy-coach";
 const STYLES: KickStyle[] = ["punt", "torpedo", "snap"];
 
 interface Prefs {
-  mode: "exhibition" | "season" | "career" | "kicking";
+  mode: "exhibition" | "season" | "career" | "coach" | "kicking";
   /** The men's or the women's competition. */
   comp: "men" | "women";
   /** Premiership season length (home-and-away rounds). */
@@ -111,6 +115,13 @@ class FootyGame implements GameModule {
   private idle = 0;
   private season: Season | null = null;
   private career: Career | null = null;
+  private coach: Coach | null = null;
+  /** Grand Final day: the build-up's running clock, and the cards shown so far. */
+  private gf = false;
+  private introClock = 0;
+  private introCard = 0;
+  /** Points at each break, [us, them]. */
+  private quarterPts: [number, number][] = [];
   private clubEdits: Record<string, ClubEdit> = {};
   /** What this match is: an exhibition, your premiership fixture, or a career game. */
   private matchMode: Prefs["mode"] = "exhibition";
@@ -144,6 +155,7 @@ class FootyGame implements GameModule {
     this.clubEdits = loadClubEdits();
     this.season = this.load(SEASON_KEY, parseSeason);
     this.career = this.load(CAREER_KEY, parseCareer);
+    this.coach = this.load(COACH_KEY, parseCoach);
     this.host = el("div", "absolute inset-0 overflow-hidden bg-[#05070c]");
     this.host.style.touchAction = "none";
     opts.root.appendChild(this.host);
@@ -272,8 +284,14 @@ class FootyGame implements GameModule {
           play: () => void this.beginMatch(),
           sim: () => this.simSeasonGame(1),
           simRound: () => this.simSeasonGame(this.season?.stage === "home" ? this.season.rounds - this.season.round : 10),
+          next: () => {
+            if (!this.season) return;
+            this.season = nextYear(this.season);
+            this.saveSeason();
+            this.showMenu();
+          },
           abandon: () => {
-            if (!confirm("Abandon this season?")) return;
+            if (!confirm("Abandon this premiership? The honour board goes with it.")) return;
             this.season = null;
             write(SEASON_KEY, null);
             this.showMenu();
@@ -281,7 +299,7 @@ class FootyGame implements GameModule {
         });
       } else {
         start = button("Start the season", PRIMARY, () => {
-          this.season = startSeason({ league: "national", club: this.prefs.club, seed: Date.now() & 0x7fffffff, rounds: this.prefs.rounds, women: this.prefs.comp === "women" });
+          this.season = startSeason({ league: "national", club: this.prefs.club, seed: Date.now() & 0x7fffffff, rounds: this.prefs.rounds, women: this.prefs.comp === "women", year: 2027, momentum: true });
           write(SEASON_KEY, this.season);
           this.showMenu();
         });
@@ -307,6 +325,30 @@ class FootyGame implements GameModule {
           ),
         );
       }
+    } else if (p.mode === "coach") {
+      modePanel = this.coach
+        ? coachHub(this.coach, {
+            act: (f) => {
+              f();
+              this.saveCoach();
+              this.showMenu();
+            },
+            coach: () => this.coachFromBox(),
+            play: () => void this.beginMatch(),
+            sim: () => this.simCoach(1),
+            simRest: () => this.simCoach(60),
+            restart: () => {
+              if (!confirm("Walk away from this coaching career?")) return;
+              this.coach = null;
+              write(COACH_KEY, null);
+              this.showMenu();
+            },
+          })
+        : coachCreate((o) => {
+            this.coach = newCoach({ ...o, seed: Date.now() & 0x7fffffff, rounds: this.prefs.rounds });
+            this.saveCoach();
+            this.showMenu();
+          });
     } else {
       modePanel = this.career
         ? careerHub(this.career, {
@@ -369,6 +411,7 @@ class FootyGame implements GameModule {
               { value: "exhibition" as const, title: "Exhibition", sub: "One match, any two clubs" },
               { value: "season" as const, title: "Premiership", sub: "A whole season and the finals" },
               { value: "career" as const, title: "Career", sub: "From the local footy to the big time" },
+              { value: "coach" as const, title: "Coach", sub: "Run a club from the box: picks, plans, the board" },
               { value: "kicking" as const, title: "Goalkicking", sub: "Ten set shots, wind and nerves" },
             ],
             p.mode,
@@ -379,7 +422,7 @@ class FootyGame implements GameModule {
             },
           ),
         ),
-        p.mode === "career" || (p.mode === "season" && this.season)
+        p.mode === "career" || p.mode === "coach" || (p.mode === "season" && this.season)
           ? el("span")
           : card(
               "Competition",
@@ -498,13 +541,67 @@ class FootyGame implements GameModule {
     write(CAREER_KEY, this.career);
   }
 
+  private saveCoach() {
+    write(COACH_KEY, this.coach);
+  }
+
+  /** Coach the next game from the box (the match centre). */
+  private coachFromBox() {
+    const c = this.coach;
+    if (!c || c.stage !== "season") return;
+    this.menu.hidden = true;
+    matchCentre(this.host, c, (m) => {
+      const { awards, mine } = m.awards();
+      const [us, them] = m.points;
+      recordCoachGame(c, { us, them, goals: m.ourGoals, votes: mine, awards, played: [...new Set([...c.selected, ...m.on])] });
+      this.saveCoach();
+      this.showMenu();
+    });
+  }
+
+  /** Sim your next `n` coached games (a simmed Grand Final win still gets its presentation). */
+  private simCoach(n: number) {
+    const c = this.coach;
+    if (!c) return;
+    for (let i = 0; i < n && c.stage === "season" && nextGame(c.season); i++) {
+      const gfLabel = nextGame(c.season)?.label === "Grand Final";
+      const m = simCoachGame(c);
+      if (gfLabel) this.simmedFlag(c.season, m.points, c.club, `Coach ${c.name}`, c.squad.filter((p) => c.selected.includes(p.id)).map((p) => `${p.first} ${p.last}`));
+    }
+    this.saveCoach();
+    this.showMenu();
+  }
+
+  /** A Grand Final you simmed: the presentation still happens. */
+  private simmedFlag(s: Season, pts: [number, number], club: string, byline: string, team: string[]) {
+    if (pts[0] === pts[1]) return;
+    const gf = s.finals.find((f) => f.key === "GF");
+    if (!gf) return;
+    const opp = gf.home === club ? gf.away : gf.home;
+    const won = pts[0] > pts[1];
+    const g = (p: number) => `${Math.floor(p / 7)}.${p - Math.floor(p / 7) * 6} (${p})`;
+    premiershipCeremony(this.host, {
+      year: s.year ?? 2027,
+      winner: clubById(won ? club : opp),
+      loser: clubById(won ? opp : club),
+      scores: won ? [g(pts[0]), g(pts[1])] : [g(pts[1]), g(pts[0])],
+      team: won ? team : rosterNames(opp, s.women).map((l) => fullName(opp, l, s.women)),
+      ours: won,
+      byline,
+      margin: Math.abs(pts[0] - pts[1]),
+      onDone: () => this.showMenu(),
+    });
+  }
+
   /** Sim your next `n` premiership games. */
   private simSeasonGame(n: number) {
     const s = this.season;
     if (!s) return;
     for (let i = 0; i < n && nextGame(s); i++) {
+      const gfLabel = nextGame(s)?.label === "Grand Final";
       const [us, them] = simulateMine(s);
       recordResult(s, us, them);
+      if (gfLabel) this.simmedFlag(s, [us, them], s.club, `${clubById(s.club).name}`, rosterNames(s.club, s.women).map((l) => fullName(s.club, l, s.women)));
     }
     this.saveSeason();
     this.showMenu();
@@ -565,7 +662,9 @@ class FootyGame implements GameModule {
     this.matchMode = p.mode;
     const career = p.mode === "career" && this.career?.stage === "season" ? this.career : null;
     if (p.mode === "career" && !career) this.matchMode = "exhibition";
-    const ssn = career ? career.season : p.mode === "season" ? this.season : null;
+    const coach = p.mode === "coach" && this.coach?.stage === "season" ? this.coach : null;
+    if (p.mode === "coach" && !coach) this.matchMode = "exhibition";
+    const ssn = career ? career.season : coach ? coach.season : p.mode === "season" ? this.season : null;
     const ng = ssn ? nextGame(ssn) : null;
     if (!ng && this.matchMode !== "exhibition") this.matchMode = "exhibition";
     const home = clubById(ng ? ssn!.club : p.club);
@@ -579,10 +678,12 @@ class FootyGame implements GameModule {
       this.fixtureLabel = "Goalkicking challenge";
     }
     const women = ssn && !career ? !!ssn.women : !career && p.comp === "women";
+    // Your eighteen, by name, in their positions (the coach's picks).
+    const ourNames = coach ? fieldOrder(coach).map((x) => x.last) : rosterNames(home.id, women);
     if (women) this.fixtureLabel = [this.fixtureLabel || "Exhibition", "Women's"].join(" · ");
     this.sim = new FootySim({
       women,
-      names: [rosterNames(home.id, women), rosterNames(rivalId, women)],
+      names: [ourNames, rosterNames(rivalId, women)],
       practice: kicking ? 10 : undefined,
       seed: Date.now() & 0x7fffffff,
       home,
@@ -637,6 +738,15 @@ class FootyGame implements GameModule {
       return;
     }
     this.hud = new FootyHud(this.host, this.sim, this.coarse, { label: [this.fixtureLabel, wet ? "Rain" : ""].filter(Boolean).join(" · ") || undefined });
+    // Grand Final day: the build-up before the first bounce.
+    this.quarterPts = [];
+    this.gf = this.fixtureLabel.endsWith("Grand Final") && !kicking;
+    this.introClock = 0;
+    this.introCard = 0;
+    if (this.gf) {
+      this.view.grandFinal(quick ? 2 : 11);
+      this.audio.roar(6);
+    }
     if (wet) this.audio.rain();
     if (this.coarse) this.buildTouch();
     this.overAt = 0;
@@ -715,6 +825,10 @@ class FootyGame implements GameModule {
       return;
     }
     this.hud?.setReplay(false);
+    if (this.view.intro) {
+      this.stepIntro(dt);
+      return;
+    }
     if (this.review) {
       // The verdict once the replay's done (or straight away if there isn't one).
       this.review.t += dt;
@@ -741,11 +855,18 @@ class FootyGame implements GameModule {
       this.view.onEvent(e);
       this.hud?.onEvent(e);
       this.audio.onEvent(e, (t) => t === 0);
+      if (e.kind === "siren") this.quarterPts.push([points(sim.score[0]), points(sim.score[1])]);
       if (e.kind === "over") {
         this.overAt = performance.now();
-        if (this.fixtureLabel.endsWith("Grand Final") && points(sim.score[0]) > points(sim.score[1])) {
-          this.view.celebrate(0);
-          this.hud?.shout("PREMIERS!", `The ${sim.clubs[0].name} have won the flag`, 8, "#facc15");
+        const [a, b] = [points(sim.score[0]), points(sim.score[1])];
+        if (this.gf && a !== b) {
+          // The siren in a Grand Final: the winners' cup, confetti and fireworks either way.
+          const w = a > b ? 0 : 1;
+          this.view.celebrate(w);
+          this.view.fireworks(40);
+          this.audio.roar(8);
+          for (let i = 0; i < 6; i++) window.setTimeout(() => this.audio.firework(), 600 + i * 700);
+          this.hud?.shout("PREMIERS!", `The ${sim.clubs[w].name} have won the flag`, 8, "#facc15");
           this.overAt += 6000;
         }
       }
@@ -757,6 +878,33 @@ class FootyGame implements GameModule {
     this.audio.setExcitement(Math.min(1, near * 0.7 + (sim.phase === "set" ? 0.3 : 0)), dt);
     this.emitter.progress(sim.matchScore(), performance.now());
     if (sim.phase === "over" && !this.ended && this.overAt && performance.now() - this.overAt > 3500) this.finish();
+  }
+
+  /** The Grand Final build-up: a card at a time while the camera sweeps the ground. Any button skips it. */
+  private stepIntro(dt: number) {
+    const sim = this.sim!;
+    const k = this.input();
+    if (k.kick || k.handball || k.tackle || k.leap) {
+      this.view?.skipIntro();
+      this.hud?.shout("", "", 0.01);
+      return;
+    }
+    this.introClock += dt;
+    this.view?.tickIntro(dt);
+    const [a, b] = sim.clubs;
+    const cards: [number, string, string][] = [
+      [0, "GRAND FINAL", `${this.season?.year ?? this.coach?.year ?? ""} · The Great Ground · 100,000`.replace(/^ · /, "")],
+      [2, `${b.name.toUpperCase()}`, "Through the banner first"],
+      [4, `${a.name.toUpperCase()}`, "And here they come: the roar shakes the stands"],
+      [6.2, "THE ANTHEM", "Arms linked along the centre line"],
+      [8.2, "IT'S TIME", "The umpire raises the ball. The biggest day of all."],
+    ];
+    while (this.introCard < cards.length && this.introClock >= cards[this.introCard][0]) {
+      const [, t, sub] = cards[this.introCard++];
+      this.hud?.shout(t, sub, 2, "#facc15");
+      this.audio.firework();
+    }
+    this.audio.setExcitement(0.9, dt);
   }
 
   private render() {
@@ -862,13 +1010,23 @@ class FootyGame implements GameModule {
           : "";
     };
     let careerLine = "";
-    if (this.matchMode === "season" && this.season && this.fixtureLabel && !this.unranked) {
-      const mine: { [name: string]: number } = {};
-      for (const v of votes) if (sim.players[v.id].team === 0) mine[sim.players[v.id].name] = v.votes;
-      // Everyone's votes and goals for the league's count.
-      const awards: Awards = { votes: {}, goals: {} };
-      for (const v of votes) awards.votes[`${sim.clubs[sim.players[v.id].team].id}:${sim.players[v.id].name}`] = v.votes;
-      for (const pl of sim.players) if (pl.st.goals) awards.goals[`${sim.clubs[pl.team].id}:${pl.name}`] = pl.st.goals;
+    const mine: { [name: string]: number } = {};
+    for (const v of votes) if (sim.players[v.id].team === 0) mine[sim.players[v.id].name] = v.votes;
+    // Everyone's votes and goals for the league's count.
+    const awards: Awards = { votes: {}, goals: {} };
+    for (const v of votes) awards.votes[`${sim.clubs[sim.players[v.id].team].id}:${sim.players[v.id].name}`] = v.votes;
+    for (const pl of sim.players) if (pl.st.goals) awards.goals[`${sim.clubs[pl.team].id}:${pl.name}`] = pl.st.goals;
+    if (this.matchMode === "coach" && this.coach && !this.unranked) {
+      const c = this.coach;
+      const goals = new Map<number, number>();
+      for (const pl of sim.players) {
+        const fp = pl.team === 0 ? c.squad.find((x) => x.last === pl.name) : null;
+        if (fp && pl.st.goals) goals.set(fp.id, pl.st.goals);
+      }
+      recordCoachGame(c, { us, them, goals, votes: mine, awards, played: fieldOrder(c).map((x) => x.id) });
+      this.saveCoach();
+      seasonLine = c.stage === "season" ? after(c.season) : `Season over: ${c.review?.finish ?? c.history[c.history.length - 1]?.finish ?? ""}.`;
+    } else if (this.matchMode === "season" && this.season && this.fixtureLabel && !this.unranked) {
       recordResult(this.season, us, them, mine, awards);
       this.saveSeason();
       seasonLine = after(this.season);
@@ -931,7 +1089,34 @@ class FootyGame implements GameModule {
     );
     box.dataset.results = "";
     box.setAttribute("data-testid", "footy-results");
-    this.host.appendChild(box);
+    if (this.gf && us !== them) {
+      // The presentation first, then the stats.
+      const w = us > them ? 0 : 1;
+      const c = this.coach && this.matchMode === "coach" ? this.coach : null;
+      const full = (team: number, last: string) => {
+        if (team === 0 && c) {
+          const fp = c.squad.find((x) => x.last === last);
+          if (fp) return `${fp.first} ${fp.last}`;
+        }
+        return fullName(sim.clubs[team].id, last, sim.women);
+      };
+      const best = votes.find((v) => sim.players[v.id].team === w) ?? votes[0];
+      const bp = best ? sim.players[best.id] : null;
+      const q = this.quarterPts.slice(0, 4).map((x) => (w === 0 ? x : ([x[1], x[0]] as [number, number])));
+      premiershipCeremony(this.host, {
+        year: this.season?.year ?? this.coach?.year ?? this.career?.year ?? 2027,
+        winner: sim.clubs[w],
+        loser: sim.clubs[1 - w],
+        scores: [FootySim.fmt(sim.score[w]), FootySim.fmt(sim.score[1 - w])],
+        quarters: q.length === 4 ? q : undefined,
+        medal: bp ? { name: `${full(bp.team, bp.name)} (${sim.clubs[bp.team].short})`, line: `${bp.st.kicks + bp.st.handballs} disposals${bp.st.marks ? ` · ${bp.st.marks} marks` : ""}${bp.st.goals ? ` · ${bp.st.goals} goals` : ""}` } : undefined,
+        team: sim.players.filter((x) => x.team === w).map((x) => full(w, x.name)),
+        ours: w === 0,
+        byline: c ? `Coach ${c.name}` : undefined,
+        margin: Math.abs(us - them),
+        onDone: () => this.host.appendChild(box),
+      });
+    } else this.host.appendChild(box);
   }
 
   // ----------------------------------------------------------------- input

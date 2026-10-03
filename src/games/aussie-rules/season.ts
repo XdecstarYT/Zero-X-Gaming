@@ -46,6 +46,29 @@ export interface Season {
   /** League-wide, home and away: 3-2-1 votes and goals, by "club:surname". */
   medal?: Record<string, number>;
   goals?: Record<string, number>;
+  /** The medal votes round by round (for awards night's live count). */
+  medalRounds?: Record<string, number>[];
+  /** The year on the calendar (premiership dynasties carry on year to year). */
+  year?: number;
+  /** Clubs' form drifts through the season (winning streaks, slumps). */
+  momentum?: boolean;
+  drift?: Record<string, number>;
+  /** Past seasons in this premiership, oldest first. */
+  honours?: Honour[];
+}
+
+/** One season on the honour board. */
+export interface Honour {
+  year: number;
+  premier: string;
+  runnerUp: string;
+  /** Grand Final score, winner first. */
+  score: [number, number];
+  minor: string;
+  medal?: { key: string; n: number };
+  coleman?: { key: string; n: number };
+  /** Where your club finished. */
+  ours: string;
 }
 
 /** Votes and goals from a game you played: by "club:surname". */
@@ -110,7 +133,7 @@ export function newSeason(o: { league: LeagueId; club: string; seed: number; rou
 /** Each club's form this season (deterministic per season). */
 export function strength(s: Season, id: string) {
   const r = createRng((s.seed ^ (id.charCodeAt(0) * 7919 + id.charCodeAt(id.length - 1) * 104729 + id.length * 31)) >>> 0);
-  return 0.84 + r.next() * 0.32;
+  return 0.84 + r.next() * 0.32 + (s.drift?.[id] ?? 0);
 }
 
 /** A simulated game's score in points: goals and behinds from each side's form. */
@@ -218,7 +241,12 @@ function nextFinals(s: Season, order: string[]): Fixture[] | null {
 function addAwards(s: Season, a: Awards) {
   const m = (s.medal ??= {});
   const g = (s.goals ??= {});
-  for (const [k, v] of Object.entries(a.votes)) m[k] = (m[k] ?? 0) + v;
+  const byRound = (s.medalRounds ??= []);
+  const rd = (byRound[s.round] ??= {});
+  for (const [k, v] of Object.entries(a.votes)) {
+    m[k] = (m[k] ?? 0) + v;
+    rd[k] = (rd[k] ?? 0) + v;
+  }
   for (const [k, v] of Object.entries(a.goals)) g[k] = (g[k] ?? 0) + v;
 }
 
@@ -263,6 +291,21 @@ export function countOf(rec: Record<string, number> | undefined, n = 10) {
     .slice(0, n);
 }
 
+/** Momentum: winners get a little hotter, losers a little colder, and a bit of luck either way. */
+function shiftForm(s: Season, round: Fixture[]) {
+  const d = (s.drift ??= {});
+  const r = createRng((s.seed * 131 + s.round * 7907) >>> 0);
+  for (const f of round) {
+    if (!f.result) continue;
+    const [h, a] = f.result;
+    for (const [id, won] of [
+      [f.home, h > a],
+      [f.away, a > h],
+    ] as [string, boolean][])
+      d[id] = Math.max(-0.07, Math.min(0.07, (d[id] ?? 0) * 0.92 + (won ? 0.006 : -0.006) + (r.next() - 0.5) * 0.02));
+  }
+}
+
 /** Simulate everything still to play until your next game (or the end of the season). */
 function advance(s: Season) {
   for (let guard = 0; guard < 200; guard++) {
@@ -274,6 +317,7 @@ function advance(s: Season) {
           f.result = simulateGame(s, f, 1);
           addAwards(s, simAwards(s, f, 1));
         }
+      if (s.momentum) shiftForm(s, round);
       s.round++;
       if (s.round >= s.rounds) {
         const top = ladder(s).map((r) => r.id);
@@ -330,10 +374,100 @@ export function simulateMine(s: Season, form = 1): [number, number] {
 }
 
 /** Start a season and play out anything before your first game. */
-export function startSeason(o: { league: LeagueId; club: string; seed: number; rounds?: number; women?: boolean }) {
+export function startSeason(o: { league: LeagueId; club: string; seed: number; rounds?: number; women?: boolean; year?: number; momentum?: boolean; honours?: Honour[] }) {
   const s = newSeason(o);
+  if (o.year) s.year = o.year;
+  if (o.momentum) s.momentum = true;
+  if (o.honours) s.honours = o.honours;
   advance(s);
   return s;
+}
+
+// ----------------------------------------------------------- the dynasty
+
+/** The season's line on the honour board (once it's over). */
+export function honourOf(s: Season): Honour | null {
+  const gf = s.finals.find((f) => f.key === "GF" && f.result);
+  if (s.stage !== "done" || !gf || !s.premier) return null;
+  const runnerUp = gf.home === s.premier ? gf.away : gf.home;
+  const [h, a] = gf.result!;
+  const medal = countOf(s.medal, 1)[0];
+  const coleman = countOf(s.goals, 1)[0];
+  return {
+    year: s.year ?? 2027,
+    premier: s.premier,
+    runnerUp,
+    score: gf.home === s.premier ? [h, a] : [a, h],
+    minor: ladder(s)[0].id,
+    medal: medal && { key: medal.key, n: medal.n },
+    coleman: coleman && { key: coleman.key, n: coleman.n },
+    ours: finish(s),
+  };
+}
+
+/** Next year: the same competition and club, the honour board carried on. */
+export function nextYear(s: Season, club = s.club, rounds = s.rounds): Season {
+  const h = honourOf(s);
+  const honours = [...(s.honours ?? []), ...(h ? [h] : [])];
+  return startSeason({ league: s.league, club, seed: (s.seed * 48271 + 11) % 2147483647 || 7, rounds, women: s.women, year: (s.year ?? 2027) + 1, momentum: true, honours });
+}
+
+/** A club's last `n` results, oldest first: "W", "L" or "D". */
+export function formGuide(s: Season, id: string, n = 5) {
+  const out: ("W" | "L" | "D")[] = [];
+  for (const f of [...s.fixtures, ...s.finals]) {
+    if (!f.result || (f.home !== id && f.away !== id)) continue;
+    const [us, them] = f.home === id ? f.result : [f.result[1], f.result[0]];
+    out.push(us > them ? "W" : us < them ? "L" : "D");
+  }
+  return out.slice(-n);
+}
+
+/** Every game in a home-and-away round. */
+export const roundResults = (s: Season, round: number) => s.fixtures.filter((f) => f.round === round);
+
+/** The last completed home-and-away round (or -1). */
+export const lastRound = (s: Season) => (s.stage === "home" ? s.round - 1 : s.rounds - 1);
+
+/** A club's current run: +3 for three wins in a row, -2 for two losses. */
+export function streak(s: Season, id: string) {
+  const g = formGuide(s, id, 99);
+  if (!g.length) return 0;
+  const last = g[g.length - 1];
+  let n = 0;
+  for (let i = g.length - 1; i >= 0 && g[i] === last; i--) n++;
+  return last === "W" ? n : last === "L" ? -n : 0;
+}
+
+/** The round's talking points: the big win, the upset, the streaks, the top of the table. */
+export function headlines(s: Season, round = lastRound(s)): string[] {
+  if (round < 0) return [];
+  const games = roundResults(s, round).filter((f) => f.result);
+  if (!games.length) return [];
+  const name = (id: string) => clubById(id).name;
+  const out: string[] = [];
+  const margin = (f: Fixture) => Math.abs(f.result![0] - f.result![1]);
+  const winnerOf = (f: Fixture) => (f.result![0] >= f.result![1] ? f.home : f.away);
+  const loserOf = (f: Fixture) => (winnerOf(f) === f.home ? f.away : f.home);
+  const big = [...games].sort((a, b) => margin(b) - margin(a))[0];
+  if (margin(big) >= 40) out.push(`${name(winnerOf(big))} smash ${name(loserOf(big))} by ${margin(big)} points.`);
+  const close = games.find((f) => margin(f) <= 6 && f !== big);
+  if (close) out.push(close.result![0] === close.result![1] ? `${name(close.home)} and ${name(close.away)} can't be split: a draw!` : `Thriller: ${name(winnerOf(close))} hold on by ${margin(close)} against ${name(loserOf(close))}.`);
+  const upset = games.find((f) => strength(s, loserOf(f)) - strength(s, winnerOf(f)) > 0.12);
+  if (upset) out.push(`Upset! ${name(winnerOf(upset))} topple ${name(loserOf(upset))}.`);
+  for (const id of s.clubs) {
+    const k = streak(s, id);
+    if (k >= 5 && formGuide(s, id, 1)[0] === "W" && games.some((f) => f.home === id || f.away === id)) out.push(`${name(id)} make it ${k} wins on the trot.`);
+    else if (k <= -5 && games.some((f) => f.home === id || f.away === id)) out.push(`${name(id)}'s losing run hits ${-k}. The pressure's on.`);
+  }
+  const top = ladder(s)[0];
+  if (top.played) out.push(`${name(top.id)} sit on top: ${top.won}-${top.lost}${top.drawn ? `-${top.drawn}` : ""}, ${top.pct.toFixed(1)}%.`);
+  return out.slice(0, 5);
+}
+
+/** The year's All-League team: the best eighteen by votes. */
+export function allLeagueTeam(s: Season) {
+  return countOf(s.medal, 18);
 }
 
 /** A saved season, if it's in the current format. */
