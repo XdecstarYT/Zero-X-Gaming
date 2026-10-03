@@ -1,4 +1,5 @@
 import type { GameFactory, GameInitOptions, GameModule, ScoreListener } from "../types";
+import { CATEGORIES, type BuildCategory } from "./catalog";
 import { TouchStick } from "./touchstick";
 import { GameLoop } from "../engine/loop";
 import { ScoreEmitter } from "../engine/emitter";
@@ -29,6 +30,7 @@ import {
   emptyBuild,
   FAMILY_PLOT,
   freshNeeds,
+  categoryOf,
   FURNITURE,
   furnitureDef,
   moodline,
@@ -133,6 +135,8 @@ class LifeGame implements GameModule {
   private building = false;
   private tool: Tool = "walk";
   private item: FurnitureType = "sofa";
+  /** Which of the builder's three tabs is open. */
+  private itemCat: BuildCategory = "Furniture";
   private rot = 0;
   private floor: FloorMat = "wood";
   private wallStart: { x: number; z: number } | null = null;
@@ -924,14 +928,27 @@ class LifeGame implements GameModule {
     if (this.tool === "floor")
       for (const m of ["wood", "tile", "carpet", "marble", "concrete"] as FloorMat[])
         sub.append(button(m, `rounded-full border-2 px-2 py-0.5 text-xs capitalize ${this.floor === m ? "border-emerald-400" : "border-white/20"}`, () => ((this.floor = m), this.renderBuildPanel())));
-    if (this.tool === "item")
-      for (const t of Object.keys(FURNITURE) as FurnitureType[]) {
+    if (this.tool === "item") {
+      sub.append(
+        el(
+          "div",
+          "mb-1 flex w-full gap-1",
+          ...CATEGORIES.map((c) => {
+            const n = (Object.keys(FURNITURE) as FurnitureType[]).filter((t) => categoryOf(t) === c).length;
+            const b = button(`${c === "Furniture" ? "🛋" : c === "Decor" ? "🖼" : "🌳"} ${c} (${n})`, `flex-1 rounded-lg border-2 px-2 py-1 text-xs font-black ${this.itemCat === c ? "border-emerald-400 bg-emerald-500/15" : "border-white/20"}`, () => ((this.itemCat = c), this.renderBuildPanel()));
+            b.setAttribute("data-testid", `life-cat-${c.toLowerCase()}`);
+            return b;
+          }),
+        ),
+      );
+      for (const t of (Object.keys(FURNITURE) as FurnitureType[]).filter((x) => categoryOf(x) === this.itemCat)) {
         const d = furnitureDef(t);
         const b = button("", `rounded-lg border-2 px-2 py-1 text-left text-[11px] ${this.item === t ? "border-emerald-400 bg-emerald-500/15" : "border-white/15"}`, () => ((this.item = t), this.renderBuildPanel()));
         b.append(el("span", "block font-bold", d.name), el("span", "block text-white/60", `${money(d.price)}${d.action ? ` · ${d.action}` : ""}`));
         b.setAttribute("data-testid", `life-item-${t}`);
         sub.append(b);
       }
+    }
     const hint = this.coarse ? "Tap to place · drag to look" : this.tool === "wall" ? "Click a corner, then the other end · right-drag to look · wheel zoom" : this.tool === "item" ? "Click to place · R rotates · right-drag to look" : "Click to use · right-drag to look · wheel zoom";
     panel.replaceChildren(head, sub, el("p", "mt-1 text-[11px] text-white/60", `${hint} · Balance ${money(this.life.money)}`));
   }

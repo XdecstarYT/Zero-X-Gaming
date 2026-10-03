@@ -1,3 +1,4 @@
+import { CATALOG, type BuildCategory } from "./catalog";
 import { createRng, type Rng } from "../engine/rng";
 
 /**
@@ -143,9 +144,15 @@ export interface FurnitureDef {
   rate?: number;
   action?: string;
   color: string;
+  /** Lies flat on the ground: other things can stand on it (rugs, decks). */
+  flat?: boolean;
+  /** Fine on bare ground as well as a floor (plants, trees, outdoor things). */
+  anywhere?: boolean;
+  /** Which of the builder's three tabs it's in (worked out from the room if unset). */
+  cat?: BuildCategory;
 }
 
-export const FURNITURE = {
+const BASE_FURNITURE = {
   fridge: { name: "Fridge", price: 900, w: 0.9, d: 0.75, h: 1.85, room: "Kitchen", need: "hunger", rate: 2.2, action: "Grab a snack", color: "#e5e7eb" },
   stove: { name: "Stove", price: 750, w: 0.75, d: 0.65, h: 0.92, room: "Kitchen", need: "hunger", rate: 1.4, action: "Cook a meal", color: "#d4d4d8" },
   counter: { name: "Counter", price: 300, w: 1.2, d: 0.65, h: 0.92, room: "Kitchen", color: "#f5f5f4" },
@@ -173,7 +180,15 @@ export const FURNITURE = {
   pool: { name: "Pool", price: 18000, w: 4, d: 7, h: 0.05, room: "Outdoor", need: "fun", rate: 1.8, action: "Swim", color: "#38bdf8" },
   hottub: { name: "Hot Tub", price: 6000, w: 2.2, d: 2.2, h: 0.9, room: "Outdoor", need: "hygiene", rate: 1.5, action: "Soak", color: "#0ea5e9" },
 } satisfies Record<string, FurnitureDef>;
+/** Everything you can place: the original pieces and the builder's catalogue of 100. */
+export const FURNITURE = { ...BASE_FURNITURE, ...CATALOG };
 export type FurnitureType = keyof typeof FURNITURE;
+/** The builder's tab for a piece: Furniture, Decor or Outdoor. */
+export function categoryOf(t: FurnitureType): BuildCategory {
+  const f = furnitureDef(t);
+  return f.cat ?? (f.room === "Outdoor" ? "Outdoor" : f.room === "Decor" ? "Decor" : "Furniture");
+}
+export const isFurniture = (t: unknown): t is FurnitureType => typeof t === "string" && Object.prototype.hasOwnProperty.call(FURNITURE, t);
 export const furnitureDef = (t: FurnitureType): FurnitureDef => FURNITURE[t];
 
 export interface Wall {
@@ -305,7 +320,7 @@ export function checkItem(b: Build, it: { type: FurnitureType; x: number; z: num
   if (r.x < 0 || r.z < 0 || r.x + r.w > PLOT_W || r.z + r.d > PLOT_D) return { ok: false, why: "Outside your plot" };
   for (const o of b.items) {
     if (o.id === skip) continue;
-    const isFlat = (t: FurnitureType) => t === "rug";
+    const isFlat = (t: FurnitureType) => !!furnitureDef(t).flat || t === "rug";
     if (!isFlat(o.type) && !isFlat(it.type) && overlap(r, itemRect(o), 0.02)) return { ok: false, why: "Something's in the way" };
   }
   for (const w of b.walls) {
@@ -325,7 +340,7 @@ export function checkItem(b: Build, it: { type: FurnitureType; x: number; z: num
     if (crosses || pts.some(([px, pz]) => wallDist(w, px, pz) < WALL_T / 2)) return { ok: false, why: "That's through a wall" };
   }
   const def = furnitureDef(it.type);
-  if (def.room !== "Outdoor" && it.type !== "plant") {
+  if (def.room !== "Outdoor" && !def.anywhere && it.type !== "plant") {
     const cx = Math.floor(it.x);
     const cz = Math.floor(it.z);
     if (!b.floors.some((f) => f.x === cx && f.z === cz)) return { ok: false, why: "Indoor furniture needs a floor" };
@@ -393,6 +408,24 @@ export function room(b: Build, x: number, z: number, w: number, d: number, mat: 
 }
 
 export const emptyBuild = (): Build => ({ walls: [], floors: [], items: [], roof: "#4b3a2f", nextId: 1 });
+
+const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/**
+ * A build that came from somewhere else (the server, another player, an old
+ * save) made safe to draw: unknown furniture and malformed pieces are dropped
+ * rather than crashing whoever walks past. Null if it isn't a build at all.
+ */
+export function cleanBuild(raw: unknown): Build | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (!Array.isArray(r.walls)) return null;
+  const walls = (r.walls as Wall[]).filter((w) => w && finite(w.x1) && finite(w.z1) && finite(w.x2) && finite(w.z2)).map((w) => ({ ...w, color: typeof w.color === "string" ? w.color : "#e7e5e4", open: Array.isArray(w.open) ? w.open.filter((o) => o && finite(o.at) && (o.kind === "door" || o.kind === "window")) : [] }));
+  const floors = Array.isArray(r.floors) ? (r.floors as FloorTile[]).filter((f) => f && finite(f.x) && finite(f.z) && typeof f.mat === "string") : [];
+  const items = Array.isArray(r.items) ? (r.items as Item[]).filter((i) => i && isFurniture(i.type) && finite(i.x) && finite(i.z) && finite(i.rot) && finite(i.id)) : [];
+  const nextId = Math.max(finite(r.nextId) ? r.nextId : 1, ...items.map((i) => i.id + 1));
+  return { walls, floors, items, roof: typeof r.roof === "string" ? r.roof : "#4b3a2f", nextId };
+}
 
 /**
  * A ready-made house for a plot: living room and kitchen, a bedroom or two and

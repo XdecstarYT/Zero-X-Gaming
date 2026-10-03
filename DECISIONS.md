@@ -459,3 +459,7 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 132. **Servers are rooms, not shards.** Splitting the economy three ways would split an already small
      market, so servers only separate who you see; land, money and elections stay one town. The lock is a
      row in `town_servers` that only the owner's account can change.
+133. **Furniture is data.** A hundred hand-written model functions would be a thousand lines nobody can review,
+     so catalogue pieces are lists of primitive parts in a data file with no three.js in it. The rules read the
+     same file for footprints and prices, a test checks every part stays inside its footprint, and adding a
+     piece is one line. The server stores builds as opaque JSON, so new pieces need no migration.

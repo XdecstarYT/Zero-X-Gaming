@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { canvasTexture, noise2 } from "../sports-kit/pipeline";
 import { concreteTexture, woodFloorTexture } from "../neon-siege/three/textures";
+import { CATALOG, type CatalogItem, type PartSpec } from "./catalog";
 import { furnitureDef, itemRect, WALL_H, WALL_T, type Build, type FloorMat, type FurnitureType } from "./world";
 
 /**
@@ -47,9 +48,37 @@ const legs = (w: number, d: number, h: number, color: string, r = 0.025) =>
 
 const BOOKS = ["#7f1d1d", "#1e3a8a", "#166534", "#a16207", "#4c1d95", "#0f766e", "#9a3412", "#334155"];
 
+/** One of the catalogue's parts, as geometry. */
+function specPart(p: PartSpec): Part {
+  switch (p[0]) {
+    case "b": {
+      const [, w, h, d, x, y, z, c, f] = p;
+      return box(w, h, d, x, y, z, c, { gloss: f === "g", glass: f === "x" });
+    }
+    case "c": {
+      const [, r, h, x, y, z, c, f] = p;
+      return cyl(r, h, x, y, z, c, 16, { gloss: f === "g", glass: f === "x" });
+    }
+    case "s": {
+      const [, r, x, y, z, c, f] = p;
+      return ball(r, x, y, z, c, { gloss: f === "g", glass: f === "x" });
+    }
+    case "k": {
+      const [, w, h, d, x, y, z, c] = p;
+      return soft(w, h, d, x, y, z, c);
+    }
+    case "n": {
+      const [, r, h, x, y, z, c] = p;
+      return { geo: new THREE.ConeGeometry(r, h, 16).translate(x, y + h / 2, z), color: c };
+    }
+  }
+}
+
 /** Parts for a piece of furniture, centred on the origin, front facing +z. */
 export function furnitureParts(type: FurnitureType): Part[] {
   const f = furnitureDef(type);
+  const listed = (CATALOG as Record<string, CatalogItem>)[type];
+  if (listed) return listed.parts.map(specPart);
   const { w, d, h } = f;
   const steel = "#9ca3af";
   const wood = "#8b5a2b";

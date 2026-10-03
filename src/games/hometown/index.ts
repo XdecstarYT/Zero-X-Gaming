@@ -1,4 +1,5 @@
 import type { GameFactory, GameInitOptions, GameModule, ScoreListener } from "../types";
+import { CATEGORIES, type BuildCategory } from "../life/catalog";
 import { TouchStick } from "../life/touchstick";
 import { GameLoop } from "../engine/loop";
 import { ScoreEmitter } from "../engine/emitter";
@@ -12,8 +13,10 @@ import {
   addWall,
   checkItem,
   checkWall,
+  cleanBuild,
   colliders,
   emptyBuild,
+  categoryOf,
   FURNITURE,
   furnitureDef,
   paintFloor,
@@ -150,6 +153,8 @@ class HometownGame implements GameModule {
   private buildPlot = -1;
   private tool: Tool = "wall";
   private item: FurnitureType = "sofa";
+  /** Which of the builder's three tabs is open. */
+  private itemCat: BuildCategory = "Furniture";
   private rot = 0;
   private floor: FloorMat = "wood";
   private wallStart: { x: number; z: number } | null = null;
@@ -490,8 +495,8 @@ class HometownGame implements GameModule {
     const list = await this.backend.builds(this.buildsAt || undefined);
     let changed = false;
     for (const b of list) {
-      const build = b.build as Build;
-      if (!build || !Array.isArray(build.walls)) continue;
+      const build = cleanBuild(b.build);
+      if (!build) continue;
       // Our own edits in flight win over an older copy from the server.
       if (this.building && b.id === this.buildPlot) continue;
       this.builds.set(b.id, build);
@@ -591,7 +596,7 @@ class HometownGame implements GameModule {
       this.leaveTown();
       void this.showMenu();
     });
-    const buttons = el("div", "absolute bottom-3 right-14 flex flex-wrap justify-end gap-2", r.buildBtn, chat, phone, leave);
+    const buttons = (r.actions = el("div", "absolute bottom-3 right-14 flex flex-wrap justify-end gap-2", r.buildBtn, chat, phone, leave));
     const top = el(
       "div",
       "absolute left-2 top-2 flex max-w-[60%] flex-col gap-1 rounded-xl bg-black/55 px-3 py-2 text-white backdrop-blur-sm",
@@ -640,7 +645,7 @@ class HometownGame implements GameModule {
       if (e.key === "Escape") input.blur();
     });
     r.chatInput = input;
-    const chatBox = el("div", `absolute left-2 flex w-72 max-w-[60%] flex-col gap-1 ${this.coarse ? "bottom-40" : "bottom-3"}`, r.chatLog, input);
+    const chatBox = (r.chatBox = el("div", `absolute left-2 flex w-72 max-w-[60%] flex-col gap-1 ${this.coarse ? "bottom-40" : "bottom-3"}`, r.chatLog, input));
     // Touch stick.
     this.stick = new TouchStick(this.coarse);
     r.stick = this.stick.ring;
@@ -1128,8 +1133,8 @@ class HometownGame implements GameModule {
     const panel = this.refs.buildPanel;
     if (!panel) return;
     panel.classList.toggle("hidden", !on);
-    // The emote bar would sit over the build tools.
-    this.refs.emotes?.classList.toggle("hidden", on);
+    // The emote bar, chat and action buttons would sit over the build tools (Done leaves build mode).
+    for (const k of ["emotes", "chatBox", "actions"]) this.refs[k]?.classList.toggle("hidden", on);
     if (on) this.renderBuildPanel();
   }
 
@@ -1164,12 +1169,25 @@ class HometownGame implements GameModule {
     if (this.tool === "floor")
       for (const m of ["wood", "tile", "carpet", "marble", "concrete"] as FloorMat[])
         sub.append(button(m, `rounded-full border-2 px-2 py-0.5 text-xs capitalize ${this.floor === m ? "border-amber-400" : "border-white/20"}`, () => ((this.floor = m), this.renderBuildPanel())));
-    if (this.tool === "item")
-      for (const t of Object.keys(FURNITURE) as FurnitureType[]) {
+    if (this.tool === "item") {
+      sub.append(
+        el(
+          "div",
+          "mb-1 flex w-full gap-1",
+          ...CATEGORIES.map((c) => {
+            const n = (Object.keys(FURNITURE) as FurnitureType[]).filter((t) => categoryOf(t) === c).length;
+            const b = button(`${c === "Furniture" ? "🛋" : c === "Decor" ? "🖼" : "🌳"} ${c} (${n})`, `flex-1 rounded-lg border-2 px-2 py-1 text-xs font-black ${this.itemCat === c ? "border-amber-400 bg-amber-500/15" : "border-white/20"}`, () => ((this.itemCat = c), this.renderBuildPanel()));
+            b.setAttribute("data-testid", `town-cat-${c.toLowerCase()}`);
+            return b;
+          }),
+        ),
+      );
+      for (const t of (Object.keys(FURNITURE) as FurnitureType[]).filter((x) => categoryOf(x) === this.itemCat)) {
         const b = button(furnitureDef(t).name, `rounded-lg border-2 px-2 py-1 text-[11px] font-bold ${this.item === t ? "border-amber-400 bg-amber-500/15" : "border-white/15"}`, () => ((this.item = t), this.renderBuildPanel()));
         b.setAttribute("data-testid", `town-item-${t}`);
         sub.append(b);
       }
+    }
     const hint = this.coarse ? "Tap to place · drag to look" : this.tool === "wall" ? "Click a corner, then the other end · right-drag to look · wheel zoom" : this.tool === "item" ? "Click to place · R rotates · right-drag to look" : "Click · right-drag to look · wheel zoom";
     panel.replaceChildren(head, sub, el("p", "mt-1 text-[11px] text-white/60", `${hint} · walls take a plank (${inv.planks ?? 0}), furniture a piece from the workshop (${inv.furniture ?? 0}); doors, windows and floors are free`));
   }

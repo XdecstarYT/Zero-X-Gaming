@@ -253,3 +253,51 @@ test("Hometown: servers, and townsfolk on the street", async ({ page }) => {
   await page.evaluate(() => (window as unknown as { __town: { act: () => void } }).__town.act());
   await expect(page.getByTestId("town-toast")).toContainText(/".+"/);
 });
+
+/** The builder's catalogue: three tabs, a hundred new pieces, placed and saved. */
+test("Hometown: build with the new catalogue (Furniture, Decor, Outdoor)", async ({ page }) => {
+  test.setTimeout(240_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await openPractice(page);
+  const stage = page.getByTestId("game-stage");
+  await page.evaluate(() => (window as unknown as { __town: Town }).__town.give("cash", 3000));
+  await page.evaluate(() => (window as unknown as { __town: Town }).__town.give("furniture", 10));
+  const pieces = () => page.evaluate(() => (window as unknown as { __town: Town }).__town.state().info?.inventory.furniture ?? 0);
+  const before = await pieces();
+  await walkTo(page, "lot:6", /For sale/);
+  await stage.getByTestId("town-buy-lot").click();
+  await expect(stage.getByTestId("town-toast")).toContainText("is yours");
+  await stage.getByTestId("town-build-here").click();
+  await stage.getByTestId("town-tool-item").click();
+  // Three tabs, with their counts.
+  await expect(stage.getByTestId("town-cat-furniture")).toContainText("Furniture (54)");
+  await expect(stage.getByTestId("town-cat-decor")).toContainText("Decor (36)");
+  await expect(stage.getByTestId("town-cat-outdoor")).toContainText("Outdoor (36)");
+  const place = async (x: number, z: number) => page.evaluate(([x, z]) => (window as unknown as { __town: Town }).__town.build(x, z), [x, z]);
+
+  await stage.getByTestId("town-cat-outdoor").click();
+  await expect(stage.getByTestId("town-item-sofa")).toHaveCount(0);
+  await stage.getByTestId("town-item-gazebo").click();
+  await place(6, 8);
+  await stage.getByTestId("town-item-oakTree").click();
+  await place(18, 6);
+
+  await stage.getByTestId("town-cat-decor").click();
+  await stage.getByTestId("town-item-monstera").click();
+  await place(12, 20);
+
+  // Indoor furniture needs a floor under it.
+  await stage.getByTestId("town-cat-furniture").click();
+  await stage.getByTestId("town-item-arcade").click();
+  await page.evaluate(() => (window as unknown as { __town: Town }).__town.setTool("floor"));
+  await place(15.5, 15.5);
+  await page.evaluate(() => (window as unknown as { __town: Town }).__town.setTool("item"));
+  await place(15.5, 15.5);
+
+  const types = await page.evaluate(() => ((window as unknown as { __town: Town }).__town.builds(6) as unknown as { items: { type: string }[] }).items.map((i) => i.type));
+  expect(types).toEqual(["gazebo", "oakTree", "monstera", "arcade"]);
+  // One piece of furniture (from the workshop) per item placed.
+  await expect.poll(pieces).toBe(before - 4);
+  expect(errors).toEqual([]);
+});

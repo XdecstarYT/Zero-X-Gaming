@@ -620,6 +620,13 @@ streets, plots, house builder and renderer). Unlike every other game here, the s
   by `town__tick`) catches up every quiet ten minutes since the last visit, buying a fair ask from a player
   (paid by the treasury) or selling from their stall (`town_npc_stock`) into a fair bid, so money only moves
   between players and the treasury.
+- **Builder catalogue** (`life/catalog.ts`, shared with Life): 100 pieces on top of the original 26, in three
+  tabs: Furniture (34 new: kitchen island, king and bunk beds, corner sofa, arcade cabinet, pool table, gaming
+  setup...), Decor (33: lamps, chandelier, rugs, plants, aquarium, drum kit, fireplace...) and Outdoor (33: fences,
+  hedges, trees, gazebo, shed, swings, trampoline, fountain, deck...). Each is plain data (footprint, price, what
+  using it does, and its shape as boxes, cylinders, balls, cushions and cones that `models.ts` builds). Outdoor and
+  potted pieces stand on bare ground; flat ones (rugs, decks) can have things on top. Every build loaded from the
+  server goes through `cleanBuild`, which drops unknown or malformed pieces instead of crashing.
 - **Touch stick** (`life/touchstick.ts`, shared with Life): the ring jumps under your thumb and the knob follows
   it exactly; walking is camera-relative (`cameraMove` in `life/world.ts`).
 
