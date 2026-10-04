@@ -4,7 +4,7 @@ import { OUTFITS, WRAPS } from "@/games/neon-siege/cosmetics";
 import { readLoadout, writeLoadout, type Loadout } from "@/games/neon-siege/loadout";
 import { useAuth } from "@/store/auth";
 import { useWallet } from "@/store/wallet";
-import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE, ubusinessFreeOpen, ubusinessPrice, ZLINK_PRICE, zlinkActive, zlinkExtend, type UBusinessTier } from "./economy";
+import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE, ubusinessFreeOpen, ubusinessPrice, ZLINK_DAYS, ZLINK_DROP, ZLINK_PRICE, zlinkActive, zlinkDropReady, zlinkExtend, type UBusinessTier } from "./economy";
 import { deviceSaveSuffix } from "./device-accounts";
 import { getSupabaseBrowser } from "./supabase/client";
 import {
@@ -81,6 +81,9 @@ interface GuestSave {
   challenges: Record<string, { progress: number; completed: boolean }>;
   /** ZLink+ runs to this time (ms), on this device. */
   zlinkUntil?: number;
+  /** Total days ever linked, and when the weekly drop was last taken (ms). */
+  zlinkDays?: number;
+  zlinkDrop?: number;
 }
 
 function readGuest(): GuestSave {
@@ -483,8 +486,47 @@ export async function joinZlink(): Promise<{ coins: number; until: number }> {
   if (g.coins < ZLINK_PRICE) throw buyError("not enough coins");
   g.coins -= ZLINK_PRICE;
   g.zlinkUntil = zlinkExtend(g.zlinkUntil);
+  g.zlinkDays = (g.zlinkDays ?? 0) + ZLINK_DAYS;
   writeGuest(g);
   return { coins: g.coins, until: g.zlinkUntil };
+}
+
+export interface ZlinkStatus {
+  until: number | null;
+  daysTotal: number;
+  lastDrop: number | null;
+}
+
+/** Your whole membership: when it runs to, days ever linked, the last weekly drop. */
+export async function zlinkStatus(): Promise<ZlinkStatus> {
+  const auth = signedInClient();
+  if (!auth) {
+    const g = readGuest();
+    return { until: g.zlinkUntil ?? null, daysTotal: g.zlinkDays ?? (g.zlinkUntil ? ZLINK_DAYS : 0), lastDrop: g.zlinkDrop ?? null };
+  }
+  const { data, error } = await (auth.supabase as unknown as { rpc: (f: string) => PromiseLike<{ data: unknown; error: { message: string } | null }> }).rpc("zlink_status");
+  if (error) throw new Error(error.message);
+  const d = (data ?? {}) as { until?: string; daysTotal?: number; lastDrop?: string | null };
+  return { until: d.until ? Date.parse(d.until) : null, daysTotal: d.daysTotal ?? 0, lastDrop: d.lastDrop ? Date.parse(d.lastDrop) : null };
+}
+
+/** Take the weekly member drop (15 coins). */
+export async function claimZlinkDrop(): Promise<{ coins: number }> {
+  const auth = signedInClient();
+  if (auth) {
+    const { data, error } = await (auth.supabase as unknown as { rpc: (f: string) => PromiseLike<{ data: unknown; error: { message: string } | null }> }).rpc("claim_zlink_drop");
+    if (error) throw new Error(error.message);
+    const r = data as { coins: number };
+    useWallet.getState().set(r.coins);
+    return r;
+  }
+  const g = readGuest();
+  if (!zlinkActive(g.zlinkUntil)) throw new Error("ZLink+ members only");
+  if (!zlinkDropReady(g.zlinkDrop)) throw new Error("Your next drop is on its way");
+  g.coins += ZLINK_DROP;
+  g.zlinkDrop = Date.now();
+  writeGuest(g);
+  return { coins: g.coins };
 }
 
 /** A guest's ZLink+ (for the daily reward, which lives in its own module). */

@@ -7,7 +7,8 @@ describe("ZLink+", () => {
     const slugs = zlinkGames().map((g) => g.slug);
     expect(slugs).toContain("ubusiness");
     expect(slugs).toContain("aussie-rules");
-    expect(slugs.filter((s) => s !== "ubusiness").length).toBe(5);
+    expect(slugs).toContain("linkwave");
+    expect(slugs.filter((s) => s !== "ubusiness" && s !== "linkwave").length).toBe(5);
     expect(inZlink(ZLINK_EXCLUDED)).toBe(false);
     expect(inZlink("neon-siege")).toBe(false);
     expect(inZlink("trenches")).toBe(false);
@@ -34,5 +35,22 @@ describe("ZLink+", () => {
     const half = scramble(t, 0.5, () => 0);
     expect(half.slice(0, 10)).toBe(t.slice(0, 10));
     expect(half).toHaveLength(t.length);
+  });
+});
+
+describe("link levels and the weekly drop", () => {
+  it("climbs Bronze, Silver, Gold, Neon by days linked", async () => {
+    const { linkLevel, zlinkDropReady } = await import("./economy");
+    expect(linkLevel(0).level.name).toBe("Linked");
+    expect(linkLevel(30).level.name).toBe("Bronze");
+    expect(linkLevel(89).level.name).toBe("Bronze");
+    expect(linkLevel(90).level.name).toBe("Silver");
+    expect(linkLevel(400).level.name).toBe("Neon");
+    expect(linkLevel(400).next).toBeNull();
+    expect(linkLevel(60).progress).toBeCloseTo(0.5);
+    const now = Date.UTC(2026, 9, 20);
+    expect(zlinkDropReady(null, now)).toBe(true);
+    expect(zlinkDropReady(now - 6 * 86_400_000, now)).toBe(false);
+    expect(zlinkDropReady(now - 7 * 86_400_000, now)).toBe(true);
   });
 });

@@ -507,4 +507,9 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      renews itself (coins aren't a card on file). What it unlocks is checked where the thing was already checked
      (`has_sports_plus()`, `ubusiness_tier()`, the daily reward) rather than by copying unlocks in and out.
      Neon Siege is left out by design: its battle pass and shop are their own economy.
+145. **Members-only is enforced where the score lands.** Linkwave's client gate keeps non-members out of the game,
+     but the leaderboard is protected in `submit_score` itself, so a hand-made request can't put a non-member on
+     it. The XP boost lives in the same place, keyed on membership and the game, so Neon Siege can never pick it up.
+146. **Link levels count days, not money.** Every join adds 30 to a running total that never falls, so a level is
+     a record of loyalty, not of having a membership right now; letting it lapse doesn't cost you your Gold.
 

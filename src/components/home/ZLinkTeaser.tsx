@@ -14,7 +14,7 @@ export function ZLinkTeaser() {
         <div className="relative text-center sm:text-left">
           <p className="font-mono text-xs uppercase tracking-[0.35em] text-[#22e5ff]">Now open</p>
           <ZLinkMark className="mt-1 text-6xl sm:text-7xl" />
-          <p className="mt-1 font-mono text-sm text-white/70">Every Sports+ game, UBusiness Ultimate and double daily coins. 40 coins a month.</p>
+          <p className="mt-1 font-mono text-sm text-white/70">Linkwave (members only), every Sports+ game, UBusiness Ultimate, +25% XP. 40 coins a month.</p>
         </div>
         <span className="relative rounded-full border border-white/30 px-5 py-2 font-mono text-sm font-bold uppercase tracking-widest transition-colors group-hover:border-[#22e5ff] group-hover:text-[#22e5ff]">
           Get linked →

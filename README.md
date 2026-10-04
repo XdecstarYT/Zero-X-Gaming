@@ -845,18 +845,29 @@ Settings live in `site_settings` (readable by everyone; written only through `ow
 
 ### ZLink+ (the membership)
 
-**40 coins for 30 days** (`/zlink`, `20261019090000_zlink.sql`). Members get **every Sports+ game**, **UBusiness
-Ultimate** and **double daily rewards**, plus a glowing **Z+** mark beside their coins. It never renews on its own:
-joining again adds 30 days to wherever it runs to. **Neon Siege is not part of ZLink+**: it stays free to play, and
-its battle pass, item shop and Cash Cups are bought separately as before. Anything bought outright (Sports+, a
-UBusiness edition) is kept either way.
+**40 coins for 30 days** (`/zlink`; `20261019090000_zlink.sql`, `20261020090000_zlink_plus.sql`). Members get:
 
-- Server: `zlink_members(user_id, until)` (read your own row), `join_zlink()` (takes the coins as `zlink` in the
-  ledger), `zlink_until()`, `has_sports_plus()` (owns the pass or is a member), and `ubusiness_tier()` /
-  `claim_daily_reward()` now count membership.
-- Guests: the membership lives in the device save (`zlinkUntil`), with the same rules.
-- `src/lib/zlink.ts` lists what's in it (`zlinkGames()` is every game behind a one-time unlock except Neon Siege).
-  The Sports+ and UBusiness unlock cards point to ZLink+.
+- **Linkwave**, the members-only game (below). Its scores are refused for non-members by `submit_score`, so its
+  leaderboard is members against members.
+- **Every Sports+ game** and **UBusiness Ultimate**.
+- **+25% XP** on every game except Neon Siege (in `submit_score`).
+- **Double daily rewards**, and a **weekly drop** of 15 coins (`claim_zlink_drop()`, once every 7 days).
+- **Link levels** from total days ever linked: Bronze 30, Silver 90, Gold 180, Neon 365 (`days_total`; never go down).
+- The glowing **Z+** beside their coins, and a dashboard on `/zlink` (the exclusive game, level, drop).
+
+It never renews on its own: joining again adds 30 days to wherever it runs to. **Neon Siege is not part of
+ZLink+**: it stays free to play, and its battle pass, item shop and Cash Cups are bought separately. Anything bought
+outright (Sports+, a UBusiness edition) is kept either way. Guests get the same rules in their device save.
+
+### Linkwave (ZLink+ exclusive)
+
+A neon link puzzle against the clock (`src/games/linkwave/`). A 6×8 board of five colours: drag through neighbours
+of one colour (three or more) and let go to clear them; the rest fall and new nodes drop in. Close a **loop** and
+every node of that colour goes (+3 s). A link of six leaves a **Pulse** (clears the 3×3 around it); a loop leaves a
+**Prism** (clears its row and column), and power nodes set each other off. Links within 2.2 s build a combo up to
+×5; links of five or more add 1.5 s. 75 seconds to start. Mouse, touch, or the keyboard (arrows, Space/Enter to
+start and finish a link, Backspace to drop it). The rules are pure functions in `logic.ts` (tested, including a
+hundred-link run that never leaves the board without a move); `index.ts` draws it on a canvas.
 
 ### The look: arcade noir
 
@@ -869,6 +880,13 @@ numbers that slide in as you scroll (CSS scroll timelines), there's a **Why Zero
 ends on a giant outlined wordmark. All of it lives in the "Arcade noir" block of `globals.css`, runs on the theme
 tokens (so Classic and X-1+ both get it), and holds still with reduced motion. Kept deliberately cheap: nothing
 repaints every frame except while you hover it, and nothing that can be clicked ever moves on its own.
+
+### The library and game pages
+
+`/games` opens on a big header (the game count in outline over a horizon floor) with a sticky glass filter bar:
+search, a segmented sort and category pills. Each game page opens on a cinematic header lit by the game's own art,
+with its access badge (Free, Sports+, Lite · Ultimate, ZLink+ exclusive, or "Included with ZLink+"), then the stage,
+an About panel with tags, keyboard and touch controls, and a sticky leaderboard.
 
 ### The front page
 

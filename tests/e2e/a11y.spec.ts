@@ -13,6 +13,7 @@ const PAGES = [
   "/locker",
   "/shop",
   "/zlink",
+  "/games/linkwave",
   "/profile",
   "/settings",
 ];

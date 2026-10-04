@@ -27,7 +27,7 @@ export interface Game {
   /** Preferred phone orientation in immersive mode. */
   orientation?: "landscape" | "any";
   /** A one-time unlock needed to play (Sports+ games need the Sports+ pass; UBusiness needs an edition). */
-  pass?: "sports-plus" | "ubusiness";
+  pass?: "sports-plus" | "ubusiness" | "zlink";
 }
 
 export interface LeaderboardEntry {

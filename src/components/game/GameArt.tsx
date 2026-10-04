@@ -61,6 +61,8 @@ export function GameArt({
         <TownArt a={a} b={b} />
       ) : game.slug === "ubusiness" ? (
         <StoreArt a={a} b={b} />
+      ) : game.slug === "linkwave" ? (
+        <LinkArt />
       ) : game.category === "sports" ? (
         <Oval id={id} a={a} b={b} />
       ) : (
@@ -627,6 +629,53 @@ function StoreArt({ a, b }: { a: string; b: string }) {
           $
         </text>
       </g>
+    </g>
+  );
+}
+
+function LinkArt() {
+  // A board of glowing nodes with one link lit through them, and a loop closing.
+  const cols = ["#22e5ff", "#ff2bd6", "#8b5cff", "#ffcb3d", "#3dffa2"];
+  const grid = [
+    [0, 1, 2, 3, 4, 2, 0, 1],
+    [2, 0, 0, 0, 1, 3, 4, 2],
+    [4, 3, 2, 0, 2, 2, 2, 0],
+    [1, 2, 4, 1, 3, 2, 2, 4],
+  ];
+  const link = [
+    [1, 1],
+    [2, 1],
+    [3, 1],
+    [3, 2],
+  ];
+  const loop = [
+    [5, 2],
+    [6, 2],
+    [6, 3],
+    [5, 3],
+    [5, 2],
+  ];
+  const x = (c: number) => 34 + c * 36;
+  const y = (r: number) => 46 + r * 36;
+  return (
+    <g>
+      <rect width="320" height="200" fill="#0b0d1f" />
+      <rect width="320" height="200" fill="url(#art-linkwave-glow)" opacity=".6" />
+      <polyline points={link.map(([c, r]) => `${x(c)},${y(r)}`).join(" ")} fill="none" stroke="#22e5ff" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" opacity=".35" />
+      <polyline points={link.map(([c, r]) => `${x(c)},${y(r)}`).join(" ")} fill="none" stroke="#22e5ff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points={loop.map(([c, r]) => `${x(c)},${y(r)}`).join(" ")} fill="none" stroke="#8b5cff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+      {grid.flatMap((row, r) =>
+        row.map((k, c) => (
+          <g key={`${c}-${r}`}>
+            <circle cx={x(c)} cy={y(r)} r="13" fill={cols[k]} opacity=".25" />
+            <circle cx={x(c)} cy={y(r)} r="9" fill={cols[k]} />
+            <circle cx={x(c) - 3} cy={y(r) - 3} r="3" fill="#fff" opacity=".5" />
+          </g>
+        )),
+      )}
+      <text x="300" y="30" textAnchor="end" fontFamily="Arial" fontWeight="900" fontSize="14" fill="#fff">
+        ZLINK+
+      </text>
     </g>
   );
 }

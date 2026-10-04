@@ -37,14 +37,14 @@ export function GameLibrary({ initial }: { initial: LibraryFilters }) {
 
   return (
     <div>
-      <div className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4 md:flex-row md:items-center">
+      <div className="zx-glass sticky top-20 z-30 flex flex-col gap-4 rounded-2xl border border-border/70 p-3 shadow-card md:flex-row md:items-center">
         <div className="relative flex-1">
           <label htmlFor="game-search" className="sr-only">
             Search games
           </label>
           <svg
             viewBox="0 0 24 24"
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle"
+            className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle"
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
@@ -59,25 +59,25 @@ export function GameLibrary({ initial }: { initial: LibraryFilters }) {
             value={filters.q}
             onChange={(e) => update({ q: e.target.value })}
             placeholder="Search by name or tag…"
-            className="h-10 w-full rounded-md border border-border bg-bg pl-9 pr-3 text-sm placeholder:text-subtle focus:border-cyan focus:outline-none"
+            className="h-11 w-full rounded-full border border-border bg-bg/70 pl-10 pr-4 text-sm placeholder:text-subtle focus:border-cyan focus:outline-none"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="game-sort" className="text-sm text-muted">
-            Sort
-          </label>
-          <select
-            id="game-sort"
-            value={filters.sort}
-            onChange={(e) => update({ sort: e.target.value as GameSort })}
-            className="h-10 rounded-md border border-border bg-bg px-3 text-sm focus:border-cyan focus:outline-none"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.id} value={o.id}>
+        <div role="radiogroup" aria-label="Sort" className="flex shrink-0 rounded-full border border-border bg-bg/70 p-1">
+          {SORT_OPTIONS.map((o) => {
+            const on = filters.sort === o.id;
+            return (
+              <button
+                key={o.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => update({ sort: o.id as GameSort })}
+                className={cn("rounded-full px-3.5 py-1.5 text-xs font-bold transition-colors", on ? "bg-cyan text-bg" : "text-muted hover:text-text")}
+              >
                 {o.label}
-              </option>
-            ))}
-          </select>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -107,8 +107,9 @@ export function GameLibrary({ initial }: { initial: LibraryFilters }) {
       </fieldset>
 
       <h2 className="sr-only">Results</h2>
-      <p className="mt-6 text-sm text-muted" aria-live="polite">
-        {results.length} {results.length === 1 ? "game" : "games"}
+      <p className="mt-6 flex items-baseline gap-2 text-sm text-muted" aria-live="polite">
+        <span className="font-display text-2xl font-black text-text">{results.length}</span>{" "}
+        <span>{results.length === 1 ? "game" : "games"}</span>
       </p>
 
       {results.length > 0 ? (
@@ -120,7 +121,7 @@ export function GameLibrary({ initial }: { initial: LibraryFilters }) {
           ))}
         </ul>
       ) : (
-        <div className="mt-3 rounded-lg border border-dashed border-border p-10 text-center">
+        <div className="mt-3 rounded-2xl border border-dashed border-border-strong bg-surface/60 p-12 text-center">
           <p className="font-display font-bold uppercase tracking-wider">No games match</p>
           <p className="mt-1 text-sm text-muted">Try a different search or category.</p>
           <Button variant="secondary" size="sm" className="mt-4" onClick={() => update({ q: "", category: "all" })}>

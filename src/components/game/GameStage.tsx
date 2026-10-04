@@ -19,6 +19,8 @@ import { SportsPassCard } from "@/components/sports/SportsPassCard";
 import { useSportsPass } from "@/components/sports/use-sports-pass";
 import { UBusinessCard } from "@/components/ubusiness/UBusinessCard";
 import { useUBusiness } from "@/components/ubusiness/use-ubusiness";
+import { useZlink } from "@/components/zlink/use-zlink";
+import { ZLinkLock } from "@/components/zlink/ZLinkLock";
 import { useIsOwner, useSettingsLoaded } from "@/lib/owner";
 
 const noopSubscribe = () => () => {};
@@ -87,7 +89,9 @@ export function GameStage({ game }: { game: Game }) {
   const pass = useSportsPass();
   const needsEdition = game.pass === "ubusiness";
   const edition = useUBusiness(needsEdition);
-  const locked = (needsPass && pass.owned !== true) || (needsEdition && !edition.tier);
+  const needsZlink = game.pass === "zlink";
+  const zlink = useZlink(needsZlink);
+  const locked = (needsPass && pass.owned !== true) || (needsEdition && !edition.tier) || (needsZlink && !zlink.active);
   const isOwner = useIsOwner();
   const downForMaintenance = !!useSettingsLoaded().maintenance?.games?.includes(game.slug);
   // The owner can still play a game that's down, to check the fix.
@@ -275,7 +279,13 @@ export function GameStage({ game }: { game: Game }) {
           <Overlay dim>
             <div data-testid="sports-lock" className="w-full max-w-lg text-left">
               <p className="mb-3 text-center font-display text-xl font-black uppercase tracking-wider sm:text-2xl">{game.title}</p>
-              {needsEdition ? (
+              {needsZlink ? (
+                zlink.until === undefined ? (
+                  <p className="text-center text-sm text-muted">Checking your ZLink+…</p>
+                ) : (
+                  <ZLinkLock />
+                )
+              ) : needsEdition ? (
                 edition.tier === undefined ? (
                   <p className="text-center text-sm text-muted">Checking your UBusiness edition…</p>
                 ) : (

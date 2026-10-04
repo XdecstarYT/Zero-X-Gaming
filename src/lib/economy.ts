@@ -34,6 +34,27 @@ export const zlinkExtend = (until: number | null | undefined, now = Date.now()) 
 /** Whole days left (rounded up), 0 when it's over. */
 export const zlinkDaysLeft = (until: number | null | undefined, now = Date.now()) => (zlinkActive(until, now) ? Math.ceil((until! - now) / DAY_MS) : 0);
 
+/** The weekly member drop. */
+export const ZLINK_DROP = 15;
+export const ZLINK_DROP_DAYS = 7;
+/** Can the weekly drop be taken (`lastDrop` in ms, or never)? */
+export const zlinkDropReady = (lastDrop: number | null | undefined, now = Date.now()) => !lastDrop || now - lastDrop >= ZLINK_DROP_DAYS * DAY_MS;
+/** Link levels, by total days ever linked. */
+export const LINK_LEVELS = [
+  { name: "Linked", days: 0, color: "#22e5ff" },
+  { name: "Bronze", days: 30, color: "#d97706" },
+  { name: "Silver", days: 90, color: "#cbd5e1" },
+  { name: "Gold", days: 180, color: "#facc15" },
+  { name: "Neon", days: 365, color: "#ff2bd6" },
+] as const;
+/** Your link level and how far to the next. */
+export function linkLevel(daysTotal: number) {
+  let i = 0;
+  while (i + 1 < LINK_LEVELS.length && daysTotal >= LINK_LEVELS[i + 1].days) i++;
+  const next = LINK_LEVELS[i + 1] ?? null;
+  return { index: i, level: LINK_LEVELS[i], next, progress: next ? (daysTotal - LINK_LEVELS[i].days) / (next.days - LINK_LEVELS[i].days) : 1 };
+}
+
 /** Launch offer: UBusiness Ultimate is free to claim (and keep) until the end of 31 October 2026, anywhere on Earth. */
 export const UBUSINESS_FREE_UNTIL = Date.parse("2026-11-01T12:00:00Z");
 export const ubusinessFreeOpen = (now = Date.now()) => now < UBUSINESS_FREE_UNTIL;

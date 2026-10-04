@@ -9,8 +9,9 @@ describe("command palette search", () => {
   });
 
   it("puts title matches ahead of tag matches", () => {
-    const r = searchPalette(paletteItems(), "li");
+    const r = searchPalette(paletteItems(), "lif");
     expect(r[0].label).toBe("Life");
+    expect(searchPalette(paletteItems(), "linkw")[0].label).toBe("Linkwave");
   });
 
   it("finds games by their tags", () => {

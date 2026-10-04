@@ -7,6 +7,7 @@ export interface Update {
 }
 
 export const UPDATES: Update[] = [
+  { tag: "ZLink+", title: "Linkwave and more", body: "A members-only game, +25% XP, a weekly coin drop and link levels from Bronze to Neon. Neon Siege stays separate.", href: "/zlink" },
   { tag: "New", title: "ZLink+ is here", body: "One link, every plus: all of Sports+, UBusiness Ultimate and double daily coins for 40 coins a month. (Neon Siege stays separate.)", href: "/zlink" },
   { tag: "Site", title: "A whole new look", body: "Arcade noir: a drifting aurora, a synthwave hero, cards that tilt toward you, a game ticker and a glass navbar, in both themes.", href: "/" },
   { tag: "UBusiness", title: "Families, foodies and a food critic", body: "Six kinds of shopper, staff who get better (and training to five stars), a coffee bar, bulk deals, late-night opening, a price promise and the week in review.", href: "/games/ubusiness" },

@@ -3,13 +3,14 @@ import Link from "next/link";
 import { Transmission } from "@/components/zlink/Transmission";
 import { ZLinkHero } from "@/components/zlink/ZLinkHero";
 import { ZLinkJoin } from "@/components/zlink/ZLinkJoin";
+import { ZLinkDashboard } from "@/components/zlink/ZLinkDashboard";
 import { GameArt } from "@/components/game/GameArt";
 import { getGame } from "@/lib/catalog";
 import { ZLINK_PERKS, zlinkGames } from "@/lib/zlink";
 
 export const metadata: Metadata = {
   title: "ZLink+",
-  description: "ZLink+: every Sports+ game, UBusiness Ultimate and double daily rewards, for 40 coins a month.",
+  description: "ZLink+: the members-only Linkwave, every Sports+ game, UBusiness Ultimate, +25% XP and double daily rewards, for 40 coins a month.",
 };
 
 export default function ZLinkPage() {
@@ -31,17 +32,20 @@ export default function ZLinkPage() {
           </div>
           <Transmission className="mt-2 min-h-6" />
           <p className="mt-6 max-w-xl text-lg text-muted lg:max-w-none">
-            One link, every plus: all of Sports+, UBusiness Ultimate and double daily coins, for {"40"} coins a month.
+            One link, every plus: a members-only game, all of Sports+, UBusiness Ultimate, +25% XP and double daily coins, for 40 coins a
+            month.
           </p>
         </div>
         <ZLinkJoin />
       </section>
 
+      <ZLinkDashboard />
+
       <section aria-labelledby="zlink-perks" className="relative mx-auto mt-20 max-w-6xl px-4 sm:px-6">
         <h2 id="zlink-perks" className="font-display text-2xl font-black uppercase tracking-tight sm:text-3xl">
           What&apos;s in the link
         </h2>
-        <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {ZLINK_PERKS.map((p) => (
             <li key={p.title} className="zx-ring rounded-2xl border border-border bg-surface/90 p-5">
               <span className="text-4xl" aria-hidden>
@@ -58,7 +62,7 @@ export default function ZLinkPage() {
         <h2 id="zlink-games" className="font-display text-2xl font-black uppercase tracking-tight sm:text-3xl">
           {games.length} games, one link
         </h2>
-        <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" data-testid="zlink-games">
+        <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7" data-testid="zlink-games">
           {games.map((g) => (
             <li key={g.slug}>
               <Link href={`/games/${g.slug}`} className="group block overflow-hidden rounded-xl border border-border bg-surface transition-colors hover:border-cyan">
@@ -102,7 +106,8 @@ export default function ZLinkPage() {
           {[
             ["Does it renew by itself?", "No. It runs for 30 days, then stops. Add more days whenever you like and they stack on the end."],
             ["What if I already bought Sports+ or UBusiness?", "They're yours to keep either way. ZLink+ just adds the rest."],
-            ["What happens when it ends?", "The member games lock again (unless you own them), and daily rewards go back to normal. Your saves stay."],
+            ["What happens when it ends?", "The member games lock again (unless you own them), and daily rewards and XP go back to normal. Your saves, scores and link level stay."],
+            ["What are link levels?", "Every 30 days you join adds to your total: Bronze at 30, Silver at 90, Gold at 180 and Neon at 365. They never go down."],
             ["Can I pay with money?", "No: ZLink+ is coins only, like everything on Zero X."],
           ].map(([q, a]) => (
             <div key={q} className="rounded-xl border border-border bg-surface/80 p-4">

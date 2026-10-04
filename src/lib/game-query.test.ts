@@ -13,7 +13,8 @@ describe("queryGames", () => {
 
   it("filters by category", () => {
     expect(slugs(queryGames(GAMES, { category: "shooter" })).sort()).toEqual(["neon-siege", "trenches"]);
-    expect(queryGames(GAMES, { category: "puzzle" })).toEqual([]);
+    expect(slugs(queryGames(GAMES, { category: "puzzle" }))).toEqual(["linkwave"]);
+    expect(queryGames(GAMES, { category: "trivia" })).toEqual([]);
   });
 
   it("searches title, tagline and tags case-insensitively", () => {
@@ -27,7 +28,7 @@ describe("queryGames", () => {
   });
 
   it("sorts newest first", () => {
-    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("ubusiness");
+    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("linkwave");
   });
 
   it("sorts by rating", () => {
