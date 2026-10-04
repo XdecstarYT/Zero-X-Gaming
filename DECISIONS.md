@@ -473,3 +473,12 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 136. **Events and goals are seeded, not stored.** A day's event comes from the store's seed and the day number,
      so reloading can't reroll a bad day, and tests can name the day they want. Goals are generated the same
      way at the start of the day and saved with the store so their progress survives a reload.
+137. **The owner is an email, checked in the database.** There's one owner, so a roles table would be machinery
+     for a single row. Every owner function starts with `owner__check()`, which reads the signed-in user's
+     email from `auth.users`; the client's `is_owner()` only decides whether to draw the crown. Site settings are
+     a public two-row table (announcement, maintenance) written through one validated function, so a typo
+     can't put a link to another site in the banner, and clearing upserts null rather than deleting.
+138. **The front page leads with games, not counters.** The hero's "Plays 0 / Downloads 0" made a new site look
+     empty, so it's gone, and cards hide ratings and play counts until there are some. The spotlight respects
+     reduced motion and pauses while you're on it; the navbar drops links the logo and avatar already cover
+     before it would ever scroll sideways.

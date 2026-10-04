@@ -81,12 +81,15 @@ export function AccountControl({ variant = "bar" }: { variant?: "bar" | "menu" |
         aria-label={`Your profile: ${name}, level ${level}`}
       >
         <Avatar name={name} url={profile?.avatar_url} className="h-7 w-7 text-xs" />
-        <span className="max-w-28 truncate text-sm font-semibold">{name}</span>
+        <span className={cn("max-w-28 truncate text-sm font-semibold", variant === "bar" && "sr-only")}>{name}</span>
         <span className="font-display text-[10px] font-bold text-cyan">L{level}</span>
       </Link>
-      <Button variant="ghost" size="sm" onClick={signOut}>
-        Sign out
-      </Button>
+      {/* The bar keeps to the avatar; signing out is on your profile page. */}
+      {variant !== "bar" && (
+        <Button variant="ghost" size="sm" onClick={signOut} className="whitespace-nowrap">
+          Sign out
+        </Button>
+      )}
     </div>
   );
 }

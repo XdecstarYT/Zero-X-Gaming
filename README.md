@@ -74,7 +74,7 @@ No server secret is used anywhere. Never add the Supabase `service_role` / secre
 ```
 src/
   proxy.ts                    refreshes the Supabase session cookie (Next 16 "proxy" = middleware)
-  app/                        routes: / · /games · /games/[slug] · /leaderboards · /profile · /settings · /auth/*
+  app/                        routes: / · /games · /games/[slug] · /leaderboards · /profile · /settings · /owner · /auth/*
                               + loading/error/not-found states, manifest, robots, sitemap, OG image
   components/
     ui/                       design system: Button, Badge, XPBar, Modal, Toaster, LeaderboardTable, Skeleton, …
@@ -789,9 +789,35 @@ The platform handles loading, pause UI, fullscreen, game over, score submission,
 ### Moderation
 
 Signed-in players can flag another player from any leaderboard row (offensive name, cheating, harassment,
-other). To moderate, review `public.reports` in the Supabase dashboard (filter `status = 'open'`). Set
-`profiles.is_hidden = true` to remove a player from every public board, then mark the report `actioned` or
+other). The site owner works through them in the owner panel (below): **Hide player** sets
+`profiles.is_hidden` (off every public board) and closes the report as `actioned`; **Dismiss** closes it as
 `dismissed`. `target_type` is open-ended, so future user content can reuse the same pipeline.
+
+### Owner panel (`/owner`)
+
+Signed in with the site owner's account (`decmar098@gmail.com`), a 👑 appears in the bar and `/owner` opens the
+panel. Everyone else gets "Not available", and every call is checked again in the database (`site__owner()`
+compares the signed-in user's email in `auth.users`), so the page is only a view.
+
+- **Numbers:** players (new today/this week, active this week), plays and a 14-day chart, coins in circulation and
+  this week's flow, battle pass holders, Sports+ and UBusiness sales, Hometown citizens and treasury
+  (`owner_dashboard()`, one call).
+- **Announcement:** a banner across every page (`owner_set_setting('announcement', …)`): 2–200 characters, a tone
+  (info, success, warning, event) and an optional link to a page on the site. Players can dismiss it; a new one shows
+  again (dismissals are keyed by its id in `localStorage`).
+- **Maintenance:** take any game down; its Play button becomes "Down for maintenance" for everyone but you.
+- **Coins:** give a player coins or take some back (`owner_grant_coins`, logged as `owner` in `coin_ledger`).
+- **Players and reports:** hide or unhide from the boards, work the open reports queue.
+- **Hometown servers:** lock and unlock Harbour Side and Hillcrest.
+
+Settings live in `site_settings` (readable by everyone; written only through `owner_set_setting`).
+
+### The front page
+
+A spotlight carousel (Life, UBusiness, Hometown, Trenches, Neon Siege, Code 3; turns every 6.5 s, pauses on
+hover/focus, stands still with reduced motion), **Browse by vibe** collections (`src/lib/spotlight.ts`), and search
+everywhere with **Ctrl/⌘+K** (`CommandPalette`, `src/lib/palette.ts`). Game cards only show ratings and play counts
+once there are some; until then they show tags and whether the game is free or needs a pass.
 
 ## Supabase project
 

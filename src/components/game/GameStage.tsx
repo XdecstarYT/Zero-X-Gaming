@@ -19,6 +19,7 @@ import { SportsPassCard } from "@/components/sports/SportsPassCard";
 import { useSportsPass } from "@/components/sports/use-sports-pass";
 import { UBusinessCard } from "@/components/ubusiness/UBusinessCard";
 import { useUBusiness } from "@/components/ubusiness/use-ubusiness";
+import { useIsOwner, useSettingsLoaded } from "@/lib/owner";
 
 const noopSubscribe = () => () => {};
 
@@ -87,7 +88,10 @@ export function GameStage({ game }: { game: Game }) {
   const needsEdition = game.pass === "ubusiness";
   const edition = useUBusiness(needsEdition);
   const locked = (needsPass && pass.owned !== true) || (needsEdition && !edition.tier);
-  const playable = game.status === "live" && game.slug in GAME_LOADERS;
+  const isOwner = useIsOwner();
+  const downForMaintenance = !!useSettingsLoaded().maintenance?.games?.includes(game.slug);
+  // The owner can still play a game that's down, to check the fix.
+  const playable = game.status === "live" && game.slug in GAME_LOADERS && (!downForMaintenance || isOwner);
   // Keep Play disabled until hydrated, so an early click is never silently lost.
   const hydrated = useSyncExternalStore(
     noopSubscribe,
@@ -257,7 +261,13 @@ export function GameStage({ game }: { game: Game }) {
         {!playable && (
           <Overlay>
             <p className="font-display text-xl font-black uppercase tracking-wider sm:text-3xl">{game.title}</p>
-            <p className="mt-2 text-sm text-muted sm:text-base">Coming soon. This game is still in development.</p>
+            {downForMaintenance ? (
+              <p className="mt-2 text-sm text-muted sm:text-base" data-testid="maintenance">
+                🛠️ Down for maintenance. We&apos;re working on it, check back soon.
+              </p>
+            ) : (
+              <p className="mt-2 text-sm text-muted sm:text-base">Coming soon. This game is still in development.</p>
+            )}
           </Overlay>
         )}
 
@@ -288,6 +298,7 @@ export function GameStage({ game }: { game: Game }) {
               {phase === "loading" ? "Loading…" : "Play"}
             </Button>
             {localBest > 0 && <p className="mt-3 text-xs text-subtle">Your best: {formatNumber(localBest)}</p>}
+            {downForMaintenance && <p className="mt-2 text-xs text-warning">Down for maintenance: only you can play it right now.</p>}
           </Overlay>
         )}
 

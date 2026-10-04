@@ -7,6 +7,7 @@ export interface Update {
 }
 
 export const UPDATES: Update[] = [
+  { tag: "Site", title: "A fresh new look", body: "A spotlight on the front page, Browse by vibe collections, and search everything with Ctrl+K.", href: "/" },
   { tag: "New game", title: "UBusiness", body: "Run your own store in photoreal 3D: stock the shelves, set the prices, work the till. Lite 5 coins, Ultimate 30, or free with the battle pass.", href: "/games/ubusiness" },
   { tag: "Hometown", title: "100 new things to build", body: "Furniture, Decor and Outdoor: king beds, arcade cabinets, pool tables, aquariums, fireplaces, gazebos, trampolines, fountains, trees and fences.", href: "/games/hometown" },
   { tag: "Hometown", title: "Townsfolk and servers", body: "Twelve townsfolk walk the streets, chat and keep the market trading while you're away. Pick your server from the menu: two more are on the way.", href: "/games/hometown" },

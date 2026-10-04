@@ -1,24 +1,22 @@
 import { LinkButton } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Rating } from "@/components/ui/Rating";
 import { YourProgress } from "@/components/layout/YourProgress";
 import { LiveLeaderboard } from "@/components/game/LeaderboardTabs";
-import { GameArt } from "@/components/game/GameArt";
 import { GameCard } from "@/components/game/GameCard";
 import { ContinuePlaying } from "@/components/game/ContinuePlaying";
 import { CardRow, CardRowItem, Section } from "@/components/layout/Section";
 import { FEATURED_SLUG, GAMES, getGame } from "@/lib/catalog";
 import { queryGames } from "@/lib/game-query";
-import { formatCompact } from "@/lib/format";
 import { SportsLineup } from "@/components/sports/SportsLineup";
 import { DailyRewards } from "@/components/home/DailyRewards";
 import { WhatsNew } from "@/components/home/WhatsNew";
+import { Spotlight } from "@/components/home/Spotlight";
+import { Collections } from "@/components/home/Collections";
 
 export default function HomePage() {
   const featured = getGame(FEATURED_SLUG) ?? GAMES[0];
   const trending = queryGames(GAMES, { sort: "popular" });
   const newest = queryGames(GAMES, { sort: "new" });
-  const totalPlays = GAMES.reduce((n, g) => n + g.plays, 0);
 
   return (
     <div className="space-y-16 pb-8">
@@ -28,15 +26,15 @@ export default function HomePage() {
           className="zx-grid-bg absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_75%)]"
           aria-hidden
         />
-        <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 py-14 sm:px-6 md:py-20 lg:grid-cols-[1.1fr_1fr]">
+        <div className="relative mx-auto grid max-w-7xl items-center gap-8 px-4 py-8 sm:gap-10 sm:px-6 sm:py-14 md:py-20 lg:grid-cols-[1.1fr_1fr]">
           <div className="animate-rise">
             <Badge tone="cyan">
               <span className="h-1.5 w-1.5 animate-pulse-glow rounded-full bg-cyan" aria-hidden />
-              {GAMES.length} original games · no downloads
+              New: UBusiness is open for business
             </Badge>
             <h1
               id="hero-title"
-              className="mt-5 font-display text-4xl font-black uppercase leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl"
+              className="mt-4 font-display text-[2.4rem] font-black uppercase leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl"
             >
               Play. Compete.
               <br />
@@ -44,62 +42,46 @@ export default function HomePage() {
                 Level up.
               </span>
             </h1>
-            <p className="mt-5 max-w-xl text-lg text-muted">
-              Live a whole life in Life, our flagship: grow up, work, love and build your house in a photoreal 3D town.
-              Then dig in on the Great War fronts in Trenches, drop into Neon Siege, or play Sports+. Earn XP, unlock the
-              battle pass, and play with friends on desktop or phone.
+            <p className="mt-4 max-w-xl text-base text-muted sm:mt-5 sm:text-lg">
+              Live a whole life in Life, run a store in UBusiness, build a town together in Hometown, then dig in on the
+              Great War fronts or play Sports+. Earn XP and coins, unlock the battle pass, and play with friends.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div className="mt-6 flex flex-wrap gap-3 sm:mt-8">
               <LinkButton href={`/games/${featured.slug}`} size="lg">
                 Play {featured.title}
               </LinkButton>
               <LinkButton href="/games" size="lg" variant="secondary">
-                Browse games
+                All games
               </LinkButton>
             </div>
-            <dl className="mt-10 grid max-w-md grid-cols-3 gap-6">
+            <ul className="mt-6 hidden flex-wrap gap-2 sm:mt-8 sm:flex" aria-label="Why play here">
               {[
-                { k: "Games", v: String(GAMES.length) },
-                { k: "Plays", v: formatCompact(totalPlays) },
-                { k: "Downloads", v: "0" },
+                { icon: "🎮", k: `${GAMES.length} original games` },
+                { icon: "⚡", k: "Free, no downloads" },
+                { icon: "📱", k: "Phone and desktop" },
+                { icon: "🏆", k: "Battle pass and ranks" },
               ].map((s) => (
-                <div key={s.k}>
-                  <dt className="text-xs uppercase tracking-wider text-muted">{s.k}</dt>
-                  <dd className="font-display text-2xl font-bold">{s.v}</dd>
-                </div>
+                <li key={s.k} className="flex items-center gap-1.5 rounded-full border border-border bg-surface/80 px-3 py-1.5 text-sm text-muted backdrop-blur">
+                  <span aria-hidden>{s.icon}</span>
+                  {s.k}
+                </li>
               ))}
-            </dl>
+            </ul>
           </div>
 
-          {/* Featured game */}
-          <article aria-labelledby="featured-title" className="animate-rise [animation-delay:120ms]">
-            <div className="relative overflow-hidden rounded-xl border border-cyan/40 bg-surface shadow-glow-cyan">
-              <div className="aspect-[16/10]">
-                <GameArt game={featured} />
-              </div>
-              <div className="flex flex-wrap items-end justify-between gap-4 border-t border-border p-5">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-magenta">Featured</p>
-                  <h2 id="featured-title" className="font-display text-2xl font-bold uppercase">
-                    {featured.title}
-                  </h2>
-                  <p className="text-sm text-muted">{featured.tagline}</p>
-                  <div className="mt-2">
-                    <Rating value={featured.rating} count={featured.ratingCount} />
-                  </div>
-                </div>
-                <LinkButton href={`/games/${featured.slug}`} variant="accent" aria-label={`Play ${featured.title} now`}>
-                  Play now
-                </LinkButton>
-              </div>
-            </div>
-          </article>
+          <div className="animate-rise [animation-delay:120ms]">
+            <Spotlight />
+          </div>
         </div>
       </section>
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <DailyRewards />
       </div>
+
+      <Section title="Browse by vibe" eyebrow="Collections" href="/games" hrefLabel="All games">
+        <Collections />
+      </Section>
 
       <Section title="What's new" eyebrow="The mega update">
         <WhatsNew />

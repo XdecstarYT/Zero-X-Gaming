@@ -59,6 +59,8 @@ export function GameArt({
         <Golf a={a} b={b} />
       ) : game.slug === "hometown" ? (
         <TownArt a={a} b={b} />
+      ) : game.slug === "ubusiness" ? (
+        <StoreArt a={a} b={b} />
       ) : game.category === "sports" ? (
         <Oval id={id} a={a} b={b} />
       ) : (
@@ -566,6 +568,64 @@ function LifeArt({ a, b }: { a: string; b: string }) {
         <rect x="8" y="30" width="26" height="4" rx="2" fill="#3b82f6" />
         <rect x="8" y="37" width="34" height="4" rx="2" fill="#ec4899" />
         <rect x="8" y="70" width="38" height="12" rx="4" fill={a} />
+      </g>
+    </g>
+  );
+}
+
+function StoreArt({ a, b }: { a: string; b: string }) {
+  // Evening on a corner store: lit windows, stocked shelves, an OPEN sign, a till and a trolley.
+  return (
+    <g>
+      <rect width="320" height="200" fill="#0f172a" />
+      <rect width="320" height="70" fill="#1e293b" />
+      <rect x="20" y="28" width="280" height="132" fill="#e7e5e4" />
+      <rect x="14" y="20" width="292" height="26" fill={a} />
+      <text x="160" y="38" textAnchor="middle" fontFamily="Arial" fontWeight="900" fontSize="15" letterSpacing="3" fill="#fff">
+        CORNER MART
+      </text>
+      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+        <path key={i} d={`M${20 + i * 35} 46 h35 l-4 12 h-27 Z`} fill={i % 2 ? "#f8fafc" : b} />
+      ))}
+      <rect x="34" y="66" width="168" height="80" fill="#fef9c3" />
+      {[0, 1, 2].map((r) => (
+        <g key={r}>
+          <rect x="40" y={84 + r * 22} width="156" height="3" fill="#78716c" />
+          {Array.from({ length: 13 }, (_, i) => (
+            <rect
+              key={i}
+              x={42 + i * 12}
+              y={72 + r * 22 + (i % 3)}
+              width="9"
+              height={12 - (i % 3)}
+              rx="1.5"
+              fill={["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#ec4899", "#a855f7"][(i + r * 2) % 6]}
+            />
+          ))}
+        </g>
+      ))}
+      <rect x="34" y="66" width="168" height="80" fill="none" stroke="#44403c" strokeWidth="4" />
+      <rect x="216" y="66" width="70" height="94" fill="#bae6fd" opacity=".75" />
+      <rect x="216" y="66" width="70" height="94" fill="none" stroke="#44403c" strokeWidth="4" />
+      <path d="M251 66 V160" stroke="#44403c" strokeWidth="3" />
+      <g transform="translate(226 78)">
+        <rect width="50" height="18" rx="4" fill="#111827" />
+        <text x="25" y="13" textAnchor="middle" fontFamily="Arial" fontWeight="900" fontSize="11" fill="#f87171">
+          OPEN
+        </text>
+      </g>
+      <rect x="0" y="160" width="320" height="40" fill="#334155" />
+      <rect x="0" y="160" width="320" height="5" fill="#94a3b8" />
+      <g transform="translate(40 160)" stroke="#e2e8f0" strokeWidth="2.5" fill="none" strokeLinejoin="round">
+        <path d="M0 4 h8 l8 20 h30 l6 -16 h-40" />
+        <circle cx="20" cy="30" r="3.5" fill="#e2e8f0" />
+        <circle cx="42" cy="30" r="3.5" fill="#e2e8f0" />
+      </g>
+      <g transform="translate(110 168)">
+        <rect width="34" height="20" rx="3" fill={b} />
+        <text x="17" y="14" textAnchor="middle" fontFamily="Arial" fontWeight="900" fontSize="10" fill="#0f172a">
+          $
+        </text>
       </g>
     </g>
   );

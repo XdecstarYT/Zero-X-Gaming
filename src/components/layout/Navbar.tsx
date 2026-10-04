@@ -6,6 +6,8 @@ import { cn } from "@/lib/cn";
 import { Logo } from "./Logo";
 import { AccountControl } from "./AccountControl";
 import { CoinChip } from "@/components/shop/Coin";
+import { OwnerLink } from "@/components/owner/OwnerLink";
+import { CommandPalette } from "./CommandPalette";
 
 export const NAV_LINKS = [
   { href: "/", label: "Home" },
@@ -32,7 +34,7 @@ export function Navbar() {
       >
         Skip to content
       </a>
-      <nav aria-label="Main" className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:h-16 sm:px-6 lg:gap-6">
+      <nav aria-label="Main" className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:h-16 sm:px-6 xl:gap-6">
         <Link href="/" aria-label="Zero X Gaming home" className="shrink-0 rounded-md">
           <Logo />
         </Link>
@@ -41,22 +43,23 @@ export function Navbar() {
           {NAV_LINKS.map((l) => {
             const active = isActive(pathname, l.href);
             return (
-              <li key={l.href}>
+              // The logo and the avatar already go home and to your profile; their links only show with room to spare.
+              <li key={l.href} className={l.href === "/" || l.href === "/profile" ? "hidden xl:block" : undefined}>
                 <Link
                   href={l.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "relative whitespace-nowrap rounded-md px-2 py-2 text-sm font-semibold transition-colors lg:px-3",
+                    "relative whitespace-nowrap rounded-md px-2 py-2 text-sm font-semibold transition-colors xl:px-3",
                     active ? "text-text" : "text-muted hover:text-text",
                   )}
                 >
                   {"short" in l ? (
                     <>
-                      <span className="hidden lg:inline">{l.label}</span>
-                      <span className="lg:hidden" aria-hidden>
+                      <span className="hidden xl:inline">{l.label}</span>
+                      <span className="xl:hidden" aria-hidden>
                         {l.short}
                       </span>
-                      <span className="sr-only lg:hidden">{l.label}</span>
+                      <span className="sr-only xl:hidden">{l.label}</span>
                     </>
                   ) : (
                     l.label
@@ -73,13 +76,17 @@ export function Navbar() {
           })}
         </ul>
 
-        <div className="ml-auto flex items-center gap-2">
-          <CoinChip />
+        <div className="ml-auto flex items-center gap-1 lg:gap-2">
+          <CommandPalette />
+          <div className="md:max-lg:hidden">
+            <CoinChip />
+          </div>
+          <OwnerLink />
           <Link
             href="/settings"
             aria-label="Settings"
             aria-current={pathname === "/settings" ? "page" : undefined}
-            className="grid h-10 w-10 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text"
+            className="hidden h-10 w-10 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text sm:grid"
           >
             <svg
               viewBox="0 0 24 24"

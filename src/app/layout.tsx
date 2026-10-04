@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Nunito, Orbitron, Space_Grotesk } from "next/font/google";
 import { Navbar } from "@/components/layout/Navbar";
+import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Footer } from "@/components/layout/Footer";
 import { Providers } from "@/components/layout/Providers";
@@ -57,6 +58,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <SportsInduction />
         <Providers>
           <Navbar />
+          <AnnouncementBanner />
           <main id="main" tabIndex={-1} className="flex-1 focus:outline-none">
             {children}
           </main>

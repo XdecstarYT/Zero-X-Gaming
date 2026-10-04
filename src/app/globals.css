@@ -167,6 +167,15 @@ html[data-theme="x1"] .font-display {
   }
 }
 
+@keyframes zx-kenburns {
+  from {
+    transform: scale(1.08) translateX(1.5%);
+  }
+  to {
+    transform: scale(1) translateX(0);
+  }
+}
+
 @keyframes zx-pulse-glow {
   0%,
   100% {

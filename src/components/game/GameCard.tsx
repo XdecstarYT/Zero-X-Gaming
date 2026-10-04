@@ -52,9 +52,25 @@ export function GameCard({ game, className, meta }: { game: Game; className?: st
           </Link>
         </h3>
         <p className="mt-0.5 line-clamp-1 text-sm text-muted">{meta ?? game.tagline}</p>
-        <div className="mt-3 flex items-center justify-between">
-          <Rating value={game.rating} />
-          <span className="text-xs text-muted">{formatCompact(game.plays)} plays</span>
+        <div className="mt-3 flex min-h-5 items-center justify-between gap-2">
+          {game.ratingCount > 0 ? (
+            <Rating value={game.rating} />
+          ) : (
+            <ul className="flex min-w-0 gap-1.5 overflow-hidden" aria-label="Tags">
+              {game.tags.slice(0, 2).map((t) => (
+                <li key={t} className="truncate rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">
+                  {t}
+                </li>
+              ))}
+            </ul>
+          )}
+          {game.plays > 0 ? (
+            <span className="shrink-0 text-xs text-muted">{formatCompact(game.plays)} plays</span>
+          ) : game.pass ? (
+            <span className="shrink-0 text-xs font-semibold text-violet">{game.pass === "sports-plus" ? "Sports+" : "Edition"}</span>
+          ) : (
+            <span className="shrink-0 text-xs font-semibold text-muted">Free</span>
+          )}
         </div>
       </div>
       <FavoriteButton slug={game.slug} title={game.title} className="absolute right-3 top-3 z-10" />
