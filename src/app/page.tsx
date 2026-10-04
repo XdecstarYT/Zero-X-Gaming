@@ -14,6 +14,7 @@ import { Spotlight } from "@/components/home/Spotlight";
 import { Collections } from "@/components/home/Collections";
 import { GameTicker } from "@/components/home/GameTicker";
 import { WhyZeroX } from "@/components/home/WhyZeroX";
+import { ZLinkTeaser } from "@/components/home/ZLinkTeaser";
 
 export default function HomePage() {
   const featured = getGame(FEATURED_SLUG) ?? GAMES[0];
@@ -81,6 +82,8 @@ export default function HomePage() {
       </section>
 
       <GameTicker />
+
+      <ZLinkTeaser />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <DailyRewards />

@@ -560,6 +560,116 @@ html[data-reduce-motion="true"] .zx-tilt {
 }
 
 /* ------------------------------------------------------------------------- */
+/* ZLink+ teaser                                                             */
+/* ------------------------------------------------------------------------- */
+
+/* A glitching word: two tinted copies jump about behind the real one. */
+.zx-glitch {
+  position: relative;
+  display: inline-block;
+}
+.zx-glitch::before,
+.zx-glitch::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.zx-glitch::before {
+  color: var(--zx-cyan);
+  mix-blend-mode: screen;
+  animation: zx-glitch-a 3.2s infinite steps(1);
+}
+.zx-glitch::after {
+  color: var(--zx-magenta);
+  mix-blend-mode: screen;
+  animation: zx-glitch-b 2.7s infinite steps(1);
+}
+@keyframes zx-glitch-a {
+  0%, 86%, 100% { transform: none; clip-path: inset(0 0 100% 0); }
+  87% { transform: translate(-4px, 1px); clip-path: inset(12% 0 58% 0); }
+  90% { transform: translate(3px, -2px); clip-path: inset(62% 0 8% 0); }
+  93% { transform: translate(-2px, 0); clip-path: inset(30% 0 40% 0); }
+}
+@keyframes zx-glitch-b {
+  0%, 80%, 100% { transform: none; clip-path: inset(100% 0 0 0); }
+  81% { transform: translate(4px, -1px); clip-path: inset(48% 0 22% 0); }
+  85% { transform: translate(-3px, 2px); clip-path: inset(5% 0 70% 0); }
+  88% { transform: translate(2px, 1px); clip-path: inset(70% 0 4% 0); }
+}
+
+/* Old-monitor scanlines and a slow sweep. */
+.zx-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / 0.035) 0 1px, transparent 1px 3px);
+}
+.zx-scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent, rgb(34 229 255 / 0.08) 50%, transparent);
+  height: 30%;
+  animation: zx-scan 7s linear infinite;
+}
+@keyframes zx-scan {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(400%); }
+}
+
+/* The "+" breathes. */
+.zx-pulse-plus {
+  animation: zx-pulse-plus 2.6s ease-in-out infinite;
+}
+@keyframes zx-pulse-plus {
+  50% { filter: drop-shadow(0 0 22px var(--zx-magenta)); transform: scale(1.08); }
+}
+
+/* Redaction: a black bar; hover (or focus) stamps it. */
+.zx-redact {
+  position: relative;
+  border-radius: 2px;
+  background: var(--zx-text);
+  color: transparent;
+  user-select: none;
+}
+.zx-redact::after {
+  content: "CLASSIFIED";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  color: var(--zx-danger);
+  background: var(--zx-bg);
+  border: 1px solid var(--zx-danger);
+  opacity: 0;
+  transition: opacity 150ms;
+}
+.zx-redact:hover::after,
+.zx-redact:focus::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zx-glitch::before,
+  .zx-glitch::after,
+  .zx-scanlines::after,
+  .zx-pulse-plus {
+    animation: none !important;
+  }
+}
+html[data-reduce-motion="true"] .zx-glitch::before,
+html[data-reduce-motion="true"] .zx-glitch::after,
+html[data-reduce-motion="true"] .zx-scanlines::after,
+html[data-reduce-motion="true"] .zx-pulse-plus {
+  animation: none !important;
+}
+
+/* ------------------------------------------------------------------------- */
 /* Intro splash                                                              */
 /* ------------------------------------------------------------------------- */
 

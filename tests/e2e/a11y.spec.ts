@@ -12,6 +12,7 @@ const PAGES = [
   "/battle-pass",
   "/locker",
   "/shop",
+  "/zlink",
   "/profile",
   "/settings",
 ];
@@ -77,7 +78,7 @@ test("no serious accessibility violations in the Trenches menu", async ({ page }
   );
 });
 
-for (const path of ["/", "/games", "/settings", "/battle-pass", "/locker", "/shop", "/games/neon-siege"]) {
+for (const path of ["/", "/games", "/settings", "/battle-pass", "/locker", "/shop", "/games/neon-siege", "/zlink"]) {
   test(`X-1+ theme: no serious accessibility violations on ${path}`, async ({ page }) => {
     await page.addInitScript(() =>
       localStorage.setItem("zx-settings", JSON.stringify({ state: { theme: "x1" }, version: 2 })),

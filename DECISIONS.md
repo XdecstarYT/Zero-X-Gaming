@@ -499,4 +499,7 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      fade left text at the bottom of the screen below contrast. Now only decorative pieces animate on scroll
      (the outlined section numbers), cards that tilt are single links, and the spotlight (with its own buttons)
      glows instead. Continuous effects run on transforms; the conic ring only spins while it's showing.
+143. **A teaser that can't leak.** Everything that ships for ZLink+ (page copy, code, comments, docs) only says
+     it's coming. The secret rows of its file are bars with nothing behind them in the HTML, not hidden text, so
+     view-source has nothing to find, and tests check the visible copy never names what it is.
 

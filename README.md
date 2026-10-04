@@ -843,6 +843,15 @@ compares the signed-in user's email in `auth.users`), so the page is only a view
 
 Settings live in `site_settings` (readable by everyone; written only through `owner_set_setting`).
 
+### ZLink+ (coming soon)
+
+A teaser and nothing more. `/zlink` shows a glitching ZLink+ mark, transmissions that decrypt out of noise, a file
+with its important rows blacked out (hover for CLASSIFIED), and **Request access**, which gives this device an
+access code (`ZL-XXXX-XXXX`, kept in `localStorage`). Poke the plus enough times and it answers. A band on the home
+page, a "???" card in What's New and a search entry lead there. **Keep it vague:** the page, the code and these docs
+deliberately don't say what ZLink+ is; `src/lib/zlink.test.ts` and `tests/e2e/zlink.spec.ts` fail if the teaser
+copy starts giving it away.
+
 ### The look: arcade noir
 
 Every page sits on a slow **aurora** (three soft gradient blobs drifting on their own clocks, transforms only) under

@@ -12,6 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE_URL}/battle-pass`, changeFrequency: "daily", priority: 0.7 },
     { url: `${SITE_URL}/locker`, changeFrequency: "weekly", priority: 0.5 },
     { url: `${SITE_URL}/shop`, changeFrequency: "daily", priority: 0.6 },
+    { url: `${SITE_URL}/zlink`, changeFrequency: "weekly", priority: 0.6 },
     ...GAMES.map((g) => ({
       url: `${SITE_URL}/games/${g.slug}`,
       lastModified: g.releasedAt,
