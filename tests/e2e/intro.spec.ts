@@ -176,11 +176,13 @@ introTest("the Boundary Blitz and Clanforge spots go first, one per visit, twice
   await expect(clan).toBeHidden({ timeout: 10_000 });
 });
 
-introTest("the UBusiness coming-soon spot plays first, one ad per visit", async ({ page }) => {
+introTest("the UBusiness coming-soon spot plays first (when its 30% roll comes up), one ad per visit", async ({ page }) => {
   test.setTimeout(120_000);
   await page.addInitScript(() => {
     localStorage.setItem("zx-mega-ad-seen", "1");
     if (!localStorage.getItem("zx-ubusiness-ad-count")) localStorage.setItem("zx-ubusiness-ad-count", "2");
+    // This visit's roll came up.
+    sessionStorage.setItem("zx-ad-roll-ubusinessAd", "1");
   });
   await page.goto("/");
   await page.getByRole("dialog", { name: "Zero X Gaming intro" }).getByRole("button", { name: "Skip intro" }).click();
@@ -196,4 +198,20 @@ introTest("the UBusiness coming-soon spot plays first, one ad per visit", async 
   await page.waitForTimeout(1500);
   await expect(page.getByTestId("cricket-ad")).toHaveCount(0);
   expect(await page.locator("main").evaluate((el) => (el as HTMLElement).inert)).toBe(false);
+});
+
+introTest("most visits skip the UBusiness spot: the next one in the queue plays instead", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    localStorage.setItem("zx-mega-ad-seen", "1");
+    localStorage.setItem("zx-ubusiness-ad-count", "0");
+    // This visit's roll didn't come up.
+    sessionStorage.setItem("zx-ad-roll-ubusinessAd", "0");
+  });
+  await page.goto("/");
+  await page.getByRole("dialog", { name: "Zero X Gaming intro" }).getByRole("button", { name: "Skip intro" }).click();
+  await expect(page.getByTestId("cricket-ad")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("ubusiness-ad")).toHaveCount(0);
+  // A skipped visit doesn't use up one of its three plays.
+  expect(await page.evaluate(() => localStorage.getItem("zx-ubusiness-ad-count"))).toBe("0");
 });

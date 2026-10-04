@@ -6,6 +6,8 @@ import { useAdTurn } from "./ad-turn";
 
 /** How many times the UBusiness spot has played in this browser (it plays three times). */
 export const UBUSINESS_AD_KEY = "zx-ubusiness-ad-count";
+/** It only turns up on 30% of visits; the rest go to the next spot in the queue. */
+export const UBUSINESS_AD_CHANCE = 0.3;
 export const UBUSINESS_AD_RUNS = 3;
 export const UBUSINESS_AD_S = 26;
 
@@ -148,13 +150,13 @@ function Grow() {
 }
 
 /**
- * A 26-second "coming soon" spot for UBusiness, first in the ad queue: it plays
- * after the intro on three visits, one ad per visit, then hands the slot on to
- * the Boundary Blitz spot. Unskippable like the others; the last beat links to
+ * A 26-second "coming soon" spot for UBusiness, first in the ad queue: on 30%
+ * of visits it plays after the intro (three plays at most, one ad per visit);
+ * otherwise, and once it's done, the slot goes to the Boundary Blitz spot. Unskippable like the others; the last beat links to
  * the game page.
  */
 export function UBusinessAd() {
-  const ad = useAdTurn({ name: "ubusinessAd", elementId: "zx-ubusiness-ad", countKey: UBUSINESS_AD_KEY, sessionKey: "zx-ubusiness-ad-session", runs: UBUSINESS_AD_RUNS, seconds: UBUSINESS_AD_S });
+  const ad = useAdTurn({ name: "ubusinessAd", elementId: "zx-ubusiness-ad", countKey: UBUSINESS_AD_KEY, sessionKey: "zx-ubusiness-ad-session", runs: UBUSINESS_AD_RUNS, seconds: UBUSINESS_AD_S, chance: UBUSINESS_AD_CHANCE });
   const t = useTimeline(ad.playing);
   if (!ad.playing) return null;
   const beat = beatAt(BEATS, t);

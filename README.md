@@ -730,7 +730,7 @@ tokens in `src/app/globals.css` (`html[data-theme="x1"]` overrides them), applie
 
 ### Spots (ads)
 
-After the intro, at most one spot plays per visit, in a queue: UBusiness (three plays), Boundary Blitz, then
+After the intro, at most one spot plays per visit, in a queue: UBusiness (three plays, and only on 30% of visits: the roll is kept for the visit, and a miss passes the slot on without using up a play), Boundary Blitz, then
 Clanforge (two plays each), then Sports+ and Code 3 (three each). `useAdTurn` (`src/components/layout/ad-turn.ts`) handles the turn-taking
 through `data-*` attributes on `<html>`, the play counts in `localStorage`, the one-ad-per-visit session keys,
 and making the page inert while a spot plays. The spots are SVG and CSS, with no video files.
