@@ -6,14 +6,14 @@ type Variant = "primary" | "accent" | "secondary" | "ghost";
 type Size = "sm" | "md" | "lg" | "icon";
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-md font-display font-semibold uppercase tracking-wider " +
+  "inline-flex items-center justify-center gap-2 rounded-full font-display font-semibold uppercase tracking-wider " +
   "transition-[background-color,box-shadow,color,transform] duration-200 ease-zx select-none " +
   "active:translate-y-px disabled:pointer-events-none disabled:opacity-50";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-cyan text-bg hover:shadow-glow-cyan hover:bg-[#5cedff]",
-  accent: "bg-magenta text-bg hover:shadow-glow-magenta hover:bg-[#ff5ee0]",
-  secondary: "border border-border-strong bg-surface-2 text-text hover:border-cyan hover:text-cyan",
+  primary: "zx-shine bg-cyan text-bg shadow-[0_8px_30px_-10px_var(--zx-cyan)] hover:shadow-glow-cyan hover:-translate-y-0.5",
+  accent: "zx-shine bg-magenta text-bg shadow-[0_8px_30px_-10px_var(--zx-magenta)] hover:shadow-glow-magenta hover:-translate-y-0.5",
+  secondary: "zx-glass border border-border-strong text-text hover:border-cyan hover:text-cyan hover:-translate-y-0.5",
   ghost: "text-muted hover:bg-surface-2 hover:text-text",
 };
 

@@ -843,6 +843,18 @@ compares the signed-in user's email in `auth.users`), so the page is only a view
 
 Settings live in `site_settings` (readable by everyone; written only through `owner_set_setting`).
 
+### The look: arcade noir
+
+Every page sits on a slow **aurora** (three soft gradient blobs drifting on their own clocks, transforms only) under
+a fine **film grain**; the navbar floats as a frosted-glass pill. The hero has a synthwave **horizon floor**, a giant
+outlined **X**, kinetic display type with a gradient sweeping through it, and a **ticker** of every game. Game cards
+**tilt toward the pointer** with a glare that follows it (`TiltCard`, mouse and pen only) and light a spinning
+gradient **ring** on hover; buttons are pills with a **sheen** that crosses on hover. Sections carry big outlined
+numbers that slide in as you scroll (CSS scroll timelines), there's a **Why Zero X** bento grid, and the footer
+ends on a giant outlined wordmark. All of it lives in the "Arcade noir" block of `globals.css`, runs on the theme
+tokens (so Classic and X-1+ both get it), and holds still with reduced motion. Kept deliberately cheap: nothing
+repaints every frame except while you hover it, and nothing that can be clicked ever moves on its own.
+
 ### The front page
 
 A spotlight carousel (Life, UBusiness, Hometown, Trenches, Neon Siege, Code 3; turns every 6.5 s, pauses on

@@ -48,6 +48,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="flex min-h-full flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] font-sans md:pb-0">
+        {/* The look: a drifting aurora behind the page and a film grain over it. */}
+        <div className="zx-aurora" aria-hidden>
+          <span />
+        </div>
+        <div className="zx-grain" aria-hidden />
         <IntroSplash />
         <MegaAd />
         <UBusinessAd />

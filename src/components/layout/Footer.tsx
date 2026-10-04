@@ -32,7 +32,7 @@ const COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
 
 export function Footer() {
   return (
-    <footer className="mt-24 border-t border-border bg-surface/40">
+    <footer className="mt-24 border-t border-border bg-surface/60">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_repeat(3,1fr)]">
         <div>
           <Logo />
@@ -57,6 +57,11 @@ export function Footer() {
             </ul>
           </nav>
         ))}
+      </div>
+      <div className="overflow-hidden" aria-hidden>
+        <p className="zx-outline -mb-[2.2vw] select-none whitespace-nowrap text-center font-display text-[19vw] font-black uppercase leading-none tracking-tighter transition-colors duration-700 hover:text-surface-3">
+          Zero X
+        </p>
       </div>
       <p className="border-t border-border/60 py-6 text-center text-xs text-subtle">© {new Date().getFullYear()} Zero X | Gaming</p>
     </footer>

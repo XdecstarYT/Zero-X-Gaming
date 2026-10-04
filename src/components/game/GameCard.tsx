@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Rating } from "@/components/ui/Rating";
 import { GameArt } from "./GameArt";
 import { FavoriteButton } from "./FavoriteButton";
+import { TiltCard } from "@/components/ui/TiltCard";
 
 /**
  * Whole card is clickable via a stretched link; the favourite button sits
@@ -16,15 +17,16 @@ import { FavoriteButton } from "./FavoriteButton";
 export function GameCard({ game, className, meta }: { game: Game; className?: string; meta?: string }) {
   const isNew = isNewRelease(game, GAMES);
   return (
+    <TiltCard className={cn("h-full rounded-xl", className)}>
     <article
       className={cn(
-        "group relative overflow-hidden rounded-lg border border-border bg-surface shadow-card transition-[border-color,box-shadow,transform] duration-200 ease-zx",
-        "hover:-translate-y-0.5 hover:border-cyan/60 hover:shadow-glow-cyan focus-within:border-cyan/60",
-        className,
+        "zx-ring group relative h-full overflow-hidden rounded-xl border border-border bg-surface shadow-card transition-[border-color,box-shadow] duration-300 ease-zx",
+        "hover:border-transparent hover:shadow-[0_24px_60px_-24px_rgb(0_0_0/0.65)] focus-within:border-transparent",
       )}
     >
       <div className="relative aspect-[16/10] overflow-hidden">
-        <GameArt game={game} className="transition-transform duration-500 ease-zx group-hover:scale-[1.04]" />
+        <GameArt game={game} className="transition-transform duration-700 ease-zx group-hover:scale-[1.07]" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface via-transparent to-transparent opacity-80" aria-hidden />
         <div className="absolute left-3 top-3 flex gap-1.5">
           <Badge tone="neutral" className="!border-white/10 !bg-black/75 !text-white backdrop-blur">
             {game.category}
@@ -43,7 +45,7 @@ export function GameCard({ game, className, meta }: { game: Game; className?: st
         </div>
       </div>
       <div className="p-4">
-        <h3 className="font-display text-base font-bold tracking-wide">
+        <h3 className="font-display text-base font-bold tracking-wide transition-colors group-hover:text-cyan">
           <Link
             href={`/games/${game.slug}`}
             className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
@@ -76,9 +78,10 @@ export function GameCard({ game, className, meta }: { game: Game; className?: st
       <FavoriteButton slug={game.slug} title={game.title} className="absolute right-3 top-3 z-10" />
       {/* Focus ring for the stretched link, drawn on the card. */}
       <span
-        className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-cyan opacity-0 group-has-[a:focus-visible]:opacity-100"
+        className="pointer-events-none absolute inset-0 rounded-xl ring-2 ring-cyan opacity-0 group-has-[a:focus-visible]:opacity-100"
         aria-hidden
       />
     </article>
+    </TiltCard>
   );
 }

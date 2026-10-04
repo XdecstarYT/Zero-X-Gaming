@@ -494,4 +494,9 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      different numbers (list length, department tastes, patience, pace, budget, card share), so every rule that
      already reads a shopper (prices, queues, reviews) works for all of them with no special cases. The critic is
      the one exception: their mood at the door becomes a newspaper verdict, capped at one visit a day.
+142. **Motion never moves what you're about to click.** The revamp first faded and slid whole sections in on
+     scroll and tilted the hero card toward the pointer; both shifted buttons out from under the cursor, and the
+     fade left text at the bottom of the screen below contrast. Now only decorative pieces animate on scroll
+     (the outlined section numbers), cards that tilt are single links, and the spotlight (with its own buttons)
+     glows instead. Continuous effects run on transforms; the conic ring only spins while it's showing.
 

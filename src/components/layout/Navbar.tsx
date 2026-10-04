@@ -27,14 +27,14 @@ export function Navbar() {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border/80 bg-bg/80 pt-[env(safe-area-inset-top)] backdrop-blur-md">
+    <header className="sticky top-0 z-40 px-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] sm:px-4">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:rounded-md focus:bg-cyan focus:px-3 focus:py-2 focus:text-bg"
       >
         Skip to content
       </a>
-      <nav aria-label="Main" className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:h-16 sm:px-6 xl:gap-6">
+      <nav aria-label="Main" className="zx-glass mx-auto flex h-14 max-w-7xl items-center gap-3 rounded-2xl border border-border/70 px-3 shadow-[0_10px_40px_-18px_rgb(0_0_0/0.7)] sm:h-16 sm:px-5 xl:gap-6">
         <Link href="/" aria-label="Zero X Gaming home" className="shrink-0 rounded-md">
           <Logo />
         </Link>
@@ -49,8 +49,8 @@ export function Navbar() {
                   href={l.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "relative whitespace-nowrap rounded-md px-2 py-2 text-sm font-semibold transition-colors xl:px-3",
-                    active ? "text-text" : "text-muted hover:text-text",
+                    "relative whitespace-nowrap rounded-full px-2 py-1.5 text-sm font-semibold transition-colors xl:px-3",
+                    active ? "bg-surface-3/80 text-text" : "text-muted hover:bg-surface-2/70 hover:text-text",
                   )}
                 >
                   {"short" in l ? (
@@ -66,7 +66,7 @@ export function Navbar() {
                   )}
                   {active && (
                     <span
-                      className="absolute inset-x-3 -bottom-[13px] h-0.5 rounded-full bg-cyan shadow-[0_0_10px_var(--zx-cyan)]"
+                      className="absolute inset-x-4 -bottom-1 h-0.5 rounded-full bg-gradient-to-r from-cyan via-violet to-magenta"
                       aria-hidden
                     />
                   )}
