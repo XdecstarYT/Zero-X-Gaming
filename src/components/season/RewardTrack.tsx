@@ -104,7 +104,7 @@ export function RewardTrack({
                         {coins}
                       </span>
                       <span className={cn("text-[11px] font-bold", reached ? "text-success" : "text-muted")}>
-                        {reached ? "✓ Earned" : "Free · coins"}
+                        {reached ? "✓ Earned" : "Free · ZX Cash"}
                       </span>
                     </div>
                   ) : (

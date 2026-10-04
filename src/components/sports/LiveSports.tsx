@@ -255,7 +255,7 @@ export function LiveSports({ initial = "footy", into }: { initial?: ChannelId; i
             <p className="text-sm text-muted">
               {pass.owned
                 ? `${game.title} is in your Sports+ pass.`
-                : `Watching is free. To play ${game.title} (and every Sports+ game), unlock Sports+ once for ${SPORTS_PASS_PRICE} coins.`}
+                : `Watching is free. To play ${game.title} (and every Sports+ game), unlock Sports+ once for ${SPORTS_PASS_PRICE} ZX Cash.`}
             </p>
           </div>
           {pass.owned ? <LinkButton href={`/games/${game.slug}`}>Play {game.title.split(":")[0]}</LinkButton> : <LinkButton href="/sports#pass">Unlock Sports+</LinkButton>}

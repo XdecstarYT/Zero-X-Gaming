@@ -50,8 +50,8 @@ test("battle pass costs 200 coins and unlocks the tiers already reached", async 
   await expect(page.getByRole("heading", { name: "Battle Pass owned" })).toBeVisible();
   await expect(page.getByText("✓ Owned")).toHaveCount(3);
   // Free lane: coins every 5 tiers for everyone.
-  await expect(page.getByText("Free · coins").first()).toBeAttached();
-  await expect(page.getByRole("link", { name: /Item Shop: 60 coins/ })).toBeVisible();
+  await expect(page.getByText("Free · ZX Cash").first()).toBeAttached();
+  await expect(page.getByRole("link", { name: /Item Shop: 60 ZX Cash/ })).toBeVisible();
 });
 
 test("item shop: DROP 1 is live, buy an item and it shows up in the Locker", async ({ page }) => {
@@ -65,19 +65,19 @@ test("item shop: DROP 1 is live, buy an item and it shows up in the Locker", asy
   await expect(page.getByTestId("drop-name")).toHaveText("DROP 1");
   await expect(page.getByRole("heading", { name: "Apex Predator" })).toBeVisible();
   // Can't afford the 150-coin featured outfit yet.
-  await expect(page.getByRole("button", { name: "Buy Apex Predator for 150 coins" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Buy Apex Predator for 150 ZX Cash" })).toBeDisabled();
   // Inspect in 3D, buy from the dialog, celebrate, equip.
   await page.getByRole("button", { name: "Inspect Frostbite" }).click();
   const dialog = page.getByRole("dialog", { name: "Frostbite" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Ice-blue layers");
-  await dialog.getByRole("button", { name: "Buy Frostbite for 60 coins" }).click();
-  await dialog.getByRole("button", { name: "Confirm: buy Frostbite for 60 coins" }).click();
+  await dialog.getByRole("button", { name: "Buy Frostbite for 60 ZX Cash" }).click();
+  await dialog.getByRole("button", { name: "Confirm: buy Frostbite for 60 ZX Cash" }).click();
   const party = page.getByRole("dialog", { name: "Unlocked!" });
   await expect(party).toBeVisible();
   await party.getByRole("button", { name: "Equip now" }).click();
   await expect(party).toBeHidden();
-  await expect(page.getByRole("link", { name: /Item Shop: 40 coins/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Item Shop: 40 ZX Cash/ })).toBeVisible();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("zx-siege-loadout") ?? "{}").outfit)).toBe("frostbite");
   await page.goto("/locker");
   const frost = page.getByRole("button", { name: /Frostbite/ });

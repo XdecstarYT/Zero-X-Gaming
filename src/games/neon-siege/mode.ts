@@ -131,7 +131,7 @@ export class RoyaleController implements ModeController {
     this.ranked = this.s.stormScale === 1;
     this.cashCup = !!opts.cashCup && this.ranked;
     if (this.cashCup)
-      this.bannerMsg = { text: "CASH CUP", sub: "Top 3 win coins: 50 · 20 · 5", color: "#f2c230" };
+      this.bannerMsg = { text: "CASH CUP", sub: "Top 3 win ZX Cash: 50 · 20 · 5", color: "#f2c230" };
   }
 
   get world() {

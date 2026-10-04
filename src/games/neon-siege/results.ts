@@ -94,7 +94,7 @@ export function showResults(root: HTMLElement, input: ResultsInput): Promise<voi
   title.style.color = won ? "#ffb321" : input.title === "Defeat" ? "#ff5a4f" : "#ffffff";
   head.append(title);
   if (!ranked && !input.reward)
-    head.append(el("p", "mt-1 text-xs text-white/60", "Unranked match: no XP, coins or leaderboard score."));
+    head.append(el("p", "mt-1 text-xs text-white/60", "Unranked match: no XP, ZX Cash or leaderboard score."));
   card.append(head);
 
   // Stats
@@ -167,13 +167,13 @@ export function showResults(root: HTMLElement, input: ResultsInput): Promise<voi
           );
           li.append(
             el("div", "font-display text-lg font-black", `#${p}`),
-            el("div", "text-sm font-bold", `${c} coins`),
+            el("div", "text-sm font-bold", `${c} ZX Cash`),
           );
           ladder.append(li);
         }
         cup.append(ladder);
         const payout = el("p", "mt-2 text-center font-display text-2xl font-black text-[#f2c230]");
-        if (r.coinsWon) countUp(payout, r.coinsWon, 900, reduceMotion, (v) => `+${v} coins`);
+        if (r.coinsWon) countUp(payout, r.coinsWon, 900, reduceMotion, (v) => `+${v} ZX Cash`);
         else payout.textContent = "No payout this time: finish top 3 to cash in.";
         if (!r.coinsWon) payout.className = "mt-2 text-center text-sm text-white/70";
         cup.append(payout);
@@ -233,7 +233,7 @@ export function showResults(root: HTMLElement, input: ResultsInput): Promise<voi
       const extras = el("div", "grid gap-2 sm:grid-cols-2");
       if (r.tierCoins || r.coinsWon) {
         const box = el("div", "rounded-lg bg-white/5 p-3 text-sm");
-        box.append(el("p", "font-bold text-[#f2c230]", `+${r.tierCoins + r.coinsWon} coins · balance ${r.coins}`));
+        box.append(el("p", "font-bold text-[#f2c230]", `+${r.tierCoins + r.coinsWon} ZX Cash · balance ${r.coins}`));
         if (r.tierCoins) box.append(el("p", "text-white/70", `${r.tierCoins} from the Battle Pass free lane`));
         extras.append(box);
       }
@@ -247,7 +247,7 @@ export function showResults(root: HTMLElement, input: ResultsInput): Promise<voi
           el(
             "p",
             "rounded-lg bg-white/5 p-3 text-sm text-white/80",
-            "Get the Battle Pass (200 coins) to claim your tier rewards.",
+            "Get the Battle Pass (200 ZX Cash) to claim your tier rewards.",
           ),
         );
       }

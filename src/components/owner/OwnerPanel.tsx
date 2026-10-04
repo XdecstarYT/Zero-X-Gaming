@@ -156,7 +156,7 @@ export function OwnerPanel() {
         <Tile label="Players" value={n(d.players.total)} sub={`+${n(d.players.new24h)} today · +${n(d.players.new7d)} this week`} testId="owner-players" />
         <Tile label="Active this week" value={n(d.players.active7d)} sub={`${n(d.players.hidden)} hidden from boards`} />
         <Tile label="Plays" value={n(d.plays.total)} sub={`${n(d.plays.day)} today · ${n(d.plays.week)} this week`} />
-        <Tile label="Coins out there" value={n(d.economy.coins)} sub={`${n(d.economy.wallets)} wallets · +${n(d.economy.earned7d)} / −${n(d.economy.spent7d)} this week`} />
+        <Tile label="ZX Cash out there" value={n(d.economy.coins)} sub={`${n(d.economy.wallets)} wallets · +${n(d.economy.earned7d)} / −${n(d.economy.spent7d)} this week`} />
         <Tile label="Battle pass" value={n(d.economy.passHolders)} sub={`holders this season (${d.economy.season ?? "—"})`} />
         <Tile label="Sports+" value={n(unlock("sports-plus"))} sub="passes sold" />
         <Tile label="UBusiness" value={n(unlock("ubusiness-lite") + unlock("ubusiness-ultimate"))} sub={`${n(unlock("ubusiness-lite"))} Lite · ${n(unlock("ubusiness-ultimate"))} Ultimate`} />
@@ -222,7 +222,7 @@ export function OwnerPanel() {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <CoinsForm busy={busy} onGrant={(u, amt) => run(() => grantCoins(u, amt), `${amt > 0 ? "Gave" : "Took"} ${Math.abs(amt)} coins ${amt > 0 ? "to" : "from"} ${u}`)} />
+        <CoinsForm busy={busy} onGrant={(u, amt) => run(() => grantCoins(u, amt), `${amt > 0 ? "Gave" : "Took"} ${Math.abs(amt)} ZX Cash ${amt > 0 ? "to" : "from"} ${u}`)} />
         <Card title="Hometown servers">
           <ul className="space-y-2">
             {d.town.servers.map((sv) => (
@@ -326,8 +326,8 @@ function CoinsForm({ busy, onGrant }: { busy: boolean; onGrant: (username: strin
   const [user, setUser] = useState("");
   const [amount, setAmount] = useState(50);
   return (
-    <Card title="Coins">
-      <p className="mb-2 text-xs text-muted">Give a player coins (or take some back with a minus number). Logged in their coin history.</p>
+    <Card title="ZX Cash">
+      <p className="mb-2 text-xs text-muted">Give a player ZX Cash (or take some back with a minus number). Logged in their ZX Cash history.</p>
       <div className="flex flex-wrap gap-2">
         <input value={user} onChange={(e) => setUser(e.target.value)} placeholder="Username" className="min-w-0 flex-1 rounded-md border border-border bg-bg px-3 py-1.5 text-sm" />
         <input type="number" value={amount} onChange={(e) => setAmount(Math.round(Number(e.target.value)))} className="w-28 rounded-md border border-border bg-bg px-3 py-1.5 text-sm tabular-nums" />

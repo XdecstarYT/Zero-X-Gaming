@@ -43,7 +43,7 @@ export function SportsPassCard({ compact = false }: { compact?: boolean }) {
         </div>
         <div className="flex flex-col items-end gap-1">
           <Button size="lg" onClick={() => void buy()} disabled={busy || owned === null || short}>
-            {busy ? "Unlocking…" : `Unlock for ${SPORTS_PASS_PRICE} coins`}
+            {busy ? "Unlocking…" : `Unlock for ${SPORTS_PASS_PRICE} ZX Cash`}
           </Button>
           {coins !== null && (
             <p className="text-xs text-muted">

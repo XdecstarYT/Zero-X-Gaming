@@ -24,7 +24,7 @@ export const ZLINK_PERKS: { icon: string; title: string; text: string }[] = [
   { icon: "🏟️", title: "Every Sports+ game", text: "Screamer, Diamond Derby, Ace Rally, Boundary Blitz, Fairway, and every Sports+ game that comes next." },
   { icon: "🏪", title: "UBusiness Ultimate", text: "All ten departments, the megastore, the full team, marketing and photo mode." },
   { icon: "⚡", title: "+25% XP", text: "A quarter more XP from every game you play (Neon Siege aside)." },
-  { icon: "🪙", title: "Double daily + a weekly drop", text: "Twice the daily coins (100 on day 7), and 15 more every week." },
+  { icon: "🪙", title: "Double daily + a weekly drop", text: "Twice the daily ZX Cash (100 on day 7), and 15 more every week." },
   { icon: "🏅", title: "Link levels", text: "Bronze, Silver, Gold, then Neon: your level grows with every month you stay linked." },
 ];
 

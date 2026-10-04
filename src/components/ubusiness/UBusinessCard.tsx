@@ -50,7 +50,7 @@ export function UBusinessCard({ compact = false }: { compact?: boolean }) {
           </span>
           <div className="min-w-0 flex-1">
             <p className="font-display font-black uppercase tracking-wide">Ultimate is free until 31 October</p>
-            <p className="text-sm text-muted">Launch offer: claim it now and it&apos;s yours to keep. No coins needed.</p>
+            <p className="text-sm text-muted">Launch offer: claim it now and it&apos;s yours to keep. No ZX Cash needed.</p>
           </div>
           <Button onClick={() => void claim()} disabled={!!busy || tier === undefined} data-testid="ubusiness-claim">
             {busy === "ultimate" ? "Claiming…" : "Claim Ultimate free"}
@@ -80,7 +80,7 @@ export function UBusinessCard({ compact = false }: { compact?: boolean }) {
                 <p className="mt-3 text-sm font-bold text-success">✓ You own Lite</p>
               ) : (
                 <Button className="mt-3" onClick={() => void buy(e.tier)} disabled={!!busy || tier === undefined || short} data-testid={`ubusiness-buy-${e.tier}`}>
-                  {busy === e.tier ? "Unlocking…" : tier === "lite" ? `Upgrade for ${price} coins` : `Get ${e.name} · ${price} coins`}
+                  {busy === e.tier ? "Unlocking…" : tier === "lite" ? `Upgrade for ${price} ZX Cash` : `Get ${e.name} · ${price} ZX Cash`}
                 </Button>
               )}
             </div>

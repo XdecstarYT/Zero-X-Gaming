@@ -178,7 +178,7 @@ export function SportsAd() {
                 <CoinIcon className="h-16 w-16 drop-shadow-[0_0_24px_rgba(242,194,48,0.7)] sm:h-24 sm:w-24" />
                 <span className="font-display text-6xl font-black text-[#f2c230] sm:text-8xl">{SPORTS_PASS_PRICE}</span>
               </div>
-              <p className="zx-ad-rise mt-3 font-display text-sm font-bold uppercase tracking-[0.5em] text-white/85 [animation-delay:1800ms]">coins · once · forever</p>
+              <p className="zx-ad-rise mt-3 font-display text-sm font-bold uppercase tracking-[0.5em] text-white/85 [animation-delay:1800ms]">ZX Cash · once · forever</p>
             </div>
           </div>
         )}

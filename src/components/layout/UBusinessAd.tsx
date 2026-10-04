@@ -221,8 +221,8 @@ export function UBusinessAd() {
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,#1c1917,#020617_70%)]" aria-hidden />
             <div className="relative grid w-full max-w-3xl gap-4 sm:grid-cols-2">
               {[
-                ["Lite", "5 coins", "Grocery to fresh · a Mini Market · one helper", TEAL],
-                ["Ultimate", "30 coins", "Every department · a Megastore · a full team", GOLD],
+                ["Lite", "5 ZX Cash", "Grocery to fresh · a Mini Market · one helper", TEAL],
+                ["Ultimate", "30 ZX Cash", "Every department · a Megastore · a full team", GOLD],
               ].map(([n, p, d, c], i) => (
                 <div key={n} className="zx-ad-rise rounded-2xl border-2 bg-black/60 p-5" style={{ borderColor: c, animationDelay: `${0.2 + i * 0.4}s` }}>
                   <p className="font-display text-4xl font-black uppercase italic" style={{ color: c }}>

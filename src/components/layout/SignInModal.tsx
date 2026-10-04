@@ -145,8 +145,8 @@ export function SignInModal({
       <p className="text-sm text-muted">
         No email needed: just an account name and a password. Add an email if you like, so you can reset a forgotten password.{" "}
         {supabase
-          ? "Save progress, coins and your Locker across devices."
-          : "Your account, progress, coins and Locker are saved on this device."}
+          ? "Save progress, ZX Cash and your Locker across devices."
+          : "Your account, progress, ZX Cash and Locker are saved on this device."}
       </p>
 
       <form onSubmit={onSubmit} noValidate className="mt-5 grid gap-3">

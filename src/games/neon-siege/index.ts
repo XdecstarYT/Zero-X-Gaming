@@ -280,7 +280,7 @@ export class NeonSiege implements GameModule {
           if (this.cashCupNext) {
             cup.replaceChildren(
               el("strong", "font-display text-sm text-[#f2c230]", "CASH CUP NEXT! "),
-              "Finish 1st / 2nd / 3rd for 50 / 20 / 5 coins. Cash Cups are played on Hard.",
+              "Finish 1st / 2nd / 3rd for 50 / 20 / 5 ZX Cash. Cash Cups are played on Hard.",
             );
             diffButtons.forEach((b) => {
               b.disabled = true;
@@ -290,7 +290,7 @@ export class NeonSiege implements GameModule {
               b.classList.toggle("!text-cyan", on);
             });
           } else {
-            cup.textContent = `Cash Cup in ${until} match${until === 1 ? "" : "es"}: every third match pays coins to the top 3.`;
+            cup.textContent = `Cash Cup in ${until} match${until === 1 ? "" : "es"}: every third match pays ZX Cash to the top 3.`;
           }
         })
         .catch(() => {});

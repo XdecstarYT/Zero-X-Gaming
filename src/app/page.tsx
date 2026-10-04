@@ -48,7 +48,7 @@ export default function HomePage() {
             </h1>
             <p className="mt-6 max-w-xl text-base text-muted sm:text-lg">
               Live a whole life in Life, run a store in UBusiness, build a town together in Hometown, then dig in on the
-              Great War fronts or play Sports+. Earn XP and coins, unlock the battle pass, and play with friends.
+              Great War fronts or play Sports+. Earn XP and ZX Cash, unlock the battle pass, and play with friends.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <LinkButton href={`/games/${featured.slug}`} size="lg">

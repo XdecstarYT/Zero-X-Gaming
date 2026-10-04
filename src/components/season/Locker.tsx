@@ -146,7 +146,7 @@ export function Locker() {
                           ) : reward ? (
                             `Battle Pass tier ${reward.tier}`
                           ) : shopItemFor(tab, item) ? (
-                            `Item Shop · ${shopItemFor(tab, item)!.price} coins`
+                            `Item Shop · ${shopItemFor(tab, item)!.price} ZX Cash`
                           ) : (
                             "Locked"
                           )}

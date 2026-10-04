@@ -16,16 +16,16 @@ export function ZLinkLock() {
     <div data-testid="zlink-lock" className="rounded-xl border border-violet/60 bg-surface p-4 text-center sm:p-5">
       <ZLinkMark className="text-5xl" />
       <p className="mt-2 text-sm font-bold uppercase tracking-[0.25em] text-violet">ZLink+ exclusive</p>
-      <p className="mt-1 text-sm text-muted">Members only. ZLink+ also brings every Sports+ game, UBusiness Ultimate and double daily coins.</p>
+      <p className="mt-1 text-sm text-muted">Members only. ZLink+ also brings every Sports+ game, UBusiness Ultimate and double daily ZX Cash.</p>
       <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
         <Button onClick={() => void join()} disabled={busy || until === undefined || short} data-testid="zlink-lock-join">
-          {busy ? "Linking…" : until ? `Relink · ${ZLINK_PRICE} coins` : `Join ZLink+ · ${ZLINK_PRICE} coins`}
+          {busy ? "Linking…" : until ? `Relink · ${ZLINK_PRICE} ZX Cash` : `Join ZLink+ · ${ZLINK_PRICE} ZX Cash`}
         </Button>
         <Link href="/zlink" className="text-sm font-semibold text-cyan hover:underline">
           What&apos;s in ZLink+ →
         </Link>
       </div>
-      {short && <p className="mt-2 text-xs text-muted">You need {ZLINK_PRICE - (coins ?? 0)} more coins.</p>}
+      {short && <p className="mt-2 text-xs text-muted">You need {ZLINK_PRICE - (coins ?? 0)} more ZX Cash.</p>}
       {error && (
         <p role="alert" className="mt-2 text-sm text-danger">
           {error}

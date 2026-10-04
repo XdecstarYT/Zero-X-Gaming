@@ -10,7 +10,7 @@ import { ZLINK_PERKS, zlinkGames } from "@/lib/zlink";
 
 export const metadata: Metadata = {
   title: "ZLink+",
-  description: "ZLink+: the members-only Zenith and Linkwave, every Sports+ game, UBusiness Ultimate, +25% XP and double daily rewards, for 40 coins a month.",
+  description: "ZLink+: the members-only Zenith and Linkwave, every Sports+ game, UBusiness Ultimate, +25% XP and double daily rewards, for 40 ZX Cash a month.",
 };
 
 export default function ZLinkPage() {
@@ -32,7 +32,7 @@ export default function ZLinkPage() {
           </div>
           <Transmission className="mt-2 min-h-6" />
           <p className="mt-6 max-w-xl text-lg text-muted lg:max-w-none">
-            One link, every plus: a members-only game, all of Sports+, UBusiness Ultimate, +25% XP and double daily coins, for 40 coins a
+            One link, every plus: a members-only game, all of Sports+, UBusiness Ultimate, +25% XP and double daily ZX Cash, for 40 ZX Cash a
             month.
           </p>
         </div>
@@ -108,7 +108,7 @@ export default function ZLinkPage() {
             ["What if I already bought Sports+ or UBusiness?", "They're yours to keep either way. ZLink+ just adds the rest."],
             ["What happens when it ends?", "The member games lock again (unless you own them), and daily rewards and XP go back to normal. Your saves, scores and link level stay."],
             ["What are link levels?", "Every 30 days you join adds to your total: Bronze at 30, Silver at 90, Gold at 180 and Neon at 365. They never go down."],
-            ["Can I pay with money?", "No: ZLink+ is coins only, like everything on Zero X."],
+            ["Can I pay with money?", "No: ZLink+ is ZX Cash only, like everything on Zero X."],
           ].map(([q, a]) => (
             <div key={q} className="rounded-xl border border-border bg-surface/80 p-4">
               <dt className="font-bold">{q}</dt>

@@ -133,7 +133,7 @@ export function ItemShop() {
               Leaves in {now ? countdown(Date.parse(drop.endsAt) - now) : "…"}
             </p>
             <p className="flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-sm">
-              Your balance <CoinAmount amount={coins} className="text-[#f2c230]" />
+              Your balance <CoinAmount amount={coins} className="text-[#10b981]" />
             </p>
           </div>
         </div>
@@ -156,7 +156,7 @@ export function ItemShop() {
       >
         <div className="sm:col-span-1">
           <h2 id="earn-title" className="font-display text-lg font-bold uppercase">
-            How to earn coins
+            How to earn ZX Cash
           </h2>
           <p className="mt-1 text-sm text-muted">
             Every third Neon Siege match is a <strong className="text-text">Cash Cup</strong> against Hard bots. Finish
@@ -173,13 +173,13 @@ export function ItemShop() {
         </ol>
         <p className="text-xs text-muted sm:col-span-3">
           The Battle Pass free lane also pays{" "}
-          <strong className="text-text">{Object.values(COIN_TIERS).reduce((a, b) => a + b, 0)} coins</strong> across the
-          season (every 5 tiers). Spend coins here or on the{" "}
+          <strong className="text-text">{Object.values(COIN_TIERS).reduce((a, b) => a + b, 0)} ZX Cash</strong> across the
+          season (every 5 tiers). Spend ZX Cash here or on the{" "}
           <Link href="/battle-pass" className="text-cyan underline underline-offset-2">
             Battle Pass
           </Link>{" "}
           (200 coins). Coins can&apos;t be bought with real money.
-          {state && !state.signedIn && " Playing as a guest: your coins are saved on this device only."}
+          {state && !state.signedIn && " Playing as a guest: your ZX Cash are saved on this device only."}
         </p>
       </section>
 
@@ -236,11 +236,11 @@ function BuyButton({ it, owned, confirming, busy, canAfford, disabled, onBuy, bi
       type="button"
       onClick={onBuy}
       disabled={disabled || busy || !canAfford}
-      aria-label={confirming ? `Confirm: buy ${name} for ${it.price} coins` : `Buy ${name} for ${it.price} coins`}
+      aria-label={confirming ? `Confirm: buy ${name} for ${it.price} ZX Cash` : `Buy ${name} for ${it.price} ZX Cash`}
       className={cn(
         "flex w-full items-center justify-center gap-1.5 rounded-md font-bold transition disabled:cursor-not-allowed disabled:opacity-50",
         big ? "py-2.5 text-base" : "py-1.5 text-sm",
-        confirming ? "bg-[#ff7a1a] text-black" : "bg-[#f2c230] text-[#2a1d00] hover:brightness-110",
+        confirming ? "bg-[#ff7a1a] text-black" : "bg-[#10b981] text-[#022c22] hover:brightness-110",
       )}
     >
       {busy ? (
@@ -403,7 +403,7 @@ function InspectDialog(props: CardProps & { onClose: () => void }) {
           </dl>
           {!owned && !canAfford && (
             <p className="text-xs text-muted">
-              You need a few more coins. Win a Cash Cup (every third match) or climb the Battle Pass free lane.
+              You need a little more ZX Cash. Win a Cash Cup (every third match) or climb the Battle Pass free lane.
             </p>
           )}
           <div className="mt-auto">
@@ -477,7 +477,7 @@ function Celebration({ it, onEquip, onClose }: { it: ShopItem; onEquip: () => vo
               type="button"
               autoFocus
               onClick={onEquip}
-              className="rounded-md bg-[#f2c230] px-6 py-2.5 font-bold text-[#2a1d00] hover:brightness-110"
+              className="rounded-md bg-[#10b981] px-6 py-2.5 font-bold text-[#022c22] hover:brightness-110"
             >
               Equip now
             </button>

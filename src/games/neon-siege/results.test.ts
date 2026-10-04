@@ -31,10 +31,10 @@ describe("results screen", () => {
     expect(text).toContain("812");
     expect(text).toContain("4:01");
     expect(text).toContain("CASH CUP");
-    expect(text).toContain("+20 coins");
+    expect(text).toContain("+20 ZX Cash");
     expect(text).toContain("+700 XP");
     expect(text).toContain("TIER UP! 4 → 5");
-    expect(text).toContain("+45 coins · balance 45");
+    expect(text).toContain("+45 ZX Cash · balance 45");
     expect(text).toContain("Get the Battle Pass");
     expect(text).toContain("Eliminate 3 opponents");
     (root.querySelector("button") as HTMLButtonElement).click();

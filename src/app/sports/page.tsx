@@ -10,7 +10,7 @@ import { UPCOMING } from "@/lib/sports";
 
 export const metadata: Metadata = {
   title: "Sports+",
-  description: `Sports+ is the Zero X Gaming section for sports games. Unlock it once for ${SPORTS_PASS_PRICE} coins and play Screamer: Aussie Rules, Diamond Derby, Ace Rally and Boundary Blitz now, watch Sports+ Live for free, with football, basketball, hockey and more on the way.`,
+  description: `Sports+ is the Zero X Gaming section for sports games. Unlock it once for ${SPORTS_PASS_PRICE} ZX Cash and play Screamer: Aussie Rules, Diamond Derby, Ace Rally and Boundary Blitz now, watch Sports+ Live for free, with football, basketball, hockey and more on the way.`,
 };
 
 export default function SportsPage() {
@@ -32,7 +32,7 @@ export default function SportsPage() {
             Sports<span className="text-cyan">+</span>
           </h1>
           <p className="mt-4 max-w-2xl text-lg text-muted">
-            Unlock Sports+ once for <strong className="text-text">{SPORTS_PASS_PRICE} coins</strong> and play every sports game:{" "}
+            Unlock Sports+ once for <strong className="text-text">{SPORTS_PASS_PRICE} ZX Cash</strong> and play every sports game:{" "}
             <strong className="text-text">{out.map((g) => g.title.split(":")[0]).join(", ")}</strong>, and every one still to come. Or watch{" "}
             <strong className="text-text">Sports+ Live</strong> for free. {UPCOMING.length} more games across {sports} sports are on the way, built
             for your browser and your phone.

@@ -330,15 +330,15 @@ export function recordGuestMatch(m: RecordedMatch, now = Date.now(), xpOverride?
 }
 
 const BUY_ERRORS: Record<string, string> = {
-  "not enough coins": "Not enough coins yet. Win a Cash Cup to earn more!",
+  "not enough coins": "Not enough ZX Cash yet. Win a Cash Cup to earn more!",
   "already owned": "You already own that.",
   "not in the shop": "That item isn't in the shop right now.",
-  "not authenticated": "Sign in to buy with your account coins.",
+  "not authenticated": "Sign in to buy with your account's ZX Cash.",
   "The free Ultimate offer has ended": "The free Ultimate offer has ended.",
 };
 const buyError = (msg: string) => new Error(BUY_ERRORS[msg] ?? "Purchase failed. Check your connection.");
 
-/** Buy this season's battle pass (200 coins). Returns rewards granted for tiers already reached. */
+/** Buy this season's battle pass (200 ZX Cash). Returns rewards granted for tiers already reached. */
 export async function buyBattlePass(): Promise<{ coins: number; unlocked: Reward[] }> {
   const auth = signedInClient();
   if (auth) {

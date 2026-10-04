@@ -82,7 +82,7 @@ describe("guest economy (same rules as the server)", () => {
   it("gates tier rewards behind the 200-coin pass, then grants everything reached", async () => {
     localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 3500, matches: 5, wins: 0, kills: 0, coins: 150, challenges: {} }));
     expect((await loadSeasonState()).owned.has("urban")).toBe(false);
-    await expect(buyBattlePass()).rejects.toThrow(/Not enough coins/);
+    await expect(buyBattlePass()).rejects.toThrow(/Not enough ZX Cash/);
     localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 3500, matches: 5, wins: 0, kills: 0, coins: 230, challenges: {} }));
     const r = await buyBattlePass();
     expect(r.coins).toBe(30);
@@ -100,7 +100,7 @@ describe("guest economy (same rules as the server)", () => {
     expect(coins).toBe(100 - it.price);
     expect((await loadSeasonState()).owned.has("frostbite")).toBe(true);
     await expect(buyShopItem("outfit", "frostbite")).rejects.toThrow(/already own/);
-    await expect(buyShopItem("outfit", "apex")).rejects.toThrow(/Not enough coins/);
+    await expect(buyShopItem("outfit", "apex")).rejects.toThrow(/Not enough ZX Cash/);
     await expect(buyShopItem("outfit", "vanguard")).rejects.toThrow(/isn't in the shop/);
   });
 });

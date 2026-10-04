@@ -33,7 +33,7 @@ export function DailyRewards() {
     try {
       const r = await claimDaily();
       setState(r);
-      if (r.coinsWon) toast(`+${r.coinsWon} coins!`, { description: r.day === 7 ? "Day 7: the big one. The week starts again tomorrow." : `Day ${r.day} of 7. Come back tomorrow for ${r.next}.`, tone: "success" });
+      if (r.coinsWon) toast(`+${r.coinsWon} ZX Cash!`, { description: r.day === 7 ? "Day 7: the big one. The week starts again tomorrow." : `Day ${r.day} of 7. Come back tomorrow for ${r.next}.`, tone: "success" });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -48,10 +48,10 @@ export function DailyRewards() {
           <h2 id="daily-title" className="font-display text-lg font-bold uppercase tracking-wide">
             Daily rewards
           </h2>
-          <p className="text-sm text-muted">Come back every day for coins. Day 7 pays 50. Miss a day and it starts again.</p>
+          <p className="text-sm text-muted">Come back every day for ZX Cash. Day 7 pays 50. Miss a day and it starts again.</p>
         </div>
         <Button onClick={() => void claim()} disabled={!state || state.claimed || busy} data-testid="daily-claim">
-          {!state ? "…" : state.claimed ? "Claimed: see you tomorrow" : `Claim ${state.next} coins`}
+          {!state ? "…" : state.claimed ? "Claimed: see you tomorrow" : `Claim ${state.next} ZX Cash`}
         </Button>
       </div>
       <ol className="mt-4 grid grid-cols-7 gap-1.5 sm:gap-2">

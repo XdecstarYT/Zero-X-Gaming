@@ -69,10 +69,10 @@ export function ZLinkDashboard() {
           </div>
           <div className="rounded-2xl border border-border bg-surface p-5">
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-subtle">Weekly drop</p>
-            <p className="mt-1 font-display text-2xl font-black uppercase">{ZLINK_DROP} coins</p>
+            <p className="mt-1 font-display text-2xl font-black uppercase">{ZLINK_DROP} ZX Cash</p>
             {ready ? (
               <Button className="mt-3" onClick={() => void z.claimDrop()} disabled={z.busy} data-testid="zlink-drop">
-                Claim {ZLINK_DROP} coins
+                Claim {ZLINK_DROP} ZX Cash
               </Button>
             ) : (
               <p className="mt-2 text-sm text-muted" data-testid="zlink-drop-wait">

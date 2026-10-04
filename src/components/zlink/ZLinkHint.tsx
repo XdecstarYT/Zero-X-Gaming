@@ -8,7 +8,7 @@ export function ZLinkHint({ what }: { what: string }) {
       <Link href="/zlink" className="font-semibold text-cyan underline">
         ZLink+
       </Link>
-      , with every other Sports+ game, UBusiness Ultimate and double daily coins.
+      , with every other Sports+ game, UBusiness Ultimate and double daily ZX Cash.
     </p>
   );
 }

@@ -7,17 +7,18 @@ export interface Update {
 }
 
 export const UPDATES: Update[] = [
+  { tag: "Mega update", title: "Coins are now ZX Cash", body: "A fresh start for everyone: balances, ZLink+, the battle pass, unlocks, XP and game saves are back to zero. Earn ZX Cash from daily rewards, the free lane and Cash Cups.", href: "/shop" },
   { tag: "ZLink+", title: "Zenith: build a city", body: "The ZLink+ flagship: a photoreal city builder. Roads, zones, power, water and services; a skyline that lights up at night, from Hamlet to Metropolis.", href: "/games/zenith" },
-  { tag: "ZLink+", title: "Linkwave and more", body: "A members-only game, +25% XP, a weekly coin drop and link levels from Bronze to Neon. Neon Siege stays separate.", href: "/zlink" },
-  { tag: "New", title: "ZLink+ is here", body: "One link, every plus: all of Sports+, UBusiness Ultimate and double daily coins for 40 coins a month. (Neon Siege stays separate.)", href: "/zlink" },
+  { tag: "ZLink+", title: "Linkwave and more", body: "A members-only game, +25% XP, a weekly ZX Cash drop and link levels from Bronze to Neon. Neon Siege stays separate.", href: "/zlink" },
+  { tag: "New", title: "ZLink+ is here", body: "One link, every plus: all of Sports+, UBusiness Ultimate and double daily ZX Cash for 40 ZX Cash a month. (Neon Siege stays separate.)", href: "/zlink" },
   { tag: "Site", title: "A whole new look", body: "Arcade noir: a drifting aurora, a synthwave hero, cards that tilt toward you, a game ticker and a glass navbar, in both themes.", href: "/" },
   { tag: "UBusiness", title: "Families, foodies and a food critic", body: "Six kinds of shopper, staff who get better (and training to five stars), a coffee bar, bulk deals, late-night opening, a price promise and the week in review.", href: "/games/ubusiness" },
   { tag: "UBusiness", title: "The big expansion + free Ultimate", body: "Bakery and frozen departments, specials, store upgrades, loans, trophies, reviews, shoplifters and a rival store. Ultimate is free to claim until 31 October.", href: "/games/ubusiness" },
   { tag: "Site", title: "A fresh new look", body: "A spotlight on the front page, Browse by vibe collections, and search everything with Ctrl+K.", href: "/" },
-  { tag: "New game", title: "UBusiness", body: "Run your own store in photoreal 3D: stock the shelves, set the prices, work the till. Lite 5 coins, Ultimate 30, or free with the battle pass.", href: "/games/ubusiness" },
+  { tag: "New game", title: "UBusiness", body: "Run your own store in photoreal 3D: stock the shelves, set the prices, work the till. Lite 5 ZX Cash, Ultimate 30, or free with the battle pass.", href: "/games/ubusiness" },
   { tag: "Hometown", title: "100 new things to build", body: "Furniture, Decor and Outdoor: king beds, arcade cabinets, pool tables, aquariums, fireplaces, gazebos, trampolines, fountains, trees and fences.", href: "/games/hometown" },
   { tag: "Hometown", title: "Townsfolk and servers", body: "Twelve townsfolk walk the streets, chat and keep the market trading while you're away. Pick your server from the menu: two more are on the way.", href: "/games/hometown" },
-  { tag: "Mega update", title: "Daily rewards", body: "Coins every day you come back, 50 on day 7.", href: "/" },
+  { tag: "Mega update", title: "Daily rewards", body: "ZX Cash every day you come back, 50 on day 7.", href: "/" },
   { tag: "Hometown", title: "The Town Bank", body: "Save your cash for interest, claim the daily allowance, wave and cheer at your neighbours, find your way with the minimap.", href: "/games/hometown" },
   { tag: "Life", title: "Invest, adopt, go viral", body: "Shares and property that rise and fall, pets that love you back, fame on social media and holidays around the world.", href: "/games/life" },
   { tag: "Neon Siege", title: "New guns", body: "The Marksman Rifle and the Light Machine Gun now drop from floor loot and chests.", href: "/games/neon-siege" },

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Nunito, Orbitron, Space_Grotesk } from "next/font/google";
 import { Navbar } from "@/components/layout/Navbar";
 import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
+import { FreshStartNotice } from "@/components/layout/FreshStartNotice";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Footer } from "@/components/layout/Footer";
 import { Providers } from "@/components/layout/Providers";
@@ -16,6 +17,7 @@ import { ClanforgeAd } from "@/components/layout/ClanforgeAd";
 import { SportsInduction } from "@/components/sports/SportsInduction";
 import { SITE_URL } from "@/lib/site";
 import { themeScript } from "@/store/settings";
+import { freshStartScript } from "@/lib/fresh-start";
 import "./globals.css";
 
 const orbitron = Orbitron({ variable: "--font-orbitron", subsets: ["latin"], weight: ["600", "700", "800", "900"] });
@@ -42,6 +44,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${orbitron.variable} ${grotesk.variable} ${nunito.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
+        {/* The ZX Cash fresh start: clears this device's old progress once, before anything reads it. */}
+        <script dangerouslySetInnerHTML={{ __html: freshStartScript }} />
         {/* Hides the intro before first paint for visitors who've already seen it this session. */}
         <script dangerouslySetInnerHTML={{ __html: introGateScript }} />
         {/* Applies the saved site theme before first paint. */}
@@ -64,6 +68,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Providers>
           <Navbar />
           <AnnouncementBanner />
+          <FreshStartNotice />
           <main id="main" tabIndex={-1} className="flex-1 focus:outline-none">
             {children}
           </main>

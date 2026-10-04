@@ -327,7 +327,7 @@ class UBusinessGame implements GameModule {
           "div",
           "m-auto flex max-w-md flex-col items-center gap-3 text-center",
           el("p", "font-display text-3xl font-black uppercase", "UBusiness"),
-          el("p", "text-white/70", "Get Lite (5 coins) or Ultimate (30 coins, free with the battle pass) on the game page to open your store."),
+          el("p", "text-white/70", "Get Lite (5 ZX Cash) or Ultimate (30 ZX Cash, free with the battle pass) on the game page to open your store."),
         ),
       );
       return;

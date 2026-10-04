@@ -843,6 +843,21 @@ compares the signed-in user's email in `auth.users`), so the page is only a view
 
 Settings live in `site_settings` (readable by everyone; written only through `owner_set_setting`).
 
+### ZX Cash and the fresh start
+
+The site currency is **ZX Cash** (it was "coins"; code and the `player_wallet.coins` column keep the old name). Its
+mark is an emerald token with a struck-through Z (`CoinIcon` in `src/components/shop/Coin.tsx`). The switch came
+with a full reset, and everyone starts at zero:
+
+- **Server** (`20261022090000_zx_cash_fresh_start.sql`): truncates the ledger, XP events, ZLink+ memberships, season
+  progress, challenges, achievements, unlocks, cosmetics, loadouts, match records, play sessions and the Hometown
+  economy; zeroes wallets, XP and streaks; puts every Hometown lot back on the market. Accounts, usernames,
+  favourites, reports and leaderboard scores stay.
+- **Devices** (`src/lib/fresh-start.ts`): an inline script in the root layout runs before first paint, once per
+  `FRESH_START_EPOCH`, and clears every `zx-` save except settings, sign-ins, graphics and other preferences, ad
+  counters and favourites. Bump the epoch to wipe devices again.
+- Returning players see a one-time **Welcome to ZX Cash** notice (`FreshStartNotice`).
+
 ### ZLink+ (the membership)
 
 **40 coins for 30 days** (`/zlink`; `20261019090000_zlink.sql`, `20261020090000_zlink_plus.sql`). Members get:

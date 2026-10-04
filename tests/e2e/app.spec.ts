@@ -18,7 +18,7 @@ test("home renders hero, featured game and sections", async ({ page }) => {
 test("daily rewards: a guest claims day 1 once, and what's new is listed", async ({ page }) => {
   await page.goto("/");
   const daily = page.getByTestId("daily-rewards");
-  await expect(daily.getByTestId("daily-claim")).toHaveText("Claim 5 coins");
+  await expect(daily.getByTestId("daily-claim")).toHaveText("Claim 5 ZX Cash");
   await daily.getByTestId("daily-claim").click();
   await expect(daily.getByTestId("daily-claim")).toHaveText(/Claimed/);
   await expect(daily.getByTestId("daily-claim")).toBeDisabled();

@@ -20,7 +20,7 @@ test("Screamer: unlock Sports+ for 50 coins, then play a match to full time", as
   const stage = page.getByTestId("game-stage");
   await expect(stage.getByTestId("sports-lock")).toBeVisible();
   await expect(stage.getByRole("button", { name: "Play", exact: true })).toHaveCount(0);
-  await stage.getByRole("button", { name: "Unlock for 50 coins" }).click();
+  await stage.getByRole("button", { name: "Unlock for 50 ZX Cash" }).click();
 
   // The welcome cinematic plays straight away; skip to the pass card and go play.
   const welcome = page.getByTestId("sports-induction");

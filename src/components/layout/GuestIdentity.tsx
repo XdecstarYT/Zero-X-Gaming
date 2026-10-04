@@ -30,7 +30,7 @@ export function GuestIdentity({ guestName }: { guestName: string }) {
         )}
         <p className="text-sm text-muted">
           {device
-            ? "Your ZXG account is saved on this device, with its own progress, coins and Locker."
+            ? "Your ZXG account is saved on this device, with its own progress, ZX Cash and Locker."
             : "Playing as a guest. Progress is saved on this device only."}
         </p>
         <XPBar xp={device ? profile.xp : 0} className="mt-4 max-w-md" />

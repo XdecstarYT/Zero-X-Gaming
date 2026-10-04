@@ -152,7 +152,7 @@ export function BattlePass() {
             </p>
             {!state.hasPass && state.coins < BATTLE_PASS_PRICE && (
               <p className="mt-1 text-xs text-muted">
-                Win coins in{" "}
+                Win ZX Cash in{" "}
                 <Link href="/shop" className="text-cyan underline underline-offset-2">
                   Cash Cups
                 </Link>
@@ -167,7 +167,7 @@ export function BattlePass() {
               disabled={buying === "busy" || state.coins < BATTLE_PASS_PRICE}
               className={cn(
                 "flex shrink-0 items-center justify-center gap-2 rounded-md px-5 py-2.5 font-bold disabled:cursor-not-allowed disabled:opacity-50",
-                buying === "confirm" ? "bg-[#ff7a1a] text-black" : "bg-[#f2c230] text-[#2a1d00] hover:brightness-110",
+                buying === "confirm" ? "bg-[#ff7a1a] text-black" : "bg-[#10b981] text-[#022c22] hover:brightness-110",
               )}
             >
               {buying === "busy" ? (
@@ -238,7 +238,7 @@ export function BattlePass() {
           </Link>
         </div>
         <p className="mt-1 text-sm text-muted">
-          Free lane: coins every 5 tiers for everyone. Battle Pass lane: a new cosmetic every tier.
+          Free lane: ZX Cash every 5 tiers for everyone. Battle Pass lane: a new cosmetic every tier.
         </p>
         <RewardTrack tier={tier} pct={pct} owned={state?.owned ?? null} hasPass={state?.hasPass ?? false} />
       </section>

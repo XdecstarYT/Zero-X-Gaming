@@ -518,3 +518,9 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      cap is per-second generous (7,000/s) with a hard ceiling near the most a full map can hold (400,000). The sim
      is deterministic per day (seeded by city and day) and the 3D view only rebuilds the 8×8 districts whose
      contents changed, so a big city stays cheap to run.
+148. **ZX Cash is a rename on screen, not in the schema.** Players see "ZX Cash" everywhere; the code, RPCs and the
+     `coins` column keep their names, so nothing that already works had to move. The fresh start wipes progress
+     in two places that can't see each other: a migration for accounts, and an epoch-keyed inline script for each
+     device's guest saves. The script keeps an allowlist (settings, sign-ins, preferences) rather than a list of
+     what to delete, so saves added later are cleared by default. "ZX Cash" was chosen over "Zcash", the name of
+     a real cryptocurrency.

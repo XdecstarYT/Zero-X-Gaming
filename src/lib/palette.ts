@@ -15,7 +15,7 @@ const PAGES: PaletteItem[] = [
   { id: "p-games", label: "All games", hint: "Page", href: "/games", icon: "🎮", words: "browse library catalog" },
   { id: "p-sports", label: "Sports+", hint: "Page", href: "/sports", icon: "🏟️", words: "sport live channels" },
   { id: "p-pass", label: "Battle Pass", hint: "Page", href: "/battle-pass", icon: "🎟️", words: "season tiers rewards xp" },
-  { id: "p-shop", label: "Item Shop", hint: "Page", href: "/shop", icon: "🛒", words: "skins coins buy" },
+  { id: "p-shop", label: "Item Shop", hint: "Page", href: "/shop", icon: "🛒", words: "skins coins zx cash buy" },
   { id: "p-locker", label: "Locker", hint: "Page", href: "/locker", icon: "🧥", words: "cosmetics outfit equip" },
   { id: "p-ranks", label: "Leaderboards", hint: "Page", href: "/leaderboards", icon: "🏆", words: "ranks scores top" },
   { id: "p-profile", label: "Profile", hint: "Page", href: "/profile", icon: "👤", words: "account badges level" },

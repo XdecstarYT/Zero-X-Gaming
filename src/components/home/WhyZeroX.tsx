@@ -5,7 +5,7 @@ const TILES: { title: string; text: string; icon: string; tone: string; big?: bo
   { title: `${GAMES.length} original games`, text: "Life sims, a shop empire, a shared town, the Great War, police patrols, footy, cricket, golf and more. Every one built here, every one free to start.", icon: "🎮", tone: "from-cyan/25", big: true },
   { title: "No downloads", text: "Click and you're in. Phone, tablet or desktop.", icon: "⚡", tone: "from-magenta/25" },
   { title: "Play together", text: "Squads in Trenches, a whole town in Hometown.", icon: "🤝", tone: "from-violet/25" },
-  { title: "A season to climb", text: "XP, a battle pass, cash cups and coins.", icon: "🏆", tone: "from-warning/25" },
+  { title: "A season to climb", text: "XP, a battle pass, cash cups and ZX Cash.", icon: "🏆", tone: "from-warning/25" },
   { title: "Something every day", text: "Daily rewards, daily goals, new updates.", icon: "📅", tone: "from-success/25" },
 ];
 

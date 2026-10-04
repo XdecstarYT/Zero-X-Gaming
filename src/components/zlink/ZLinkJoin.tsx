@@ -33,7 +33,7 @@ export function ZLinkJoin() {
           <p className="mt-1 text-sm text-muted">Runs to {new Date(until!).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}. Add another {ZLINK_DAYS} days any time.</p>
           <div className="mt-4 flex flex-wrap gap-3">
             <Button onClick={() => void join()} disabled={busy || short} data-testid="zlink-extend">
-              {busy ? "Linking…" : `Add ${ZLINK_DAYS} days · ${ZLINK_PRICE} coins`}
+              {busy ? "Linking…" : `Add ${ZLINK_DAYS} days · ${ZLINK_PRICE} ZX Cash`}
             </Button>
             <Link href="/sports" className="self-center text-sm font-semibold text-cyan hover:underline">
               Play Sports+ →
@@ -47,9 +47,9 @@ export function ZLinkJoin() {
             <CoinAmount amount={ZLINK_PRICE} />
             <span className="text-base font-bold text-muted normal-case">for {ZLINK_DAYS} days</span>
           </p>
-          <p className="mt-1 text-sm text-muted">Coins only. It doesn&apos;t renew on its own: add more days whenever you like.</p>
+          <p className="mt-1 text-sm text-muted">ZX Cash only. It doesn&apos;t renew on its own: add more days whenever you like.</p>
           <Button size="lg" className="mt-4 w-full sm:w-auto" onClick={() => void join()} disabled={busy || until === undefined || short} data-testid="zlink-join-button">
-            {busy ? "Linking…" : until ? `Relink · ${ZLINK_PRICE} coins` : `Join ZLink+ · ${ZLINK_PRICE} coins`}
+            {busy ? "Linking…" : until ? `Relink · ${ZLINK_PRICE} ZX Cash` : `Join ZLink+ · ${ZLINK_PRICE} ZX Cash`}
           </Button>
         </>
       )}

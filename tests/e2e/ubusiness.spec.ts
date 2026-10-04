@@ -30,7 +30,7 @@ test("UBusiness: buy Lite, then upgrade to Ultimate for the difference", async (
   await expect(card).toContainText("Free with the battle pass");
   await page.getByTestId("ubusiness-buy-lite").click();
   await expect(card).toContainText("You own Lite");
-  await expect(page.getByTestId("ubusiness-buy-ultimate")).toHaveText("Upgrade for 25 coins");
+  await expect(page.getByTestId("ubusiness-buy-ultimate")).toHaveText("Upgrade for 25 ZX Cash");
   await page.getByTestId("ubusiness-buy-ultimate").click();
   await expect(card).toHaveAttribute("data-tier", "ultimate");
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("zx-season-s1")!).coins)).toBe(10);

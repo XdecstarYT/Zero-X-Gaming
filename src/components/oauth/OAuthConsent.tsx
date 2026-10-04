@@ -167,7 +167,7 @@ export function OAuthConsent({ authorizationId }: { authorizationId: string | nu
         ))}
       </ul>
       <p className="mt-4 text-xs text-muted">
-        It can&apos;t see your password, spend your coins or play as you. You can remove its access any time in Settings → Connected apps.
+        It can&apos;t see your password, spend your ZX Cash or play as you. You can remove its access any time in Settings → Connected apps.
         {back && (
           <>
             {" "}

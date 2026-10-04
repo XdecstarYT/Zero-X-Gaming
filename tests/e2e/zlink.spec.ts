@@ -52,7 +52,7 @@ test("ZLink+: members get double daily coins", async ({ page }) => {
   await page.getByTestId("zlink-join-button").click();
   await expect(page.getByTestId("zlink-days")).toBeVisible();
   await page.goto("/");
-  await expect(page.getByTestId("daily-claim")).toHaveText("Claim 10 coins");
+  await expect(page.getByTestId("daily-claim")).toHaveText("Claim 10 ZX Cash");
 });
 
 test("ZLink+: Neon Siege's battle pass still has to be bought on its own", async ({ page }) => {
