@@ -490,4 +490,8 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      and the rival are plain functions in `logic.ts` that the tests drive directly; the game only calls them and
      draws the result. Waste and theft go through the evening books, a loan comes off the business's value so
      borrowing can't inflate the score, and old saves get the new fields filled in on load.
+141. **Shopper types are weights, not scripts.** A family, a student or the critic is the same shopper with
+     different numbers (list length, department tastes, patience, pace, budget, card share), so every rule that
+     already reads a shopper (prices, queues, reviews) works for all of them with no special cases. The critic is
+     the one exception: their mood at the door becomes a newspaper verdict, capped at one visit a day.
 

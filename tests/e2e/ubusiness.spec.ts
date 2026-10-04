@@ -226,3 +226,53 @@ test("UBusiness expansion: specials, upgrades, a loan, a freezer, and catching a
   expect((await ub()).milestones).toContain("catch");
   expect(errors).toEqual([]);
 });
+
+test("UBusiness round three: bulk orders, staff training, a coffee bar, the week in review and the profit chart", async ({ page }) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await guestWith(page, 0, true);
+  await page.goto("/games/ubusiness");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
+  const stage = page.getByTestId("game-stage");
+  await stage.getByTestId("ub-new").click();
+  await expect(stage.getByTestId("ub-cash")).toHaveText("$3,000.00", { timeout: 60_000 });
+  type X = { state: () => Record<string, unknown>; xp: (n: number) => void; give: (c: number) => void; place: (x: number, z: number) => void; closeDay: () => void };
+  const ub = () => page.evaluate(() => (window as unknown as { __ubiz: X }).__ubiz.state());
+  const call = (fn: string, ...a: unknown[]) => page.evaluate(([fn, a]) => ((window as unknown as { __ubiz: Record<string, (...x: unknown[]) => void> }).__ubiz[fn as string](...(a as unknown[]))), [fn, a] as const);
+
+  // Five boxes at the bulk price.
+  await stage.getByTestId("ub-tool-stock").click();
+  await stage.getByTestId("ub-order5-pasta").click();
+  await expect(stage.getByTestId("ub-toast")).toContainText("8% bulk discount");
+  await stage.getByTestId("ub-close").click();
+
+  // Hire and train a cashier.
+  await call("give", 1_000_000);
+  await call("xp", 5_000);
+  await stage.getByTestId("ub-tool-staff").click();
+  await stage.getByTestId("ub-hire-cashier").click();
+  const id = ((await ub()).staff as { id: number }[])[0].id;
+  await stage.getByTestId(`ub-train-${id}`).click();
+  await expect(stage.getByTestId("ub-toast")).toContainText("is now level 2");
+  await stage.getByTestId("ub-close").click();
+
+  // A coffee bar.
+  await stage.getByTestId("ub-tool-build").click();
+  await stage.getByTestId("ub-build-coffee").click();
+  await call("place", 9.5, 6.3);
+  await expect(stage.getByTestId("ub-toast")).toContainText("Coffee Bar placed");
+
+  // A week of closing the books: the week in review, and two weeks of profit on the chart.
+  for (let d = 1; d <= 7; d++) {
+    await call("closeDay");
+    if (d < 7) await stage.getByTestId("ub-next-day").click();
+  }
+  await expect(stage.getByTestId("ub-week")).toContainText("Week 1 in review");
+  await stage.getByTestId("ub-next-day").click();
+  await stage.getByTestId("ub-tool-books").click();
+  await expect(stage.getByTestId("ub-profit-chart")).toContainText("Profit per day");
+  expect(await stage.getByTestId("ub-profit-chart").locator(".group").count()).toBe(7);
+  expect(errors).toEqual([]);
+});

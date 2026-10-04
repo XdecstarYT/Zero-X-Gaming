@@ -64,6 +64,21 @@ import {
   theftLoss,
   toggleSpecial,
   writeReview,
+  bulkDiscount,
+  closeOf,
+  coffeeChance,
+  COFFEE,
+  criticVerdict,
+  orderCost,
+  pickShopper,
+  pricePromise,
+  scanPerItem,
+  sellCoffee,
+  SHOPPER_TYPES,
+  train,
+  trainCost,
+  wageOf,
+  type ShopperKind,
   type Store,
 } from "./logic";
 
@@ -280,9 +295,9 @@ describe("the books", () => {
     const v = storeValue(s);
     expect(v).toBeGreaterThan(s.cash);
     expect(score(s)).toBe(Math.floor(v / 10_000));
-    order(s, "pasta", 5);
+    order(s, "pasta", 4);
     advance(s, 40);
-    // Buying stock moves cash into stock: the value barely changes.
+    // Buying stock (below the bulk deal) moves cash into stock: the value barely changes.
     expect(Math.abs(storeValue(s) - v)).toBeLessThan(10);
   });
 
@@ -566,3 +581,114 @@ describe("the big expansion", () => {
   });
 });
 
+
+describe("round three: shoppers, staff, coffee, bulk, late nights, the promise, the week", () => {
+  it("shoppers come in types: families fill a basket, students go for snacks, the critic comes once a day from day 3", () => {
+    const s = opened("ultimate");
+    s.licences = ["grocery", "snacks", "household", "fresh"];
+    const rng = createRng(8);
+    const avg = (k: ShopperKind) => Array.from({ length: 300 }, () => shoppingList(s, rng, k).length).reduce((a, b) => a + b, 0) / 300;
+    expect(avg("family")).toBeGreaterThan(avg("student") * 1.8);
+    const snacky = (k: ShopperKind) => Array.from({ length: 300 }, () => shoppingList(s, rng, k)).flat().filter((id) => PRODUCTS[id].cat === "snacks").length;
+    expect(snacky("student")).toBeGreaterThan(snacky("pensioner"));
+    const kinds = new Set(Array.from({ length: 2000 }, () => pickShopper(s, rng)));
+    expect(kinds.has("critic")).toBe(false);
+    s.day = 3;
+    expect(new Set(Array.from({ length: 4000 }, () => pickShopper(s, rng))).has("critic")).toBe(true);
+    s.today.critic = true;
+    expect(new Set(Array.from({ length: 2000 }, () => pickShopper(s, rng))).has("critic")).toBe(false);
+    expect(maxPay(s, "bread", createRng(1), "foodie")).toBeGreaterThan(maxPay(s, "bread", createRng(1), "student"));
+    expect(Object.keys(SHOPPER_TYPES)).toHaveLength(6);
+  });
+
+  it("the critic's write-up moves the reputation a long way", () => {
+    const s = opened();
+    const rep = s.reputation;
+    expect(criticVerdict(s, 0.9).good).toBe(true);
+    expect(s.reputation).toBeCloseTo(rep + 0.4);
+    criticVerdict(s, 0.1);
+    expect(s.reputation).toBeCloseTo(rep);
+    expect(s.press).toHaveLength(2);
+    expect(s.press![0].good).toBe(false);
+  });
+
+  it("staff improve with experience to level 3, training takes them to 5; better costs more", () => {
+    const s = opened("ultimate");
+    s.cash = 10_000_000;
+    hire(s, "cashier");
+    const st = s.staff[0];
+    for (let d = 0; d < 5; d++) endDay(s);
+    expect(st.level).toBe(2);
+    for (let d = 0; d < 20; d++) endDay(s);
+    expect(st.level).toBe(3);
+    const cost = trainCost(st);
+    const cash = s.cash;
+    expect(train(s, st.id).ok).toBe(true);
+    expect(s.cash).toBe(cash - cost);
+    train(s, st.id);
+    expect(st.level).toBe(5);
+    expect(train(s, st.id).ok).toBe(false);
+    expect(wageOf(st)).toBe(Math.round(12_000 * 1.4));
+    expect(scanPerItem(5)).toBeLessThan(scanPerItem(1) * 0.6);
+  });
+
+  it("a coffee bar sells coffee to a share of shoppers", () => {
+    const s = opened();
+    s.cash = 10_000_000;
+    s.xp = 99_999;
+    expect(coffeeChance(s)).toBe(0);
+    buyFixture(s, "coffee", 10, 4, 0);
+    expect(coffeeChance(s)).toBe(0.25);
+    const before = s.today.revenue;
+    sellCoffee(s);
+    expect(s.today.revenue).toBe(before + COFFEE.price);
+    expect(s.today.coffees).toBe(1);
+  });
+
+  it("bulk orders are cheaper per box", () => {
+    const s = opened();
+    expect(bulkDiscount(1)).toBe(0);
+    expect(bulkDiscount(5)).toBe(0.08);
+    expect(bulkDiscount(12)).toBe(0.15);
+    const one = orderCost(s, "pasta", 1);
+    expect(orderCost(s, "pasta", 10)).toBe(Math.round(one * 10 * 0.85));
+    const cash = s.cash;
+    order(s, "pasta", 5);
+    expect(s.cash).toBe(cash - orderCost(s, "pasta", 5));
+  });
+
+  it("the late-night licence keeps the doors open until 10pm, for a bit more in wages and power", () => {
+    const s = opened();
+    s.cash = 10_000_000;
+    s.xp = 99_999;
+    expect(closeOf(s)).toBe(CLOSE);
+    expect(footfall(s, 21 * 60)).toBe(0);
+    buyUpgrade(s, "late");
+    expect(closeOf(s)).toBe(22 * 60);
+    expect(footfall(s, 21 * 60)).toBeGreaterThan(0);
+    hire(s, "cashier");
+    expect(endDay(s).wages).toBe(Math.round(12_000 * 1.15));
+  });
+
+  it("a price promise halves what the rival takes today", () => {
+    const s = opened();
+    expect(pricePromise(s).ok).toBe(false);
+    s.rival = { name: "Bargain Barn", strength: 0.3 };
+    const pull = rivalPull(s);
+    expect(pricePromise(s).ok).toBe(true);
+    expect(rivalPull(s)).toBeCloseTo(pull / 2);
+    expect(pricePromise(s).ok).toBe(false);
+  });
+
+  it("every seventh evening brings the week in review", () => {
+    const s = opened();
+    let week;
+    for (let d = 1; d <= 7; d++) {
+      ringUp(s, [{ product: "bread", price: 449 }]);
+      const r = endDay(s);
+      if (d < 7) expect(r.week).toBeUndefined();
+      else week = r.week;
+    }
+    expect(week).toMatchObject({ week: 1, customers: 7, revenue: 7 * 449, best: "bread" });
+  });
+});

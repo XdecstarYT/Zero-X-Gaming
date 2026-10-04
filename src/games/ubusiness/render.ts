@@ -608,6 +608,19 @@ export class StoreView {
         g.add(box(def.w, 0.95, def.d, std("#f5f5f4", 0.4), 0, 0, 0), box(0.5, 0.36, 0.05, dark, 0, 1.15, 0.1), box(0.46, 0.32, 0.01, emissive("#22d3ee", 0.8), 0, 1.17, 0.07), box(0.3, 0.02, 0.3, emissive("#ef4444", 0.3), 0, 0.95, -0.12));
         break;
       }
+      case "coffee": {
+        // A coffee bar: a wooden counter, an espresso machine, a stack of cups and a chalkboard menu.
+        g.add(box(def.w, 0.95, def.d, std("#4a2c1a", 0.55), 0, 0, 0), box(def.w + 0.04, 0.04, def.d + 0.04, std("#d6d3d1", 0.3), 0, 0.95, 0));
+        g.add(box(0.55, 0.42, 0.4, std("#d4d4d8", 0.25, 0.85), -0.3, 0.99, 0.1), box(0.5, 0.06, 0.36, std("#18181b", 0.4), -0.3, 1.41, 0.1));
+        g.add(box(0.06, 0.08, 0.06, dark, -0.42, 1.12, -0.12), box(0.06, 0.08, 0.06, dark, -0.18, 1.12, -0.12), box(0.08, 0.03, 0.08, emissive("#22c55e", 0.8), -0.3, 1.3, -0.11));
+        for (let i = 0; i < 4; i++) g.add(cyl(0.045, 0.1, std("#fafaf9", 0.4), 0.25 + (i % 2) * 0.1, 0.99 + Math.floor(i / 2) * 0.1, 0.05, 12));
+        g.add(cyl(0.045, 0.1, std("#7c2d12", 0.5), 0.5, 0.99, -0.15, 12));
+        const menu = label("COFFEE  $3.80", 0.9, 0.36, "#1c1917", "#fef3c7", 48);
+        menu.position.set(0, 1.9, def.d / 2 - 0.02);
+        menu.rotation.y = Math.PI;
+        g.add(menu, cyl(0.02, 0.5, steel, -0.45, 1.45, def.d / 2 - 0.04, 6), cyl(0.02, 0.5, steel, 0.45, 1.45, def.d / 2 - 0.04, 6));
+        break;
+      }
       case "plant": {
         g.add(cyl(0.22, 0.5, std("#e7e5e4", 0.6), 0, 0, 0, 16));
         for (let i = 0; i < 6; i++) {

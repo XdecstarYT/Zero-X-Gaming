@@ -682,6 +682,18 @@ of October, with pumpkins at the door), a cold snap, big match day and school ho
 opens across the street and takes a share of your shoppers, more if you're dearer than usual and less if you're
 well liked; marketing and a 4★ reputation push it back. Old saves load with all of it switched on.
 
+**Round three: people.** Shoppers come in six types (`SHOPPER_TYPES`): regulars, families (big trolleys, short
+patience), pensioners (slow, patient, mostly cash, health and bakery), students (snacks on a budget), foodies (fresh
+and bakery, pay more) and, from day 3 and at most once a day, a **food critic** whose verdict lands in tomorrow's
+paper (±0.4★ reputation, kept under 📰 in the trophies panel). **Staff improve**: a level every five days worked
+up to ★★★, and training courses to ★★★★★; better cashiers scan faster, stockers keep shelves fuller, cleaners mop
+more, guards miss less, and wages rise 10% a star. A **Coffee Bar** fixture sells a $3.80 coffee to a quarter of
+paying shoppers (two bars, up to 45%). The wholesaler's **bulk deal** takes 8% off five boxes and 15% off ten. A
+**late-night licence** keeps the doors open until 10pm (wages and power +15%). A **price promise** (both editions)
+halves what Bargain Barn takes for a day. Every seventh evening brings **the week in review**, and the books show
+**profit per day** for the last fortnight. Fixed: the evening report couldn't be dismissed, so a store couldn't
+start its second day.
+
 **Free Ultimate until 31 October.** `claim_ubusiness_free()` (`20261018090000_ubusiness_free_claim.sql`) gives a
 signed-in player the Ultimate unlock for nothing until 2026-11-01 12:00 UTC (the end of the 31st anywhere on Earth);
 guests claim into their device save. A claimed copy is an ordinary unlock, so it's theirs to keep. The edition card

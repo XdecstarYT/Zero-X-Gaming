@@ -41,7 +41,7 @@ export const CATEGORY_IDS = Object.keys(CATEGORIES) as Category[];
 
 // ---------------------------------------------------------------- products
 
-export type FixtureKind = "shelf" | "fridge" | "freezer" | "bakery" | "produce" | "rack" | "display" | "checkout" | "selfCheckout" | "plant" | "promo";
+export type FixtureKind = "shelf" | "fridge" | "freezer" | "bakery" | "produce" | "rack" | "display" | "checkout" | "selfCheckout" | "coffee" | "plant" | "promo";
 /** Fixtures that hold stock. */
 export type StockFixture = "shelf" | "fridge" | "freezer" | "bakery" | "produce" | "rack" | "display";
 export type Shape = "box" | "bottle" | "can" | "bag" | "jar" | "fruit" | "carton" | "device" | "garment" | "toy" | "roll";
@@ -175,6 +175,7 @@ export const FIXTURES: Record<FixtureKind, FixtureDef> = {
   display: { name: "Tech Display", price: 150_000, w: 1.6, d: 0.9, slots: 3, power: 600, level: 7, ultimate: true },
   checkout: { name: "Checkout Counter", price: 90_000, w: 2.2, d: 0.9, slots: 0, power: 300, level: 1 },
   selfCheckout: { name: "Self-Checkout", price: 200_000, w: 0.9, d: 0.7, slots: 0, power: 400, level: 4, ultimate: true },
+  coffee: { name: "Coffee Bar", price: 150_000, w: 1.6, d: 0.8, slots: 0, power: 500, level: 2, appeal: 1 },
   plant: { name: "Potted Palm", price: 8_000, w: 0.6, d: 0.6, slots: 0, power: 0, level: 1, appeal: 1 },
   promo: { name: "Promo Stand", price: 25_000, w: 1, d: 0.6, slots: 0, power: 200, level: 2, appeal: 3 },
 };
@@ -296,6 +297,7 @@ export const UPGRADES = {
   aircon: { name: "Air conditioning", icon: "❄️", price: 250_000, level: 3, text: "Happier shoppers, and 15% more come in during a heatwave." },
   bay: { name: "Loading bay", icon: "🚛", price: 200_000, level: 4, text: "Deliveries arrive twice as fast." },
   app: { name: "Loyalty app", icon: "📱", price: 350_000, level: 5, ultimate: true, text: "Regulars: 10% more shoppers, and your reputation grows faster." },
+  late: { name: "Late-night licence", icon: "🌙", price: 300_000, level: 4, text: "Stay open until 10pm for the after-work crowd (wages and power go up 15%)." },
 } satisfies Record<string, UpgradeDef>;
 export type UpgradeId = keyof typeof UPGRADES;
 export const UPGRADE_IDS = Object.keys(UPGRADES) as UpgradeId[];
@@ -425,6 +427,10 @@ export interface Staff {
   name: string;
   /** The checkout a cashier works (fixture id). */
   post?: number;
+  /** Skill, 1 to 5: experience raises it to 3, training to 5. */
+  level?: number;
+  /** Days worked. */
+  days?: number;
 }
 
 export interface Order {
@@ -450,6 +456,10 @@ export interface DayStats {
   /** Shoplifters caught, and what got away (cents, at shelf price). */
   caught?: number;
   stolen?: number;
+  /** Coffees sold at the coffee bar. */
+  coffees?: number;
+  /** The food critic has been in today. */
+  critic?: boolean;
 }
 
 export interface DayReport extends DayStats {
@@ -471,6 +481,18 @@ export interface DayReport extends DayStats {
   loan?: number;
   /** The rival opened across the street tonight. */
   rivalOpened?: boolean;
+  /** Staff who got better with experience tonight. */
+  promoted?: string[];
+  /** Every seventh evening: the week in review. */
+  week?: WeekReview;
+}
+
+export interface WeekReview {
+  week: number;
+  revenue: number;
+  profit: number;
+  customers: number;
+  best: ProductId | null;
 }
 
 export interface Store {
@@ -510,6 +532,10 @@ export interface Store {
   milestones?: string[];
   lifetime?: Lifetime;
   loan?: { kind: LoanKind; left: number; daily: number } | null;
+  /** The day a price promise is running (it fights the rival for a day). */
+  promise?: number;
+  /** Newspaper write-ups from the food critic, newest first. */
+  press?: Press[];
   rival?: { name: string; strength: number } | null;
 }
 
@@ -530,7 +556,9 @@ export const hasUpgrade = (s: Store, id: UpgradeId) => !!s.upgrades?.includes(id
 export const levelOf = (xp: number) => LEVELS.filter((x) => xp >= x).length;
 export const sizeOf = (s: Store) => SIZES[s.size];
 export const absMinute = (s: Store) => (s.day - 1) * 1440 + s.minute;
-export const isOpen = (s: Store) => s.minute >= OPEN && s.minute < CLOSE;
+/** Closing time: 8pm, or 10pm with the late-night licence. */
+export const closeOf = (s: Store) => (hasUpgrade(s, "late") ? 22 * 60 : CLOSE);
+export const isOpen = (s: Store) => s.minute >= OPEN && s.minute < closeOf(s);
 
 const NAMES = ["Alex", "Sam", "Jordan", "Riley", "Casey", "Morgan", "Jamie", "Taylor", "Robin", "Quinn", "Avery", "Drew"];
 
@@ -576,6 +604,7 @@ export function newStore(tier: Tier, name = "Corner Store", seed = 1): Store {
   s.lifetime = freshLifetime();
   s.loan = null;
   s.rival = null;
+  s.press = [];
   return s;
 }
 
@@ -610,7 +639,7 @@ export function order(s: Store, id: ProductId, boxes: number, express = false): 
   if (!(boxes >= 1 && boxes <= 50)) return no("1 to 50 boxes");
   const units = p.box * Math.floor(boxes);
   const fee = express ? Math.ceil(p.cost * units * 0.1) : 0;
-  const r = spend(s, unitCost(s, id) * units + fee);
+  const r = spend(s, orderCost(s, id, Math.floor(boxes)) + fee);
   if (!r.ok) return r;
   const base = express ? EXPRESS_MIN : (eventOf(s)?.delivery ?? DELIVERY_MIN);
   const wait = hasUpgrade(s, "bay") ? Math.ceil(base / 2) : base;
@@ -618,6 +647,11 @@ export function order(s: Store, id: ProductId, boxes: number, express = false): 
   deliver(s);
   return yes;
 }
+
+/** The wholesaler's bulk deal: 8% off five boxes or more, 15% off ten or more. */
+export const bulkDiscount = (boxes: number) => (boxes >= 10 ? 0.15 : boxes >= 5 ? 0.08 : 0);
+/** What an order of boxes costs today, after the bulk deal. */
+export const orderCost = (s: Store, id: ProductId, boxes: number) => Math.round(unitCost(s, id) * PRODUCTS[id].box * boxes * (1 - bulkDiscount(boxes)));
 
 /** Orders that have arrived go into the stockroom. Returns what arrived. */
 export function deliver(s: Store): Order[] {
@@ -779,6 +813,56 @@ export function fire(s: Store, id: number): Result {
   return yes;
 }
 
+// -------------------------------------------------------------- staff skill
+
+export const levelOfStaff = (st: Staff) => st.level ?? 1;
+/** Experience takes a member of staff to level 3 (a level every five days worked); training goes to 5. */
+export const STAFF_MAX = 5;
+export const EXPERIENCE_MAX = 3;
+/** Wages rise 10% a level. */
+export const wageOf = (st: Staff) => Math.round(STAFF[st.role].wage * (1 + 0.1 * (levelOfStaff(st) - 1)));
+export const trainCost = (st: Staff) => 25_000 * levelOfStaff(st);
+/** The best skill among staff in a role (0 if nobody). */
+export const skill = (s: Store, role: StaffRole) => s.staff.filter((st) => st.role === role).reduce((a, st) => Math.max(a, levelOfStaff(st)), 0);
+/** How long a cashier takes per item (seconds of game time): quicker as they improve. */
+export const scanPerItem = (level: number) => 0.5 * (1 - 0.12 * (Math.max(1, level) - 1));
+
+/** Send someone on a course: one level up, for a fee. */
+export function train(s: Store, id: number): Result {
+  const st = s.staff.find((o) => o.id === id);
+  if (!st) return no("No such person");
+  if (levelOfStaff(st) >= STAFF_MAX) return no("They're already the best there is");
+  const r = spend(s, trainCost(st));
+  if (r.ok) st.level = levelOfStaff(st) + 1;
+  return r;
+}
+
+// ------------------------------------------------------------- coffee bar
+
+export const COFFEE = { price: 380, cost: 60 };
+/** The chance a paying shopper grabs a coffee on the way out: 25% a bar, up to 45%. */
+export const coffeeChance = (s: Store) => Math.min(0.45, 0.25 * s.fixtures.filter((f) => f.kind === "coffee").length);
+/** Ring up a coffee. */
+export function sellCoffee(s: Store) {
+  s.cash += COFFEE.price;
+  s.today.revenue += COFFEE.price;
+  s.today.cogs += COFFEE.cost;
+  s.today.coffees = (s.today.coffees ?? 0) + 1;
+  life(s).revenue += COFFEE.price;
+}
+
+// ----------------------------------------------------------- price promise
+
+/** A day-long price promise: we'll match the rival. It halves what they take from you today, and knocks them back a little. */
+export const promiseCost = (s: Store) => 25_000 + s.size * 10_000;
+export function pricePromise(s: Store): Result {
+  if (!s.rival) return no("There's nobody to beat yet");
+  if (s.promise === s.day) return no("Already running today");
+  const r = spend(s, promiseCost(s));
+  if (r.ok) s.promise = s.day;
+  return r;
+}
+
 /** Grow into the next size of premises. */
 export function expand(s: Store): Result {
   const next = SIZES[s.size + 1];
@@ -827,7 +911,7 @@ export const appeal = (s: Store) => s.fixtures.reduce((a, f) => a + (FIXTURES[f.
 
 /** Shoppers walking in per game hour at this time of day. */
 export function footfall(s: Store, minute = s.minute) {
-  if (minute < OPEN || minute >= CLOSE) return 0;
+  if (minute < OPEN || minute >= closeOf(s)) return 0;
   const h = minute / 60;
   // Busy at lunch and after work.
   const curve = 0.6 + 0.5 * Math.exp(-((h - 12.5) ** 2) / 2) + 0.7 * Math.exp(-((h - 17.5) ** 2) / 2.5);
@@ -856,7 +940,8 @@ export function rivalPull(s: Store) {
   if (!s.rival) return 0;
   const price = Math.max(0.2, Math.min(1.5, 0.5 + (priceIndex(s) - 1) * 3));
   const liked = Math.max(0.5, 1.3 - s.reputation * 0.15);
-  return Math.min(0.6, s.rival.strength * price * liked);
+  const promise = s.promise === s.day ? 0.5 : 1;
+  return Math.min(0.6, s.rival.strength * price * liked * promise);
 }
 
 export const eventOf = (s: Store): DayEvent | null => (s.event ? EVENTS[s.event] : null);
@@ -880,13 +965,81 @@ export function demandOf(s: Store, id: ProductId) {
 /** Most shoppers the floor holds at once. */
 export const capacity = (s: Store) => 6 + s.size * 4;
 
-/** A shopper's list: 1 to 6 things from what you're licensed to sell (some may not be on the shelves). */
-export function shoppingList(s: Store, rng: Rng): ProductId[] {
+// ------------------------------------------------------------ shopper types
+
+export interface ShopperType {
+  name: string;
+  icon: string;
+  /** How common (relative). */
+  weight: number;
+  /** Fewest and most things on their list. */
+  items: [number, number];
+  /** Queue patience, walking pace and what they'll pay, against an average shopper. */
+  patience: number;
+  pace: number;
+  budget: number;
+  /** Added to the share who pay by card. */
+  card: number;
+  /** Departments they go for. */
+  likes: Partial<Record<Category, number>>;
+}
+
+export const SHOPPER_TYPES = {
+  regular: { name: "Regular", icon: "🙂", weight: 50, items: [1, 6], patience: 1, pace: 1, budget: 1, card: 0, likes: {} },
+  family: { name: "Family", icon: "👨‍👩‍👧", weight: 15, items: [4, 9], patience: 0.8, pace: 0.9, budget: 1, card: 0.1, likes: { fresh: 1.5, snacks: 1.4, frozen: 1.5, toys: 1.8, bakery: 1.3 } },
+  pensioner: { name: "Pensioner", icon: "👵", weight: 12, items: [1, 4], patience: 1.5, pace: 0.7, budget: 0.95, card: -0.4, likes: { grocery: 1.4, pharmacy: 1.7, bakery: 1.4, fresh: 1.2 } },
+  student: { name: "Student", icon: "🎒", weight: 15, items: [1, 3], patience: 0.9, pace: 1.15, budget: 0.9, card: 0.2, likes: { snacks: 2.2, frozen: 1.6, electronics: 1.4 } },
+  foodie: { name: "Foodie", icon: "🧑‍🍳", weight: 7, items: [2, 5], patience: 1.1, pace: 1, budget: 1.15, card: 0.1, likes: { fresh: 2.2, bakery: 2.4, grocery: 1.2 } },
+  critic: { name: "Food critic", icon: "🧐", weight: 1.5, items: [3, 6], patience: 0.9, pace: 0.9, budget: 1.05, card: 0.3, likes: { fresh: 1.3, bakery: 1.5 } },
+} satisfies Record<string, ShopperType>;
+export type ShopperKind = keyof typeof SHOPPER_TYPES;
+const KINDS = Object.keys(SHOPPER_TYPES) as ShopperKind[];
+
+/** Who walks in: the critic comes at most once a day, and not before day 3. */
+export function pickShopper(s: Store, rng: Rng): ShopperKind {
+  const ok = KINDS.filter((k) => k !== "critic" || (s.day >= 3 && !s.today.critic));
+  const total = ok.reduce((a, k) => a + SHOPPER_TYPES[k].weight, 0);
+  let r = rng.next() * total;
+  for (const k of ok) {
+    r -= SHOPPER_TYPES[k].weight;
+    if (r <= 0) return k;
+  }
+  return "regular";
+}
+
+export interface Press {
+  day: number;
+  text: string;
+  good: boolean;
+}
+
+/**
+ * The critic's verdict, printed in tomorrow's paper: a glowing review is
+ * worth a lot of reputation, a stinker costs it.
+ */
+export function criticVerdict(s: Store, mood: number): Press {
+  const good = mood >= 0.7;
+  const bad = mood < 0.45;
+  const n = s.name;
+  const text = good
+    ? `"${n}: the best little shop in town." ★★★★★`
+    : bad
+      ? `"Avoid ${n}: empty shelves and a grumpy queue." ★`
+      : `"${n} is fine. Just fine." ★★★`;
+  s.reputation = Math.max(0, Math.min(5, s.reputation + (good ? 0.4 : bad ? -0.4 : 0.05)));
+  const p: Press = { day: s.day, text, good };
+  s.press = [p, ...(s.press ?? [])].slice(0, 10);
+  return p;
+}
+
+/** A shopper's list: 1 to 6 things (more for a family) from what you're licensed to sell (some may not be on the shelves). */
+export function shoppingList(s: Store, rng: Rng, kind: ShopperKind = "regular"): ProductId[] {
+  const t: ShopperType = SHOPPER_TYPES[kind];
   const pool = PRODUCT_IDS.filter((id) => s.licences.includes(PRODUCTS[id].cat));
   if (!pool.length) return [];
-  const weights = pool.map((id) => demandOf(s, id));
+  const weights = pool.map((id) => demandOf(s, id) * (t.likes[PRODUCTS[id].cat] ?? 1));
   const total = weights.reduce((a, w) => a + w, 0);
-  const n = 1 + Math.floor(rng.next() ** 1.4 * 6);
+  const n = t.items[0] + Math.floor(rng.next() ** 1.4 * (t.items[1] - t.items[0] + 1));
   const list: ProductId[] = [];
   for (let i = 0; i < n; i++) {
     let r = rng.next() * total;
@@ -902,13 +1055,13 @@ export function shoppingList(s: Store, rng: Rng): ProductId[] {
 }
 
 /** The most a shopper will pay for something: around the market price, more at a well-liked store. */
-export function maxPay(s: Store, id: ProductId, rng: Rng) {
+export function maxPay(s: Store, id: ProductId, rng: Rng, kind: ShopperKind = "regular") {
   const m = PRODUCTS[id].market;
-  return Math.round(m * (1.04 + s.reputation * 0.035) * (0.88 + rng.next() * 0.24));
+  return Math.round(m * (1.04 + s.reputation * 0.035) * (0.88 + rng.next() * 0.24) * SHOPPER_TYPES[kind].budget);
 }
 
 /** Will they take it at your price? */
-export const willBuy = (s: Store, id: ProductId, rng: Rng) => shelfPrice(s, id) <= maxPay(s, id, rng);
+export const willBuy = (s: Store, id: ProductId, rng: Rng, kind: ShopperKind = "regular") => shelfPrice(s, id) <= maxPay(s, id, rng, kind);
 
 /** Take one unit off a shelf slot. */
 export function pick(s: Store, fixtureId: number, slot: number): boolean {
@@ -948,9 +1101,9 @@ export function leaveMood(s: Store, mood: number) {
 /** How a shopper's mood starts (air conditioning helps). */
 export const moodStart = (s: Store) => 0.75 + (hasUpgrade(s, "aircon") ? 0.05 : 0);
 /** Share of shoppers who pay by card. */
-export const cardShare = (s: Store) => (hasUpgrade(s, "tap") ? 0.85 : 0.62);
+export const cardShare = (s: Store, kind: ShopperKind = "regular") => Math.max(0.05, Math.min(0.97, (hasUpgrade(s, "tap") ? 0.85 : 0.62) + SHOPPER_TYPES[kind].card));
 /** How long (game minutes of patience, roughly) a shopper will queue. */
-export const patienceOf = (s: Store, rng: Rng) => (25 + rng.next() * 20) * (hasUpgrade(s, "doors") ? 1.15 : 1);
+export const patienceOf = (s: Store, rng: Rng, kind: ShopperKind = "regular") => (25 + rng.next() * 20) * (hasUpgrade(s, "doors") ? 1.15 : 1) * SHOPPER_TYPES[kind].patience;
 
 /** Some shoppers leave with a review: the stars follow their mood, the words their reason. */
 export function writeReview(s: Store, mood: number, reason: Reason, rng: Rng): Review | null {
@@ -973,7 +1126,7 @@ export function rating(s: Store) {
 /** The chance a shopper tries to walk out without paying. */
 export const theftChance = (s: Store) => (s.day <= 1 ? 0 : 0.04 * (hasUpgrade(s, "cctv") ? 0.5 : 1));
 /** The chance your guards stop a shoplifter at the door (each guard has a go). */
-export const guardCatch = (s: Store) => 1 - 0.15 ** s.staff.filter((st) => st.role === "guard").length;
+export const guardCatch = (s: Store) => 1 - s.staff.filter((st) => st.role === "guard").reduce((miss, st) => miss * (0.15 - 0.03 * (levelOfStaff(st) - 1)), 1);
 
 /** Caught: the goods go back in the stockroom and the town hears about it. */
 export function catchThief(s: Store, basket: { product: ProductId }[]) {
@@ -1213,7 +1366,7 @@ export function runAuto(s: Store) {
     const want = (boxes ?? 0) * p.box - (s.storage[id] ?? 0);
     if (want <= 0) continue;
     const buy = Math.ceil(want / p.box);
-    const cost = buy * p.box * unitCost(s, id);
+    const cost = orderCost(s, id, buy);
     if (cost > s.cash) continue;
     s.cash -= cost;
     spent += cost;
@@ -1253,14 +1406,16 @@ export function makeChange(cents: number): number[] {
 
 /** Staff at work: stockers top up any slot below half from the stockroom. */
 export function staffWork(s: Store) {
-  const cleaners = s.staff.filter((o) => o.role === "cleaner").length;
-  for (let i = 0; i < cleaners * 2 && s.mess?.length; i++) {
+  const sweeps = s.staff.filter((o) => o.role === "cleaner").reduce((a, st) => a + 1 + levelOfStaff(st), 0);
+  for (let i = 0; i < sweeps && s.mess?.length; i++) {
     s.mess.shift();
     s.today.cleaned = (s.today.cleaned ?? 0) + 1;
   }
   if (!s.staff.some((o) => o.role === "stocker")) return 0;
   let moved = 0;
-  for (const f of s.fixtures) if (f.slots.some((sl) => sl.product && sl.qty < PRODUCTS[sl.product].slot / 2)) moved += restock(s, f.id);
+  // A better stocker tops up sooner: below half at level 1, below 90% at level 5.
+  const below = 0.5 + 0.1 * (skill(s, "stocker") - 1);
+  for (const f of s.fixtures) if (f.slots.some((sl) => sl.product && sl.qty < PRODUCTS[sl.product].slot * below)) moved += restock(s, f.id);
   return moved;
 }
 
@@ -1278,8 +1433,9 @@ export function endDay(s: Store, date?: Date): DayReport {
   const goalPay = (s.goals ?? []).filter((g) => g.done).reduce((a, g) => a + g.reward, 0);
   const t = s.today;
   const rent = sizeOf(s).rent;
-  const wages = s.staff.reduce((a, st) => a + STAFF[st.role].wage, 0);
-  const power = Math.round(s.fixtures.reduce((a, f) => a + FIXTURES[f.kind].power, 0) * (hasUpgrade(s, "led") ? 0.7 : 1));
+  const late = hasUpgrade(s, "late") ? 1.15 : 1;
+  const wages = Math.round(s.staff.reduce((a, st) => a + wageOf(st), 0) * late);
+  const power = Math.round(s.fixtures.reduce((a, f) => a + FIXTURES[f.kind].power, 0) * (hasUpgrade(s, "led") ? 0.7 : 1) * late);
   s.cash -= rent + wages + power;
   const waste = spoil(s);
   let loan = 0;
@@ -1301,8 +1457,26 @@ export function endDay(s: Store, date?: Date): DayReport {
     s.rival = { name: RIVAL_NAME, strength: 0.15 };
     report.rivalOpened = true;
   } else if (s.rival) {
-    const fight = (s.campaign && s.campaign.until >= s.day ? 0.06 : 0) + (s.reputation >= 4 ? 0.02 : 0);
+    const fight = (s.campaign && s.campaign.until >= s.day ? 0.06 : 0) + (s.reputation >= 4 ? 0.02 : 0) + (s.promise === s.day ? 0.03 : 0);
     s.rival.strength = Math.max(0.05, Math.min(0.45, s.rival.strength + 0.02 - fight));
+  }
+  // Experience: a level every five days worked, up to 3.
+  const promoted: string[] = [];
+  for (const st of s.staff) {
+    st.days = (st.days ?? 0) + 1;
+    if (st.days % 5 === 0 && levelOfStaff(st) < EXPERIENCE_MAX) {
+      st.level = levelOfStaff(st) + 1;
+      promoted.push(st.name);
+    }
+  }
+  if (promoted.length) report.promoted = promoted;
+  // Every seventh evening, the week in review.
+  if (s.day % 7 === 0) {
+    const days = [...s.history.slice(-6), report];
+    const sold: Partial<Record<ProductId, number>> = {};
+    for (const d of days) for (const [k, n] of Object.entries(d.sold)) sold[k as ProductId] = (sold[k as ProductId] ?? 0) + (n ?? 0);
+    const best = (Object.entries(sold).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0]?.[0] as ProductId | undefined) ?? null;
+    report.week = { week: s.day / 7, revenue: days.reduce((a, d) => a + d.revenue, 0), profit: days.reduce((a, d) => a + d.profit, 0), customers: days.reduce((a, d) => a + d.customers, 0), best };
   }
   s.day++;
   s.minute = OPEN - 30;
@@ -1446,6 +1620,7 @@ export function loadStore(raw: string | null, tier: Tier): Store | null {
     };
     s.loan ??= null;
     s.rival ??= null;
+    s.press ??= [];
     s.staff = s.staff.filter((st) => st.role in STAFF);
     if (tier === "lite") s.auto = {};
     return s;
