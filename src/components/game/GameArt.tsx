@@ -63,6 +63,8 @@ export function GameArt({
         <StoreArt a={a} b={b} />
       ) : game.slug === "linkwave" ? (
         <LinkArt />
+      ) : game.slug === "zenith" ? (
+        <CityArt id={id} />
       ) : game.category === "sports" ? (
         <Oval id={id} a={a} b={b} />
       ) : (
@@ -629,6 +631,70 @@ function StoreArt({ a, b }: { a: string; b: string }) {
           $
         </text>
       </g>
+    </g>
+  );
+}
+
+function CityArt({ id }: { id: string }) {
+  // A city at dusk from across the river: towers with lit windows, a rising moon, the skyline in the water.
+  const towers = [
+    [14, 70, 26],
+    [44, 104, 30],
+    [78, 58, 22],
+    [104, 132, 34],
+    [142, 88, 28],
+    [174, 150, 30],
+    [208, 96, 26],
+    [238, 120, 32],
+    [274, 74, 30],
+    [300, 54, 20],
+  ];
+  const base = 150;
+  return (
+    <g>
+      <defs>
+        <linearGradient id={`${id}-zsky`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stopColor="#0c1445" />
+          <stop offset=".55" stopColor="#7c3aed" />
+          <stop offset=".85" stopColor="#f97316" />
+          <stop offset="1" stopColor="#fbbf24" />
+        </linearGradient>
+        <linearGradient id={`${id}-zwater`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stopColor="#1e3a8a" />
+          <stop offset="1" stopColor="#020617" />
+        </linearGradient>
+      </defs>
+      <rect width="320" height="200" fill={`url(#${id}-zsky)`} />
+      <circle cx="252" cy="44" r="14" fill="#fef3c7" opacity=".9" />
+      <rect y={base} width="320" height="50" fill={`url(#${id}-zwater)`} />
+      {towers.map(([x, h, w], i) => (
+        <g key={i}>
+          <rect x={x} y={base - h} width={w} height={h} fill="#0f172a" />
+          <rect x={x} y={base} width={w} height={h * 0.32} fill="#0f172a" opacity=".45" />
+          {Array.from({ length: Math.floor(h / 12) }, (_, r) =>
+            Array.from({ length: Math.floor(w / 8) }, (_, c) =>
+              (i * 7 + r * 3 + c * 5) % 4 ? (
+                <rect
+                  key={`${r}-${c}`}
+                  x={x + 3 + c * 8}
+                  y={base - h + 6 + r * 12}
+                  width="4"
+                  height="5"
+                  fill="#fde68a"
+                  opacity={(i + r + c) % 3 ? 0.85 : 0.45}
+                />
+              ) : null,
+            ),
+          )}
+        </g>
+      ))}
+      <rect x="0" y={base - 2} width="320" height="3" fill="#fbbf24" opacity=".7" />
+      {[30, 90, 150, 210, 270].map((x) => (
+        <rect key={x} x={x} y={base + 10 + (x % 3) * 8} width="26" height="2" fill="#fde68a" opacity=".35" />
+      ))}
+      <text x="12" y="28" fontFamily="Arial" fontWeight="900" fontSize="14" fill="#fff">
+        ZLINK+
+      </text>
     </g>
   );
 }

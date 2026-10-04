@@ -512,4 +512,9 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      it. The XP boost lives in the same place, keyed on membership and the game, so Neon Siege can never pick it up.
 146. **Link levels count days, not money.** Every join adds 30 to a running total that never falls, so a level is
      a record of loyalty, not of having a membership right now; letting it lapse doesn't cost you your Gold.
-
+147. **Zenith's city lives on the device; only the population is scored.** A city is a few hundred KB of tiles
+     that changes every 1.6 seconds, so it isn't synced: it saves locally, and the leaderboard takes the
+     population when you bank it. Because a city can be built over weeks and banked in a minute, the plausibility
+     cap is per-second generous (7,000/s) with a hard ceiling near the most a full map can hold (400,000). The sim
+     is deterministic per day (seeded by city and day) and the 3D view only rebuilds the 8×8 districts whose
+     contents changed, so a big city stays cheap to run.

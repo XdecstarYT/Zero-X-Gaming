@@ -847,8 +847,8 @@ Settings live in `site_settings` (readable by everyone; written only through `ow
 
 **40 coins for 30 days** (`/zlink`; `20261019090000_zlink.sql`, `20261020090000_zlink_plus.sql`). Members get:
 
-- **Linkwave**, the members-only game (below). Its scores are refused for non-members by `submit_score`, so its
-  leaderboard is members against members.
+- **Zenith** and **Linkwave**, the members-only games (below). Their scores are refused for non-members by
+  `submit_score`, so their leaderboards are members against members.
 - **Every Sports+ game** and **UBusiness Ultimate**.
 - **+25% XP** on every game except Neon Siege (in `submit_score`).
 - **Double daily rewards**, and a **weekly drop** of 15 coins (`claim_zlink_drop()`, once every 7 days).
@@ -868,6 +868,25 @@ every node of that colour goes (+3 s). A link of six leaves a **Pulse** (clears 
 ×5; links of five or more add 1.5 s. 75 seconds to start. Mouse, touch, or the keyboard (arrows, Space/Enter to
 start and finish a link, Backspace to drop it). The rules are pure functions in `logic.ts` (tested, including a
 hundred-link run that never leaves the board without a move); `index.ts` draws it on a canvas.
+
+### Zenith (ZLink+ exclusive)
+
+A photoreal city builder (`src/games/zenith/`; `20261021090000_zenith.sql`). A 48×48 map of 12 m tiles: a winding
+river, woods, and a highway in from the west. Drag **roads** off it (L-shaped, $25 a tile, bridges $150), paint
+**zones** beside them (residential, commercial, industrial; high density from Town), and supply **power** (coal,
+wind, solar) and **water** (towers, riverside pumps). Buildings move in where there's demand, road access, power
+and water, level up to 3 as land value rises (services, parks and the river add it; pollution takes it away), and
+empty out after 20 days without. **Police, fire, clinics, hospitals and schools** cover a radius; the **views** show
+power and water, land value, pollution and each coverage. Taxes per zone against upkeep in **Budget**; five
+**milestones** from Hamlet to Metropolis, each with a grant and new buildings. The population is the score, banked
+from **City** whenever you like (cap 400,000; members only).
+
+`logic.ts` is the whole simulation as pure functions (tested). `render.ts` draws it with the shared PBR pipeline:
+physical sky with a day/night cycle, the photoreal facades from Code 3 (windows light up at night), asphalt roads
+with markings, sidewalks and streetlights, reflective water, instanced trees and traffic, chimney smoke, and a
+data-texture overlay for the views. Buildings are merged per 8×8 district and rebuilt only when that district
+changes. Camera: drag to pan, right-drag or two fingers to rotate, wheel or pinch to zoom, WASD/QE. The city saves
+on the device every 10 seconds (`zx-zenith-city`). Tests drive it through `window.__zenith`.
 
 ### The look: arcade noir
 

@@ -10,7 +10,7 @@ import { ZLINK_PERKS, zlinkGames } from "@/lib/zlink";
 
 export const metadata: Metadata = {
   title: "ZLink+",
-  description: "ZLink+: the members-only Linkwave, every Sports+ game, UBusiness Ultimate, +25% XP and double daily rewards, for 40 coins a month.",
+  description: "ZLink+: the members-only Zenith and Linkwave, every Sports+ game, UBusiness Ultimate, +25% XP and double daily rewards, for 40 coins a month.",
 };
 
 export default function ZLinkPage() {

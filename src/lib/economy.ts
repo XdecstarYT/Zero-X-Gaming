@@ -39,6 +39,8 @@ export const ZLINK_DROP = 15;
 export const ZLINK_DROP_DAYS = 7;
 /** Can the weekly drop be taken (`lastDrop` in ms, or never)? */
 export const zlinkDropReady = (lastDrop: number | null | undefined, now = Date.now()) => !lastDrop || now - lastDrop >= ZLINK_DROP_DAYS * DAY_MS;
+/** Whole days until the next weekly drop (at least 1 while waiting; 0 if there's never been one). */
+export const zlinkDropIn = (lastDrop: number | null | undefined, now = Date.now()) => (lastDrop ? Math.max(1, Math.ceil((lastDrop + ZLINK_DROP_DAYS * DAY_MS - now) / DAY_MS)) : 0);
 /** Link levels, by total days ever linked. */
 export const LINK_LEVELS = [
   { name: "Linked", days: 0, color: "#22e5ff" },

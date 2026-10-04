@@ -7,6 +7,7 @@ export interface Update {
 }
 
 export const UPDATES: Update[] = [
+  { tag: "ZLink+", title: "Zenith: build a city", body: "The ZLink+ flagship: a photoreal city builder. Roads, zones, power, water and services; a skyline that lights up at night, from Hamlet to Metropolis.", href: "/games/zenith" },
   { tag: "ZLink+", title: "Linkwave and more", body: "A members-only game, +25% XP, a weekly coin drop and link levels from Bronze to Neon. Neon Siege stays separate.", href: "/zlink" },
   { tag: "New", title: "ZLink+ is here", body: "One link, every plus: all of Sports+, UBusiness Ultimate and double daily coins for 40 coins a month. (Neon Siege stays separate.)", href: "/zlink" },
   { tag: "Site", title: "A whole new look", body: "Arcade noir: a drifting aurora, a synthwave hero, cards that tilt toward you, a game ticker and a glass navbar, in both themes.", href: "/" },

@@ -3,12 +3,13 @@ import { inZlink, scramble, ZLINK_EXCLUDED, zlinkGames } from "./zlink";
 import { ZLINK_DAYS, zlinkActive, zlinkDaysLeft, zlinkExtend } from "./economy";
 
 describe("ZLink+", () => {
-  it("covers every Sports+ game and UBusiness, and never Neon Siege", () => {
+  it("covers every Sports+ game, UBusiness and the exclusives, and never Neon Siege", () => {
     const slugs = zlinkGames().map((g) => g.slug);
     expect(slugs).toContain("ubusiness");
     expect(slugs).toContain("aussie-rules");
     expect(slugs).toContain("linkwave");
-    expect(slugs.filter((s) => s !== "ubusiness" && s !== "linkwave").length).toBe(5);
+    expect(slugs).toContain("zenith");
+    expect(slugs.filter((s) => !["ubusiness", "linkwave", "zenith"].includes(s)).length).toBe(5);
     expect(inZlink(ZLINK_EXCLUDED)).toBe(false);
     expect(inZlink("neon-siege")).toBe(false);
     expect(inZlink("trenches")).toBe(false);

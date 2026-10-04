@@ -14,7 +14,7 @@ test("ZLink+: the page says what's in it, and that Neon Siege isn't", async ({ p
   await page.getByTestId("zlink-teaser").click();
   await expect(page).toHaveURL(/\/zlink$/);
   const games = page.getByTestId("zlink-games");
-  await expect(games.getByRole("link")).toHaveCount(7);
+  await expect(games.getByRole("link")).toHaveCount(8);
   await expect(games).toContainText("Linkwave");
   await expect(games).toContainText("UBusiness");
   await expect(games).not.toContainText("Neon Siege");

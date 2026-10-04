@@ -14,6 +14,7 @@ const PAGES = [
   "/shop",
   "/zlink",
   "/games/linkwave",
+  "/games/zenith",
   "/profile",
   "/settings",
 ];

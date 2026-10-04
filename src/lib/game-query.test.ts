@@ -28,7 +28,7 @@ describe("queryGames", () => {
   });
 
   it("sorts newest first", () => {
-    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("linkwave");
+    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("zenith");
   });
 
   it("sorts by rating", () => {

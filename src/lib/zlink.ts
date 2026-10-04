@@ -2,7 +2,7 @@ import { GAMES } from "./catalog";
 
 /**
  * ZLink+: the Zero X membership (40 coins for 30 days). It covers the
- * members-only Linkwave, every Sports+ game, UBusiness Ultimate, +25% XP,
+ * members-only Zenith and Linkwave, every Sports+ game, UBusiness Ultimate, +25% XP,
  * double daily rewards and a weekly drop. Neon Siege — its battle pass,
  * item shop and Cash Cups — stays outside it.
  */
@@ -19,6 +19,7 @@ export const zlinkGames = () => GAMES.filter((g) => g.status === "live" && g.pas
 export const inZlink = (slug: string) => zlinkGames().some((g) => g.slug === slug);
 
 export const ZLINK_PERKS: { icon: string; title: string; text: string }[] = [
+  { icon: "🏙️", title: "Zenith", text: "The members-only city builder: roads, zones, power and a photoreal skyline under a real sun. Members-only leaderboard." },
   { icon: "🌊", title: "Linkwave", text: "The members-only game: link the nodes, close the loop, beat the clock. Its leaderboard is members only." },
   { icon: "🏟️", title: "Every Sports+ game", text: "Screamer, Diamond Derby, Ace Rally, Boundary Blitz, Fairway, and every Sports+ game that comes next." },
   { icon: "🏪", title: "UBusiness Ultimate", text: "All ten departments, the megastore, the full team, marketing and photo mode." },
