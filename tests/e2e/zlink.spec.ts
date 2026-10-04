@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures";
+import { givesItAway } from "../zlink-guard";
 
 test("ZLink+: the home teaser leads to the classified page, which gives nothing away", async ({ page }) => {
   await page.goto("/");
@@ -10,8 +11,7 @@ test("ZLink+: the home teaser leads to the classified page, which gives nothing 
   await expect(file).toContainText("Codename");
   await expect(file.getByLabel("Classified")).toHaveCount(3);
   // Nothing on the page says what it is.
-  const text = (await page.locator("main").innerText()).toLowerCase();
-  for (const w of ["game pass", "subscription", "every game", "unlimited"]) expect(text).not.toContain(w);
+  expect(givesItAway(await page.locator("main").innerText())).toBeNull();
 });
 
 test("ZLink+: request access hands out a code that stays", async ({ page }) => {

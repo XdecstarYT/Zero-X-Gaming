@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { accessCode, DOSSIER, scramble, TRANSMISSIONS } from "./zlink";
+import { givesItAway } from "../../tests/zlink-guard";
 
 describe("ZLink+ teaser", () => {
   it("decrypts a line from left to right, keeping its shape", () => {
@@ -24,9 +25,18 @@ describe("ZLink+ teaser", () => {
   });
 
   it("never says what it is", () => {
-    const words = [...TRANSMISSIONS, ...DOSSIER.flatMap((d) => [d.label, d.open ? d.value : ""])].join(" ").toLowerCase();
-    for (const w of ["pass", "subscription", "library", "catalog", "every game", "unlimited"]) expect(words).not.toContain(w);
+    const words = [...TRANSMISSIONS, ...DOSSIER.flatMap((d) => [d.label, d.open ? d.value : ""])].join(" ");
+    expect(givesItAway(words)).toBeNull();
     // The secret rows are blacked out.
     for (const d of DOSSIER.filter((x) => x.open === undefined)) expect(d.value).toMatch(/^[█ ]+$/);
+  });
+});
+
+describe("the giveaway guard", () => {
+  it("catches the hidden words without naming them", () => {
+    // A known-bad sample built from character codes, so no hidden word appears in this file either.
+    const sample = String.fromCharCode(103, 97, 109, 101, 32, 112, 97, 115, 115);
+    expect(givesItAway(`Introducing the ${sample}!`)).not.toBeNull();
+    expect(givesItAway("Something is linking. Are you linked?")).toBeNull();
   });
 });
