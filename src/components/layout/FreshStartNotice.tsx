@@ -6,6 +6,7 @@ import { Modal } from "@/components/ui/Modal";
 import { CoinIcon } from "@/components/shop/Coin";
 import { FRESH_SEEN_KEY, FRESH_START_EPOCH } from "@/lib/fresh-start";
 import { useAuth } from "@/store/auth";
+import { quietHere } from "@/lib/quiet";
 
 /**
  * Once per device: tells returning players that coins are now ZX Cash and
@@ -26,7 +27,7 @@ export function FreshStartNotice() {
       return;
     }
     const returning = document.documentElement.dataset.fresh === "1" || status === "signed_in" || status === "device";
-    if (seen || !returning) return;
+    if (seen || !returning || quietHere()) return;
     const t = window.setInterval(() => {
       if (document.documentElement.dataset.intro !== "done") return;
       if (document.querySelector("dialog[open]")) return;

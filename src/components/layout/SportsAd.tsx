@@ -1,5 +1,6 @@
 "use client";
 
+import { quietHere } from "@/lib/quiet";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { hasSportsPass } from "@/lib/season-client";
@@ -52,7 +53,7 @@ export function SportsAd() {
     } catch {
       runs = SPORTS_AD_RUNS;
     }
-    const invite = /[?&](room|lobby)=/.test(window.location.search);
+    const invite = quietHere();
     if (thisVisit || megaDue) {
       // An ad already ran (or the mega ad has this visit): no more ads.
       root.dataset.sportsAd = "done";

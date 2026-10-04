@@ -7,6 +7,7 @@ export interface Update {
 }
 
 export const UPDATES: Update[] = [
+  { tag: "New app", title: "Cash Cup", body: "Neon Siege tournaments for ZX Cash: 32 fighters on a map four times the size, 250 for the win and 3 per elimination. 10 to enter; the battle pass gives two free entries.", href: "/cash-cup" },
   { tag: "Mega update", title: "Coins are now ZX Cash", body: "A fresh start for everyone: balances, ZLink+, the battle pass, unlocks, XP and game saves are back to zero. Earn ZX Cash from daily rewards, the free lane and Cash Cups.", href: "/shop" },
   { tag: "ZLink+", title: "Zenith: build a city", body: "The ZLink+ flagship: a photoreal city builder. Roads, zones, power, water and services; a skyline that lights up at night, from Hamlet to Metropolis.", href: "/games/zenith" },
   { tag: "ZLink+", title: "Linkwave and more", body: "A members-only game, +25% XP, a weekly ZX Cash drop and link levels from Bronze to Neon. Neon Siege stays separate.", href: "/zlink" },

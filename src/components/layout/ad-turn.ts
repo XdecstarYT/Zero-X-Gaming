@@ -1,5 +1,6 @@
 "use client";
 
+import { quietHere } from "@/lib/quiet";
 import { useEffect, useState } from "react";
 import { MEGA_AD_KEY } from "./MegaAd";
 
@@ -32,7 +33,7 @@ export function useAdTurn(o: { name: string; elementId: string; countKey: string
     } catch {
       played = runs;
     }
-    const invite = /[?&](room|lobby)=/.test(window.location.search);
+    const invite = quietHere();
     const finish = (mark: "done" | "skip") => {
       root.dataset[name] = mark;
       return window.setTimeout(() => setState("done"), 0);

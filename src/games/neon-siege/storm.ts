@@ -40,6 +40,20 @@ export interface StormState {
   current: Circle;
   dps: number;
   done: boolean;
+  /** Map scale against Ground Zero (1 there; bigger arenas get wider circles and longer waits). */
+  k?: number;
+}
+
+/** The map size the phases are tuned for. */
+const BASE_SIZE = 72;
+
+/** Phase `i`, scaled for the storm's map. */
+export function phaseOf(s: Pick<StormState, "k">, i: number): StormPhase {
+  const p = STORM_PHASES[i];
+  const k = s.k ?? 1;
+  if (k === 1) return p;
+  const slow = 1 + (k - 1) * 0.6;
+  return { wait: p.wait * slow, shrink: p.shrink * slow, radius: p.radius * k, dps: p.dps };
 }
 
 function nextCircle(prev: Circle, radius: number, rng: Rng, bounds: { w: number; h: number }): Circle {
@@ -55,14 +69,15 @@ function nextCircle(prev: Circle, radius: number, rng: Rng, bounds: { w: number;
 }
 
 export function createStorm(width: number, height: number, rng: Rng): StormState {
+  const k = Math.max(1, width / BASE_SIZE);
   const start: Circle = { x: width / 2, y: height / 2, r: Math.hypot(width, height) / 2 };
-  const to = nextCircle(start, STORM_PHASES[0].radius, rng, { w: width, h: height });
-  return { phase: 0, t: 0, from: start, to, current: { ...start }, dps: STORM_PHASES[0].dps, done: false };
+  const to = nextCircle(start, phaseOf({ k }, 0).radius, rng, { w: width, h: height });
+  return { phase: 0, t: 0, from: start, to, current: { ...start }, dps: STORM_PHASES[0].dps, done: false, ...(k > 1 ? { k } : {}) };
 }
 
 export function stepStorm(s: StormState, dt: number, rng: Rng, width: number, height: number) {
   if (s.done) return;
-  const p = STORM_PHASES[s.phase];
+  const p = phaseOf(s, s.phase);
   s.t += dt;
   s.dps = p.dps;
   const k = Math.min(1, Math.max(0, (s.t - p.wait) / p.shrink));
@@ -79,7 +94,7 @@ export function stepStorm(s: StormState, dt: number, rng: Rng, width: number, he
     s.phase++;
     s.t = 0;
     s.from = { ...s.to };
-    s.to = nextCircle(s.from, STORM_PHASES[s.phase].radius, rng, { w: width, h: height });
+    s.to = nextCircle(s.from, phaseOf(s, s.phase).radius, rng, { w: width, h: height });
   }
 }
 
@@ -89,10 +104,10 @@ export function outside(c: Circle, x: number, y: number) {
 
 /** Seconds until the next shrink starts (0 while shrinking). */
 export function stormCountdown(s: StormState) {
-  const p = STORM_PHASES[s.phase];
+  const p = phaseOf(s, s.phase);
   return Math.max(0, p.wait - s.t);
 }
 
 export function isShrinking(s: StormState) {
-  return !s.done && s.t >= STORM_PHASES[s.phase].wait;
+  return !s.done && s.t >= phaseOf(s, s.phase).wait;
 }

@@ -524,3 +524,9 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      device's guest saves. The script keeps an allowlist (settings, sign-ins, preferences) rather than a list of
      what to delete, so saves added later are cleared by default. "ZX Cash" was chosen over "Zcash", the name of
      a real cryptocurrency.
+149. **The Cash Cup Arena is four towns, not a bigger generator.** Ground Zero's generator is hand-tuned to its
+     72 × 72 grid, so the arena stitches four seeded towns two by two and takes down the seam walls; the roads
+     meet because every town shares the grid. The storm scales by map width only above 72, so Ground Zero and
+     online play are unchanged. Tournament results are client-simulated (bots), so the server can't verify a
+     placement; it bounds what's possible instead (time since entry, kills against players outlasted) and pays
+     each entry once, which caps abuse at roughly one real-time match per prize.

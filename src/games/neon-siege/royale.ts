@@ -155,7 +155,8 @@ export function createRoyale(
     const id = `bot-${i}`;
     const bot = createEntity({
       id,
-      name: BOT_NAMES[(i - 1) % BOT_NAMES.length],
+      // Big fields run out of names: the second Hawk is "Hawk 2".
+      name: BOT_NAMES[(i - 1) % BOT_NAMES.length] + (i > BOT_NAMES.length ? ` ${Math.floor((i - 1) / BOT_NAMES.length) + 1}` : ""),
       kind: "bot",
       team: i,
       x: spawns[i].x,

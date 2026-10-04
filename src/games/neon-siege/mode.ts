@@ -10,6 +10,7 @@ import {
 } from "./royale";
 import { isShrinking, stormCountdown, type StormState } from "./storm";
 import type { Entity, World, WorldEvent } from "./world";
+import type { GameMap } from "./map";
 
 export interface Banner {
   text: string;
@@ -125,13 +126,14 @@ export class RoyaleController implements ModeController {
   constructor(
     difficulty: Difficulty,
     seed = Date.now(),
-    opts: { outfit?: string; name?: string; stormScale?: number; cashCup?: boolean } = {},
+    opts: { outfit?: string; name?: string; stormScale?: number; cashCup?: boolean; map?: GameMap; field?: number; tournament?: Banner } = {},
   ) {
     this.s = createRoyale(difficulty, seed, opts);
     this.ranked = this.s.stormScale === 1;
-    this.cashCup = !!opts.cashCup && this.ranked;
-    if (this.cashCup)
-      this.bannerMsg = { text: "CASH CUP", sub: "Top 3 win ZX Cash: 50 · 20 · 5", color: "#f2c230" };
+    this.cashCup = (!!opts.cashCup || !!opts.tournament) && this.ranked;
+    if (opts.tournament) this.bannerMsg = opts.tournament;
+    else if (this.cashCup) this.bannerMsg = { text: "CASH CUP", sub: "Top 3 win ZX Cash: 50 · 20 · 5", color: "#f2c230" };
+    if (opts.tournament) this.bannerUntil = 5;
   }
 
   get world() {

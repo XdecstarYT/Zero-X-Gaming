@@ -416,12 +416,13 @@ export function generateTown(seed = GROUND_ZERO_SEED, size = MAP_SIZE): GameMap 
     if (free(x, y)) lootSpots.push({ x: x + 0.5, y: y + 0.5 });
   }
 
-  // Spawns: 24 outdoor points spread out (farthest-point sampling).
+  // Spawns: outdoor points spread out (farthest-point sampling): 24 on Ground Zero, more on bigger maps.
   const outdoor: { x: number; y: number }[] = [];
   for (let y = 3; y < H - 3; y += 2)
     for (let x = 3; x < W - 3; x += 2) if (free(x, y) && ground[idx(x, y)] !== GROUND.floor) outdoor.push({ x: x + 0.5, y: y + 0.5 });
   const spawns: { x: number; y: number }[] = [rng.pick(outdoor)];
-  while (spawns.length < 24) {
+  const spawnCount = size === MAP_SIZE ? 24 : Math.max(8, Math.round(24 * (size / MAP_SIZE) ** 2));
+  while (spawns.length < spawnCount) {
     let best = outdoor[0];
     let bestD = -1;
     for (let i = 0; i < 200; i++) {
@@ -441,7 +442,7 @@ export function generateTown(seed = GROUND_ZERO_SEED, size = MAP_SIZE): GameMap 
 }
 
 /** Remove props that seal off pockets of floor, so every walkable cell is reachable. */
-function ensureConnected(map: GameMap) {
+export function ensureConnected(map: GameMap) {
   const { width: W, height: H, cells } = map;
   for (let pass = 0; pass < 8; pass++) {
     const seen = new Uint8Array(W * H);
@@ -506,6 +507,43 @@ export function parseMap(rows: string[]): GameMap {
     }
   });
   return { name: "Test", width, height, cells, ground, buildings: [], spawns, lootSpots: [], chests: [], windows: [] };
+}
+
+/**
+ * The Cash Cup arena: four different towns stitched two by two (144 × 144,
+ * four times Ground Zero). The walls along the seams come down, and the
+ * roads meet because every town is laid out on the same grid.
+ */
+export function cupArena(seed = 20261031): GameMap {
+  const S = MAP_SIZE;
+  const W = S * 2;
+  const tiles = [0, 1, 2, 3].map((i) => generateTown(seed + i * 7919));
+  const cells = new Uint8Array(W * W);
+  const ground = new Uint8Array(W * W);
+  const map: GameMap = { name: "Cash Cup Arena", width: W, height: W, cells, ground, buildings: [], spawns: [], lootSpots: [], chests: [], windows: [] };
+  tiles.forEach((t, i) => {
+    const ox = (i % 2) * S;
+    const oy = Math.floor(i / 2) * S;
+    for (let y = 0; y < S; y++)
+      for (let x = 0; x < S; x++) {
+        cells[(y + oy) * W + x + ox] = t.cells[y * S + x];
+        ground[(y + oy) * W + x + ox] = t.ground[y * S + x];
+      }
+    const off = <T extends { x: number; y: number }>(p: T): T => ({ ...p, x: p.x + ox, y: p.y + oy });
+    map.buildings.push(...t.buildings.map(off));
+    map.spawns.push(...t.spawns.map(off));
+    map.lootSpots.push(...t.lootSpots.map(off));
+    map.chests.push(...t.chests.map(off));
+    map.windows.push(...t.windows.map(off));
+  });
+  // Open the seams: the inner perimeter walls go (the outer wall stays).
+  for (let a = 1; a < W - 1; a++)
+    for (const b of [S - 1, S]) {
+      if (cells[a * W + b] === SOLID.perimeter) cells[a * W + b] = 0;
+      if (cells[b * W + a] === SOLID.perimeter) cells[b * W + a] = 0;
+    }
+  ensureConnected(map);
+  return map;
 }
 
 let cached: GameMap | null = null;

@@ -376,6 +376,7 @@ export class NeonSiege implements GameModule {
             "16 fighters, one town, a closing storm. Loot, survive, win. Ranked + season XP.",
           ),
           cup,
+          Object.assign(el("a", "text-xs font-bold text-[#10b981] underline-offset-2 hover:underline", "Want a bigger purse? Cash Cup tournaments: 32 fighters, 250 ZX Cash for the win →"), { href: "/cash-cup" }),
           el("div", "flex gap-2", ...diffButtons),
           deploy,
           locker,

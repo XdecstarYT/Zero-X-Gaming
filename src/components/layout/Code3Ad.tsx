@@ -1,5 +1,6 @@
 "use client";
 
+import { quietHere } from "@/lib/quiet";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { MEGA_AD_KEY } from "./MegaAd";
@@ -97,7 +98,7 @@ export function Code3Ad() {
     } catch {
       runs = CODE3_AD_RUNS;
     }
-    const invite = /[?&](room|lobby)=/.test(window.location.search);
+    const invite = quietHere();
     if (runs >= CODE3_AD_RUNS || megaDue || thisVisit || invite) {
       const t = window.setTimeout(() => setState("done"), 0);
       return () => clearTimeout(t);

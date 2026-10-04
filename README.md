@@ -858,6 +858,27 @@ with a full reset, and everyone starts at zero:
   counters and favourites. Bump the epoch to wipe devices again.
 - Returning players see a one-time **Welcome to ZX Cash** notice (`FreshStartNotice`).
 
+### Cash Cup (the tournament app)
+
+`/cash-cup` is a full-screen app for Neon Siege tournaments (`src/components/cash-cup/CashCupApp.tsx`). It opens
+on a cinematic intro (beams, a shockwave, the ZX Cash mark and the title slamming in), a loading screen while the
+match engine and the 3D renderer load, then a flash-and-zoom reveal into the lobby: balance, the entry button,
+the purse, your recent cups and a graphics picker. Entering stamps a ticket, drops you into the match, and the
+prize is counted out with a burst of ZX Cash at the end. No site intro, ads or notices interrupt it
+(`src/lib/quiet.ts`).
+
+- **The match** (`src/games/cash-cup/match.ts`): the Neon Siege shell with 32 fighters on Hard, on the
+  **Cash Cup Arena**: four different towns stitched two by two (`cupArena()` in `map.ts`, 144 × 144, four times
+  Ground Zero). The storm scales with the map (`phaseOf()` in `storm.ts`: wider circles, longer waits).
+- **Entry:** 10 ZX Cash; the battle pass gives **two free entries a season** (used first). One cup at a time; an
+  unfinished entry is forfeited when you enter again.
+- **Prizes:** 250 / 125 / 75 / 40 (4th–5th) / 20 (6th–10th) / 10 (11th–15th), plus 3 per elimination.
+- **Server** (`20261023090000_cash_cup.sql`): `cash_cup_entries`, `cash_cup_status()`, `enter_cash_cup()` and
+  `finish_cash_cup()`, which checks the result against the time since the entry (no top-ten finish in under a
+  minute, no win in under 150 s, kills ≤ players outlasted) and pays it once. Guests get the same rules on their
+  device (`src/lib/cash-cup.ts`, `season-client.ts`).
+- The free Cash Cup every third Neon Siege match (50 · 20 · 5) is unchanged.
+
 ### ZLink+ (the membership)
 
 **40 coins for 30 days** (`/zlink`; `20261019090000_zlink.sql`, `20261020090000_zlink_plus.sql`). Members get:

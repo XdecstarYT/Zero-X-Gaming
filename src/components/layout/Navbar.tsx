@@ -14,6 +14,7 @@ export const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/games", label: "Games" },
   { href: "/sports", label: "Sports+" },
+  { href: "/cash-cup", label: "Cash Cup", short: "Cup" },
   { href: "/battle-pass", label: "Battle Pass", short: "Pass" },
   { href: "/shop", label: "Item Shop", short: "Shop" },
   { href: "/leaderboards", label: "Leaderboards", short: "Ranks" },
@@ -45,7 +46,7 @@ export function Navbar() {
             const active = isActive(pathname, l.href);
             return (
               // The logo and the avatar already go home and to your profile; their links only show with room to spare.
-              <li key={l.href} className={l.href === "/" || l.href === "/profile" ? "hidden xl:block" : undefined}>
+              <li key={l.href} className={l.href === "/" || l.href === "/profile" ? "hidden 2xl:block" : undefined}>
                 <Link
                   href={l.href}
                   aria-current={active ? "page" : undefined}

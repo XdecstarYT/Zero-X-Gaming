@@ -13,7 +13,7 @@ const EXIT_MS = 450;
  * the intro, not even for a frame, and neither do people arriving on a game
  * invite link (?room=). Kept tiny and dependency-free on purpose.
  */
-export const introGateScript = `try{if(sessionStorage.getItem("${INTRO_SEEN_KEY}")||/[?&]room=/.test(location.search))document.documentElement.dataset.intro="done"}catch(e){document.documentElement.dataset.intro="done"}`;
+export const introGateScript = `try{if(sessionStorage.getItem("${INTRO_SEEN_KEY}")||/[?&]room=/.test(location.search)||location.pathname.indexOf("/cash-cup")===0)document.documentElement.dataset.intro="done"}catch(e){document.documentElement.dataset.intro="done"}`;
 
 /**
  * Cinematic brand intro shown once per browser session. Pure CSS/SVG (no video,

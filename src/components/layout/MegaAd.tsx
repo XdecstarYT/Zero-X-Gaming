@@ -1,5 +1,6 @@
 "use client";
 
+import { quietHere } from "@/lib/quiet";
 import { useEffect, useState } from "react";
 import { GAMES } from "@/lib/catalog";
 import { GameArt } from "@/components/game/GameArt";
@@ -35,7 +36,7 @@ export function MegaAd() {
       seen = true;
     }
     // Friends arriving on a game invite link go straight in; they'll see it on a later visit.
-    const invite = /[?&](room|lobby)=/.test(window.location.search);
+    const invite = quietHere();
     if (seen || invite) {
       const t = window.setTimeout(() => setState("done"), 0);
       return () => clearTimeout(t);

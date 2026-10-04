@@ -6,6 +6,7 @@ import { useAuth } from "@/store/auth";
 import { useWallet } from "@/store/wallet";
 import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE, ubusinessFreeOpen, ubusinessPrice, ZLINK_DAYS, ZLINK_DROP, ZLINK_PRICE, zlinkActive, zlinkDropReady, zlinkExtend, type UBusinessTier } from "./economy";
 import { deviceSaveSuffix } from "./device-accounts";
+import { CUP_ENTRY, CUP_OPEN_MINUTES, cupPrize, freeLeft, plausible, type CupResult } from "./cash-cup";
 import { getSupabaseBrowser } from "./supabase/client";
 import {
   activeChallenges,
@@ -84,6 +85,11 @@ interface GuestSave {
   /** Total days ever linked, and when the weekly drop was last taken (ms). */
   zlinkDays?: number;
   zlinkDrop?: number;
+  /** Cash Cup: free entries used this season, the open entry, and recent cups. */
+  cupFree?: number;
+  cupOpen?: { id: number; at: number; free?: boolean } | null;
+  cupHistory?: CupRow[];
+  cupNext?: number;
 }
 
 function readGuest(): GuestSave {
@@ -583,3 +589,102 @@ export function addGuestCoins(n: number) {
 
 /** The signed-in player's client, for other server calls (null for guests). */
 export const signedIn = signedInClient;
+
+// ------------------------------------------------------------------ Cash Cup
+
+export interface CupRow {
+  at: number;
+  /** null for a forfeited entry. */
+  placement: number | null;
+  kills: number;
+  prize: number;
+  free: boolean;
+}
+
+export interface CupStatus {
+  price: number;
+  hasPass: boolean;
+  freeLeft: number;
+  coins: number;
+  open: { id: number; at: number } | null;
+  history: CupRow[];
+}
+
+type Rpc = { rpc: (f: string, a?: object) => PromiseLike<{ data: unknown; error: { message: string } | null }> };
+
+/** Your Cash Cup standing: price, free entries, any open entry and recent cups. */
+export async function cashCupStatus(): Promise<CupStatus> {
+  const auth = signedInClient();
+  if (auth) {
+    const { data, error } = await (auth.supabase as unknown as Rpc).rpc("cash_cup_status");
+    if (error) throw new Error(error.message);
+    const d = data as { price: number; has_pass: boolean; free_left: number; coins: number; open: { id: number; at: string } | null; history: { at: string; placement: number | null; kills: number | null; prize: number; free: boolean }[] };
+    useWallet.getState().set(d.coins);
+    return {
+      price: d.price,
+      hasPass: d.has_pass,
+      freeLeft: d.free_left,
+      coins: d.coins,
+      open: d.open ? { id: d.open.id, at: Date.parse(d.open.at) } : null,
+      history: d.history.map((h) => ({ at: Date.parse(h.at), placement: h.placement, kills: h.kills ?? 0, prize: h.prize, free: h.free })),
+    };
+  }
+  const g = readGuest();
+  useWallet.getState().set(g.coins);
+  const open = g.cupOpen && Date.now() - g.cupOpen.at < CUP_OPEN_MINUTES * 60_000 ? g.cupOpen : null;
+  return { price: CUP_ENTRY, hasPass: g.hasPass, freeLeft: freeLeft(g.hasPass, g.cupFree ?? 0), coins: g.coins, open: open && { id: open.id, at: open.at }, history: g.cupHistory ?? [] };
+}
+
+/** Take an entry: a free one while the battle pass has any, otherwise 10 ZX Cash. */
+export async function enterCashCup(): Promise<{ id: number; free: boolean; coins: number; freeLeft: number }> {
+  const auth = signedInClient();
+  if (auth) {
+    const { data, error } = await (auth.supabase as unknown as Rpc).rpc("enter_cash_cup");
+    if (error) throw buyError(error.message);
+    const r = data as { id: number; free: boolean; coins: number; free_left: number };
+    useWallet.getState().set(r.coins);
+    return { id: r.id, free: r.free, coins: r.coins, freeLeft: r.free_left };
+  }
+  const g = readGuest();
+  // One cup at a time: an open entry is forfeited.
+  if (g.cupOpen) g.cupHistory = [{ at: g.cupOpen.at, placement: null, kills: 0, prize: 0, free: !!g.cupOpen.free }, ...(g.cupHistory ?? [])].slice(0, 10);
+  const free = freeLeft(g.hasPass, g.cupFree ?? 0) > 0;
+  if (!free && g.coins < CUP_ENTRY) throw buyError("not enough coins");
+  if (free) g.cupFree = (g.cupFree ?? 0) + 1;
+  else g.coins -= CUP_ENTRY;
+  const id = (g.cupNext ?? 1);
+  g.cupNext = id + 1;
+  g.cupOpen = { id, at: Date.now(), free };
+  writeGuest(g);
+  return { id, free, coins: g.coins, freeLeft: freeLeft(g.hasPass, g.cupFree ?? 0) };
+}
+
+/** Report a finished cup and collect the prize. */
+export async function finishCashCup(id: number, r: CupResult): Promise<{ prize: number; coins: number }> {
+  const result = { ...r, damage: Math.round(r.damage), survivedS: Math.floor(r.survivedS) };
+  const auth = signedInClient();
+  if (auth) {
+    const { data, error } = await (auth.supabase as unknown as Rpc).rpc("finish_cash_cup", {
+      p_entry: id,
+      p_placement: result.placement,
+      p_kills: result.kills,
+      p_damage: result.damage,
+      p_chests: result.chests,
+      p_survived_s: result.survivedS,
+    });
+    if (error) throw new Error(error.message);
+    const d = data as { prize: number; coins: number };
+    useWallet.getState().set(d.coins);
+    return d;
+  }
+  const g = readGuest();
+  if (!g.cupOpen || g.cupOpen.id !== id) throw new Error("no open entry");
+  const why = plausible(result, (Date.now() - g.cupOpen.at) / 1000);
+  if (why) throw new Error("match not plausible");
+  const prize = cupPrize(result.placement, result.kills);
+  g.coins += prize;
+  g.cupHistory = [{ at: g.cupOpen.at, placement: result.placement, kills: result.kills, prize, free: !!g.cupOpen.free }, ...(g.cupHistory ?? [])].slice(0, 10);
+  g.cupOpen = null;
+  writeGuest(g);
+  return { prize, coins: g.coins };
+}
