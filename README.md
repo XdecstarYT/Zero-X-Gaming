@@ -668,6 +668,25 @@ that drags everyone's mood and footfall down until you click it clean or hire a 
 **standing orders**: keep N boxes of a line in the stockroom, topped up overnight. Shoppers show how they feel in
 speech bubbles; cars and pedestrians pass in the street; the door chimes and the till rings.
 
+**The big expansion.** Two new departments: **Frozen** (Lite and Ultimate, sold from freezers) and the **Bakery**
+(Ultimate, a warm-lit bakery case). Fresh food now **goes off overnight** (`spoil`: bakery loses half, bread and
+produce some, tins nothing), shown as waste in the books, so you order what you'll sell. **Specials** (☆ on
+Prices): 20% off, 1.5× the demand and a few more shoppers; Lite runs one, Ultimate one plus one per promo stand, up
+to three. **Store upgrades** (automatic doors, sound system, tap-to-pay, LED lighting, CCTV, air conditioning, a
+loading bay, a loyalty app) each change one rule. **The bank** lends a small loan (both editions) or a growth loan
+(Ultimate), repaid each evening and counted against your score. **Shoplifters** (from day 2) head for the door with
+the goods: a 🚨 alert lets you stop them, CCTV halves them and a **security guard** stops most at the door.
+Shoppers leave **reviews** (stars follow their mood, the words their reason: sold out, too pricey, the queue, the
+mess, short change). Sixteen **trophies** pay out once. New days: **Halloween** (far more likely in the last week
+of October, with pumpkins at the door), a cold snap, big match day and school holidays. From day 6 **Bargain Barn**
+opens across the street and takes a share of your shoppers, more if you're dearer than usual and less if you're
+well liked; marketing and a 4★ reputation push it back. Old saves load with all of it switched on.
+
+**Free Ultimate until 31 October.** `claim_ubusiness_free()` (`20261018090000_ubusiness_free_claim.sql`) gives a
+signed-in player the Ultimate unlock for nothing until 2026-11-01 12:00 UTC (the end of the 31st anywhere on Earth);
+guests claim into their device save. A claimed copy is an ordinary unlock, so it's theirs to keep. The edition card
+shows the offer while it's open (`UBUSINESS_FREE_UNTIL` in `src/lib/economy.ts`).
+
 **The UBusiness spot** (`UBusinessAd`, 26 s): a shutter rolls up at dawn, the logo, a COMING SOON stamp, stock
 dropping onto shelves, the till counting up to CHA-CHING, the store growing from a corner shop to a megastore,
 the two editions, and a **Take a look** end card. It's first in the ad queue (three plays).

@@ -12,7 +12,7 @@ export type Tier = "lite" | "ultimate";
 
 // -------------------------------------------------------------- categories
 
-export type Category = "grocery" | "snacks" | "household" | "fresh" | "pharmacy" | "toys" | "fashion" | "electronics";
+export type Category = "grocery" | "snacks" | "household" | "fresh" | "frozen" | "bakery" | "pharmacy" | "toys" | "fashion" | "electronics";
 
 export interface CategoryInfo {
   name: string;
@@ -30,6 +30,8 @@ export const CATEGORIES: Record<Category, CategoryInfo> = {
   snacks: { name: "Snacks & Drinks", licence: 40_000, level: 1, ultimate: false, icon: "🥤" },
   household: { name: "Household", licence: 90_000, level: 2, ultimate: false, icon: "🧻" },
   fresh: { name: "Fresh & Dairy", licence: 150_000, level: 3, ultimate: false, icon: "🍎" },
+  frozen: { name: "Frozen", licence: 120_000, level: 3, ultimate: false, icon: "🧊" },
+  bakery: { name: "Bakery", licence: 250_000, level: 4, ultimate: true, icon: "🥐" },
   pharmacy: { name: "Health & Beauty", licence: 300_000, level: 4, ultimate: true, icon: "💊" },
   toys: { name: "Toys & Games", licence: 400_000, level: 5, ultimate: true, icon: "🧸" },
   fashion: { name: "Fashion", licence: 600_000, level: 6, ultimate: true, icon: "👕" },
@@ -39,7 +41,9 @@ export const CATEGORY_IDS = Object.keys(CATEGORIES) as Category[];
 
 // ---------------------------------------------------------------- products
 
-export type FixtureKind = "shelf" | "fridge" | "produce" | "rack" | "display" | "checkout" | "selfCheckout" | "plant" | "promo";
+export type FixtureKind = "shelf" | "fridge" | "freezer" | "bakery" | "produce" | "rack" | "display" | "checkout" | "selfCheckout" | "plant" | "promo";
+/** Fixtures that hold stock. */
+export type StockFixture = "shelf" | "fridge" | "freezer" | "bakery" | "produce" | "rack" | "display";
 export type Shape = "box" | "bottle" | "can" | "bag" | "jar" | "fruit" | "carton" | "device" | "garment" | "toy" | "roll";
 
 export interface Product {
@@ -47,7 +51,7 @@ export interface Product {
   brand: string;
   cat: Category;
   /** What it's sold from. */
-  fixture: "shelf" | "fridge" | "produce" | "rack" | "display";
+  fixture: StockFixture;
   /** Wholesale cost per unit (cents). */
   cost: number;
   /** What it usually sells for (cents): customers judge your price against this. */
@@ -64,13 +68,15 @@ export interface Product {
   size: [number, number, number];
   /** How often it's on someone's list (1 = average). */
   demand: number;
+  /** Share of the stock that goes off overnight (fresh food); none for everything else. */
+  spoil?: number;
 }
 
-const P = (name: string, brand: string, cat: Category, fixture: Product["fixture"], cost: number, market: number, box: number, slot: number, shape: Shape, color: string, accent: string, size: [number, number, number], demand = 1): Product => ({ name, brand, cat, fixture, cost, market, box, slot, shape, color, accent, size, demand });
+const P = (name: string, brand: string, cat: Category, fixture: Product["fixture"], cost: number, market: number, box: number, slot: number, shape: Shape, color: string, accent: string, size: [number, number, number], demand = 1, spoil?: number): Product => ({ name, brand, cat, fixture, cost, market, box, slot, shape, color, accent, size, demand, ...(spoil ? { spoil } : {}) });
 
 export const PRODUCTS = {
   // Grocery
-  bread: P("Sourdough Loaf", "Hearthstone", "grocery", "shelf", 180, 449, 12, 12, "bag", "#d6a565", "#7c2d12", [0.26, 0.12, 0.12], 1.6),
+  bread: P("Sourdough Loaf", "Hearthstone", "grocery", "shelf", 180, 449, 12, 12, "bag", "#d6a565", "#7c2d12", [0.26, 0.12, 0.12], 1.6, 0.15),
   pasta: P("Spaghetti 500g", "Bellarosa", "grocery", "shelf", 90, 249, 20, 24, "box", "#1d4ed8", "#facc15", [0.07, 0.26, 0.04], 1.1),
   rice: P("Long Grain Rice 1kg", "Paddyfield", "grocery", "shelf", 140, 349, 16, 16, "bag", "#f5f5f4", "#15803d", [0.14, 0.22, 0.06], 0.9),
   cereal: P("Honey Oat Crunch", "Morning Field", "grocery", "shelf", 210, 549, 12, 12, "box", "#f59e0b", "#b91c1c", [0.19, 0.28, 0.07], 1.2),
@@ -93,14 +99,26 @@ export const PRODUCTS = {
   towels: P("Paper Towels 4-pack", "Cloudsoft", "household", "shelf", 260, 649, 8, 8, "roll", "#e0f2fe", "#0ea5e9", [0.26, 0.28, 0.13], 0.8),
   sponges: P("Scrub Sponges 5-pack", "Sparkle", "household", "shelf", 90, 279, 20, 24, "box", "#facc15", "#16a34a", [0.15, 0.1, 0.05], 0.6),
   // Fresh & dairy
-  apples: P("Red Apples", "Orchard Hill", "fresh", "produce", 35, 99, 40, 60, "fruit", "#dc2626", "#16a34a", [0.08, 0.08, 0.08], 1.5),
-  bananas: P("Bananas", "Sunvale", "fresh", "produce", 30, 89, 40, 60, "fruit", "#facc15", "#65a30d", [0.18, 0.04, 0.04], 1.5),
-  tomatoes: P("Vine Tomatoes", "Orchard Hill", "fresh", "produce", 40, 119, 40, 60, "fruit", "#ef4444", "#15803d", [0.07, 0.07, 0.07], 1),
-  milk: P("Whole Milk 2L", "Northfield Dairy", "fresh", "fridge", 140, 349, 12, 12, "carton", "#f8fafc", "#2563eb", [0.1, 0.26, 0.1], 1.6),
-  cheese: P("Aged Cheddar", "Northfield Dairy", "fresh", "fridge", 260, 649, 16, 20, "box", "#fbbf24", "#1e3a8a", [0.12, 0.05, 0.08], 1),
-  yoghurt: P("Greek Yoghurt", "Alpwood", "fresh", "fridge", 120, 329, 16, 20, "jar", "#f5f5f4", "#7c3aed", [0.1, 0.09, 0.1], 1),
-  eggs: P("Free Range Eggs 12", "Henhouse", "fresh", "fridge", 210, 549, 12, 12, "carton", "#fef3c7", "#a16207", [0.3, 0.07, 0.11], 1.3),
-  juice: P("Orange Juice 1L", "Sunvale", "fresh", "fridge", 150, 399, 12, 14, "carton", "#f97316", "#16a34a", [0.08, 0.22, 0.06], 1),
+  apples: P("Red Apples", "Orchard Hill", "fresh", "produce", 35, 99, 40, 60, "fruit", "#dc2626", "#16a34a", [0.08, 0.08, 0.08], 1.5, 0.1),
+  bananas: P("Bananas", "Sunvale", "fresh", "produce", 30, 89, 40, 60, "fruit", "#facc15", "#65a30d", [0.18, 0.04, 0.04], 1.5, 0.15),
+  tomatoes: P("Vine Tomatoes", "Orchard Hill", "fresh", "produce", 40, 119, 40, 60, "fruit", "#ef4444", "#15803d", [0.07, 0.07, 0.07], 1, 0.12),
+  milk: P("Whole Milk 2L", "Northfield Dairy", "fresh", "fridge", 140, 349, 12, 12, "carton", "#f8fafc", "#2563eb", [0.1, 0.26, 0.1], 1.6, 0.08),
+  cheese: P("Aged Cheddar", "Northfield Dairy", "fresh", "fridge", 260, 649, 16, 20, "box", "#fbbf24", "#1e3a8a", [0.12, 0.05, 0.08], 1, 0.03),
+  yoghurt: P("Greek Yoghurt", "Alpwood", "fresh", "fridge", 120, 329, 16, 20, "jar", "#f5f5f4", "#7c3aed", [0.1, 0.09, 0.1], 1, 0.06),
+  eggs: P("Free Range Eggs 12", "Henhouse", "fresh", "fridge", 210, 549, 12, 12, "carton", "#fef3c7", "#a16207", [0.3, 0.07, 0.11], 1.3, 0.04),
+  juice: P("Orange Juice 1L", "Sunvale", "fresh", "fridge", 150, 399, 12, 14, "carton", "#f97316", "#16a34a", [0.08, 0.22, 0.06], 1, 0.06),
+  // Frozen
+  icecream: P("Vanilla Ice Cream 2L", "Polar Scoop", "frozen", "freezer", 280, 699, 8, 10, "jar", "#fef3c7", "#db2777", [0.16, 0.12, 0.16], 1.1),
+  pizza: P("Margherita Pizza", "Forno Rosso", "frozen", "freezer", 230, 599, 10, 10, "box", "#dc2626", "#fef3c7", [0.3, 0.04, 0.28], 1.1),
+  peas: P("Garden Peas 1kg", "Frostvale", "frozen", "freezer", 110, 299, 16, 18, "bag", "#16a34a", "#f5f5f4", [0.18, 0.24, 0.05], 0.8),
+  fishfingers: P("Fish Fingers 20", "Captain Gale", "frozen", "freezer", 190, 499, 12, 14, "box", "#1d4ed8", "#f97316", [0.2, 0.05, 0.12], 0.8),
+  icepops: P("Ice Pops 10-pack", "Polar Scoop", "frozen", "freezer", 120, 349, 16, 18, "box", "#06b6d4", "#f43f5e", [0.18, 0.04, 0.12], 0.9),
+  // Bakery: baked fresh, gone stale by morning.
+  croissant: P("Butter Croissant", "Hearthstone", "bakery", "bakery", 45, 229, 24, 24, "fruit", "#d97706", "#fde68a", [0.14, 0.06, 0.08], 1.3, 0.5),
+  muffin: P("Blueberry Muffin", "Hearthstone", "bakery", "bakery", 55, 279, 24, 24, "can", "#7c3aed", "#fde68a", [0.08, 0.08, 0.08], 1.1, 0.5),
+  donut: P("Glazed Donut", "Ring Bros", "bakery", "bakery", 35, 189, 24, 30, "fruit", "#f9a8d4", "#fef3c7", [0.1, 0.04, 0.1], 1.2, 0.5),
+  baguette: P("French Baguette", "Hearthstone", "bakery", "bakery", 60, 299, 20, 16, "bag", "#d6a565", "#7c2d12", [0.5, 0.06, 0.07], 1, 0.5),
+  cake: P("Chocolate Cake", "Hearthstone", "bakery", "bakery", 600, 1899, 4, 4, "can", "#451a03", "#fef3c7", [0.24, 0.12, 0.24], 0.4, 0.2),
   // Health & beauty
   vitamins: P("Daily Multivitamin", "Kindcare", "pharmacy", "shelf", 420, 1199, 12, 16, "jar", "#f5f5f4", "#0d9488", [0.07, 0.12, 0.07], 0.8),
   painrelief: P("Pain Relief Tablets", "Kindcare", "pharmacy", "shelf", 150, 549, 20, 24, "box", "#f5f5f4", "#dc2626", [0.1, 0.06, 0.03], 0.9),
@@ -150,6 +168,8 @@ export interface FixtureDef {
 export const FIXTURES: Record<FixtureKind, FixtureDef> = {
   shelf: { name: "Shelf Unit", price: 35_000, w: 2, d: 0.6, slots: 4, power: 0, level: 1 },
   fridge: { name: "Glass Fridge", price: 120_000, w: 2, d: 0.8, slots: 4, power: 1_800, level: 3 },
+  freezer: { name: "Freezer", price: 140_000, w: 2, d: 0.8, slots: 4, power: 2_400, level: 3 },
+  bakery: { name: "Bakery Case", price: 160_000, w: 1.8, d: 0.9, slots: 3, power: 900, level: 4, ultimate: true },
   produce: { name: "Produce Stand", price: 60_000, w: 2, d: 1.1, slots: 4, power: 0, level: 3 },
   rack: { name: "Clothing Rail", price: 50_000, w: 1.6, d: 0.6, slots: 2, power: 0, level: 6, ultimate: true },
   display: { name: "Tech Display", price: 150_000, w: 1.6, d: 0.9, slots: 3, power: 600, level: 7, ultimate: true },
@@ -173,11 +193,13 @@ export interface Edition {
   express: boolean;
   photoMode: boolean;
   customSign: boolean;
+  /** Products on special at once (more with promo stands, up to this). */
+  specials: number;
 }
 
 export const EDITIONS: Record<Tier, Edition> = {
-  lite: { name: "UBusiness Lite", categories: ["grocery", "snacks", "household", "fresh"], sizes: 3, staff: 1, speeds: [1, 2], marketing: false, express: false, photoMode: false, customSign: false },
-  ultimate: { name: "UBusiness Ultimate", categories: CATEGORY_IDS, sizes: 6, staff: 6, speeds: [1, 2, 3], marketing: true, express: true, photoMode: true, customSign: true },
+  lite: { name: "UBusiness Lite", categories: ["grocery", "snacks", "household", "fresh", "frozen"], sizes: 3, staff: 1, speeds: [1, 2], marketing: false, express: false, photoMode: false, customSign: false, specials: 1 },
+  ultimate: { name: "UBusiness Ultimate", categories: CATEGORY_IDS, sizes: 6, staff: 6, speeds: [1, 2, 3], marketing: true, express: true, photoMode: true, customSign: true, specials: 3 },
 };
 
 /** Fixtures this edition can place. */
@@ -198,6 +220,7 @@ export const STAFF = {
   cashier: { name: "Cashier", wage: 12_000, does: "Runs a checkout" },
   stocker: { name: "Stocker", wage: 10_000, does: "Refills shelves from the stockroom" },
   cleaner: { name: "Cleaner", wage: 8_000, does: "Mops spills and picks up litter" },
+  guard: { name: "Security guard", wage: 11_000, does: "Stops shoplifters at the door" },
 } as const;
 export type StaffRole = keyof typeof STAFF;
 
@@ -231,17 +254,126 @@ export const EVENTS = {
   health: { name: "Health week", icon: "🩺", text: "The town's on a health kick: fruit, vitamins and toothpaste.", boost: { fresh: 1.4, pharmacy: 1.9 } },
   supplier: { name: "Wholesale sale", icon: "🏷", text: "The wholesaler is 15% off today. Stock up!", cost: 0.85 },
   strike: { name: "Delivery strike", icon: "🚚", text: "Deliveries take three times as long today.", delivery: 90 },
+  halloween: { name: "Halloween", icon: "🎃", text: "Trick-or-treaters everywhere: sweets, snacks and toys fly out.", footfall: 1.3, boost: { gummies: 3, choc: 2.4, snacks: 1.5, toys: 1.6, icepops: 1.4 } },
+  coldsnap: { name: "Cold snap", icon: "🥶", text: "Freezing out: soup and coffee sell, nobody wants ice cream.", footfall: 0.9, boost: { soup: 2.2, coffee: 1.8, bakery: 1.4, icecream: 0.3, icepops: 0.3 } },
+  bigmatch: { name: "Big match day", icon: "🏉", text: "The grand final's on tonight: crisps, drinks and pizza for the party.", footfall: 1.2, boost: { chips: 2.4, cola: 2, energy: 1.6, pizza: 2.2, water: 1.4 } },
+  holidays: { name: "School holidays", icon: "🎒", text: "Kids are off school: toys, treats and ice pops.", footfall: 1.15, boost: { toys: 2, icepops: 2, icecream: 1.6, gummies: 1.6, donut: 1.5 } },
 } satisfies Record<string, DayEvent>;
 export type EventId = keyof typeof EVENTS;
 
-/** Today's event: none on day 1, then about half the days have one (the same for a given store and day). */
-export function eventFor(seed: number, day: number): EventId | null {
+/**
+ * Today's event: none on day 1, then about half the days have one (the same
+ * for a given store and day). In the last week of October, Halloween turns up
+ * far more often.
+ */
+export function eventFor(seed: number, day: number, date?: Date): EventId | null {
   if (day <= 1) return null;
   const r = createRng(seed * 31 + day * 977);
+  if (date && date.getMonth() === 9 && date.getDate() >= 24 && r.next() < 0.5) return "halloween";
   if (r.next() < 0.45) return null;
   const ids = Object.keys(EVENTS) as EventId[];
   return ids[Math.floor(r.next() * ids.length)];
 }
+
+// ---------------------------------------------------------------- upgrades
+
+export interface UpgradeDef {
+  name: string;
+  icon: string;
+  price: number;
+  level: number;
+  ultimate?: boolean;
+  text: string;
+}
+
+/** One-time improvements to the premises. */
+export const UPGRADES = {
+  doors: { name: "Automatic doors", icon: "🚪", price: 40_000, level: 1, text: "Shoppers will wait 15% longer at the till." },
+  music: { name: "Sound system", icon: "🎵", price: 60_000, level: 1, text: "Background music makes the place nicer (+2 appeal)." },
+  tap: { name: "Tap-to-pay terminals", icon: "💳", price: 90_000, level: 2, text: "Most shoppers pay by card: less change to count." },
+  led: { name: "LED lighting", icon: "💡", price: 120_000, level: 2, text: "The power bill drops by 30%." },
+  cctv: { name: "CCTV cameras", icon: "📹", price: 180_000, level: 3, text: "Half as many shoplifters try their luck." },
+  aircon: { name: "Air conditioning", icon: "❄️", price: 250_000, level: 3, text: "Happier shoppers, and 15% more come in during a heatwave." },
+  bay: { name: "Loading bay", icon: "🚛", price: 200_000, level: 4, text: "Deliveries arrive twice as fast." },
+  app: { name: "Loyalty app", icon: "📱", price: 350_000, level: 5, ultimate: true, text: "Regulars: 10% more shoppers, and your reputation grows faster." },
+} satisfies Record<string, UpgradeDef>;
+export type UpgradeId = keyof typeof UPGRADES;
+export const UPGRADE_IDS = Object.keys(UPGRADES) as UpgradeId[];
+
+// -------------------------------------------------------------------- loans
+
+export const LOANS = {
+  small: { name: "Small business loan", amount: 500_000, days: 10, rate: 0.1, ultimate: false },
+  growth: { name: "Growth loan", amount: 2_000_000, days: 20, rate: 0.15, ultimate: true },
+} as const;
+export type LoanKind = keyof typeof LOANS;
+
+// -------------------------------------------------------------------- rival
+
+/** The day a rival opens across the street. */
+export const RIVAL_DAY = 6;
+export const RIVAL_NAME = "Bargain Barn";
+
+// ------------------------------------------------------------------ reviews
+
+export type Reason = "great" | "soldout" | "pricey" | "queue" | "mess" | "short" | "ok";
+export interface Review {
+  day: number;
+  stars: number;
+  text: string;
+  who: string;
+}
+
+const REVIEW_LINES: Record<Reason, string[]> = {
+  great: ["Everything I needed, friendly till, in and out. Love it.", "My new favourite shop. Spotless and well stocked.", "Great prices and the shelves are always full!", "Lovely little store. Will be back tomorrow."],
+  soldout: ["Half my list was sold out.", "Empty shelves again. Restock please!", "Came for one thing and they didn't have it."],
+  pricey: ["Way too expensive. I'll shop elsewhere.", "Nice shop but the prices made me wince.", "Daylight robbery on the basics."],
+  queue: ["Waited forever at the till and gave up.", "One till open and a queue to the door.", "Need more staff on the checkouts."],
+  mess: ["Sticky floor and litter in the aisles.", "Someone please mop aisle two.", "Grubby. Put me right off."],
+  short: ["They short-changed me!", "Check your change here, folks."],
+  ok: ["Fine. Got what I needed.", "Does the job.", "Not bad, not amazing."],
+};
+const REVIEWERS = ["Pat", "Lee", "Mel", "Chris", "Dana", "Kim", "Nico", "Ash", "Sky", "Jo", "Bea", "Ravi", "Tess", "Omar", "Ivy"];
+
+// --------------------------------------------------------------- milestones
+
+export interface Lifetime {
+  customers: number;
+  revenue: number;
+  items: number;
+  days: number;
+  caught: number;
+  /** Best day's takings. */
+  bestDay: number;
+}
+
+export interface Milestone {
+  id: string;
+  name: string;
+  text: string;
+  reward: number;
+  done: (s: Store) => boolean;
+}
+
+/** Trophies: each pays out once, the moment you earn it. */
+export const MILESTONES: Milestone[] = [
+  { id: "first", name: "Open for business", text: "Serve your first shopper", reward: 5_000, done: (s) => life(s).customers >= 1 },
+  { id: "hundred", name: "Regulars", text: "Serve 100 shoppers", reward: 20_000, done: (s) => life(s).customers >= 100 },
+  { id: "thousand", name: "Local legend", text: "Serve 1,000 shoppers", reward: 150_000, done: (s) => life(s).customers >= 1_000 },
+  { id: "day1k", name: "Four figures", text: "Take $1,000 in a day", reward: 20_000, done: (s) => Math.max(life(s).bestDay, s.today.revenue) >= 100_000 },
+  { id: "day5k", name: "Big day", text: "Take $5,000 in a day", reward: 80_000, done: (s) => Math.max(life(s).bestDay, s.today.revenue) >= 500_000 },
+  { id: "week", name: "One week in", text: "Trade for 7 days", reward: 30_000, done: (s) => life(s).days >= 7 },
+  { id: "month", name: "Established", text: "Trade for 30 days", reward: 200_000, done: (s) => life(s).days >= 30 },
+  { id: "depts3", name: "Something for everyone", text: "Sell from 3 departments", reward: 25_000, done: (s) => s.licences.length >= 3 },
+  { id: "depts6", name: "Department store", text: "Sell from 6 departments", reward: 120_000, done: (s) => s.licences.length >= 6 },
+  { id: "grow", name: "Moving up", text: "Move to bigger premises", reward: 40_000, done: (s) => s.size >= 1 },
+  { id: "super", name: "Supermarket sweep", text: "Become a Supermarket", reward: 250_000, done: (s) => s.size >= 3 },
+  { id: "team", name: "Team player", text: "Have 3 staff", reward: 30_000, done: (s) => s.staff.length >= 3 },
+  { id: "stars", name: "Five-star service", text: "Reach a 4.5★ reputation", reward: 100_000, done: (s) => s.reputation >= 4.5 },
+  { id: "catch", name: "Not on my watch", text: "Catch a shoplifter", reward: 15_000, done: (s) => life(s).caught >= 1 },
+  { id: "fitout", name: "Fitted out", text: "Buy 4 store upgrades", reward: 60_000, done: (s) => (s.upgrades ?? []).length >= 4 },
+  { id: "million", name: "Millionaire", text: "Build a business worth $1,000,000", reward: 500_000, done: (s) => storeValue(s) >= 100_000_000 },
+];
 
 export type GoalKind = "serve" | "revenue" | "sell" | "happy" | "clean";
 export interface Goal {
@@ -315,6 +447,9 @@ export interface DayStats {
   tillError: number;
   /** Spills and litter cleaned up. */
   cleaned?: number;
+  /** Shoplifters caught, and what got away (cents, at shelf price). */
+  caught?: number;
+  stolen?: number;
 }
 
 export interface DayReport extends DayStats {
@@ -330,6 +465,12 @@ export interface DayReport extends DayStats {
   /** Spent on standing orders for tomorrow. */
   autoOrders?: number;
   event?: EventId | null;
+  /** Fresh food thrown out overnight (cents at cost). */
+  waste?: number;
+  /** Loan repayment taken this evening. */
+  loan?: number;
+  /** The rival opened across the street tonight. */
+  rivalOpened?: boolean;
 }
 
 export interface Store {
@@ -361,13 +502,31 @@ export interface Store {
   mess?: Mess[];
   /** Standing orders (Ultimate): keep this many boxes in the stockroom, topped up each morning. */
   auto?: Partial<Record<ProductId, number>>;
+  /** Products on special (20% off). */
+  specials?: ProductId[];
+  upgrades?: UpgradeId[];
+  reviews?: Review[];
+  /** Trophies earned (ids). */
+  milestones?: string[];
+  lifetime?: Lifetime;
+  loan?: { kind: LoanKind; left: number; daily: number } | null;
+  rival?: { name: string; strength: number } | null;
 }
 
-const freshStats = (): DayStats => ({ revenue: 0, cogs: 0, customers: 0, unhappy: 0, items: 0, sold: {}, tillError: 0, cleaned: 0 });
+const freshStats = (): DayStats => ({ revenue: 0, cogs: 0, customers: 0, unhappy: 0, items: 0, sold: {}, tillError: 0, cleaned: 0, caught: 0, stolen: 0 });
+const freshLifetime = (): Lifetime => ({ customers: 0, revenue: 0, items: 0, days: 0, caught: 0, bestDay: 0 });
+/** Lifetime totals (made up on the spot for an old save). */
+export const life = (s: Store): Lifetime => (s.lifetime ??= freshLifetime());
 
 /** The default shelf price: the market price. */
 export const defaultPrice = (id: ProductId) => PRODUCTS[id].market;
 export const priceOf = (s: Store, id: ProductId) => s.prices[id] ?? defaultPrice(id);
+/** How much off a special is. */
+export const SPECIAL_OFF = 0.2;
+export const onSpecial = (s: Store, id: ProductId) => !!s.specials?.includes(id);
+/** What it actually rings up at: your price, less the special discount. */
+export const shelfPrice = (s: Store, id: ProductId) => (onSpecial(s, id) ? Math.round(priceOf(s, id) * (1 - SPECIAL_OFF)) : priceOf(s, id));
+export const hasUpgrade = (s: Store, id: UpgradeId) => !!s.upgrades?.includes(id) && (s.tier === "ultimate" || !(UPGRADES[id] as UpgradeDef).ultimate);
 export const levelOf = (xp: number) => LEVELS.filter((x) => xp >= x).length;
 export const sizeOf = (s: Store) => SIZES[s.size];
 export const absMinute = (s: Store) => (s.day - 1) * 1440 + s.minute;
@@ -410,6 +569,13 @@ export function newStore(tier: Tier, name = "Corner Store", seed = 1): Store {
   s.goals = makeGoals(s);
   s.mess = [];
   s.auto = {};
+  s.specials = [];
+  s.upgrades = [];
+  s.reviews = [];
+  s.milestones = [];
+  s.lifetime = freshLifetime();
+  s.loan = null;
+  s.rival = null;
   return s;
 }
 
@@ -446,7 +612,8 @@ export function order(s: Store, id: ProductId, boxes: number, express = false): 
   const fee = express ? Math.ceil(p.cost * units * 0.1) : 0;
   const r = spend(s, unitCost(s, id) * units + fee);
   if (!r.ok) return r;
-  const wait = express ? EXPRESS_MIN : (eventOf(s)?.delivery ?? DELIVERY_MIN);
+  const base = express ? EXPRESS_MIN : (eventOf(s)?.delivery ?? DELIVERY_MIN);
+  const wait = hasUpgrade(s, "bay") ? Math.ceil(base / 2) : base;
   s.orders.push({ product: id, units, at: isOpen(s) ? absMinute(s) + wait : absMinute(s) });
   deliver(s);
   return yes;
@@ -656,7 +823,7 @@ export function onShelf(s: Store): Map<ProductId, { fixture: number; slot: numbe
   return m;
 }
 
-export const appeal = (s: Store) => s.fixtures.reduce((a, f) => a + (FIXTURES[f.kind].appeal ?? 0), 0);
+export const appeal = (s: Store) => s.fixtures.reduce((a, f) => a + (FIXTURES[f.kind].appeal ?? 0), 0) + (hasUpgrade(s, "music") ? 2 : 0);
 
 /** Shoppers walking in per game hour at this time of day. */
 export function footfall(s: Store, minute = s.minute) {
@@ -669,9 +836,27 @@ export function footfall(s: Store, minute = s.minute) {
   const rep = 0.35 + s.reputation / 4;
   const ad = s.campaign && s.campaign.until > s.day - 1 ? 1 + MARKETING[s.campaign.kind].boost : 1;
   const decor = 1 + Math.min(0.3, appeal(s) * 0.02);
-  const ev = eventOf(s)?.footfall ?? 1;
+  const ev = (eventOf(s)?.footfall ?? 1) * (s.event === "heatwave" && hasUpgrade(s, "aircon") ? 1.15 : 1);
   const messy = 1 - messPenalty(s) * 0.6;
-  return 8 * curve * variety * level * rep * ad * decor * ev * messy;
+  const deals = 1 + (s.specials?.length ?? 0) * 0.04;
+  const loyal = hasUpgrade(s, "app") ? 1.1 : 1;
+  const rival = 1 - rivalPull(s);
+  return 8 * curve * variety * level * rep * ad * decor * ev * messy * deals * loyal * rival;
+}
+
+/** Your average shelf price against the usual price (1 = the usual), across what's on the shelves. */
+export function priceIndex(s: Store) {
+  const ids = [...onShelf(s).keys()];
+  if (!ids.length) return 1;
+  return ids.reduce((a, id) => a + shelfPrice(s, id) / PRODUCTS[id].market, 0) / ids.length;
+}
+
+/** Share of shoppers the rival takes: more if you're dearer than usual, less if you're well liked. */
+export function rivalPull(s: Store) {
+  if (!s.rival) return 0;
+  const price = Math.max(0.2, Math.min(1.5, 0.5 + (priceIndex(s) - 1) * 3));
+  const liked = Math.max(0.5, 1.3 - s.reputation * 0.15);
+  return Math.min(0.6, s.rival.strength * price * liked);
 }
 
 export const eventOf = (s: Store): DayEvent | null => (s.event ? EVENTS[s.event] : null);
@@ -687,9 +872,9 @@ export function demandOf(s: Store, id: ProductId) {
   const p = PRODUCTS[id];
   const ev = eventOf(s)?.boost as Partial<Record<string, number>> | undefined;
   const boost = (ev?.[id] ?? 1) * (ev?.[p.cat] ?? 1);
-  const ratio = p.market / priceOf(s, id);
+  const ratio = p.market / shelfPrice(s, id);
   const price = Math.max(0.45, Math.min(1.8, ratio ** 1.6));
-  return p.demand * boost * price;
+  return p.demand * boost * price * (onSpecial(s, id) ? 1.5 : 1);
 }
 
 /** Most shoppers the floor holds at once. */
@@ -723,7 +908,7 @@ export function maxPay(s: Store, id: ProductId, rng: Rng) {
 }
 
 /** Will they take it at your price? */
-export const willBuy = (s: Store, id: ProductId, rng: Rng) => priceOf(s, id) <= maxPay(s, id, rng);
+export const willBuy = (s: Store, id: ProductId, rng: Rng) => shelfPrice(s, id) <= maxPay(s, id, rng);
 
 /** Take one unit off a shelf slot. */
 export function pick(s: Store, fixtureId: number, slot: number): boolean {
@@ -746,13 +931,153 @@ export function ringUp(s: Store, basket: { product: ProductId; price: number }[]
   s.today.items += basket.length;
   s.today.tillError += tillError;
   s.today.customers++;
+  const l = life(s);
+  l.customers++;
+  l.revenue += total;
+  l.items += basket.length;
   return total;
 }
 
 /** A shopper leaves: happy if they found what they wanted at a fair price without a long wait. */
 export function leaveMood(s: Store, mood: number) {
   if (mood < 0.45) s.today.unhappy++;
-  s.reputation = Math.max(0, Math.min(5, s.reputation + (mood - 0.6) * 0.04));
+  const step = (mood - 0.6) * 0.04 * (hasUpgrade(s, "app") && mood > 0.6 ? 1.5 : 1);
+  s.reputation = Math.max(0, Math.min(5, s.reputation + step));
+}
+
+/** How a shopper's mood starts (air conditioning helps). */
+export const moodStart = (s: Store) => 0.75 + (hasUpgrade(s, "aircon") ? 0.05 : 0);
+/** Share of shoppers who pay by card. */
+export const cardShare = (s: Store) => (hasUpgrade(s, "tap") ? 0.85 : 0.62);
+/** How long (game minutes of patience, roughly) a shopper will queue. */
+export const patienceOf = (s: Store, rng: Rng) => (25 + rng.next() * 20) * (hasUpgrade(s, "doors") ? 1.15 : 1);
+
+/** Some shoppers leave with a review: the stars follow their mood, the words their reason. */
+export function writeReview(s: Store, mood: number, reason: Reason, rng: Rng): Review | null {
+  if (rng.next() > 0.3) return null;
+  const stars = Math.max(1, Math.min(5, Math.round(mood * 5 + 0.4)));
+  const lines = REVIEW_LINES[stars >= 4 && reason === "ok" ? "great" : reason];
+  const r: Review = { day: s.day, stars, text: lines[Math.floor(rng.next() * lines.length)], who: REVIEWERS[Math.floor(rng.next() * REVIEWERS.length)] };
+  s.reviews = [r, ...(s.reviews ?? [])].slice(0, 20);
+  return r;
+}
+
+/** The average of the latest reviews, or null before there are any. */
+export function rating(s: Store) {
+  const r = s.reviews ?? [];
+  return r.length ? r.reduce((a, x) => a + x.stars, 0) / r.length : null;
+}
+
+// --------------------------------------------------------------- shoplifters
+
+/** The chance a shopper tries to walk out without paying. */
+export const theftChance = (s: Store) => (s.day <= 1 ? 0 : 0.04 * (hasUpgrade(s, "cctv") ? 0.5 : 1));
+/** The chance your guards stop a shoplifter at the door (each guard has a go). */
+export const guardCatch = (s: Store) => 1 - 0.15 ** s.staff.filter((st) => st.role === "guard").length;
+
+/** Caught: the goods go back in the stockroom and the town hears about it. */
+export function catchThief(s: Store, basket: { product: ProductId }[]) {
+  for (const b of basket) s.storage[b.product] = (s.storage[b.product] ?? 0) + 1;
+  s.today.caught = (s.today.caught ?? 0) + 1;
+  life(s).caught++;
+  s.xp += 5;
+  s.reputation = Math.min(5, s.reputation + 0.03);
+}
+
+/** Got away: the goods are gone. */
+export function theftLoss(s: Store, basket: { price: number }[]) {
+  s.today.stolen = (s.today.stolen ?? 0) + basket.reduce((a, b) => a + b.price, 0);
+}
+
+// ------------------------------------------------------------------ specials
+
+/** How many products can be on special at once: one, plus one per promo stand, up to the edition's limit. */
+export const specialSlots = (s: Store) => Math.min(EDITIONS[s.tier].specials, 1 + s.fixtures.filter((f) => f.kind === "promo").length);
+
+/** Put a product on special (20% off: it sells faster and brings people in) or take it off. */
+export function toggleSpecial(s: Store, id: ProductId): Result {
+  s.specials ??= [];
+  if (s.specials.includes(id)) {
+    s.specials = s.specials.filter((x) => x !== id);
+    return yes;
+  }
+  if (!s.licences.includes(PRODUCTS[id].cat)) return no("You need the licence first");
+  const n = specialSlots(s);
+  if (s.specials.length >= n) return no(n < EDITIONS[s.tier].specials ? "Build a promo stand for another special" : `${n} special${n > 1 ? "s" : ""} at a time`);
+  s.specials.push(id);
+  return yes;
+}
+
+// ------------------------------------------------------------------ upgrades
+
+export function buyUpgrade(s: Store, id: UpgradeId): Result {
+  const u: UpgradeDef = UPGRADES[id];
+  s.upgrades ??= [];
+  if (s.upgrades.includes(id)) return no("Already fitted");
+  if (u.ultimate && s.tier !== "ultimate") return no("Ultimate edition only");
+  if (levelOf(s.xp) < u.level) return no(`Reach level ${u.level} first`);
+  const r = spend(s, u.price);
+  if (r.ok) s.upgrades.push(id);
+  return r;
+}
+
+// --------------------------------------------------------------------- loans
+
+export function takeLoan(s: Store, kind: LoanKind): Result {
+  const l = LOANS[kind];
+  if (s.loan) return no("Pay off your loan first");
+  if (l.ultimate && s.tier !== "ultimate") return no("Ultimate edition only");
+  const left = Math.round(l.amount * (1 + l.rate));
+  s.cash += l.amount;
+  s.loan = { kind, left, daily: Math.ceil(left / l.days) };
+  return yes;
+}
+
+export function repayLoan(s: Store): Result {
+  if (!s.loan) return no("No loan to pay off");
+  const r = spend(s, s.loan.left);
+  if (r.ok) s.loan = null;
+  return r;
+}
+
+// ---------------------------------------------------------------- trophies
+
+/** Award any trophies just earned: cash and 50 XP each. Returns them. */
+export function checkMilestones(s: Store): Milestone[] {
+  s.milestones ??= [];
+  const out: Milestone[] = [];
+  for (const m of MILESTONES) {
+    if (s.milestones.includes(m.id) || !m.done(s)) continue;
+    s.milestones.push(m.id);
+    s.cash += m.reward;
+    s.xp += 50;
+    out.push(m);
+  }
+  return out;
+}
+
+/** Overnight, fresh food goes off: a share of every perishable line, stockroom first. Returns the cost thrown out. */
+export function spoil(s: Store) {
+  let cost = 0;
+  for (const id of PRODUCT_IDS) {
+    const p: Product = PRODUCTS[id];
+    if (!p.spoil) continue;
+    const onShelves = s.fixtures.reduce((a, f) => a + f.slots.reduce((b, sl) => b + (sl.product === id ? sl.qty : 0), 0), 0);
+    let lose = Math.floor((onShelves + (s.storage[id] ?? 0)) * p.spoil);
+    if (!lose) continue;
+    cost += lose * p.cost;
+    const fromStore = Math.min(lose, s.storage[id] ?? 0);
+    if (fromStore) s.storage[id] = (s.storage[id] ?? 0) - fromStore;
+    lose -= fromStore;
+    for (const f of s.fixtures)
+      for (const sl of f.slots)
+        if (lose > 0 && sl.product === id) {
+          const k = Math.min(lose, sl.qty);
+          sl.qty -= k;
+          lose -= k;
+        }
+  }
+  return cost;
 }
 
 // --------------------------------------------------------------------- mess
@@ -948,25 +1273,44 @@ export function advance(s: Store, minutes: number): Order[] {
 }
 
 /** Close the books: rent, wages and power are paid, XP and the level move, a new day starts at 7:30. */
-export function endDay(s: Store): DayReport {
+export function endDay(s: Store, date?: Date): DayReport {
   claimGoals(s, true);
   const goalPay = (s.goals ?? []).filter((g) => g.done).reduce((a, g) => a + g.reward, 0);
   const t = s.today;
   const rent = sizeOf(s).rent;
   const wages = s.staff.reduce((a, st) => a + STAFF[st.role].wage, 0);
-  const power = s.fixtures.reduce((a, f) => a + FIXTURES[f.kind].power, 0);
+  const power = Math.round(s.fixtures.reduce((a, f) => a + FIXTURES[f.kind].power, 0) * (hasUpgrade(s, "led") ? 0.7 : 1));
   s.cash -= rent + wages + power;
-  const profit = t.revenue - t.cogs - rent - wages - power - t.tillError + goalPay;
+  const waste = spoil(s);
+  let loan = 0;
+  if (s.loan) {
+    loan = Math.min(s.loan.daily, s.loan.left);
+    s.cash -= loan;
+    s.loan.left -= loan;
+    if (s.loan.left <= 0) s.loan = null;
+  }
+  const profit = t.revenue - t.cogs - rent - wages - power - t.tillError - waste - (t.stolen ?? 0) + goalPay;
   const xp = Math.max(10, Math.round(t.revenue / 1000 + t.customers * 2 - t.unhappy * 3));
   s.xp += xp;
-  const report: DayReport = { ...t, sold: { ...t.sold }, day: s.day, rent, wages, power, profit, xp, reputation: s.reputation, goals: goalPay, event: s.event ?? null };
+  const l = life(s);
+  l.days++;
+  l.bestDay = Math.max(l.bestDay, t.revenue);
+  const report: DayReport = { ...t, sold: { ...t.sold }, day: s.day, rent, wages, power, profit, xp, reputation: s.reputation, goals: goalPay, event: s.event ?? null, waste, loan };
+  // The rival opens on day 6 and grows, unless you fight back with marketing and service.
+  if (!s.rival && s.day + 1 >= RIVAL_DAY) {
+    s.rival = { name: RIVAL_NAME, strength: 0.15 };
+    report.rivalOpened = true;
+  } else if (s.rival) {
+    const fight = (s.campaign && s.campaign.until >= s.day ? 0.06 : 0) + (s.reputation >= 4 ? 0.02 : 0);
+    s.rival.strength = Math.max(0.05, Math.min(0.45, s.rival.strength + 0.02 - fight));
+  }
   s.day++;
   s.minute = OPEN - 30;
   s.today = freshStats();
   if (s.campaign && s.campaign.until < s.day) s.campaign = null;
   // Overnight: the cleaners come in, standing orders arrive, and a new day brings its own event and goals.
   s.mess = [];
-  s.event = eventFor(s.seed, s.day);
+  s.event = eventFor(s.seed, s.day, date);
   report.autoOrders = runAuto(s);
   s.goals = makeGoals(s);
   s.history = [...s.history, report].slice(-30);
@@ -984,6 +1328,9 @@ export function storeValue(s: Store) {
   }
   for (let i = 1; i <= s.size; i++) v += Math.floor(SIZES[i].price * 0.5);
   for (const c of s.licences) v += Math.floor(CATEGORIES[c].licence * 0.5);
+  for (const u of s.upgrades ?? []) v += Math.floor(UPGRADES[u].price * 0.5);
+  // Debts come off.
+  v -= s.loan?.left ?? 0;
   return v;
 }
 
@@ -1085,6 +1432,21 @@ export function loadStore(raw: string | null, tier: Tier): Store | null {
     s.auto ??= {};
     if (s.event && !(s.event in EVENTS)) s.event = null;
     s.goals ??= makeGoals(s);
+    // Saves from before the big expansion.
+    s.specials = (s.specials ?? []).filter((id) => id in PRODUCTS).slice(0, EDITIONS[tier].specials);
+    s.upgrades = (s.upgrades ?? []).filter((id) => id in UPGRADES);
+    s.reviews ??= [];
+    s.milestones ??= [];
+    s.lifetime ??= {
+      ...freshLifetime(),
+      days: s.history.length,
+      customers: s.history.reduce((a, r) => a + r.customers, 0),
+      revenue: s.history.reduce((a, r) => a + r.revenue, 0),
+      bestDay: s.history.reduce((a, r) => Math.max(a, r.revenue), 0),
+    };
+    s.loan ??= null;
+    s.rival ??= null;
+    s.staff = s.staff.filter((st) => st.role in STAFF);
     if (tier === "lite") s.auto = {};
     return s;
   } catch {

@@ -4,7 +4,7 @@ import { GAMES } from "./catalog";
 /** The home page's rotating spotlight: a kicker and a one-line pitch for each. */
 export const SPOTLIGHT: { slug: string; kicker: string; pitch: string }[] = [
   { slug: "life", kicker: "Flagship", pitch: "Grow up, get a job, fall in love and build the house, in a photoreal 3D town." },
-  { slug: "ubusiness", kicker: "New", pitch: "Run a corner store: stock the shelves, work the till, set the prices, grow it into a superstore." },
+  { slug: "ubusiness", kicker: "Free Ultimate until 31 Oct", pitch: "The big expansion: a bakery, frozen food, specials, shoplifters and a rival across the street. Claim Ultimate free this month." },
   { slug: "hometown", kicker: "Online", pitch: "One shared town: open a shop, play the market, run for mayor. Townsfolk keep it going overnight." },
   { slug: "trenches", kicker: "Multiplayer", pitch: "Dig in on the Great War fronts. Go over the top with your squad, or hold the line." },
   { slug: "neon-siege", kicker: "Battle royale", pitch: "Drop into the city, loot up and outlast the storm." },

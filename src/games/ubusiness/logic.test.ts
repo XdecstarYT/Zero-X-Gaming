@@ -46,6 +46,24 @@ import {
   MESS_MAX,
   setAuto,
   unitCost,
+  buyUpgrade,
+  cardShare,
+  catchThief,
+  checkMilestones,
+  guardCatch,
+  MILESTONES,
+  priceOf,
+  rating,
+  repayLoan,
+  RIVAL_DAY,
+  rivalPull,
+  shelfPrice,
+  spoil,
+  takeLoan,
+  theftChance,
+  theftLoss,
+  toggleSpecial,
+  writeReview,
   type Store,
 } from "./logic";
 
@@ -78,9 +96,9 @@ describe("UBusiness: the store", () => {
 });
 
 describe("Lite and Ultimate", () => {
-  it("Lite sells four categories; Ultimate sells all eight", () => {
-    expect(EDITIONS.lite.categories).toEqual(["grocery", "snacks", "household", "fresh"]);
-    expect(EDITIONS.ultimate.categories).toHaveLength(8);
+  it("Lite sells five departments; Ultimate sells all ten", () => {
+    expect(EDITIONS.lite.categories).toEqual(["grocery", "snacks", "household", "fresh", "frozen"]);
+    expect(EDITIONS.ultimate.categories).toHaveLength(10);
     const s = opened("lite");
     s.xp = 100_000;
     s.cash = 10_000_000;
@@ -247,7 +265,9 @@ describe("the books", () => {
     expect(r.rent).toBe(15_000);
     expect(r.wages).toBe(12_000);
     expect(r.power).toBe(300);
-    expect(r.profit).toBe(449 - 180 - 15_000 - 12_000 - 300);
+    // Some of the fresh bread goes stale overnight: that's in the profit too.
+    expect(r.waste).toBeGreaterThan(0);
+    expect(r.profit).toBe(449 - 180 - 15_000 - 12_000 - 300 - r.waste!);
     expect(s.cash).toBe(1_000_000 + 449 - 15_000 - 12_000 - 300);
     expect(s.day).toBe(2);
     expect(s.minute).toBe(OPEN - 30);
@@ -390,3 +410,159 @@ describe("round two: events, demand, mess, goals, standing orders", () => {
     expect(s.auto?.bread).toBeUndefined();
   });
 });
+
+describe("the big expansion", () => {
+  it("frozen and bakery departments sell from their own fixtures", () => {
+    const s = opened("ultimate");
+    s.cash = 10_000_000;
+    s.xp = 99_999;
+    expect(buyLicence(s, "frozen").ok).toBe(true);
+    expect(buyLicence(s, "bakery").ok).toBe(true);
+    const fz = buyFixture(s, "freezer", 3, 7, 0);
+    expect(fz.ok).toBe(true);
+    expect(assign(s, fz.id!, 0, "icecream").ok).toBe(true);
+    expect(assign(s, fz.id!, 1, "croissant").ok).toBe(false);
+    const bk = buyFixture(s, "bakery", 9.5, 7, 0);
+    expect(bk.ok).toBe(true);
+    expect(assign(s, bk.id!, 0, "croissant").ok).toBe(true);
+    // Bakery is Ultimate only; frozen comes with Lite.
+    const lite = opened();
+    lite.cash = 10_000_000;
+    lite.xp = 99_999;
+    expect(buyLicence(lite, "frozen").ok).toBe(true);
+    expect(buyLicence(lite, "bakery")).toEqual({ ok: false, why: "Ultimate edition only" });
+    expect(buyFixture(lite, "bakery", 9.5, 7, 0).ok).toBe(false);
+  });
+
+  it("fresh food goes off overnight; tins don't", () => {
+    const s = opened("ultimate");
+    s.storage = { bread: 100, soup: 100 };
+    const waste = spoil(s);
+    expect(s.storage.soup).toBe(100);
+    expect(s.storage.bread).toBeLessThan(100);
+    // 100 in the stockroom and 12 on the shelf: 15% of 112 is 16, taken from the stockroom first.
+    expect(s.storage.bread).toBe(84);
+    expect(s.fixtures[1].slots[0].qty).toBe(12);
+    expect(waste).toBe(16 * PRODUCTS.bread.cost);
+  });
+
+  it("specials ring up 20% off, sell faster, and promo stands allow more", () => {
+    const s = opened("ultimate");
+    s.cash = 10_000_000;
+    s.xp = 99_999;
+    const before = demandOf(s, "pasta");
+    expect(toggleSpecial(s, "pasta").ok).toBe(true);
+    expect(shelfPrice(s, "pasta")).toBe(Math.round(priceOf(s, "pasta") * 0.8));
+    expect(demandOf(s, "pasta")).toBeGreaterThan(before * 1.8);
+    expect(toggleSpecial(s, "rice")).toEqual({ ok: false, why: "Build a promo stand for another special" });
+    buyFixture(s, "promo", 10, 4, 0);
+    expect(toggleSpecial(s, "rice").ok).toBe(true);
+    expect(toggleSpecial(s, "pasta").ok).toBe(true);
+    expect(s.specials).toEqual(["rice"]);
+    // Lite: one at a time, promo stands or not.
+    const lite = opened();
+    toggleSpecial(lite, "pasta");
+    expect(toggleSpecial(lite, "rice").ok).toBe(false);
+  });
+
+  it("upgrades cost money once and change the rules", () => {
+    const s = opened("ultimate");
+    s.cash = 10_000_000;
+    s.xp = 99_999;
+    expect(cardShare(s)).toBe(0.62);
+    expect(buyUpgrade(s, "tap").ok).toBe(true);
+    expect(buyUpgrade(s, "tap")).toEqual({ ok: false, why: "Already fitted" });
+    expect(cardShare(s)).toBe(0.85);
+    const pow = endDay(structuredClone(s)).power;
+    buyUpgrade(s, "led");
+    expect(endDay(structuredClone(s)).power).toBe(Math.round(pow * 0.7));
+    expect(buyUpgrade(opened(), "app")).toEqual({ ok: false, why: "Ultimate edition only" });
+    expect(buyUpgrade(opened(), "bay")).toEqual({ ok: false, why: "Reach level 4 first" });
+  });
+
+  it("guards and CCTV deal with shoplifters; a catch puts the goods back", () => {
+    const s = opened("ultimate");
+    s.day = 3;
+    expect(theftChance(s)).toBeCloseTo(0.04);
+    s.xp = 99_999;
+    s.cash = 10_000_000;
+    buyUpgrade(s, "cctv");
+    expect(theftChance(s)).toBeCloseTo(0.02);
+    expect(guardCatch(s)).toBe(0);
+    hire(s, "guard");
+    expect(guardCatch(s)).toBeCloseTo(0.85);
+    const had = s.storage.pasta ?? 0;
+    catchThief(s, [{ product: "pasta" }]);
+    expect(s.storage.pasta).toBe(had + 1);
+    expect(s.today.caught).toBe(1);
+    theftLoss(s, [{ price: 249 }]);
+    expect(s.today.stolen).toBe(249);
+    expect(theftChance(opened())).toBe(0);
+  });
+
+  it("a loan is paid back a little each evening, and counts against the business's value", () => {
+    const s = opened();
+    const v = storeValue(s);
+    expect(takeLoan(s, "small").ok).toBe(true);
+    expect(s.cash).toBe(300_000 + 500_000);
+    expect(storeValue(s)).toBe(v + 500_000 - 550_000);
+    expect(takeLoan(s, "small").ok).toBe(false);
+    expect(takeLoan(opened(), "growth")).toEqual({ ok: false, why: "Ultimate edition only" });
+    const r = endDay(s);
+    expect(r.loan).toBe(55_000);
+    expect(s.loan!.left).toBe(495_000);
+    expect(repayLoan(s).ok).toBe(true);
+    expect(s.loan).toBeNull();
+  });
+
+  it("a rival opens on day 6 and takes more shoppers from a pricey store", () => {
+    const s = opened();
+    for (let d = 1; d < RIVAL_DAY - 1; d++) expect(endDay(s).rivalOpened).toBeFalsy();
+    expect(endDay(s).rivalOpened).toBe(true);
+    expect(s.rival?.name).toBe("Bargain Barn");
+    const fair = rivalPull(s);
+    expect(fair).toBeGreaterThan(0);
+    for (const id of PRODUCT_IDS) s.prices[id] = Math.round(PRODUCTS[id].market * 1.3);
+    expect(rivalPull(s)).toBeGreaterThan(fair * 1.5);
+  });
+
+  it("trophies pay out once", () => {
+    const s = opened();
+    const cash = s.cash;
+    ringUp(s, [{ product: "bread", price: 449 }]);
+    const got = checkMilestones(s).map((m) => m.id);
+    expect(got).toContain("first");
+    expect(s.cash).toBe(cash + 449 + 5_000);
+    expect(checkMilestones(s)).toEqual([]);
+    expect(MILESTONES.length).toBeGreaterThanOrEqual(15);
+  });
+
+  it("reviews follow the shopper's mood", () => {
+    const s = opened();
+    const rng = createRng(4);
+    for (let i = 0; i < 60; i++) writeReview(s, 0.95, "great", rng);
+    expect(rating(s)).toBeGreaterThanOrEqual(4.5);
+    for (let i = 0; i < 80; i++) writeReview(s, 0.1, "pricey", rng);
+    expect(rating(s)).toBeLessThan(2);
+    expect(s.reviews!.length).toBeLessThanOrEqual(20);
+  });
+
+  it("Halloween turns up often in the last week of October", () => {
+    const oct = new Date(2026, 9, 28);
+    const n = Array.from({ length: 100 }, (_, d) => eventFor(9, d + 2, oct)).filter((e) => e === "halloween").length;
+    expect(n).toBeGreaterThan(40);
+    const june = new Date(2026, 5, 10);
+    expect(Array.from({ length: 100 }, (_, d) => eventFor(9, d + 2, june)).filter((e) => e === "halloween").length).toBeLessThan(15);
+  });
+
+  it("an old save loads with the new systems switched on", () => {
+    const s = opened();
+    const old = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+    for (const k of ["specials", "upgrades", "reviews", "milestones", "lifetime", "loan", "rival"]) delete old[k];
+    const back = loadStore(JSON.stringify(old), "lite")!;
+    expect(back.specials).toEqual([]);
+    expect(back.lifetime).toMatchObject({ days: 0, customers: 0 });
+    expect(back.loan).toBeNull();
+  });
+});
+

@@ -6,7 +6,7 @@ import { buildPed, posePed, type PedModel, type Pose } from "../code-3/people3d"
 import { concreteTexture, asphaltTexture, setTextureDetail } from "../neon-siege/three/textures";
 import type { Detail } from "../sports-kit/look";
 import { canvasTexture, SportsPipeline } from "../sports-kit/pipeline";
-import { accessPoint, CATEGORIES, doorOf, FACING, FIXTURES, fixtureRect, PRODUCTS, priceOf, sizeOf, stockroomOf, type Fixture, type FixtureKind, type ProductId, type Shape, type Store } from "./logic";
+import { accessPoint, CATEGORIES, doorOf, FACING, FIXTURES, fixtureRect, onSpecial, PRODUCTS, shelfPrice, sizeOf, stockroomOf, type Fixture, type FixtureKind, type ProductId, type Shape, type Store } from "./logic";
 
 /**
  * UBusiness in 3D: a photoreal shop floor seen like a doll's house (the walls
@@ -234,6 +234,8 @@ export class StoreView {
   private messKey = "";
   private messSpots: { id: number; x: number; z: number }[] = [];
   private street = new THREE.Group();
+  private decor: THREE.Group | null = null;
+  private decorKey = "";
   private cars: { g: THREE.Group; lane: number; speed: number; offset: number }[] = [];
   private walkers: { m: PedModel; offset: number; speed: number; dir: number; lane: number; step: number }[] = [];
   private rain: THREE.LineSegments | null = null;
@@ -493,9 +495,10 @@ export class StoreView {
         SHELF_LEVELS.forEach((y, i) => {
           g.add(box(def.w - 0.08, 0.025, def.d - 0.06, white, 0, y - 0.025, -0.02));
           const sl = f.slots[i];
-          const text = sl?.product ? `${PRODUCTS[sl.product].name.slice(0, 18)}  $${(priceOf(s, sl.product) / 100).toFixed(2)}` : "";
+          const sale = !!sl?.product && onSpecial(s, sl.product);
+          const text = sl?.product ? `${sale ? "SALE " : ""}${PRODUCTS[sl.product].name.slice(0, 18)}  $${(shelfPrice(s, sl.product) / 100).toFixed(2)}` : "";
           if (text) {
-            const tag = label(text, 0.9, 0.05, "#fef08a", "#111827", 15);
+            const tag = label(text, 0.9, 0.05, sale ? "#dc2626" : "#fef08a", sale ? "#ffffff" : "#111827", 15);
             tag.position.set(0, y - 0.012, -def.d / 2 + 0.008);
             tag.rotation.y = Math.PI;
             g.add(tag);
@@ -519,6 +522,42 @@ export class StoreView {
           g.add(pane, box(0.03, 1.8, 0.04, steel, -def.w / 2 + (i * def.w) / 3 + 0.02, 0.2, -def.d / 2));
         }
         g.add(box(def.w, 0.22, 0.04, std(s.sign, 0.5), 0, 1.95, -def.d / 2 - 0.02));
+        break;
+      }
+      case "freezer": {
+        // An upright freezer: frosted steel, cold blue light behind misted glass doors.
+        g.add(box(def.w, 0.18, def.d, std("#cbd5e1", 0.3, 0.6), 0, 0, 0), box(def.w, 0.12, def.d, std("#cbd5e1", 0.3, 0.6), 0, 1.98, 0));
+        for (const x of [-def.w / 2 + 0.03, def.w / 2 - 0.03]) g.add(box(0.06, 2.1, def.d, std("#e2e8f0", 0.3, 0.6), x, 0, 0));
+        g.add(box(def.w, 2.1, 0.04, std("#e2e8f0", 0.3, 0.6), 0, 0, def.d / 2 - 0.02));
+        // The lit back panel sits behind the stock, not around it.
+        g.add(box(def.w - 0.12, 1.75, 0.04, emissive("#bfdbfe", 0.35), 0, 0.2, def.d / 2 - 0.08));
+        SHELF_LEVELS.forEach((y) => g.add(box(def.w - 0.14, 0.02, def.d - 0.2, std("#94a3b8", 0.2, 0.8), 0, y + 0.06, 0.03)));
+        for (let i = 0; i < 3; i++) {
+          const pane = new THREE.Mesh(new THREE.PlaneGeometry(def.w / 3 - 0.04, 1.8), glass());
+          pane.position.set(-def.w / 3 + (i * def.w) / 3, 1.1, -def.d / 2 - 0.01);
+          pane.rotation.y = Math.PI;
+          g.add(pane, box(0.03, 1.8, 0.04, steel, -def.w / 2 + (i * def.w) / 3 + 0.02, 0.2, -def.d / 2), box(0.025, 0.5, 0.04, steel, -def.w / 3 + (i * def.w) / 3 + def.w / 6 - 0.08, 0.9, -def.d / 2 - 0.04));
+        }
+        const head = label("FROZEN", def.w, 0.22, "#1d4ed8", "#ffffff", 50);
+        head.position.set(0, 2.06, -def.d / 2 - 0.03);
+        head.rotation.y = Math.PI;
+        g.add(head);
+        break;
+      }
+      case "bakery": {
+        // A bakery case: a warm-lit, stepped counter behind curved glass.
+        g.add(box(def.w, 0.85, def.d, std("#78350f", 0.55), 0, 0, 0), box(def.w + 0.04, 0.04, def.d + 0.04, std("#fef3c7", 0.3), 0, 0.85, 0));
+        for (let i = 0; i < 3; i++) g.add(box(def.w - 0.1, 0.03, 0.26, std("#fafaf9", 0.3), 0, 0.89 + i * 0.24, -def.d / 2 + 0.2 + i * 0.22));
+        g.add(box(def.w - 0.06, 0.03, def.d - 0.06, emissive("#fde68a", 0.9), 0, 1.6, 0.02));
+        const front = new THREE.Mesh(new THREE.PlaneGeometry(def.w - 0.04, 0.85), glass());
+        front.position.set(0, 1.28, -def.d / 2 + 0.06);
+        front.rotation.set(0.32, Math.PI, 0);
+        g.add(front);
+        for (const x of [-def.w / 2 + 0.02, def.w / 2 - 0.02]) g.add(box(0.04, 0.78, def.d, std("#fef3c7", 0.3), x, 0.87, 0));
+        const head = label("FRESH BAKED", def.w, 0.2, "#b45309", "#ffffff", 46);
+        head.position.set(0, 1.7, def.d / 2 - 0.05);
+        head.rotation.y = Math.PI;
+        g.add(head);
         break;
       }
       case "produce": {
@@ -616,8 +655,8 @@ export class StoreView {
       out.push(at.clone().multiply(m));
     };
     let n = 0;
-    if (f.kind === "shelf" || f.kind === "fridge") {
-      const y0 = SHELF_LEVELS[slot] + (f.kind === "fridge" ? 0.08 : 0);
+    if (f.kind === "shelf" || f.kind === "fridge" || f.kind === "freezer") {
+      const y0 = SHELF_LEVELS[slot] + (f.kind === "shelf" ? 0 : 0.08);
       const L = layout(id, def.w - 0.16, def.d - 0.12, 0.34);
       for (let k = 0; k < L.stack && n < count; k++)
         for (let j = 0; j < L.deep && n < count; j++)
@@ -629,6 +668,10 @@ export class StoreView {
       for (let k = 0; k < 3 && n < count; k++)
         for (let j = 0; j < L.deep && n < count; j++)
           for (let i = 0; i < L.across && n < count; i++, n++) push(cx - ((L.across - 1) * L.w) / 2 + i * L.w + (k % 2) * 0.02, 0.74 + L.h / 2 + k * L.h * 0.8, cz - ((L.deep - 1) * L.d) / 2 + j * L.d);
+    } else if (f.kind === "bakery") {
+      const L = layout(id, def.w - 0.2, 0.22, 0.2);
+      for (let j = 0; j < L.deep && n < count; j++)
+        for (let i = 0; i < L.across && n < count; i++, n++) push(-((L.across - 1) * (L.w + 0.01)) / 2 + i * (L.w + 0.01), 0.92 + slot * 0.24 + L.h / 2, -def.d / 2 + 0.1 + slot * 0.22 + L.d / 2 + j * (L.d + 0.01));
     } else if (f.kind === "rack") {
       const x0 = slot === 0 ? -def.w / 2 + 0.15 : 0.08;
       for (let i = 0; i < Math.min(count, 8); i++) push(x0 + i * 0.085, 1.5 - p.size[1] / 2, 0, 0);
@@ -643,7 +686,7 @@ export class StoreView {
     const seen = new Set<number>();
     for (const f of s.fixtures) {
       seen.add(f.id);
-      const key = `${f.kind}|${f.x}|${f.z}|${f.rot}|${s.sign}|${f.slots.map((sl) => (sl.product ? `${sl.product}:${priceOf(s, sl.product)}` : "-")).join(",")}`;
+      const key = `${f.kind}|${f.x}|${f.z}|${f.rot}|${s.sign}|${f.slots.map((sl) => (sl.product ? `${sl.product}:${shelfPrice(s, sl.product)}` : "-")).join(",")}`;
       const old = this.fixtures.get(f.id);
       if (old?.key === key) continue;
       if (old) this.fixturesGroup.remove(old.group);
@@ -899,6 +942,38 @@ export class StoreView {
     }
   }
 
+  /** Halloween: pumpkins either side of the door, glowing after dark. */
+  private syncDecor(s: Store) {
+    const key = `${s.event === "halloween"}|${s.size}`;
+    if (key === this.decorKey) return;
+    this.decorKey = key;
+    if (this.decor) this.pipe.scene.remove(this.decor);
+    this.decor = null;
+    if (s.event !== "halloween") return;
+    const g = new THREE.Group();
+    const door = doorOf(s);
+    const skin = std("#ea580c", 0.55);
+    const stem = std("#3f6212", 0.8);
+    const face = emissive("#fbbf24", 2.2);
+    [-2.2, -1.75, 1.8, 2.3].forEach((dx, i) => {
+      const r = i % 2 ? 0.2 : 0.28;
+      const p = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), skin);
+      p.scale.y = 0.8;
+      p.position.set(door.x + dx, r * 0.8, -0.6 - (i % 2) * 0.35);
+      p.castShadow = true;
+      g.add(p, cyl(0.03, 0.1, stem, p.position.x, r * 1.55, p.position.z, 6));
+      for (const ex of [-0.08, 0.08]) {
+        const eye = new THREE.Mesh(new THREE.ConeGeometry(r * 0.22, r * 0.25, 3), face);
+        eye.rotation.x = -Math.PI / 2;
+        eye.position.set(p.position.x + ex * (r / 0.28), r * 0.95, p.position.z - r * 0.92);
+        g.add(eye);
+      }
+      g.add(box(r * 0.7, r * 0.12, 0.02, face, p.position.x, r * 0.55, p.position.z - r * 0.95));
+    });
+    this.decor = g;
+    this.pipe.scene.add(g);
+  }
+
   /** Rain outside on a rainy day: streaks falling over the street. */
   setRain(on: boolean, s: Store) {
     if (on === this.raining) return;
@@ -958,6 +1033,7 @@ export class StoreView {
     this.syncStock(s);
     this.syncPeople(people, dt, s.sign);
     this.syncMess(s);
+    this.syncDecor(s);
     this.buildStreet(s);
     const { w, d } = sizeOf(s);
     this.moveStreet(dt, w);

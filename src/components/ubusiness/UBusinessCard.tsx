@@ -4,16 +4,16 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { CoinAmount } from "@/components/shop/Coin";
 import { cn } from "@/lib/cn";
-import { ubusinessPrice, type UBusinessTier } from "@/lib/economy";
+import { ubusinessFreeOpen, ubusinessPrice, type UBusinessTier } from "@/lib/economy";
 import { useWallet } from "@/store/wallet";
 import { useUBusiness } from "./use-ubusiness";
 
 const EDITIONS: { tier: UBusinessTier; name: string; perks: string[] }[] = [
-  { tier: "lite", name: "Lite", perks: ["Grocery, snacks, household and fresh", "Grow to a Mini Market", "One member of staff"] },
+  { tier: "lite", name: "Lite", perks: ["Grocery, snacks, household, fresh and frozen", "Grow to a Mini Market", "One member of staff"] },
   {
     tier: "ultimate",
     name: "Ultimate",
-    perks: ["All 8 departments: health, toys, fashion, electronics", "Grow to a Megastore", "Up to 6 staff and self-checkouts", "Marketing, express delivery, 3× speed, photo mode"],
+    perks: ["All 10 departments, with the bakery, health, toys, fashion and electronics", "Grow to a Megastore", "Up to 6 staff and self-checkouts", "Marketing, 3 specials at once, the loyalty app, growth loans, 3× speed, photo mode"],
   },
 ];
 
@@ -22,7 +22,8 @@ const EDITIONS: { tier: UBusinessTier; name: string; perks: string[] }[] = [
  * you hold this season's battle pass; Lite owners upgrade for the difference.
  */
 export function UBusinessCard({ compact = false }: { compact?: boolean }) {
-  const { tier, busy, error, buy } = useUBusiness();
+  const { tier, busy, error, buy, claim } = useUBusiness();
+  const free = ubusinessFreeOpen();
   const coins = useWallet((s) => s.coins);
 
   if (tier === "ultimate") {
@@ -41,6 +42,20 @@ export function UBusinessCard({ compact = false }: { compact?: boolean }) {
 
   return (
     <div data-testid="ubusiness-pass" data-tier={tier ?? undefined} className="rounded-xl border border-amber-400/40 bg-surface p-4 sm:p-5">
+      {free && (
+        <div data-testid="ubusiness-free" className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-emerald-400/50 bg-emerald-400/10 p-3">
+          <span aria-hidden className="text-2xl">
+            🎁
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-display font-black uppercase tracking-wide">Ultimate is free until 31 October</p>
+            <p className="text-sm text-muted">Launch offer: claim it now and it&apos;s yours to keep. No coins needed.</p>
+          </div>
+          <Button onClick={() => void claim()} disabled={!!busy || tier === undefined} data-testid="ubusiness-claim">
+            {busy === "ultimate" ? "Claiming…" : "Claim Ultimate free"}
+          </Button>
+        </div>
+      )}
       {!compact && <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">One-time unlock · free with the battle pass</p>}
       <div className={cn("grid gap-3", compact ? "mt-1" : "mt-3", "sm:grid-cols-2")}>
         {EDITIONS.map((e) => {

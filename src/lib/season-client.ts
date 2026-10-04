@@ -4,7 +4,7 @@ import { OUTFITS, WRAPS } from "@/games/neon-siege/cosmetics";
 import { readLoadout, writeLoadout, type Loadout } from "@/games/neon-siege/loadout";
 import { useAuth } from "@/store/auth";
 import { useWallet } from "@/store/wallet";
-import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE, ubusinessPrice, type UBusinessTier } from "./economy";
+import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE, ubusinessFreeOpen, ubusinessPrice, type UBusinessTier } from "./economy";
 import { deviceSaveSuffix } from "./device-accounts";
 import { getSupabaseBrowser } from "./supabase/client";
 import {
@@ -329,6 +329,7 @@ const BUY_ERRORS: Record<string, string> = {
   "already owned": "You already own that.",
   "not in the shop": "That item isn't in the shop right now.",
   "not authenticated": "Sign in to buy with your account coins.",
+  "The free Ultimate offer has ended": "The free Ultimate offer has ended.",
 };
 const buyError = (msg: string) => new Error(BUY_ERRORS[msg] ?? "Purchase failed. Check your connection.");
 
@@ -433,6 +434,22 @@ export async function buyUBusiness(tier: UBusinessTier): Promise<{ coins: number
   writeGuest(g);
   useWallet.getState().set(g.coins);
   return { coins: g.coins, tier };
+}
+
+/** Claim UBusiness Ultimate for free while the launch offer is on (yours to keep). */
+export async function claimUBusinessFree(): Promise<{ tier: UBusinessTier }> {
+  if (!ubusinessFreeOpen()) throw buyError("The free Ultimate offer has ended");
+  const auth = signedInClient();
+  if (auth) {
+    const { error } = await (auth.supabase as unknown as { rpc: (f: string) => PromiseLike<{ data: unknown; error: { message: string } | null }> }).rpc("claim_ubusiness_free");
+    if (error) throw buyError(error.message);
+    return { tier: "ultimate" };
+  }
+  const g = readGuest();
+  if (g.purchases.includes("unlock:ubusiness-ultimate")) throw buyError("already owned");
+  g.purchases.push("unlock:ubusiness-ultimate");
+  writeGuest(g);
+  return { tier: "ultimate" };
 }
 
 export async function saveLoadout(l: Loadout & { banner: string }) {

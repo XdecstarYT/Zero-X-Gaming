@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import type { UBusinessTier } from "@/lib/economy";
-import { buyUBusiness, loadCoins, ubusinessTier } from "@/lib/season-client";
+import { buyUBusiness, claimUBusinessFree, loadCoins, ubusinessTier } from "@/lib/season-client";
 import { useAuth } from "@/store/auth";
 import { useWallet } from "@/store/wallet";
 
@@ -14,6 +14,8 @@ interface UBState {
   error: string | null;
   refresh: () => Promise<void>;
   buy: (tier: UBusinessTier) => Promise<boolean>;
+  /** The launch offer: Ultimate free until the end of 31 October. */
+  claim: () => Promise<boolean>;
 }
 
 /** Which UBusiness edition this player has: Lite (5 coins), Ultimate (30, or free with the battle pass). */
@@ -43,6 +45,21 @@ export const useUBusinessStore = create<UBState>()((set, get) => ({
       // The game reads the edition from here when it starts.
       try {
         sessionStorage.setItem("zx-ubusiness-tier", tier);
+      } catch {}
+      return true;
+    } catch (e) {
+      set({ busy: null, error: (e as Error).message });
+      return false;
+    }
+  },
+  claim: async () => {
+    if (get().busy) return false;
+    set({ busy: "ultimate", error: null });
+    try {
+      await claimUBusinessFree();
+      set({ tier: "ultimate", busy: null });
+      try {
+        sessionStorage.setItem("zx-ubusiness-tier", "ultimate");
       } catch {}
       return true;
     } catch (e) {

@@ -23,6 +23,10 @@ export type UBusinessTier = keyof typeof UBUSINESS_PRICES;
 /** What Ultimate costs you now. */
 export const ubusinessPrice = (tier: UBusinessTier, owned: UBusinessTier | null) => (tier === "ultimate" && owned === "lite" ? UBUSINESS_PRICES.ultimate - UBUSINESS_PRICES.lite : UBUSINESS_PRICES[tier]);
 
+/** Launch offer: UBusiness Ultimate is free to claim (and keep) until the end of 31 October 2026, anywhere on Earth. */
+export const UBUSINESS_FREE_UNTIL = Date.parse("2026-11-01T12:00:00Z");
+export const ubusinessFreeOpen = (now = Date.now()) => now < UBUSINESS_FREE_UNTIL;
+
 /** Is the Nth ranked match of the season (1-based) a Cash Cup? */
 export function isCashCup(matchNumber: number) {
   return matchNumber > 0 && matchNumber % CASH_CUP_EVERY === 0;

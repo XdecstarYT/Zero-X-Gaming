@@ -143,3 +143,86 @@ test("UBusiness: goals, the day's event, mess and the cleaner", async ({ page })
   await stage.getByTestId("ub-auto-bread").getByRole("button", { name: "+" }).click();
   await expect(stage.getByTestId("ub-auto-bread")).toContainText("auto 1 box");
 });
+
+test("UBusiness: Ultimate is free to claim until 31 October, and keeps", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-10-20T10:00:00Z"));
+  await guestWith(page, 0);
+  await page.goto("/games/ubusiness");
+  const free = page.getByTestId("ubusiness-free");
+  await expect(free).toContainText("free until 31 October");
+  await page.getByTestId("ubusiness-claim").click();
+  await expect(page.getByTestId("ubusiness-pass")).toHaveAttribute("data-tier", "ultimate");
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("zx-season-s1")!))).toMatchObject({ coins: 0, purchases: ["unlock:ubusiness-ultimate"] });
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+});
+
+test("UBusiness: the free offer is gone in November", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-02T10:00:00Z"));
+  await guestWith(page, 0);
+  await page.goto("/games/ubusiness");
+  await expect(page.getByTestId("ubusiness-buy-lite")).toBeVisible();
+  await expect(page.getByTestId("ubusiness-free")).toHaveCount(0);
+});
+
+test("UBusiness expansion: specials, upgrades, a loan, a freezer, and catching a shoplifter", async ({ page }) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await guestWith(page, 0, true);
+  await page.goto("/games/ubusiness");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
+  const stage = page.getByTestId("game-stage");
+  await stage.getByTestId("ub-new").click();
+  await expect(stage.getByTestId("ub-cash")).toHaveText("$3,000.00", { timeout: 60_000 });
+  type X = { state: () => Record<string, unknown>; xp: (n: number) => void; give: (c: number) => void; place: (x: number, z: number) => void; thief: () => void };
+  const ub = () => page.evaluate(() => (window as unknown as { __ubiz: X }).__ubiz.state());
+
+  // A special: 20% off.
+  await stage.getByTestId("ub-tool-prices").click();
+  await stage.getByTestId("ub-special-pasta").click();
+  await expect(stage.getByTestId("ub-toast")).toContainText("on special");
+  expect((await ub()).specials).toEqual(["pasta"]);
+  await stage.getByTestId("ub-close").click();
+
+  // Upgrades and the bank.
+  await stage.getByTestId("ub-tool-upgrades").click();
+  await stage.getByTestId("ub-upgrade-doors").click();
+  await expect(stage.getByTestId("ub-upgrade-doors")).toContainText("Fitted");
+  await stage.getByTestId("ub-close").click();
+  await stage.getByTestId("ub-tool-bank").click();
+  await stage.getByTestId("ub-loan-small").click();
+  await expect(stage.getByTestId("ub-cash")).toHaveText("$7,600.00");
+  await expect(stage.getByTestId("ub-repay")).toBeVisible();
+  await stage.getByTestId("ub-close").click();
+
+  // Frozen food: the licence, then a freezer.
+  await page.evaluate(() => {
+    const u = (window as unknown as { __ubiz: X }).__ubiz;
+    u.xp(5_000);
+    u.give(1_000_000);
+  });
+  await stage.getByTestId("ub-tool-licences").click();
+  await stage.getByTestId("ub-licence-frozen").click();
+  await expect(stage.getByTestId("ub-licence-frozen")).toContainText("Licensed");
+  await stage.getByTestId("ub-close").click();
+  await stage.getByTestId("ub-tool-build").click();
+  await stage.getByTestId("ub-build-freezer").click();
+  await page.evaluate(() => (window as unknown as { __ubiz: X }).__ubiz.place(9.5, 6.3));
+  await expect(stage.getByTestId("ub-panel-fixture")).toContainText("Freezer");
+  await stage.getByTestId("ub-close").click();
+
+  // A shoplifter: the alert, and you stop them.
+  await stage.getByTestId("ub-open").click();
+  await page.evaluate(() => (window as unknown as { __ubiz: X }).__ubiz.thief());
+  await expect(stage.getByTestId("ub-thief-alert")).toBeVisible();
+  await stage.getByTestId("ub-thief-alert").click();
+  await expect(stage.getByTestId("ub-toast")).toContainText("Caught them");
+  expect(((await ub()).lifetime as { caught: number }).caught).toBe(1);
+
+  // Trophies: "Not on my watch" is in.
+  await stage.getByTestId("ub-tool-trophies").click();
+  await expect(stage.getByTestId("ub-panel-trophies")).toContainText("Not on my watch");
+  expect((await ub()).milestones).toContain("catch");
+  expect(errors).toEqual([]);
+});

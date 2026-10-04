@@ -482,3 +482,12 @@ Deviations from, or interpretations of, the master prompt. Newest last.
      empty, so it's gone, and cards hide ratings and play counts until there are some. The spotlight respects
      reduced motion and pauses while you're on it; the navbar drops links the logo and avatar already cover
      before it would ever scroll sideways.
+139. **The free Ultimate is an unlock, not a date check.** Making `ubusiness_tier()` return Ultimate for everyone
+     until November would take it away again on the 1st. Claiming writes the same `ubusiness-ultimate` row a
+     purchase does, so the offer has an end date but the copies don't. The cut-off is the end of 31 October
+     anywhere on Earth, so nobody loses the last day to their time zone.
+140. **Every new system in the store is a rule with a number on it.** Spoilage, specials, upgrades, theft, loans
+     and the rival are plain functions in `logic.ts` that the tests drive directly; the game only calls them and
+     draws the result. Waste and theft go through the evening books, a loan comes off the business's value so
+     borrowing can't inflate the score, and old saves get the new fields filled in on load.
+

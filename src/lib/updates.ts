@@ -7,6 +7,7 @@ export interface Update {
 }
 
 export const UPDATES: Update[] = [
+  { tag: "UBusiness", title: "The big expansion + free Ultimate", body: "Bakery and frozen departments, specials, store upgrades, loans, trophies, reviews, shoplifters and a rival store. Ultimate is free to claim until 31 October.", href: "/games/ubusiness" },
   { tag: "Site", title: "A fresh new look", body: "A spotlight on the front page, Browse by vibe collections, and search everything with Ctrl+K.", href: "/" },
   { tag: "New game", title: "UBusiness", body: "Run your own store in photoreal 3D: stock the shelves, set the prices, work the till. Lite 5 coins, Ultimate 30, or free with the battle pass.", href: "/games/ubusiness" },
   { tag: "Hometown", title: "100 new things to build", body: "Furniture, Decor and Outdoor: king beds, arcade cabinets, pool tables, aquariums, fireplaces, gazebos, trampolines, fountains, trees and fences.", href: "/games/hometown" },

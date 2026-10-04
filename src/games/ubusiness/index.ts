@@ -70,6 +70,30 @@ import {
   messPenalty,
   setAuto,
   unitCost,
+  buyUpgrade,
+  cardShare,
+  catchThief,
+  checkMilestones,
+  guardCatch,
+  LOANS,
+  MILESTONES,
+  moodStart,
+  onSpecial,
+  patienceOf,
+  rating,
+  repayLoan,
+  rivalPull,
+  shelfPrice,
+  specialSlots,
+  takeLoan,
+  theftChance,
+  theftLoss,
+  toggleSpecial,
+  UPGRADE_IDS,
+  UPGRADES,
+  writeReview,
+  type LoanKind,
+  type Reason,
   type Campaign,
   type DayReport,
   type Fixture,
@@ -89,7 +113,7 @@ import { StoreView, type Person } from "./render";
  * the books close and a new day starts.
  */
 
-type Stage = "enter" | "walk" | "browse" | "toQueue" | "queue" | "scan" | "pay" | "leave";
+type Stage = "enter" | "walk" | "browse" | "toQueue" | "queue" | "scan" | "pay" | "sneak" | "leave";
 
 interface Shopper {
   id: number;
@@ -116,6 +140,11 @@ interface Shopper {
   bubble?: string;
   /** Cash handed over at the till. */
   paid?: number;
+  /** Means to walk out without paying; a guard will stop them if `guarded`. */
+  thief?: boolean;
+  guarded?: boolean;
+  /** What made (or spoiled) their visit, for the review. */
+  reason?: Reason;
 }
 
 interface Prefs {
@@ -165,6 +194,7 @@ class UBusinessGame implements GameModule {
   private panelRender: (() => void) | null = null;
   private toastEl: HTMLDivElement | null = null;
   private toastTimer = 0;
+  private trophyTimer = 0;
   private changeGiven: number[] = [];
 
   // Input.
@@ -341,7 +371,8 @@ class UBusinessGame implements GameModule {
             `${ed.categories.length} departments: ${ed.categories.map((c) => CATEGORIES[c].name).join(", ")}`,
             `Grow to a ${SIZES[ed.sizes - 1].name}`,
             `${ed.staff === 1 ? "One member" : `Up to ${ed.staff}`} of staff`,
-            ed.marketing ? "Marketing campaigns, express delivery, self-checkouts" : "Upgrade to Ultimate for every department, a megastore and a full team",
+            ed.marketing ? "Marketing campaigns, express delivery, self-checkouts, 3 specials at once" : "Upgrade to Ultimate for the bakery and every department, a megastore and a full team",
+            "New: frozen and bakery, specials, store upgrades, loans, trophies, reviews, shoplifters and a rival across the street",
             ed.photoMode ? "Photo mode and 3× speed" : "",
           ]
             .filter(Boolean)
@@ -355,6 +386,9 @@ class UBusinessGame implements GameModule {
         ["Grow", "Profit earns XP. New levels unlock departments (📜 Licences) and fixtures; bigger premises bring more shoppers."],
         ["Team", "Cashiers run a checkout for you; stockers keep the shelves full from the stockroom. Wages come out each evening."],
         ["Books", "At closing time rent, wages and power are paid. Bank your score from 📊 Books whenever you like."],
+        ["Specials", "Put up to three lines on special (☆ on 🏷 Prices): 20% off, they fly off the shelves and pull shoppers in."],
+        ["Shoplifters", "A 🚨 alert means someone's heading for the door without paying: tap it to stop them, or hire a guard."],
+        ["Rival", `From day 6 a discount store opens across the street. Keep prices fair and shoppers happy, and use marketing to win them back.`],
       ]),
     );
     this.menu.replaceChildren(box);
@@ -437,10 +471,11 @@ class UBusinessGame implements GameModule {
       basket: [],
       stage: "enter",
       timer: 0,
-      patience: 25 + this.rng.next() * 20,
-      mood: 0.75,
-      card: this.rng.next() < 0.62,
+      patience: patienceOf(this.s, this.rng),
+      mood: moodStart(this.s),
+      card: this.rng.next() < cardShare(this.s),
       scanned: 0,
+      thief: this.rng.next() < theftChance(this.s),
     };
     this.shoppers.push(c);
     this.sound("door");
@@ -480,6 +515,7 @@ class UBusinessGame implements GameModule {
       if (!where.length) {
         c.mood -= this.s.fixtures.some((f) => f.slots.some((sl) => sl.product === want)) ? 0.16 : 0.08;
         c.bubble = `No ${PRODUCTS[want].name.split(" ")[0].toLowerCase()}?`;
+        c.reason ??= "soldout";
         continue;
       }
       const spot = where[Math.floor(this.rng.next() * where.length)];
@@ -490,6 +526,7 @@ class UBusinessGame implements GameModule {
     }
     // Done shopping: to a till, or out if they've nothing.
     if (!c.basket.length) return this.leave(c);
+    if (c.thief) return this.sneak(c);
     const selfs = this.s.fixtures.filter((f) => f.kind === "selfCheckout");
     const staffed = this.s.fixtures.filter((f) => f.kind === "checkout" && this.s.staff.some((st) => st.post === f.id));
     const mine = this.playerTill();
@@ -503,6 +540,37 @@ class UBusinessGame implements GameModule {
     c.till = till.id;
     c.stage = "toQueue";
     c.path = this.route(c, this.queueSpot(till, this.queueAt(till.id).length - 1));
+  }
+
+  /** A shoplifter heads for the door with the goods. */
+  private sneak(c: Shopper) {
+    c.stage = "sneak";
+    c.bubble = "👀";
+    c.guarded = this.rng.next() < guardCatch(this.s);
+    const door = doorOf(this.s);
+    c.path = [...this.route(c, { x: door.x, z: 1 }), { x: door.x, z: -1.2 }];
+    if (!c.guarded) {
+      this.toast("🚨 Shoplifter! Stop them before they reach the door.");
+      this.sound("alarm");
+    }
+  }
+
+  /** Stopped: the goods go back and they're shown out. */
+  private stopThief(c: Shopper, by: "you" | "guard") {
+    catchThief(this.s, c.basket);
+    c.basket = [];
+    c.thief = false;
+    c.bubble = "😳 Sorry!";
+    this.toast(by === "guard" ? "🛡 Your guard stopped a shoplifter at the door." : "🚨 Caught them! The goods are back in the stockroom. +5 XP");
+    this.sound("goal");
+    c.stage = "leave";
+    const door = doorOf(this.s);
+    c.path = [{ x: door.x, z: -1 }, { x: door.x + (this.rng.next() < 0.5 ? -8 : 8), z: -3.5 }];
+  }
+
+  private catchSneaking() {
+    const c = this.shoppers.find((o) => o.stage === "sneak");
+    if (c) this.stopThief(c, "you");
   }
 
   private leave(c: Shopper, unhappy = false) {
@@ -520,9 +588,12 @@ class UBusinessGame implements GameModule {
 
   /** On the way out: a mess counts against them, they show how they feel, and some drop litter. */
   private departing(c: Shopper) {
-    c.mood -= messPenalty(this.s);
+    const messy = messPenalty(this.s);
+    c.mood -= messy;
     c.bubble = c.mood >= 0.7 ? "😀 Great shop!" : c.mood < 0.45 ? "😠" : "🙂";
     if (this.rng.next() < 0.07) makeMess(this.s, c.x, c.z, this.rng);
+    const reason: Reason = c.reason ?? (messy >= 0.12 ? "mess" : c.mood >= 0.7 ? "great" : "ok");
+    writeReview(this.s, Math.max(0, Math.min(1, c.mood)), reason, this.rng);
   }
 
   /** The sale goes through: money in, mood up, off they go. */
@@ -575,12 +646,13 @@ class UBusinessGame implements GameModule {
             } else if (!willBuy(this.s, id, this.rng)) {
               c.mood -= 0.12;
               c.bubble = "Too pricey";
+              c.reason ??= "pricey";
             } else if (pick(this.s, f.id, c.goal.slot ?? 0)) {
               if (this.rng.next() < 0.02) {
                 makeMess(this.s, c.x, c.z, this.rng);
                 c.bubble = "Oops!";
               }
-              c.basket.push({ product: id, price: priceOf(this.s, id) });
+              c.basket.push({ product: id, price: shelfPrice(this.s, id) });
               if (this.rng.next() < 0.18 && c.basket.length < 8) c.list.push(id);
             }
             c.goal = undefined;
@@ -618,6 +690,7 @@ class UBusinessGame implements GameModule {
           c.patience -= dt / 60;
           if (c.patience <= 0) {
             c.bubble = "I've waited long enough";
+            c.reason = "queue";
             this.leave(c, true);
             break;
           }
@@ -635,6 +708,23 @@ class UBusinessGame implements GameModule {
           c.pose = "stand";
           if (c.timer <= 0) this.complete(c);
           break;
+        case "sneak": {
+          const door = doorOf(this.s);
+          // A guard steps in near the door.
+          if (c.guarded && Math.hypot(c.x - door.x, c.z - 1) < 2.2) {
+            this.stopThief(c, "guard");
+            break;
+          }
+          if (this.stepWalk(c, dt)) {
+            const lost = c.basket.reduce((a, b) => a + b.price, 0);
+            theftLoss(this.s, c.basket);
+            c.basket = [];
+            this.toast(`💨 A shoplifter got away with ${money(lost)} of stock.`);
+            c.stage = "leave";
+            c.path = [{ x: door.x + (this.rng.next() < 0.5 ? -9 : 9), z: -3.5 }];
+          }
+          break;
+        }
         case "leave":
           if (this.stepWalk(c, dt)) c.stage = "leave";
           break;
@@ -689,6 +779,10 @@ class UBusinessGame implements GameModule {
       this.toast(`🎯 Goal done: ${goalText(g)} · +${money(g.reward)}`);
       this.sound("goal");
     }
+    for (const m of checkMilestones(this.s)) {
+      this.trophy(`🏆 Trophy: ${m.name} · +${money(m.reward)}`);
+      this.sound("goal");
+    }
     this.emitter.progress(score(this.s), performance.now(), 1000);
   }
 
@@ -710,6 +804,11 @@ class UBusinessGame implements GameModule {
       if (st.role === "cashier" && post) {
         const a = accessPoint(post, true);
         people.push({ id: `s${st.id}`, x: a.x, z: a.z, heading: Math.atan2(post.x - a.x, post.z - a.z), speed: 0, pose: "stand", staff: true, seed: st.id });
+      } else if (st.role === "guard") {
+        const door = doorOf(this.s);
+        const thief = this.shoppers.find((c) => c.stage === "sneak" && c.guarded);
+        const at = thief ? { x: thief.x + 0.6, z: thief.z } : { x: door.x + 1.9, z: 1.1 };
+        people.push({ id: `s${st.id}`, x: at.x, z: at.z, heading: Math.PI, speed: thief ? 1.2 : 0, pose: thief ? "walk" : "stand", staff: true, seed: st.id, bubble: thief ? "Stop right there!" : undefined });
       } else if (st.role === "cleaner") {
         const m = this.s.mess?.[i % Math.max(1, this.s.mess.length)];
         const t = performance.now() / 1000 + i * 5;
@@ -756,7 +855,7 @@ class UBusinessGame implements GameModule {
   private closeDay() {
     if (this.report) return;
     this.shoppers = [];
-    this.report = endDay(this.s);
+    this.report = endDay(this.s, new Date());
     this.rng = createRng(this.s.seed + this.s.day * 101);
     this.save();
     this.showReport(this.report);
@@ -780,6 +879,10 @@ class UBusinessGame implements GameModule {
           ...(r.goals ? [row("Goal rewards", `+${money(r.goals)}`, "text-emerald-300")] : []),
           ...(r.cleaned ? [row("Messes cleaned", String(r.cleaned))] : []),
           ...(r.tillError ? [row("Till errors", `${r.tillError > 0 ? "−" : "+"}${money(Math.abs(r.tillError))}`, "text-amber-300")] : []),
+          ...(r.waste ? [row("Gone off overnight", `−${money(r.waste)}`, "text-amber-300")] : []),
+          ...(r.stolen ? [row("Shoplifted", `−${money(r.stolen)}`, "text-red-300")] : []),
+          ...(r.caught ? [row("Shoplifters caught", String(r.caught), "text-emerald-300")] : []),
+          ...(r.loan ? [row("Loan repayment", `−${money(r.loan)}`)] : []),
           row("Profit", money(r.profit), r.profit >= 0 ? "text-emerald-300 text-base" : "text-red-300 text-base"),
           row("XP", `+${r.xp}`),
           row("Reputation", `${"★".repeat(Math.round(r.reputation))}${"☆".repeat(5 - Math.round(r.reputation))}`),
@@ -788,6 +891,7 @@ class UBusinessGame implements GameModule {
       const best = Object.entries(r.sold).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0];
       if (best) box.append(el("p", "mt-2 text-xs text-white/60", `Best seller: ${PRODUCTS[best[0] as ProductId].name} (${best[1]})`));
       if (r.autoOrders) box.append(el("p", "text-xs text-white/60", `Standing orders for tomorrow: ${money(r.autoOrders)}, already in the stockroom.`));
+      if (r.rivalOpened) box.append(el("p", "rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-100", `🏪 Competition! ${this.s.rival?.name} has opened across the street. Keep your prices fair, your shelves full and your shoppers happy, or they'll take your customers. Marketing wins them back.`));
       const tomorrow = this.s.event ? EVENTS[this.s.event] : null;
       if (tomorrow) box.append(el("p", "rounded-lg bg-amber-500/15 px-3 py-2 text-sm text-amber-100", `Tomorrow: ${tomorrow.icon} ${tomorrow.name}. ${tomorrow.text}`));
       const next = primaryButton(`Open day ${this.s.day}`, TEAL, () => {
@@ -843,6 +947,8 @@ class UBusinessGame implements GameModule {
     // The till alert.
     r.till = button("", "pointer-events-auto absolute left-1/2 top-16 hidden -translate-x-1/2 animate-pulse rounded-full bg-amber-500 px-4 py-2 text-sm font-black text-white shadow-lg", () => this.tillPanel());
     r.till.setAttribute("data-testid", "ub-till-alert");
+    r.thief = button("🚨 Shoplifter! Stop them", "pointer-events-auto absolute left-1/2 top-28 hidden -translate-x-1/2 animate-pulse rounded-full bg-red-600 px-4 py-2 text-sm font-black text-white shadow-lg", () => this.catchSneaking());
+    r.thief.setAttribute("data-testid", "ub-thief-alert");
     const tools: [string, string, () => void, boolean?][] = [
       ["📦 Stock", "stock", () => this.stockPanel()],
       ["🏷 Prices", "prices", () => this.pricesPanel()],
@@ -851,6 +957,9 @@ class UBusinessGame implements GameModule {
       ["🏗 Build", "build", () => this.buildPanel()],
       ["📜 Licences", "licences", () => this.licencePanel()],
       ["📣 Marketing", "marketing", () => this.marketingPanel(), !EDITIONS[this.s.tier].marketing],
+      ["🔧 Upgrades", "upgrades", () => this.upgradesPanel()],
+      ["🏦 Bank", "bank", () => this.bankPanel()],
+      ["🏆 Trophies", "trophies", () => this.trophiesPanel()],
       ["🏢 Store", "store", () => this.storePanel()],
       ["📊 Books", "books", () => this.booksPanel()],
       ["📷 Photo", "photo", () => this.photoMode(), !EDITIONS[this.s.tier].photoMode],
@@ -868,13 +977,15 @@ class UBusinessGame implements GameModule {
     toast.setAttribute("role", "status");
     toast.setAttribute("data-testid", "ub-toast");
     this.toastEl = toast;
+    r.trophy = el("div", "pointer-events-none absolute left-1/2 top-40 z-30 max-w-[86%] -translate-x-1/2 rounded-full border border-amber-300/60 bg-amber-500/90 px-4 py-1.5 text-center text-sm font-black text-slate-950 opacity-0 shadow-lg transition-opacity");
+    r.trophy.setAttribute("data-testid", "ub-trophy");
     r.goals = el("div", "pointer-events-auto absolute right-2 top-[4.5rem] flex w-52 flex-col gap-1 rounded-xl bg-black/60 p-2 text-[11px] text-white backdrop-blur-sm");
     r.goals.setAttribute("data-testid", "ub-goals");
     r.event = el("div", "pointer-events-none absolute bottom-16 left-2 hidden max-w-[60%] rounded-xl bg-black/60 px-3 py-1.5 text-[11px] font-bold text-amber-200 backdrop-blur-sm");
     r.event.setAttribute("data-testid", "ub-event");
     r.build = el("div", "pointer-events-auto absolute bottom-16 left-1/2 hidden -translate-x-1/2 items-center gap-2 rounded-full bg-black/75 px-4 py-2 text-xs font-bold text-white");
     r.build.setAttribute("data-testid", "ub-build-bar");
-    this.hud = el("div", "pointer-events-none absolute inset-0 z-10", top, r.goals, r.event, r.till, r.build, bar, toast);
+    this.hud = el("div", "pointer-events-none absolute inset-0 z-10", top, r.goals, r.event, r.till, r.thief, r.build, bar, toast, r.trophy);
     this.refs = r;
     this.host.appendChild(this.hud);
   }
@@ -887,7 +998,7 @@ class UBusinessGame implements GameModule {
     r.name.textContent = `${s.name} · ${SIZES[s.size].name}`;
     r.time.textContent = `Day ${s.day} · ${clock(s.minute)} · ${this.open ? "OPEN" : s.minute >= CLOSE ? "CLOSED" : "Not open yet"} · ${this.shoppers.length} in store`;
     r.cash.textContent = money(s.cash);
-    r.rep.textContent = `${"★".repeat(Math.round(s.reputation))}${"☆".repeat(5 - Math.round(s.reputation))}`;
+    r.rep.textContent = `${"★".repeat(Math.round(s.reputation))}${"☆".repeat(5 - Math.round(s.reputation))}${s.rival ? ` · ${s.rival.name} −${Math.round(rivalPull(s) * 100)}%` : ""}`;
     const lv = levelOf(s.xp);
     r.level.textContent = `Level ${lv}`;
     const lo = LEVELS[lv - 1] ?? 0;
@@ -899,6 +1010,7 @@ class UBusinessGame implements GameModule {
     const waiting = mine ? this.queueAt(mine.id).filter((c) => c.stage === "queue").length : 0;
     r.till.classList.toggle("hidden", !waiting || this.panel?.dataset.kind === "till");
     r.till.textContent = `🛒 ${waiting} waiting at your till · tap or Space`;
+    r.thief.classList.toggle("hidden", !this.shoppers.some((c) => c.stage === "sneak" && !c.guarded));
     // Goals and the day's event (rebuilt only when they change).
     const gk = (s.goals ?? []).map((g) => `${g.kind}${g.done}${goalProgress(s, g)}`).join("|");
     if (r.goals.dataset.key !== gk) {
@@ -920,6 +1032,16 @@ class UBusinessGame implements GameModule {
     for (const k of ["goals", "event"]) if (hide) r[k].classList.add("hidden");
     if (!hide) r.goals.classList.remove("hidden");
     for (const k of ["top", "bar"]) r[k].classList.toggle("hidden", !!hide);
+  }
+
+  /** Trophies get their own banner, so they don't hide the message for what earned them. */
+  private trophy(t: string) {
+    const b = this.refs.trophy;
+    if (!b) return;
+    b.textContent = t;
+    b.style.opacity = "1";
+    clearTimeout(this.trophyTimer);
+    this.trophyTimer = window.setTimeout(() => (b.style.opacity = "0"), 4000);
   }
 
   private toast(t: string) {
@@ -976,7 +1098,8 @@ class UBusinessGame implements GameModule {
       const ed = EDITIONS[this.s.tier];
       box.append(el("p", "text-xs text-white/60", `Boxes arrive in the stockroom ${this.open ? "in 30 minutes" : "right away (you're closed)"}.${ed.express ? " Express: 5 minutes, +10%." : ""} You have ${money(this.s.cash)}.`));
       for (const cat of this.s.licences) {
-        box.append(el("p", "mt-1 text-xs font-black uppercase tracking-wider text-amber-300", `${CATEGORIES[cat].icon} ${CATEGORIES[cat].name}`));
+        const perishable = PRODUCT_IDS.some((p) => PRODUCTS[p].cat === cat && PRODUCTS[p].spoil);
+        box.append(el("p", "mt-1 text-xs font-black uppercase tracking-wider text-amber-300", `${CATEGORIES[cat].icon} ${CATEGORIES[cat].name}${perishable ? " · some goes off overnight: order what you'll sell" : ""}`));
         for (const id of PRODUCT_IDS.filter((p) => PRODUCTS[p].cat === cat)) {
           const p = PRODUCTS[id];
           const have = this.s.storage[id] ?? 0;
@@ -1008,6 +1131,7 @@ class UBusinessGame implements GameModule {
   private pricesPanel() {
     this.openPanel("Prices", "prices", (box) => {
       box.append(el("p", "text-xs text-white/60", "Shoppers compare your price with the usual one. At 5★ they'll pay about 20% over; at 1★ barely more than usual."));
+      box.append(el("p", "rounded-lg bg-red-500/10 px-2 py-1 text-xs text-red-100", `★ Specials: 20% off, they sell 1.5× as fast and bring more shoppers in. ${this.s.specials?.length ?? 0} of ${specialSlots(this.s)} in use${specialSlots(this.s) < EDITIONS[this.s.tier].specials ? " (build a promo stand for another)" : ""}.`));
       for (const id of PRODUCT_IDS.filter((p) => this.s.licences.includes(PRODUCTS[p].cat))) {
         const p = PRODUCTS[id];
         const price = priceOf(this.s, id);
@@ -1024,7 +1148,10 @@ class UBusinessGame implements GameModule {
         plus.setAttribute("data-testid", `ub-price-up-${id}`);
         const tag = el("span", "w-16 text-right font-display font-black tabular-nums", money(price));
         tag.setAttribute("data-testid", `ub-price-${id}`);
-        row.append(minus, tag, plus, button("Usual", "rounded border border-white/20 px-1.5 py-0.5 text-xs", () => this.act(setPrice(this.s, id, p.market))));
+        const sp = onSpecial(this.s, id);
+        const star = button(sp ? "★ On special" : "☆ Special", `rounded border px-1.5 py-0.5 text-xs ${sp ? "border-red-400 bg-red-500/25 text-red-100" : "border-white/20"}`, () => this.act(toggleSpecial(this.s, id), sp ? `${p.name} is back to full price` : `${p.name} is on special: 20% off`));
+        star.setAttribute("data-testid", `ub-special-${id}`);
+        row.append(minus, tag, plus, button("Usual", "rounded border border-white/20 px-1.5 py-0.5 text-xs", () => this.act(setPrice(this.s, id, p.market))), star);
         box.append(row);
       }
     });
@@ -1160,6 +1287,7 @@ class UBusinessGame implements GameModule {
   private finishSale(c: Shopper, error: number) {
     if (error !== 0) {
       c.mood -= error < 0 ? 0.3 : 0;
+      if (error < 0) c.reason = "short";
       this.toast(error > 0 ? `Gave ${money(error)} too much change` : `Short-changed them by ${money(-error)}!`);
     } else this.toast("Thank you, come again!");
     this.complete(c, Math.max(0, error));
@@ -1169,7 +1297,7 @@ class UBusinessGame implements GameModule {
   }
 
   /** Little synthesised sounds: the door chime, the till, a mop, a goal. */
-  private sound(kind: "door" | "till" | "mop" | "goal") {
+  private sound(kind: "door" | "till" | "mop" | "goal" | "alarm") {
     if (!this.opts.settings.sound) return;
     try {
       const ac = ((this as unknown as { ac?: AudioContext }).ac ??= new AudioContext());
@@ -1194,6 +1322,7 @@ class UBusinessGame implements GameModule {
         tone(2637, 0.08, 0.35, "triangle");
       }
       if (kind === "mop") tone(220, 0, 0.18, "triangle");
+      if (kind === "alarm") [0, 0.25, 0.5].forEach((at) => (tone(880, at, 0.18, "square", v * 0.6), tone(660, at + 0.12, 0.12, "square", v * 0.6)));
       if (kind === "goal") [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.09, 0.3, "triangle"));
     } catch {
       // No audio.
@@ -1350,6 +1479,8 @@ class UBusinessGame implements GameModule {
         el("p", "text-sm", `Business value ${money(storeValue(s))} · score ${score(s).toLocaleString()}`),
         el("p", "text-xs text-white/60", `Today so far: ${s.today.customers} served, ${money(s.today.revenue)} taken, ${s.today.unhappy} left unhappy.`),
       );
+      if (s.rival) box.append(el("p", "rounded-lg bg-red-500/10 px-2 py-1 text-xs text-red-100", `🏪 ${s.rival.name} is taking about ${Math.round(rivalPull(s) * 100)}% of your shoppers. Fair prices, full shelves, good service and marketing win them back.`));
+      if (s.loan) box.append(el("p", "rounded-lg bg-white/5 px-2 py-1 text-xs", `🏦 Loan: ${money(s.loan.left)} to pay, ${money(s.loan.daily)} a day.`));
       for (const r of [...s.history].reverse().slice(0, 10))
         box.append(el("div", "flex justify-between rounded bg-white/5 px-2 py-1 text-xs", el("span", "", `Day ${r.day}`), el("span", "", `${r.customers} shoppers`), el("span", r.profit >= 0 ? "text-emerald-300" : "text-red-300", money(r.profit))));
       const bank = primaryButton("Bank my score and finish for now", AMBER, () => {
@@ -1358,6 +1489,64 @@ class UBusinessGame implements GameModule {
       });
       bank.setAttribute("data-testid", "ub-bank");
       box.append(bank);
+    });
+  }
+
+  private upgradesPanel() {
+    this.openPanel("Store upgrades", "upgrades", (box) => {
+      const lv = levelOf(this.s.xp);
+      box.append(el("p", "text-xs text-white/60", "One-time improvements to the premises. They stay with the store."));
+      for (const id of UPGRADE_IDS) {
+        const u = UPGRADES[id] as (typeof UPGRADES)[typeof id] & { ultimate?: boolean };
+        const owned = this.s.upgrades?.includes(id);
+        const tierLock = !!u.ultimate && this.s.tier !== "ultimate";
+        const b = button("", `flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm ${owned ? "border-emerald-400/40 bg-emerald-500/10" : tierLock || lv < u.level ? "border-white/10 opacity-60" : "border-white/20 hover:border-amber-400"}`, () => {
+          if (!owned) this.act(buyUpgrade(this.s, id), `${u.name} fitted`);
+        });
+        b.append(el("span", "text-2xl", u.icon), el("span", "min-w-0 flex-1", el("span", "block font-bold", u.name), el("span", "block text-xs text-white/60", u.text)), el("span", "shrink-0 text-xs text-white/70", owned ? "✓ Fitted" : tierLock ? "Ultimate" : lv < u.level ? `Level ${u.level}` : money(u.price)));
+        b.setAttribute("data-testid", `ub-upgrade-${id}`);
+        box.append(b);
+      }
+    });
+  }
+
+  private bankPanel() {
+    this.openPanel("The bank", "bank", (box) => {
+      const s = this.s;
+      if (s.loan) {
+        box.append(el("p", "rounded-lg bg-white/5 px-3 py-2 text-sm", `${LOANS[s.loan.kind].name}: ${money(s.loan.left)} left to pay, ${money(s.loan.daily)} taken each evening.`));
+        const pay = button(`Pay it all off now (${money(s.loan.left)})`, `${BTN} w-full`, () => this.act(repayLoan(s), "Loan paid off. Debt free!"));
+        pay.setAttribute("data-testid", "ub-repay");
+        box.append(pay);
+        return;
+      }
+      box.append(el("p", "text-xs text-white/60", "Borrow to grow faster: a bigger store or a new department pays for itself if the shoppers come. Repayments come out each evening, and what you owe counts against your score."));
+      for (const k of Object.keys(LOANS) as LoanKind[]) {
+        const l = LOANS[k];
+        const lock = l.ultimate && s.tier !== "ultimate";
+        const b = button("", `flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${lock ? "border-white/10 opacity-60" : "border-white/20 hover:border-amber-400"}`, () => this.act(takeLoan(s, k), `${money(l.amount)} is in the bank`));
+        b.append(el("span", "font-bold", `${l.name}: ${money(l.amount)}`), el("span", "text-xs text-white/70", lock ? "Ultimate" : `${Math.round(l.rate * 100)}% · ${l.days} days · ${money(Math.ceil((l.amount * (1 + l.rate)) / l.days))}/day`));
+        b.setAttribute("data-testid", `ub-loan-${k}`);
+        box.append(b);
+      }
+    });
+  }
+
+  private trophiesPanel() {
+    this.openPanel("Trophies and reviews", "trophies", (box) => {
+      const s = this.s;
+      const got = s.milestones ?? [];
+      box.append(el("p", "text-xs font-black uppercase tracking-wider text-amber-300", `🏆 Trophies · ${got.length} of ${MILESTONES.length}`));
+      const grid = el("div", "grid grid-cols-1 gap-1 sm:grid-cols-2");
+      for (const m of MILESTONES) {
+        const done = got.includes(m.id);
+        grid.append(el("div", `flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs ${done ? "bg-amber-400/15" : "bg-white/5 opacity-70"}`, el("span", "text-lg", done ? "🏆" : "🔒"), el("span", "min-w-0 flex-1", el("span", "block font-bold", m.name), el("span", "block text-white/60", m.text)), el("span", "shrink-0 text-white/70", done ? "✓" : money(m.reward))));
+      }
+      box.append(grid);
+      const avg = rating(s);
+      box.append(el("p", "mt-2 text-xs font-black uppercase tracking-wider text-amber-300", `⭐ Reviews${avg ? ` · ${avg.toFixed(1)} average` : ""}`));
+      if (!s.reviews?.length) box.append(el("p", "text-sm text-white/60", "No reviews yet. Shoppers leave them on the way out."));
+      for (const r of s.reviews ?? []) box.append(el("div", "rounded-lg bg-white/5 px-2 py-1.5 text-xs", el("div", "flex justify-between", el("span", "font-bold", r.who), el("span", "text-amber-300", `${"★".repeat(r.stars)}${"☆".repeat(5 - r.stars)} · day ${r.day}`)), el("p", "text-white/75", `"${r.text}"`)));
     });
   }
 
@@ -1501,7 +1690,29 @@ class UBusinessGame implements GameModule {
         event: this.s?.event ?? null,
         goals: this.s?.goals,
         mess: this.s?.mess,
+        specials: this.s?.specials,
+        upgrades: this.s?.upgrades,
+        loan: this.s?.loan ?? null,
+        rival: this.s?.rival ?? null,
+        reviews: this.s?.reviews?.length ?? 0,
+        milestones: this.s?.milestones,
+        thieves: this.shoppers.filter((c) => c.stage === "sneak").length,
+        lifetime: this.s?.lifetime,
       }),
+      /** Send a shoplifter in with something in their basket (tests). */
+      thief: () => {
+        this.spawn();
+        const c = this.shoppers[this.shoppers.length - 1];
+        if (!c) return;
+        const id = (Object.keys(this.s.storage) as ProductId[]).find((k) => (this.s.storage[k] ?? 0) > 0) ?? "bread";
+        c.list = [];
+        c.basket = [{ product: id, price: shelfPrice(this.s, id) }];
+        c.thief = true;
+        c.x = doorOf(this.s).x;
+        c.z = 6;
+        this.sneak(c);
+        c.guarded = false;
+      },
       /** Jump the clock (minutes after midnight). */
       setMinute: (m: number) => this.s && (this.s.minute = m),
       /** Bring a shopper in right away. */
