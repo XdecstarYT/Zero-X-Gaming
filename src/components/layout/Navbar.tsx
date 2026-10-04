@@ -8,6 +8,7 @@ import { AccountControl } from "./AccountControl";
 import { CoinChip } from "@/components/shop/Coin";
 import { OwnerLink } from "@/components/owner/OwnerLink";
 import { CommandPalette } from "./CommandPalette";
+import { ZLinkMemberMark } from "@/components/zlink/ZLinkMemberMark";
 
 export const NAV_LINKS = [
   { href: "/", label: "Home" },
@@ -81,6 +82,7 @@ export function Navbar() {
           <div className="md:max-lg:hidden">
             <CoinChip />
           </div>
+          <ZLinkMemberMark />
           <OwnerLink />
           <Link
             href="/settings"

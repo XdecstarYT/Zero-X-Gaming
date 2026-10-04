@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ZLinkHint } from "@/components/zlink/ZLinkHint";
 import { Button } from "@/components/ui/Button";
 import { CoinAmount } from "@/components/shop/Coin";
 import { cn } from "@/lib/cn";
@@ -98,6 +99,7 @@ export function UBusinessCard({ compact = false }: { compact?: boolean }) {
         </Link>{" "}
         unlocks Ultimate for free.
       </p>
+      {!compact && <ZLinkHint what="UBusiness Ultimate" />}
       {error && (
         <p role="alert" className="mt-2 text-sm text-danger">
           {error}

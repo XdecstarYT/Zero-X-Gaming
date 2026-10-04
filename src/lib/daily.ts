@@ -1,4 +1,4 @@
-import { addGuestCoins, signedIn } from "./season-client";
+import { addGuestCoins, guestZlinkActive, signedIn } from "./season-client";
 import { deviceSaveSuffix } from "./device-accounts";
 
 /**
@@ -50,9 +50,12 @@ export function guestState(last: GuestDaily | null, now = Date.now()): DailyStat
   return { day, claimed: false, next: coinsForDay(day) };
 }
 
+/** ZLink+ members get double. */
+const doubled = (s: DailyState, k: number): DailyState => ({ ...s, next: s.next * k });
+
 export async function loadDaily(now = Date.now()): Promise<DailyState> {
   const auth = signedIn();
-  if (!auth) return guestState(readLocal(), now);
+  if (!auth) return doubled(guestState(readLocal(), now), guestZlinkActive() ? 2 : 1);
   const { data, error } = await (auth.supabase.rpc as unknown as (f: string, a: object) => PromiseLike<{ data: { day: number; claimed: boolean; next: number } | null; error: unknown }>).call(auth.supabase, "claim_daily_reward", { p_peek: true });
   if (error || !data) throw new Error("Couldn't check your daily reward.");
   return { day: data.day, claimed: data.claimed, next: data.next };
@@ -68,8 +71,9 @@ export async function claimDaily(now = Date.now()): Promise<DailyClaim> {
     } catch {
       // storage blocked: the coins still land for this visit
     }
-    const won = coinsForDay(s.day);
-    return { day: s.day, claimed: true, next: coinsForDay(s.day + 1), coinsWon: won, coins: addGuestCoins(won) };
+    const k = guestZlinkActive() ? 2 : 1;
+    const won = coinsForDay(s.day) * k;
+    return { day: s.day, claimed: true, next: coinsForDay(s.day + 1) * k, coinsWon: won, coins: addGuestCoins(won) };
   }
   const { data, error } = await (auth.supabase.rpc as unknown as (f: string, a: object) => PromiseLike<{ data: { day: number; claimed: boolean; next: number; coins_won: number; coins: number } | null; error: unknown }>).call(auth.supabase, "claim_daily_reward", { p_peek: false });
   if (error || !data) throw new Error("Couldn't claim your daily reward. Try again.");

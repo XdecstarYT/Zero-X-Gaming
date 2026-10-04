@@ -470,9 +470,9 @@ html[data-theme="x1"] {
 .zx-ring:hover::before,
 .zx-ring:focus-within::before {
   opacity: 1;
-  animation: zx-spin 4s linear infinite;
+  animation: zx-ring-spin 4s linear infinite;
 }
-@keyframes zx-spin {
+@keyframes zx-ring-spin {
   to {
     --zx-spin: 360deg;
   }

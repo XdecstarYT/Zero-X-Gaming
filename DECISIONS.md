@@ -502,4 +502,9 @@ Deviations from, or interpretations of, the master prompt. Newest last.
 143. **A teaser that can't leak.** Everything that ships for ZLink+ (page copy, code, comments, docs) only says
      it's coming. The secret rows of its file are bars with nothing behind them in the HTML, not hidden text, so
      view-source has nothing to find, and tests check the visible copy never names what it is.
+144. **ZLink+ is time, not a flag.** A membership is a single `until` timestamp per player, so joining again is
+     `greatest(now, until) + 30 days`, lapsing needs no clean-up job, and every check is "until > now". It never
+     renews itself (coins aren't a card on file). What it unlocks is checked where the thing was already checked
+     (`has_sports_plus()`, `ubusiness_tier()`, the daily reward) rather than by copying unlocks in and out.
+     Neon Siege is left out by design: its battle pass and shop are their own economy.
 

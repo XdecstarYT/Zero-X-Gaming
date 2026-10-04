@@ -4,7 +4,7 @@ import { OUTFITS, WRAPS } from "@/games/neon-siege/cosmetics";
 import { readLoadout, writeLoadout, type Loadout } from "@/games/neon-siege/loadout";
 import { useAuth } from "@/store/auth";
 import { useWallet } from "@/store/wallet";
-import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE, ubusinessFreeOpen, ubusinessPrice, type UBusinessTier } from "./economy";
+import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE, ubusinessFreeOpen, ubusinessPrice, ZLINK_PRICE, zlinkActive, zlinkExtend, type UBusinessTier } from "./economy";
 import { deviceSaveSuffix } from "./device-accounts";
 import { getSupabaseBrowser } from "./supabase/client";
 import {
@@ -79,6 +79,8 @@ interface GuestSave {
   /** "kind:item" for shop purchases. */
   purchases: string[];
   challenges: Record<string, { progress: number; completed: boolean }>;
+  /** ZLink+ runs to this time (ms), on this device. */
+  zlinkUntil?: number;
 }
 
 function readGuest(): GuestSave {
@@ -376,7 +378,13 @@ export async function buyShopItem(kind: CosmeticKind, item: string): Promise<{ c
 /** Has this player unlocked Sports+ (50 coins, once)? */
 export async function hasSportsPass(): Promise<boolean> {
   const auth = signedInClient();
-  if (!auth) return readGuest().purchases.includes(`unlock:${SPORTS_PASS_ID}`);
+  if (!auth) {
+    const g = readGuest();
+    return g.purchases.includes(`unlock:${SPORTS_PASS_ID}`) || zlinkActive(g.zlinkUntil);
+  }
+  // Owning the pass or being a ZLink+ member: the server answers both.
+  const sp = await (auth.supabase as unknown as { rpc: (f: string) => PromiseLike<{ data: unknown; error: unknown }> }).rpc("has_sports_plus");
+  if (!sp.error) return sp.data === true;
   const { data } = await auth.supabase.from("player_unlocks").select("unlock_id").eq("user_id", auth.userId).eq("unlock_id", SPORTS_PASS_ID).maybeSingle();
   return !!data;
 }
@@ -406,7 +414,7 @@ export async function ubusinessTier(): Promise<UBusinessTier | null> {
   const auth = signedInClient();
   if (!auth) {
     const g = readGuest();
-    if (g.hasPass || g.purchases.includes("unlock:ubusiness-ultimate")) return "ultimate";
+    if (g.hasPass || g.purchases.includes("unlock:ubusiness-ultimate") || zlinkActive(g.zlinkUntil)) return "ultimate";
     return g.purchases.includes("unlock:ubusiness-lite") ? "lite" : null;
   }
   const { data, error } = await (auth.supabase as unknown as { rpc: (f: string) => PromiseLike<{ data: unknown; error: { message: string } | null }> }).rpc("ubusiness_tier");
@@ -451,6 +459,36 @@ export async function claimUBusinessFree(): Promise<{ tier: UBusinessTier }> {
   writeGuest(g);
   return { tier: "ultimate" };
 }
+
+/** When your ZLink+ membership runs to (ms), or null. */
+export async function zlinkUntil(): Promise<number | null> {
+  const auth = signedInClient();
+  if (!auth) return readGuest().zlinkUntil ?? null;
+  const { data, error } = await (auth.supabase as unknown as { rpc: (f: string) => PromiseLike<{ data: unknown; error: { message: string } | null }> }).rpc("zlink_until");
+  if (error) throw new Error(error.message);
+  return typeof data === "string" ? Date.parse(data) : null;
+}
+
+/** Join ZLink+ (or add 30 more days) for 40 coins. */
+export async function joinZlink(): Promise<{ coins: number; until: number }> {
+  const auth = signedInClient();
+  if (auth) {
+    const { data, error } = await (auth.supabase as unknown as { rpc: (f: string) => PromiseLike<{ data: unknown; error: { message: string } | null }> }).rpc("join_zlink");
+    if (error) throw buyError(error.message);
+    const r = data as { coins: number; until: string };
+    useWallet.getState().set(r.coins);
+    return { coins: r.coins, until: Date.parse(r.until) };
+  }
+  const g = readGuest();
+  if (g.coins < ZLINK_PRICE) throw buyError("not enough coins");
+  g.coins -= ZLINK_PRICE;
+  g.zlinkUntil = zlinkExtend(g.zlinkUntil);
+  writeGuest(g);
+  return { coins: g.coins, until: g.zlinkUntil };
+}
+
+/** A guest's ZLink+ (for the daily reward, which lives in its own module). */
+export const guestZlinkActive = () => zlinkActive(readGuest().zlinkUntil);
 
 export async function saveLoadout(l: Loadout & { banner: string }) {
   writeLoadout({ outfit: l.outfit, wrap: l.wrap });

@@ -19,7 +19,7 @@ const PAGES: PaletteItem[] = [
   { id: "p-locker", label: "Locker", hint: "Page", href: "/locker", icon: "🧥", words: "cosmetics outfit equip" },
   { id: "p-ranks", label: "Leaderboards", hint: "Page", href: "/leaderboards", icon: "🏆", words: "ranks scores top" },
   { id: "p-profile", label: "Profile", hint: "Page", href: "/profile", icon: "👤", words: "account badges level" },
-  { id: "p-zlink", label: "ZLink+", hint: "Coming soon", href: "/zlink", icon: "➕", words: "zlink link classified secret" },
+  { id: "p-zlink", label: "ZLink+", hint: "Membership: every Sports+ game, UBusiness Ultimate", href: "/zlink", icon: "➕", words: "zlink link membership pass sports ubusiness" },
   { id: "p-settings", label: "Settings", hint: "Page", href: "/settings", icon: "⚙️", words: "theme keys controls password" },
 ];
 

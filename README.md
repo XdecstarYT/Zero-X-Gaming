@@ -843,14 +843,20 @@ compares the signed-in user's email in `auth.users`), so the page is only a view
 
 Settings live in `site_settings` (readable by everyone; written only through `owner_set_setting`).
 
-### ZLink+ (coming soon)
+### ZLink+ (the membership)
 
-A teaser and nothing more. `/zlink` shows a glitching ZLink+ mark, transmissions that decrypt out of noise, a file
-with its important rows blacked out (hover for CLASSIFIED), and **Request access**, which gives this device an
-access code (`ZL-XXXX-XXXX`, kept in `localStorage`). Poke the plus enough times and it answers. A band on the home
-page, a "???" card in What's New and a search entry lead there. **Keep it vague:** the page, the code and these docs
-deliberately don't say what ZLink+ is; `src/lib/zlink.test.ts` and `tests/e2e/zlink.spec.ts` fail if the teaser
-copy starts giving it away.
+**40 coins for 30 days** (`/zlink`, `20261019090000_zlink.sql`). Members get **every Sports+ game**, **UBusiness
+Ultimate** and **double daily rewards**, plus a glowing **Z+** mark beside their coins. It never renews on its own:
+joining again adds 30 days to wherever it runs to. **Neon Siege is not part of ZLink+**: it stays free to play, and
+its battle pass, item shop and Cash Cups are bought separately as before. Anything bought outright (Sports+, a
+UBusiness edition) is kept either way.
+
+- Server: `zlink_members(user_id, until)` (read your own row), `join_zlink()` (takes the coins as `zlink` in the
+  ledger), `zlink_until()`, `has_sports_plus()` (owns the pass or is a member), and `ubusiness_tier()` /
+  `claim_daily_reward()` now count membership.
+- Guests: the membership lives in the device save (`zlinkUntil`), with the same rules.
+- `src/lib/zlink.ts` lists what's in it (`zlinkGames()` is every game behind a one-time unlock except Neon Siege).
+  The Sports+ and UBusiness unlock cards point to ZLink+.
 
 ### The look: arcade noir
 

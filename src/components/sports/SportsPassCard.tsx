@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ZLinkHint } from "@/components/zlink/ZLinkHint";
 import { Button } from "@/components/ui/Button";
 import { CoinAmount } from "@/components/shop/Coin";
 import { SPORTS_PASS_PRICE } from "@/lib/economy";
@@ -60,6 +61,7 @@ export function SportsPassCard({ compact = false }: { compact?: boolean }) {
           and Cash Cups.
         </p>
       )}
+      {!compact && <ZLinkHint what="Sports+" />}
       {error && (
         <p role="alert" className="mt-3 text-sm text-danger">
           {error}

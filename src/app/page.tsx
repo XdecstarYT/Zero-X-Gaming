@@ -36,7 +36,7 @@ export default function HomePage() {
           <div className="animate-rise">
             <Badge tone="cyan" className="zx-glass">
               <span className="h-1.5 w-1.5 animate-pulse-glow rounded-full bg-cyan" aria-hidden />
-              UBusiness Ultimate is free until 31 October
+              ZLink+ is here: every Sports+ game and UBusiness Ultimate
             </Badge>
             <h1
               id="hero-title"

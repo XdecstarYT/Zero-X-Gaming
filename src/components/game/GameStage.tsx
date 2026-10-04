@@ -367,7 +367,7 @@ export function GameStage({ game }: { game: Game }) {
 
         {immersive && wantsLandscape && portrait && !rotateDismissed && phase !== "over" && (
           <div
-            className="absolute inset-0 z-20 grid place-items-center bg-black/85 p-6 text-center"
+            className="absolute inset-0 z-40 grid place-items-center bg-black/85 p-6 text-center"
             role="dialog"
             aria-label="Rotate your device"
           >

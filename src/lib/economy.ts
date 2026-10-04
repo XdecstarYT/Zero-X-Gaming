@@ -23,6 +23,17 @@ export type UBusinessTier = keyof typeof UBUSINESS_PRICES;
 /** What Ultimate costs you now. */
 export const ubusinessPrice = (tier: UBusinessTier, owned: UBusinessTier | null) => (tier === "ultimate" && owned === "lite" ? UBUSINESS_PRICES.ultimate - UBUSINESS_PRICES.lite : UBUSINESS_PRICES[tier]);
 
+/** ZLink+: the membership. 40 coins for 30 days; joining again adds 30 more. */
+export const ZLINK_PRICE = 40;
+export const ZLINK_DAYS = 30;
+const DAY_MS = 86_400_000;
+/** Is a membership running to `until` (ms) still on at `now`? */
+export const zlinkActive = (until: number | null | undefined, now = Date.now()) => !!until && until > now;
+/** Where a membership runs to after joining (or extending) at `now`. */
+export const zlinkExtend = (until: number | null | undefined, now = Date.now()) => Math.max(now, until ?? 0) + ZLINK_DAYS * DAY_MS;
+/** Whole days left (rounded up), 0 when it's over. */
+export const zlinkDaysLeft = (until: number | null | undefined, now = Date.now()) => (zlinkActive(until, now) ? Math.ceil((until! - now) / DAY_MS) : 0);
+
 /** Launch offer: UBusiness Ultimate is free to claim (and keep) until the end of 31 October 2026, anywhere on Earth. */
 export const UBUSINESS_FREE_UNTIL = Date.parse("2026-11-01T12:00:00Z");
 export const ubusinessFreeOpen = (now = Date.now()) => now < UBUSINESS_FREE_UNTIL;

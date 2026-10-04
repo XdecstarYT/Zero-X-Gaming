@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { ZLinkMark } from "@/components/zlink/ZLinkMark";
 
-/** A band on the home page: no explanation, just the mark and a door. */
+/** A band on the home page: the mark, what it is in a line, and the way in. */
 export function ZLinkTeaser() {
   return (
-    <section aria-label="ZLink+ is coming" className="mx-auto max-w-7xl px-4 sm:px-6">
+    <section aria-label="ZLink+" className="mx-auto max-w-7xl px-4 sm:px-6">
       <Link
         href="/zlink"
         data-testid="zlink-teaser"
@@ -12,12 +12,12 @@ export function ZLinkTeaser() {
       >
         <div className="zx-scanlines" aria-hidden />
         <div className="relative text-center sm:text-left">
-          <p className="font-mono text-xs uppercase tracking-[0.35em] text-[#ff2bd6]">Incoming transmission</p>
+          <p className="font-mono text-xs uppercase tracking-[0.35em] text-[#22e5ff]">Now open</p>
           <ZLinkMark className="mt-1 text-6xl sm:text-7xl" />
-          <p className="mt-1 font-mono text-sm text-white/70">Something is linking. You&apos;re not supposed to know yet.</p>
+          <p className="mt-1 font-mono text-sm text-white/70">Every Sports+ game, UBusiness Ultimate and double daily coins. 40 coins a month.</p>
         </div>
         <span className="relative rounded-full border border-white/30 px-5 py-2 font-mono text-sm font-bold uppercase tracking-widest transition-colors group-hover:border-[#22e5ff] group-hover:text-[#22e5ff]">
-          Decrypt →
+          Get linked →
         </span>
       </Link>
     </section>

@@ -1,30 +1,31 @@
+import { GAMES } from "./catalog";
+
 /**
- * ZLink+: a teaser. Nothing here says what it is — only that it's coming.
+ * ZLink+: the Zero X membership (40 coins for 30 days). It covers every
+ * Sports+ game, UBusiness Ultimate and double daily rewards. Neon Siege —
+ * its battle pass, item shop and Cash Cups — stays outside it.
  */
 
 export const ZLINK_NAME = "ZLink+";
-export const ZLINK_KEY = "zx-zlink-access";
+
+/** The one game that isn't part of ZLink+. */
+export const ZLINK_EXCLUDED = "neon-siege";
+
+/** Games ZLink+ unlocks (anything behind a one-time purchase, apart from Neon Siege). */
+export const zlinkGames = () => GAMES.filter((g) => g.status === "live" && g.pass && g.slug !== ZLINK_EXCLUDED);
+
+/** Is this game covered by ZLink+? */
+export const inZlink = (slug: string) => zlinkGames().some((g) => g.slug === slug);
+
+export const ZLINK_PERKS: { icon: string; title: string; text: string }[] = [
+  { icon: "🏟️", title: "Every Sports+ game", text: "Screamer, Diamond Derby, Ace Rally, Boundary Blitz, Fairway, and every Sports+ game that comes next." },
+  { icon: "🏪", title: "UBusiness Ultimate", text: "All ten departments, the megastore, the full team, marketing and photo mode." },
+  { icon: "🪙", title: "Double daily rewards", text: "Twice the coins every day you come back: 100 on day 7." },
+  { icon: "➕", title: "The member mark", text: "A glowing Z+ next to your coins, so everyone knows you're linked." },
+];
 
 /** Lines the transmission cycles through. */
-export const TRANSMISSIONS = [
-  "SIGNAL ACQUIRED",
-  "EVERYTHING CONNECTS",
-  "ONE LINK. MORE THAN YOU THINK.",
-  "ACCESS IS BEING PREPARED",
-  "ARE YOU LINKED?",
-  "SOON.",
-];
-
-/** The file, as far as you're allowed to read it. */
-export const DOSSIER: { label: string; value: string; open?: boolean }[] = [
-  { label: "Codename", value: "ZLink+", open: true },
-  { label: "Status", value: "Linking…", open: true },
-  { label: "Clearance", value: "Not yet", open: true },
-  { label: "What it is", value: "████████ ████ ███████" },
-  { label: "What it costs", value: "███ ███████" },
-  { label: "What you get", value: "████ ██ ███████ ████████" },
-  { label: "Arrives", value: "When the link is ready", open: true },
-];
+export const TRANSMISSIONS = ["LINK ESTABLISHED", "EVERYTHING CONNECTS", "ONE LINK. EVERY PLUS.", "WELCOME TO ZLINK+"];
 
 const GLYPHS = "!<>-_\\/[]{}—=+*^?#ZXL01";
 
@@ -41,22 +42,4 @@ export function scramble(target: string, progress: number, rand: () => number = 
     out += i < shown || c === " " ? c : GLYPHS[Math.floor(rand() * GLYPHS.length)];
   }
   return out;
-}
-
-/** An access code for the list: ZL-XXXX-XXXX, from a number (stable for a given seed). */
-export function accessCode(seed: number) {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  // 32-bit maths throughout (a timestamp times a big constant would lose its low bits as a float).
-  let x = (Math.floor(Math.abs(seed)) % 2147483647) | 0;
-  x = Math.imul(x ^ 0x9e3779b9, 0x85ebca6b) ^ (Math.floor(Math.abs(seed) / 2147483647) | 0);
-  let s = "";
-  for (let i = 0; i < 8; i++) {
-    x ^= x >>> 15;
-    x = Math.imul(x, 0x2c1b3c6d);
-    x ^= x >>> 12;
-    x = Math.imul(x, 0x297a2d39);
-    x ^= x >>> 15;
-    s += alphabet[(x >>> 0) % alphabet.length];
-  }
-  return `ZL-${s.slice(0, 4)}-${s.slice(4)}`;
 }
