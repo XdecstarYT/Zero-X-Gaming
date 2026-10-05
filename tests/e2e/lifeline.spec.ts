@@ -129,3 +129,42 @@ test("Lifeline: the small starter hospital treats patients, and the game saves a
   expect((await ll(page, (g) => g.debugState())).treated).toBeGreaterThanOrEqual(s.treated);
   expect(errors).toEqual([]);
 });
+
+test("Lifeline mega update: what's new, the campaign, research and follow cam", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "covered on desktop");
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/ERR_TUNNEL|Failed to load resource|supabase/i.test(m.text())) errors.push(m.text());
+  });
+  await page.goto("/games/lifeline?ll");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByTestId("ll-menu")).toBeVisible({ timeout: 60_000 });
+  // The menu backdrop shows the new wing, with an air ambulance coming in.
+  await ll(page, (g) => g.look(52, 22, 46, 0.95, 0.6));
+  await page.waitForTimeout(5000);
+  await shot(page, "10-wing");
+  await page.getByTestId("ll-news").click();
+  await expect(page.getByTestId("ll-news-list")).toContainText("Air ambulances");
+  await page.getByRole("button", { name: "← Back" }).click();
+  await page.getByTestId("ll-campaign").click();
+  await expect(page.getByTestId("ll-scenarios").locator("li")).toHaveCount(5);
+  await page.getByTestId("ll-sc-disaster").click();
+  await expect(page.getByTestId("ll-scenario")).toContainText("Disaster response");
+  // Research: pick a project.
+  await page.getByTestId("ll-panel-research").click();
+  await page.getByTestId("ll-rs-ergonomics").click();
+  await expect(page.getByTestId("ll-research-current")).toContainText("Ergonomics");
+  await page.keyboard.press("Escape");
+  // Run the hospital, then follow a member of staff.
+  await ll(page, (g) => g.fastForward(4));
+  await page.getByTestId("ll-panel-staff").click();
+  await page.getByTestId("ll-staff").locator("li button", { hasText: "Doctor ·" }).first().click();
+  await expect(page.getByTestId("ll-inspector")).toContainText("Level");
+  await page.getByTestId("ll-follow").click();
+  await expect(page.getByTestId("ll-follow")).toHaveText("Following");
+  await page.waitForTimeout(1500);
+  await shot(page, "11-follow");
+  expect(errors).toEqual([]);
+});

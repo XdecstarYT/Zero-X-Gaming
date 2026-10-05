@@ -194,3 +194,108 @@ describe("running the place", () => {
     expect(t.minutes).toBeGreaterThan(s.minutes);
   });
 });
+
+// ------------------------------------------------------------ mega update
+
+import { RESEARCH, RESEARCH_ORDER, SCENARIOS } from "./data";
+import { megaWing } from "./plan";
+import { levelOf } from "./sim";
+
+function bigHospital(seed: number, researched = true) {
+  const s = new Sim(seed);
+  starterHospital(s, { build: true, full: true });
+  s.cash = 1_000_000;
+  megaWing(s, { build: true });
+  if (researched) s.research.done = [...RESEARCH_ORDER];
+  s.world.touch();
+  for (const r of ["receptionist", "receptionist", "doctor", "doctor", "doctor", "doctor", "doctor", "doctor", "nurse", "nurse", "nurse", "nurse", "midwife", "psychiatrist", "janitor", "janitor", "workman"] as const) s.hire(r);
+  return s;
+}
+
+describe("mega update", () => {
+  it("research: a staffed lab finishes projects, which unlock rooms and staff", () => {
+    const s = bigHospital(21, false);
+    s.hire("doctor");
+    run(s, 1);
+    expect(s.hire("midwife")).toBeNull();
+    expect(s.world.roomsOf("icu")[0].valid).toBe(false);
+    expect(s.world.roomsOf("icu")[0].issues[0]).toMatch(/Research/);
+    expect(s.setResearch("mri")).toBe(false); // needs Rapid diagnostics first
+    expect(s.setResearch("intensiveCare")).toBe(true);
+    run(s, 40);
+    expect(s.research.done).toContain("intensiveCare");
+    expect(s.world.roomsOf("icu")[0].valid).toBe(true);
+    // The lab carries on with the next project by itself.
+    run(s, 30);
+    expect(s.research.done.length).toBeGreaterThanOrEqual(2);
+    expect(Object.keys(RESEARCH)).toHaveLength(10);
+  });
+
+  it("new departments treat new conditions: births, therapy, MRI scans and intensive care", () => {
+    const s = bigHospital(22);
+    for (const r of s.world.rooms) expect(r.valid, `${r.type}: ${r.issues.join()}`).toBe(true);
+    run(s, 96);
+    expect(s.stats.births + s.stats.therapy + s.stats.mri + s.stats.icu).toBeGreaterThan(3);
+    expect(s.stats.treated).toBeGreaterThan(40);
+  });
+
+  it("air ambulances land on the helipad with major trauma cases", () => {
+    const s = bigHospital(23);
+    run(s, 0.5);
+    (s as unknown as { callHelicopter: () => void }).callHelicopter();
+    expect(s.vehicles.some((v) => v.kind === "helicopter")).toBe(true);
+    for (let i = 0; i < 300 && ![...s.people.values()].some((p) => p.air); i++) s.step(0.1, 1);
+    const flown = [...s.people.values()].filter((p) => p.air);
+    expect(flown.length).toBe(1);
+    expect(flown[0].cond).toBe("majorTrauma");
+    // Landed on the pad, not at the street.
+    expect(flown[0].x).toBeGreaterThan(55);
+  });
+
+  it("machines wear out and break; workmen repair them", () => {
+    const s = bigHospital(24);
+    run(s, 0.2);
+    const xray = [...s.world.objects.values()].find((o) => o.kind === "xray")!;
+    xray.wear = 1;
+    s.world.touch();
+    s.step(0.1, 1);
+    expect(s.world.roomsOf("radiology")[0].valid).toBe(false);
+    expect(s.world.roomsOf("radiology")[0].issues.join()).toMatch(/broken/);
+    run(s, 4);
+    expect(xray.wear).toBeLessThan(0.5);
+    expect(s.stats.repairs).toBeGreaterThan(0);
+    expect(s.world.roomsOf("radiology")[0].valid).toBe(true);
+  });
+
+  it("staff gain experience and level up", () => {
+    expect([0, 6, 24, 54, 96, 1000].map(levelOf)).toEqual([1, 2, 3, 4, 5, 5]);
+    const s = bigHospital(25);
+    run(s, 30);
+    const best = Math.max(...[...s.people.values()].filter((p) => p.kind === "staff").map((p) => p.xp));
+    expect(best).toBeGreaterThan(6);
+  });
+
+  it("scenarios: medals by goal, and they end on time", () => {
+    const s = new Sim(26);
+    s.startScenario("cityGeneral");
+    expect(s.cash).toBe(SCENARIOS.cityGeneral.cash);
+    s.stats.treated = SCENARIOS.cityGeneral.goals[1];
+    run(s, 1);
+    expect(s.scenario!.medal).toBe(2);
+    expect(s.scenario!.finished).toBe(false);
+    run(s, 24 * SCENARIOS.cityGeneral.days);
+    expect(s.scenario!.finished).toBe(true);
+    const t = Sim.from(JSON.parse(JSON.stringify(s.toJSON())));
+    expect(t.scenario).toEqual(s.scenario);
+  });
+
+  it("weekly awards pay out for a clean, safe, busy week", () => {
+    const s = new Sim(27);
+    s.week = { treated: 90, deaths: 0, left: 2, hyg: 0.95 * 168, hours: 168 };
+    const cash = s.cash;
+    (s as unknown as { awards: () => void }).awards();
+    expect(s.lastAwards.map((a) => a.name)).toHaveLength(4);
+    expect(s.cash - cash).toBe(10_000 + 20_000 + 8_000 + 15_000);
+    expect(s.week.treated).toBe(0);
+  });
+});

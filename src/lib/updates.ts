@@ -7,6 +7,7 @@ export interface Update {
 }
 
 export const UPDATES: Update[] = [
+  { tag: "Mega update", title: "Lifeline: the mega update", body: "Research, six new departments (ICU, maternity, psychiatry, MRI, a lab and a helipad), air ambulances, eight new conditions, machines that break down, staff who level up, a five-scenario campaign with medals and weekly awards.", href: "/games/lifeline" },
   { tag: "New game", title: "Lifeline", body: "Build a hospital in 3D: foundations, walls and rooms built by your workmen, doctors and nurses to hire, and patients with real conditions to diagnose, treat and send home. Lives saved is your score.", href: "/games/lifeline" },
   { tag: "ZLink+", title: "Zero City: Mayor mode", body: "Run Zero City as its mayor: a real budget and taxes, five groups of voters, a council that votes on your policies, dilemmas, promises and an election every term. Plus a new liquid-glass interface.", href: "/games/zero-city" },
   { tag: "ZLink+", title: "Zero City", body: "A new members-only city builder: ten maps, roads in eight draw modes with bridges and roundabouts, four kinds of zone, and a living low-poly city of cars, buses and people. Eight languages.", href: "/games/zero-city" },

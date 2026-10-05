@@ -26,6 +26,29 @@ A 3D hospital management sim at `/games/lifeline`, open to everyone. Score = liv
   times), grants for milestones, and events (flu season, bus crash, inspection, donation,
   heatwave, outbreaks).
 
+## Mega update
+
+- **Research.** A research lab (enclosed, a lab bench; microscopes speed it up) staffed by
+  a doctor puts points into a project each hour (`RESEARCH` in `data.ts`): rapid
+  diagnostics, ergonomics, antibiotics, telehealth, surgical robotics, and the projects that
+  unlock departments.
+- **Departments.** Intensive care, maternity (midwives), psychiatry (psychiatrists), an MRI
+  suite, the research lab and a helipad, with 13 new objects and 8 new conditions. Rooms
+  and roles locked behind research say so (`ROOMS[...].research`, `ROLES[...].research`).
+- **Air ambulances.** A helipad zone plus an emergency room brings helicopters with major
+  trauma cases (`Vehicle` kind `helicopter`, flown in `flyHelicopter`).
+- **Wear and repairs.** Powered objects wear with each patient; at 75% a repair job ($250)
+  goes to the workmen; at 100% the machine is broken and its room stops until it's fixed.
+- **Experience.** Staff gain XP per patient, job or clean; `levelOf` gives level 1–5, each
+  level 10% faster.
+- **Campaign.** Five `SCENARIOS` with a metric, a time limit and bronze/silver/gold goals;
+  best medals are kept on the device (`zx-lifeline-medals`).
+- **Weekly awards**, new grants (discovery, newborns, airlift), baby-boom and power-surge
+  events, and a follow camera.
+
+`plan.ts` has `megaWing`, a ready-made wing with every new department (used by the tests
+and the menu backdrop).
+
 ## Code
 
 | File | What it does |

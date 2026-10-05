@@ -230,9 +230,21 @@ export class AgentView {
     for (const v of vs) {
       let e = this.vehicles.get(v.id);
       if (!e) {
-        e = v.kind === "truck" ? truck() : ambulance();
+        e = v.kind === "truck" ? truck() : v.kind === "helicopter" ? helicopter() : ambulance();
         this.vehicles.set(v.id, e);
         this.group.add(e.g);
+      }
+      if (v.kind === "helicopter") {
+        e.g.position.set(v.x, v.y ?? 0, v.z ?? 0);
+        e.g.rotation.y = v.state === "stopped" ? e.g.rotation.y : v.state === "out" ? -0.3 : 0.2;
+        const rotor = e.g.userData.rotor as THREE.Object3D;
+        rotor.rotation.y = t * (v.state === "stopped" && (v.t ?? 0) > 2 ? 14 : 30);
+        const tail = e.g.userData.tail as THREE.Object3D;
+        tail.rotation.x = t * 40;
+        e.lights.forEach((l, i) => {
+          (l.material as THREE.MeshStandardMaterial).emissiveIntensity = Math.sin(t * 6 + i * 3) > 0.6 ? 3 : 0.2;
+        });
+        continue;
       }
       e.g.position.set(v.x, 0, ROAD_Z + 1.6);
       const flash = v.kind === "ambulance" && v.state !== "out";
@@ -269,6 +281,60 @@ function wheels(g: THREE.Group, len: number) {
       w.position.set(x, 0.35, z);
       g.add(w);
     }
+}
+
+function helicopter() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12).scale(1.9, 1, 1.05), m("#dc2626"));
+  body.position.y = 1.2;
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.18, 2.12), m("#f8fafc"));
+  stripe.position.y = 1.0;
+  const glass = new THREE.Mesh(new THREE.SphereGeometry(0.75, 14, 10).scale(1.2, 0.8, 1.1), m("#93c5fd"));
+  glass.position.set(1.25, 1.45, 0);
+  const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.28, 3.4, 10).rotateZ(Math.PI / 2), m("#dc2626"));
+  boom.position.set(-3.1, 1.5, 0);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.1, 0.08), m("#dc2626"));
+  fin.position.set(-4.6, 2.0, 0);
+  const tail = new THREE.Group();
+  tail.position.set(-4.6, 2.1, 0.12);
+  for (const a of [0, Math.PI / 2]) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.1, 0.04), m("#1f2937"));
+    b.rotation.x = a;
+    tail.add(b);
+  }
+  const rotor = new THREE.Group();
+  rotor.position.y = 2.35;
+  for (const a of [0, Math.PI / 2]) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(9, 0.05, 0.28), m("#1f2937"));
+    b.rotation.y = a;
+    rotor.add(b);
+  }
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.4, 10), m("#1f2937"));
+  hub.position.y = 2.15;
+  const skidGeo = new THREE.BoxGeometry(3, 0.08, 0.1);
+  for (const z of [-0.85, 0.85]) {
+    const sk = new THREE.Mesh(skidGeo, m("#111827"));
+    sk.position.set(0.1, 0.05, z);
+    g.add(sk);
+    for (const x of [-0.7, 0.8]) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.08), m("#111827"));
+      st.position.set(x, 0.35, z * 0.85);
+      g.add(st);
+    }
+  }
+  const cross = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.7, 2.14), m("#f8fafc"));
+  cross.position.set(-0.3, 1.25, 0);
+  const crossB = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.15, 2.14), m("#f8fafc"));
+  crossB.position.set(-0.3, 1.25, 0);
+  for (const x of [body, glass, boom, fin]) x.castShadow = true;
+  const beacon = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.2), m("#ef4444", 2).clone());
+  beacon.position.set(-1, 2.0, 0);
+  const beacon2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.2), m("#f8fafc", 2).clone());
+  beacon2.position.set(-4.6, 2.6, 0);
+  g.add(body, stripe, glass, boom, fin, tail, rotor, hub, cross, crossB, beacon, beacon2);
+  g.userData.rotor = rotor;
+  g.userData.tail = tail;
+  return { g, lights: [beacon, beacon2] };
 }
 
 function truck() {

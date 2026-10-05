@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useStore } from "zustand";
-import { ADMINS, CONDITIONS, FLOORS, GRANT_ORDER, GRANTS, OBJECTS, ROLES, ROOMS, STEP_ROOM, type FloorId, type ObjectCat, type ObjectId, type Role, type RoomId } from "../data";
+import { ADMINS, CONDITIONS, FLOORS, GRANT_ORDER, GRANTS, METRIC_NAME, OBJECTS, RESEARCH, RESEARCH_ORDER, ROLES, ROOMS, SCENARIO_ORDER, SCENARIOS, STEP_ROOM, type FloorId, type ObjectCat, type ObjectId, type Role, type RoomId } from "../data";
+import { levelOf } from "../sim";
 import { OBJECT_LIST, STAFF_ROLES, type Game } from "../game";
 import type { HudState, Tool } from "../store";
 
@@ -44,38 +45,107 @@ function Stars({ value }: { value: number }) {
 function Menu() {
   const g = useGame();
   const hasSave = useHud((s) => s.hasSave);
-  const [help, setHelp] = useState(false);
+  const medals = useHud((s) => s.medals);
+  const [view, setView] = useState<"main" | "campaign" | "news" | "help">("main");
   return (
     <div className="absolute inset-0 flex items-center justify-start p-4 sm:p-8" data-testid="ll-menu">
-      <div className="ll-glass ll-in flex w-full max-w-sm flex-col gap-2 p-5">
+      <div className="ll-glass ll-in flex max-h-full w-full max-w-md flex-col gap-2 overflow-hidden p-5">
         <div className="mb-2 flex items-center gap-3">
           <span className="grid h-11 w-11 place-items-center rounded-2xl" style={{ background: "linear-gradient(140deg,#5eead4,#0f766e)" }} aria-hidden>
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#04201c" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
               <path d="M2 12h4l2-5 4 10 2-5h8" />
             </svg>
           </span>
-          <div>
+          <div className="flex-1">
             <h1 className="ll-h text-[1.9em] leading-none">Lifeline</h1>
             <p className="text-[.85em] opacity-75">Build a hospital. Save lives.</p>
           </div>
+          <span className="ll-pill" style={{ background: "linear-gradient(90deg,#f472b6,#fbbf24)", color: "#1f1300" }}>
+            MEGA UPDATE
+          </span>
         </div>
-        {hasSave && (
-          <button type="button" className="ll-btn ll-on min-h-[52px] font-black" onClick={() => (g.sound.unlock(), g.continueGame())} data-testid="ll-continue">
-            Continue
+        {view === "main" && (
+          <>
+            {hasSave && (
+              <button type="button" className="ll-btn ll-on min-h-[52px] font-black" onClick={() => (g.sound.unlock(), g.continueGame())} data-testid="ll-continue">
+                Continue
+              </button>
+            )}
+            <button type="button" className={`ll-btn min-h-[52px] ${hasSave ? "" : "ll-on"}`} onClick={() => (g.sound.unlock(), g.newGame("empty"))} data-testid="ll-new">
+              New hospital (empty plot)
+            </button>
+            <button type="button" className="ll-btn min-h-[52px]" onClick={() => (g.sound.unlock(), g.newGame("starter"))} data-testid="ll-starter">
+              Start with a small hospital
+            </button>
+            <button type="button" className="ll-btn min-h-[52px]" onClick={() => setView("campaign")} data-testid="ll-campaign">
+              Campaign · {Object.values(medals).filter((m) => m === 3).length}/{SCENARIO_ORDER.length} gold
+            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" className="ll-btn" onClick={() => setView("news")} data-testid="ll-news">
+                What&apos;s new
+              </button>
+              <button type="button" className="ll-btn" onClick={() => setView("help")}>
+                How to play
+              </button>
+            </div>
+          </>
+        )}
+        {view !== "main" && (
+          <button type="button" className="ll-btn self-start" onClick={() => setView("main")}>
+            ← Back
           </button>
         )}
-        <button type="button" className={`ll-btn min-h-[52px] ${hasSave ? "" : "ll-on"}`} onClick={() => (g.sound.unlock(), g.newGame("empty"))} data-testid="ll-new">
-          New hospital (empty plot)
-        </button>
-        <button type="button" className="ll-btn min-h-[52px]" onClick={() => (g.sound.unlock(), g.newGame("starter"))} data-testid="ll-starter">
-          Start with a small hospital
-        </button>
-        <button type="button" className="ll-btn" onClick={() => setHelp((h) => !h)} aria-expanded={help}>
-          How to play
-        </button>
-        {help && <HelpText />}
+        {view === "help" && <HelpText />}
+        {view === "campaign" && (
+          <ul className="ll-scroll flex min-h-0 flex-col gap-2" data-testid="ll-scenarios">
+            {SCENARIO_ORDER.map((id) => {
+              const sc = SCENARIOS[id];
+              const m = medals[id] ?? 0;
+              return (
+                <li key={id}>
+                  <button type="button" className="ll-card flex-col items-start" onClick={() => (g.sound.unlock(), g.newGame(id))} data-testid={`ll-sc-${id}`}>
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span className="font-black">{sc.name}</span>
+                      <span className="ll-pill" style={{ background: MEDAL_COLOR[m], color: m ? "#111" : undefined }}>
+                        {MEDAL[m]}
+                      </span>
+                    </span>
+                    <span className="text-[.82em] opacity-80">{sc.blurb}</span>
+                    <span className="text-[.75em] opacity-65">
+                      {sc.days} days · {sc.goals.join(" / ")} {METRIC_NAME[sc.metric]} · ${sc.cash.toLocaleString("en-US")}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {view === "news" && <News />}
       </div>
     </div>
+  );
+}
+
+function News() {
+  const items: [string, string][] = [
+    ["Research", "Build a research lab, put a doctor at the bench and pick from ten projects: faster diagnosis, antibiotics, surgical robots, telehealth and more."],
+    ["Six new departments", "Intensive care, maternity, psychiatry, an MRI suite, the research lab and a helipad, each with its own equipment."],
+    ["Air ambulances", "With a helipad, helicopters fly in major trauma cases. They pay the most of anything."],
+    ["Eight new conditions", "Strokes, sepsis, labour (and premature labour), anxiety, depression, back injuries and major trauma."],
+    ["New staff", "Midwives and psychiatrists. Every member of staff now gains experience and levels up to five, working faster each level."],
+    ["Machines wear out", "Powered equipment wears with use and breaks down; workmen repair it (a marker shows when something needs a look)."],
+    ["Campaign", "Five scenarios, from a rural clinic to a disaster response, each with bronze, silver and gold."],
+    ["Weekly awards", "Every seven days: prizes for the cleanest hospital, the best care, no deaths and the busiest wards."],
+    ["Also", "Follow-cam for any person, new grants, baby booms and power surges, 13 new 3D objects, a helipad and a fountain."],
+  ];
+  return (
+    <ul className="ll-scroll flex min-h-0 flex-col gap-2 text-[.88em]" data-testid="ll-news-list">
+      {items.map(([t, d]) => (
+        <li key={t} className="rounded-xl bg-white/5 p-2">
+          <b>{t}.</b> <span className="opacity-85">{d}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -87,6 +157,8 @@ function HelpText() {
       <li>Hire a <b>receptionist</b> and a <b>doctor</b>. Patients check in, wait, get diagnosed and treated, pay and go home.</li>
       <li>Some need more: a <b>pharmacy</b>, a <b>ward</b>, <b>radiology</b> (needs a generator), an <b>emergency room</b> for ambulances, an <b>operating theatre</b> (needs a chief of medicine).</li>
       <li>Keep staff rested (a <b>staff room</b>), floors clean (<b>janitors</b>) or infections spread, and the books balanced. Grants pay for milestones.</li>
+      <li>Build a <b>research lab</b> (lab bench) with a doctor in it to research upgrades and unlock intensive care, maternity, psychiatry, MRI and the helipad.</li>
+      <li>Machines wear out: <b>workmen</b> repair them when a marker appears. Staff level up as they work. Try the <b>campaign</b> for medals.</li>
       <li>Lives saved is your score: bank it from Reports whenever you like.</li>
     </ol>
   );
@@ -123,6 +195,7 @@ function TopBar() {
             </button>
           ))}
         </div>
+        <ScenarioChip />
         {events.map((e) => (
           <span key={e} className="ll-pill" style={{ background: "#fbbf24", color: "#2a1d00" }}>
             {e}
@@ -143,13 +216,29 @@ function TopBar() {
           <span className="tabular-nums">{treated}</span>
           <span className="text-[.75em] opacity-70">· {patients} in</span>
         </span>
-        {(["staff", "grants", "reports", "help"] as const).map((p) => (
+        {(["staff", "research", "grants", "reports", "help"] as const).map((p) => (
           <button key={p} type="button" aria-pressed={panel === p} className="ll-btn" onClick={() => g.openPanel(p)} data-testid={`ll-panel-${p}`}>
-            {p === "staff" ? "Staff" : p === "grants" ? "Grants" : p === "reports" ? "Reports" : "?"}
+            {p === "staff" ? "Staff" : p === "research" ? "Research" : p === "grants" ? "Grants" : p === "reports" ? "Reports" : "?"}
           </button>
         ))}
       </div>
     </div>
+  );
+}
+
+function ScenarioChip() {
+  const sc = useHud((s) => s.scenario);
+  if (!sc) return null;
+  const def = SCENARIOS[sc.id];
+  const next = def.goals[Math.min(2, sc.medal)];
+  const days = Math.floor(sc.hoursLeft / 24);
+  const hours = Math.floor(sc.hoursLeft % 24);
+  return (
+    <span className="ll-glass flex min-h-[44px] items-center gap-2 px-3 text-[.85em] font-bold" data-testid="ll-scenario">
+      <span className="h-3 w-3 rounded-full" style={{ background: MEDAL_COLOR[sc.medal] }} aria-hidden />
+      {def.name}: {sc.score}/{next} {METRIC_NAME[def.metric]}
+      <span className="opacity-70">· {sc.finished ? "over" : `${days}d ${hours}h left`}</span>
+    </span>
   );
 }
 
@@ -199,6 +288,16 @@ function ToolCard({ on, onClick, title, sub, swatch, testId, disabled }: { on: b
     </button>
   );
 }
+
+/** Why a room or role is locked: research to do, or someone to hire. */
+function lockText(def: { unlock?: Role; research?: keyof typeof RESEARCH }) {
+  if (def.research) return `Research: ${RESEARCH[def.research].name}`;
+  if (def.unlock) return `Needs a ${ROLES[def.unlock].name.toLowerCase()}`;
+  return "Locked";
+}
+
+const MEDAL = ["None yet", "Bronze", "Silver", "Gold"];
+const MEDAL_COLOR = ["rgba(255,255,255,.15)", "#cd7f32", "#cbd5e1", "#fbbf24"];
 
 function same(a: Tool | null, b: Tool) {
   return !!a && JSON.stringify({ ...a, rot: 0 }) === JSON.stringify({ ...b, rot: 0 });
@@ -254,7 +353,7 @@ function Tray() {
                 on={tool?.kind === "room" && tool.room === r}
                 onClick={() => pick({ kind: "room", room: r })}
                 title={def.name}
-                sub={locked ? `Needs a ${ROLES[def.unlock!].name.toLowerCase()}` : `${def.min} m² · ${Object.keys(def.needs).map((k) => OBJECTS[k as ObjectId].name.toLowerCase()).join(", ") || "any space"}`}
+                sub={locked ? lockText(def) : `${def.min} m² · ${Object.keys(def.needs).map((k) => OBJECTS[k as ObjectId].name.toLowerCase()).join(", ") || "any space"}`}
                 swatch={def.color}
                 testId={`ll-r-${r}`}
               />
@@ -294,7 +393,7 @@ function Tray() {
       {cat === "staff" && (
         <div className="ll-scroll flex gap-1 overflow-x-auto">
           {STAFF_ROLES.map((r) => (
-            <ToolCard key={r} on={false} onClick={() => g.hire(r)} title={`Hire ${ROLES[r].name.toLowerCase()}`} sub={unlocked[r] ? `${money(ROLES[r].wage)} a day` : `Needs a ${ROLES[ROLES[r].unlock!].name.toLowerCase()}`} swatch={ROLES[r].color} testId={`ll-hire-${r}`} disabled={!unlocked[r]} />
+            <ToolCard key={r} on={false} onClick={() => g.hire(r)} title={`Hire ${ROLES[r].name.toLowerCase()}`} sub={unlocked[r] ? `${money(ROLES[r].wage)} a day` : lockText(ROLES[r])} swatch={ROLES[r].color} testId={`ll-hire-${r}`} disabled={!unlocked[r]} />
           ))}
         </div>
       )}
@@ -333,7 +432,7 @@ function StaffPanel() {
             <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: ROLES[r].color }} aria-hidden />
             <span className="flex min-w-0 flex-col">
               <span className="truncate font-bold">{ROLES[r].name}</span>
-              <span className="text-[.75em] opacity-70">{unlocked[r] ? `${money(ROLES[r].wage)}/day` : "Locked"}</span>
+              <span className="text-[.75em] opacity-70">{unlocked[r] ? `${money(ROLES[r].wage)}/day` : lockText(ROLES[r])}</span>
             </span>
           </button>
         ))}
@@ -373,7 +472,7 @@ function StaffPanel() {
             <button type="button" className="min-w-0 flex-1 text-start" onClick={() => g.store.setState({ selected: { kind: "person", id: s.id } })}>
               <span className="block truncate font-semibold">{s.name}</span>
               <span className="block text-[.75em] opacity-70">
-                {ROLES[s.role].name} · {s.onDuty ? "on duty" : s.state === "rest" ? "resting" : "between jobs"}
+                {ROLES[s.role].name} · Lv {s.level} · {s.onDuty ? "on duty" : s.state === "rest" ? "resting" : "between jobs"}
               </span>
             </button>
             <span className="ll-bar w-14" title={`Energy ${Math.round(s.energy)}%`}>
@@ -523,7 +622,13 @@ function Inspector() {
           <Meter label="Health" v={p.health} />
           <Meter label="Hunger" v={p.hunger} bad />
           <Meter label="Bladder" v={p.bladder} bad />
-          <p className="mt-1 text-[.8em] opacity-70">Waiting {Math.round(p.waited)} min · {p.state === "inStep" ? "being treated" : p.state === "waitStep" ? "waiting" : p.state}</p>
+          <p className="mt-1 text-[.8em] opacity-70">
+            Waiting {Math.round(p.waited)} min · {p.state === "inStep" ? "being treated" : p.state === "waitStep" ? "waiting" : p.state}
+            {p.air ? " · flown in" : ""}
+          </p>
+          <div className="mt-2">
+            <FollowButton />
+          </div>
         </>
       );
     } else {
@@ -536,10 +641,17 @@ function Inspector() {
             {room ? ` · ${ROOMS[room.type].name}` : ""}
           </p>
           <Meter label="Energy" v={p.energy} />
+          <p className="mt-1 text-[.82em]">
+            Level {levelOf(p.xp)} {"★".repeat(levelOf(p.xp))}
+            <span className="opacity-60"> · works {(levelOf(p.xp) - 1) * 10}% faster</span>
+          </p>
           <p className="mt-1 text-[.8em] opacity-70">{ROLES[p.role!].desc}</p>
-          <button type="button" className="ll-btn ll-danger mt-2" onClick={() => g.fire(p.id)}>
-            Fire
-          </button>
+          <div className="mt-2 flex gap-2">
+            <FollowButton />
+            <button type="button" className="ll-btn ll-danger" onClick={() => g.fire(p.id)}>
+              Fire
+            </button>
+          </div>
         </>
       );
     }
@@ -574,6 +686,96 @@ function Inspector() {
       </button>
       {body}
     </section>
+  );
+}
+
+function FollowButton() {
+  const g = useGame();
+  const follow = useHud((s) => s.follow);
+  return (
+    <button type="button" aria-pressed={follow} className="ll-btn" onClick={() => g.toggleFollow()} data-testid="ll-follow">
+      {follow ? "Following" : "Follow"}
+    </button>
+  );
+}
+
+function ResearchPanel() {
+  const g = useGame();
+  const r = useHud((s) => s.research);
+  return (
+    <Panel title="Research" testId="ll-research">
+      <p className="mb-2 text-[.82em] opacity-75">
+        Build a research lab (lab bench, enclosed) and a doctor will work there. Microscopes speed it up. {r.labs ? `${r.labs} lab${r.labs > 1 ? "s" : ""} working.` : "No working lab yet."}
+      </p>
+      {r.current && (
+        <div className="mb-3 rounded-xl bg-white/5 p-2" data-testid="ll-research-current">
+          <p className="font-bold">{RESEARCH[r.current].name}</p>
+          <div className="ll-bar mt-1">
+            <i style={{ width: `${Math.min(100, (r.points / RESEARCH[r.current].cost) * 100)}%`, background: "#c084fc" }} />
+          </div>
+          <p className="mt-1 text-[.75em] opacity-70">
+            {Math.floor(r.points)} / {RESEARCH[r.current].cost} points
+          </p>
+        </div>
+      )}
+      <ul className="flex flex-col gap-1">
+        {RESEARCH_ORDER.map((id) => {
+          const def = RESEARCH[id];
+          const done = r.done.includes(id);
+          const open = r.open.includes(id);
+          const on = r.current === id;
+          return (
+            <li key={id}>
+              <button type="button" aria-pressed={on} className="ll-card" disabled={!open || done} onClick={() => g.setResearch(id)} data-testid={`ll-rs-${id}`}>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="font-bold">
+                    {def.name}{" "}
+                    {done && (
+                      <span className="ll-pill" style={{ background: "var(--ll-good)", color: "#052e16" }}>
+                        Done
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-[.78em] opacity-75">{def.desc}</span>
+                  <span className="text-[.72em] opacity-60">
+                    {def.cost} points{def.needs && !r.done.includes(def.needs) ? ` · after ${RESEARCH[def.needs].name}` : ""}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </Panel>
+  );
+}
+
+function ResultCard() {
+  const g = useGame();
+  const show = useHud((s) => s.result);
+  const sc = useHud((s) => s.scenario);
+  if (!show || !sc) return null;
+  const def = SCENARIOS[sc.id];
+  return (
+    <div className="pointer-events-auto absolute inset-0 z-20 grid place-items-center bg-black/45 p-3" role="dialog" aria-modal="true" aria-label="Scenario result" data-testid="ll-result">
+      <div className="ll-glass ll-in flex w-full max-w-sm flex-col items-center gap-3 p-6 text-center">
+        <span className="grid h-20 w-20 place-items-center rounded-full text-[2.2em] font-black" style={{ background: MEDAL_COLOR[sc.medal], color: "#111" }}>
+          {sc.medal ? ["", "3", "2", "1"][sc.medal] : "–"}
+        </span>
+        <h2 className="ll-h text-[1.6em]">{sc.medal ? `${MEDAL[sc.medal]} medal` : "No medal"}</h2>
+        <p className="opacity-85">
+          {def.name}: {sc.score} {METRIC_NAME[def.metric]} (goals {def.goals.join(" / ")}).
+        </p>
+        <div className="flex w-full gap-2">
+          <button type="button" className="ll-btn ll-on flex-1" onClick={() => g.dismissResult()} data-testid="ll-result-keep">
+            Keep playing
+          </button>
+          <button type="button" className="ll-btn flex-1" onClick={() => (g.dismissResult(), g.toMenu())}>
+            Menu
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -635,11 +837,13 @@ function Hud() {
       {panel === "staff" && <StaffPanel />}
       {panel === "grants" && <GrantsPanel />}
       {panel === "reports" && <ReportsPanel />}
+      {panel === "research" && <ResearchPanel />}
       {panel === "help" && (
         <PanelHelp />
       )}
       <Toasts />
       <Cursor />
+      <ResultCard />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-2 p-2">
         <Tray />
         <Toolbar />

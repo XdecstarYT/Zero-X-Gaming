@@ -1,11 +1,13 @@
 import * as THREE from "three";
-import { ADMINS, EVENTS, FLOORS, H, OBJECTS, PAVEMENT_Z, ROLES, ROOMS, SAVE_KEY, SAVE_VERSION, W, WALL_COST, DOOR_COST, type ObjectId, type Role, type RoomId } from "./data";
-import { starterHospital } from "./plan";
+import { ADMINS, EVENTS, RESEARCH_ORDER, FLOORS, H, OBJECTS, PAVEMENT_Z, ROLES, ROOMS, SAVE_KEY, SAVE_VERSION, SCENARIOS, W, WALL_COST, DOOR_COST, type ObjectId, type ResearchId, type Role, type RoomId, type ScenarioId } from "./data";
+import { megaWing, starterHospital } from "./plan";
 import { AgentView } from "./render/agents";
 import { BuildingView } from "./render/buildingView";
 import { Engine } from "./render/engine";
 import { GHOST_BAD, GHOST_OK, makeObject, ObjectView, placeModel } from "./render/objects";
-import { Sim } from "./sim";
+import { levelOf, Sim } from "./sim";
+
+const MEDALS_KEY = "zx-lifeline-medals";
 import type { Category, Panel, Store, Tool } from "./store";
 import { footprint, idx, inside } from "./world";
 
@@ -113,7 +115,13 @@ export class Game {
     ro.observe(host);
     this.disposers.push(() => ro.disconnect());
     this.attachInput(this.engine.renderer.domElement);
-    this.store.setState({ hasSave: !!localStorage.getItem(SAVE_KEY) });
+    let medals = {};
+    try {
+      medals = JSON.parse(localStorage.getItem(MEDALS_KEY) ?? "{}") ?? {};
+    } catch {
+      medals = {};
+    }
+    this.store.setState({ hasSave: !!localStorage.getItem(SAVE_KEY), medals });
     // The menu backdrop: a working hospital, running.
     this.demo();
     this.loop();
@@ -122,26 +130,50 @@ export class Game {
   private demo() {
     const s = new Sim(7);
     starterHospital(s, { build: true, full: true });
-    for (const r of ["receptionist", "receptionist", "doctor", "doctor", "doctor", "nurse", "nurse", "janitor", "janitor", "workman"] as Role[]) s.hire(r);
+    s.cash = 1_000_000;
+    megaWing(s, { build: true });
+    s.research.done = [...RESEARCH_ORDER];
+    s.world.touch();
+    for (const r of ["receptionist", "receptionist", "doctor", "doctor", "doctor", "doctor", "doctor", "doctor", "nurse", "nurse", "nurse", "nurse", "midwife", "psychiatrist", "janitor", "janitor", "workman"] as Role[]) s.hire(r);
     s.minutes = 10 * 60;
     for (let i = 0; i < 600; i++) s.step(0.1, 4);
+    // A helicopter on its way in, for the show.
+    (s as unknown as { callHelicopter: () => void }).callHelicopter();
     s.messages = [];
     this.sim = s;
-    this.engine?.setView({ x: 30, z: 28, dist: 58, yaw: 0.5, pitch: 0.82 }, true);
+    this.engine?.setView({ x: 36, z: 26, dist: 66, yaw: 0.5, pitch: 0.82 }, true);
   }
 
-  newGame(scenario: "empty" | "starter") {
+  newGame(kind: "empty" | "starter" | ScenarioId) {
     const s = new Sim(Math.floor(Math.random() * 1e9));
     s.hire("workman");
     s.hire("workman");
-    if (scenario === "starter") {
-      starterHospital(s, { build: true });
+    const sc = kind === "empty" || kind === "starter" ? null : SCENARIOS[kind];
+    const start = sc ? sc.start : kind;
+    if (start === "starter" || start === "full") {
+      starterHospital(s, { build: true, full: start === "full" });
       s.cash = 25_000;
-      s.messages = [];
     }
+    if (start === "full") for (const r of ["receptionist", "doctor", "doctor", "doctor", "nurse", "nurse", "janitor"] as Role[]) s.hire(r);
+    if (sc) s.startScenario(kind as ScenarioId);
+    s.messages = [];
     this.sim = s;
     this.enter();
-    this.toast(scenario === "starter" ? "Here's a small hospital to start from. Hire a receptionist, a doctor and a nurse." : "An empty plot and two workmen. Lay a foundation to begin.", "info");
+    this.toast(sc ? `${sc.name}: ${sc.blurb} Goal: ${sc.goals[0]} / ${sc.goals[1]} / ${sc.goals[2]} in ${sc.days} days.` : kind === "starter" ? "Here's a small hospital to start from. Hire a receptionist, a doctor and a nurse." : "An empty plot and two workmen. Lay a foundation to begin.", "info");
+  }
+
+  setResearch(id: ResearchId) {
+    if (this.sim.setResearch(id)) this.sound.click();
+    this.publish();
+  }
+
+  toggleFollow() {
+    this.store.setState({ follow: !this.store.getState().follow });
+  }
+
+  /** Close the scenario card and play on. */
+  dismissResult() {
+    this.store.setState({ result: false });
   }
 
   continueGame() {
@@ -161,7 +193,7 @@ export class Game {
   }
 
   private enter() {
-    this.store.setState({ screen: "game", tool: null, category: null, panel: null, selected: null, speed: 1, toasts: [] });
+    this.store.setState({ screen: "game", tool: null, category: null, panel: null, selected: null, speed: 1, toasts: [], result: false, follow: false });
     this.engine?.setView({ x: W / 2, z: H / 2 + 6, dist: 62, yaw: 0, pitch: 0.95 }, true);
     this.publish();
   }
@@ -232,11 +264,18 @@ export class Game {
     this.building!.sync(this.sim.world);
     this.building!.setNight(e.night);
     this.objects!.sync(this.sim.world.objects);
+    this.objects!.update(this.time);
     this.dirtAcc += dt;
     const dirtNow = this.dirtAcc > 0.5;
     if (dirtNow) this.dirtAcc = 0;
     this.building!.update(this.sim.world, this.sim.people.values(), dt, dirtNow);
     this.agents!.selected = st.selected?.kind === "person" ? st.selected.id : -1;
+    // Follow cam: keep the selected person in the middle of the view.
+    if (inGame && st.follow && st.selected?.kind === "person") {
+      const p = this.sim.people.get(st.selected.id);
+      if (p) e.setView({ ...e.state, x: p.at ? p.at.x : p.x, z: p.at ? p.at.z : p.z });
+      else this.store.setState({ follow: false });
+    }
     this.agents!.update(this.sim.people, this.sim.crates, this.sim.vehicles, this.time, e.night);
     if (!inGame) e.rotate(dt * 0.05);
     e.render();
@@ -256,6 +295,18 @@ export class Game {
   /** Push a snapshot of the hospital to the HUD. */
   publish() {
     const s = this.sim;
+    const prev = this.store.getState().scenario;
+    if (s.scenario && s.scenario.finished && prev && !prev.finished) {
+      const medals = { ...this.store.getState().medals };
+      medals[s.scenario.id] = Math.max(medals[s.scenario.id] ?? 0, s.scenario.medal);
+      try {
+        localStorage.setItem(MEDALS_KEY, JSON.stringify(medals));
+      } catch {
+        /* storage full or blocked: the medal still shows this session */
+      }
+      this.store.setState({ medals, result: true, speed: 0 });
+      if (s.scenario.medal) this.sound.chime();
+    }
     for (const m of s.messages.splice(0)) {
       this.toast(m.text, m.kind);
       if (m.kind === "good") this.sound.chime();
@@ -272,7 +323,9 @@ export class Game {
       stats: { ...s.stats },
       notices: s.notices,
       grants: { ...s.grants },
-      staff: [...s.people.values()].filter((p) => p.kind === "staff").map((p) => ({ id: p.id, role: p.role!, name: p.name, energy: p.energy, onDuty: p.onDuty, state: p.state })),
+      staff: [...s.people.values()].filter((p) => p.kind === "staff").map((p) => ({ id: p.id, role: p.role!, name: p.name, energy: p.energy, onDuty: p.onDuty, state: p.state, level: levelOf(p.xp) })),
+      research: { current: s.research.current, points: s.research.points, done: [...s.research.done], open: s.researchOpen(), labs: s.world.roomsOf("research").filter((r) => r.valid).length },
+      scenario: s.scenario ? { id: s.scenario.id, score: s.scenarioScore(), medal: s.scenario.medal, finished: s.scenario.finished, hoursLeft: Math.max(0, (s.scenario.endsAt - s.minutes) / 60) } : null,
       patients: [...s.people.values()].filter((p) => p.kind === "patient" && p.state !== "dead" && p.state !== "leaving").length,
       jobs: s.jobs.size,
       loan: s.loan,

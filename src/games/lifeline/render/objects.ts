@@ -247,6 +247,116 @@ const BUILDERS: Record<ObjectId, B> = {
     box(g, 0.5, 1.3, 0.6, "#94a3b8", 0, 0, 0, { metal: 0.3 });
     for (const y of [0.15, 0.55, 0.95]) box(g, 0.44, 0.34, 0.02, "#cbd5e1", 0, y, 0.31);
   },
+  icuBed: (g) => {
+    box(g, 0.92, 0.45, 1.9, STEEL, 0, 0.1, 0, { metal: 0.5 });
+    box(g, 0.94, 0.16, 1.9, WHITE, 0, 0.55, 0);
+    box(g, 0.96, 0.06, 1.2, "#60a5fa", 0, 0.71, 0.3);
+    box(g, 0.6, 0.12, 0.35, "#ffffff", 0, 0.71, -0.7);
+    for (const x of [-0.5, 0.5]) box(g, 0.04, 0.3, 1.6, "#cbd5e1", x, 0.62, 0, { metal: 0.4 });
+    box(g, 0.94, 1.1, 0.06, "#e2e8f0", 0, 0.25, -0.95);
+    box(g, 0.5, 0.32, 0.06, DARK, 0, 1.15, -0.9);
+    box(g, 0.44, 0.26, 0.01, "#22c55e", 0, 1.18, -0.865, { glow: 1 });
+  },
+  ventilator: (g) => {
+    box(g, 0.55, 0.12, 0.5, DARK, 0, 0, 0);
+    box(g, 0.5, 1.1, 0.45, "#e2e8f0", 0, 0.12, 0);
+    box(g, 0.42, 0.3, 0.02, "#0ea5e9", 0, 1.0, 0.235, { glow: 0.9 });
+    cyl(g, 0.04, 0.6, "#93c5fd", 0.18, 1.22, 0, { rough: 0.2 });
+    cyl(g, 0.06, 0.25, "#cbd5e1", -0.15, 0.5, 0.24);
+  },
+  incubator: (g) => {
+    box(g, 0.6, 0.75, 0.5, WHITE, 0, 0, 0);
+    box(g, 0.7, 0.4, 0.5, new THREE.MeshStandardMaterial({ color: "#dbeafe", transparent: true, opacity: 0.55, roughness: 0.05 }), 0, 0.75, 0);
+    box(g, 0.25, 0.08, 0.15, "#fbcfe8", 0, 0.8, 0);
+    box(g, 0.2, 0.12, 0.02, "#f472b6", 0, 0.5, 0.26, { glow: 0.8 });
+  },
+  birthingBed: (g) => {
+    box(g, 0.9, 0.5, 1.9, STEEL, 0, 0.1, 0, { metal: 0.5 });
+    box(g, 0.94, 0.14, 1.9, "#fdf2f8", 0, 0.6, 0);
+    const back = box(g, 0.94, 0.12, 0.8, "#fbcfe8", 0, 0.8, -0.5);
+    back.rotation.x = -0.6;
+    box(g, 0.96, 0.06, 0.9, "#f0abfc", 0, 0.74, 0.45);
+  },
+  mriScanner: (g) => {
+    box(g, 1.9, 0.12, 2.9, "#cbd5e1", 0, 0, 0);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.38, 16, 32), mat("#f8fafc", { rough: 0.3 }));
+    ring.position.set(0, 1.05, -0.7);
+    ring.castShadow = true;
+    g.add(ring);
+    box(g, 1.85, 1.8, 0.7, "#f1f5f9", 0, 0.12, -0.75, { rough: 0.3 });
+    cyl(g, 0.55, 0.72, "#0f172a", 0, 0.7, -0.72).rotation.x = Math.PI / 2;
+    box(g, 0.6, 0.5, 1.7, "#e2e8f0", 0, 0.12, 0.6);
+    box(g, 0.56, 0.1, 1.9, "#93c5fd", 0, 0.62, 0.35);
+    box(g, 1.2, 0.08, 0.02, "#38bdf8", 0, 1.75, -0.39, { glow: 1.2 });
+  },
+  mriConsole: (g) => {
+    box(g, 1.8, 0.75, 0.7, "#e2e8f0", 0, 0, 0);
+    for (const x of [-0.45, 0.45]) {
+      box(g, 0.6, 0.38, 0.05, DARK, x, 0.8, -0.1);
+      box(g, 0.55, 0.32, 0.01, "#38bdf8", x, 0.83, -0.07, { glow: 0.8 });
+    }
+    box(g, 0.5, 0.03, 0.18, "#334155", 0, 0.76, 0.15);
+  },
+  therapyCouch: (g) => {
+    box(g, 1.85, 0.35, 0.75, "#7c3aed", 0, 0.1, 0);
+    box(g, 1.85, 0.14, 0.7, "#8b5cf6", 0, 0.45, 0.02);
+    const head = box(g, 0.5, 0.35, 0.7, "#7c3aed", -0.75, 0.45, 0);
+    head.rotation.z = 0.35;
+    for (const x of [-0.8, 0.8]) for (const z of [-0.3, 0.3]) cyl(g, 0.04, 0.1, WOOD, x, 0, z);
+  },
+  armchair: (g) => {
+    box(g, 0.75, 0.4, 0.7, "#a16207", 0, 0.05, 0);
+    box(g, 0.6, 0.12, 0.55, "#ca8a04", 0, 0.45, 0.05);
+    box(g, 0.75, 0.55, 0.15, "#a16207", 0, 0.45, -0.28);
+    for (const x of [-0.33, 0.33]) box(g, 0.1, 0.25, 0.65, "#854d0e", x, 0.45, 0);
+  },
+  labBench: (g) => {
+    box(g, 1.85, 0.85, 0.7, WHITE, 0, 0, 0);
+    box(g, 1.9, 0.05, 0.75, "#1f2937", 0, 0.85, 0, { rough: 0.3 });
+    for (const [x, c] of [
+      [-0.6, "#22c55e"],
+      [-0.45, "#3b82f6"],
+      [-0.3, "#f59e0b"],
+    ] as const)
+      cyl(g, 0.05, 0.22, c, x, 0.9, -0.15, { glow: 0.4 });
+    box(g, 0.5, 0.35, 0.05, DARK, 0.45, 0.9, -0.2);
+    box(g, 0.46, 0.3, 0.01, "#a78bfa", 0.45, 0.93, -0.17, { glow: 0.8 });
+  },
+  microscope: (g) => {
+    box(g, 0.55, 0.85, 0.5, WHITE, 0, 0, 0);
+    box(g, 0.3, 0.05, 0.25, DARK, 0, 0.85, 0);
+    const arm = box(g, 0.06, 0.4, 0.08, DARK, 0, 0.9, -0.08);
+    arm.rotation.x = 0.3;
+    cyl(g, 0.045, 0.25, "#475569", 0, 1.08, 0.02, { metal: 0.6 });
+  },
+  bookshelf: (g) => {
+    box(g, 1.8, 1.9, 0.4, WOOD, 0, 0, 0);
+    const colors = ["#b91c1c", "#1d4ed8", "#15803d", "#a16207", "#7e22ce", "#0f766e"];
+    for (let r = 0; r < 4; r++) for (let i = 0; i < 9; i++) box(g, 0.14, 0.32, 0.3, colors[(r * 3 + i) % colors.length], -0.75 + i * 0.185, 0.12 + r * 0.45, 0.04);
+  },
+  helipad: (g) => {
+    box(g, 3.9, 0.08, 3.9, "#374151", 0, 0, 0, { rough: 0.9 });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.3, 1.5, 40).rotateX(-Math.PI / 2), mat("#facc15", { glow: 0.3 }));
+    ring.position.y = 0.09;
+    g.add(ring);
+    box(g, 0.25, 0.01, 1.4, "#f8fafc", -0.4, 0.085, 0);
+    box(g, 0.25, 0.01, 1.4, "#f8fafc", 0.4, 0.085, 0);
+    box(g, 0.6, 0.01, 0.25, "#f8fafc", 0, 0.085, 0);
+    for (const [x, z] of [
+      [-1.85, -1.85],
+      [1.85, -1.85],
+      [-1.85, 1.85],
+      [1.85, 1.85],
+    ])
+      sphere(g, 0.08, "#22c55e", x, 0.12, z, { glow: 1.5 });
+  },
+  fountain: (g) => {
+    cyl(g, 0.95, 0.35, "#cbd5e1", 0, 0, 0, { rough: 0.6 });
+    cyl(g, 0.82, 0.06, "#38bdf8", 0, 0.3, 0, { rough: 0.05, glow: 0.2 });
+    cyl(g, 0.15, 0.8, "#cbd5e1", 0, 0.3, 0);
+    cyl(g, 0.4, 0.1, "#cbd5e1", 0, 1.05, 0);
+    sphere(g, 0.12, "#bae6fd", 0, 1.3, 0, { glow: 0.5 });
+  },
 };
 
 /** Build the model for an object (or its blueprint). */
@@ -274,7 +384,8 @@ export function placeModel(g: THREE.Object3D, o: Pick<Obj, "kind" | "x" | "z" | 
 /** Keeps a model per object in the world, swapping blueprints for the real thing when built. */
 export class ObjectView {
   group = new THREE.Group();
-  private models = new Map<number, { g: THREE.Group; built: boolean }>();
+  private models = new Map<number, { g: THREE.Group; key: string; marker: THREE.Mesh | null }>();
+  private markerGeo = new THREE.OctahedronGeometry(0.22);
 
   sync(objects: Map<number, Obj>) {
     for (const [id, m] of this.models)
@@ -283,14 +394,33 @@ export class ObjectView {
         this.models.delete(id);
       }
     for (const o of objects.values()) {
+      // Worn machines get an amber marker; broken ones a red one.
+      const wear = o.wear ?? 0;
+      const state = wear >= 1 ? "broken" : wear >= 0.75 ? "worn" : "";
+      const key = `${o.built}:${state}`;
       const m = this.models.get(o.id);
-      if (m && m.built === o.built) continue;
+      if (m && m.key === key) continue;
       if (m) this.group.remove(m.g);
       const g = makeObject(o.kind, o.built ? undefined : GHOST_OK);
       placeModel(g, o);
       g.userData.obj = o.id;
+      let marker: THREE.Mesh | null = null;
+      if (o.built && state) {
+        marker = new THREE.Mesh(this.markerGeo, new THREE.MeshBasicMaterial({ color: state === "broken" ? "#ef4444" : "#f59e0b" }));
+        marker.position.y = 2.4;
+        g.add(marker);
+      }
       this.group.add(g);
-      this.models.set(o.id, { g, built: o.built });
+      this.models.set(o.id, { g, key, marker });
     }
+  }
+
+  /** Spin and bob the markers. */
+  update(t: number) {
+    for (const m of this.models.values())
+      if (m.marker) {
+        m.marker.rotation.y = t * 2;
+        m.marker.position.y = 2.4 + Math.sin(t * 3) * 0.12;
+      }
   }
 }

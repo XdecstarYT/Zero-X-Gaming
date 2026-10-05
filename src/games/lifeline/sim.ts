@@ -18,7 +18,11 @@ import {
   MINUTES_PER_SECOND,
   OBJECTS,
   PAVEMENT_Z,
+  RESEARCH,
+  RESEARCH_ORDER,
+  METRIC_NAME,
   ROLES,
+  SCENARIOS,
   ROOMS,
   START_CASH,
   STEP_MINUTES,
@@ -31,7 +35,9 @@ import {
   type GrantId,
   type ObjectId,
   type Role,
+  type ResearchId,
   type RoomId,
+  type ScenarioId,
   type Step,
 } from "./data";
 import { accessCell, BUILT, cx, cz, FLOOR_IDS, FRONT, idx, inside, NONE, objCells, PLANNED, ROOM_IDS, slots, World, type Obj, type RoomInstance } from "./world";
@@ -53,7 +59,7 @@ export class Rng {
 
 // ------------------------------------------------------------------- types
 
-export type JobKind = "wall" | "door" | "floor" | "object";
+export type JobKind = "wall" | "door" | "floor" | "object" | "repair";
 export interface Job {
   id: number;
   kind: JobKind;
@@ -113,6 +119,10 @@ export interface Person {
   seat: { x: number; z: number } | null;
   /** Sim time before which a waiting patient doesn't re-think. */
   cool: number;
+  /** Experience: staff level up and work faster. */
+  xp: number;
+  /** Flown in by air ambulance. */
+  air?: boolean;
   /** The last unreachable target, and when to try it again. */
   failCell: number;
   failUntil: number;
@@ -121,7 +131,12 @@ export interface Person {
 
 export interface Vehicle {
   id: number;
-  kind: "truck" | "ambulance";
+  kind: "truck" | "ambulance" | "helicopter";
+  /** Helicopters fly: their position over the plot and their height. */
+  z?: number;
+  y?: number;
+  tx?: number;
+  tz?: number;
   x: number;
   /** Where it stops. */
   stop: number;
@@ -158,6 +173,12 @@ export interface Stats {
   /** Rolling window for reputation. */
   recent: { t: number; d: number; l: number; wait: number; waits: number };
   cleanHours: number;
+  births: number;
+  icu: number;
+  therapy: number;
+  mri: number;
+  air: number;
+  repairs: number;
   history: DayReport[];
   today: DayReport;
 }
@@ -168,8 +189,33 @@ export type GrantState = "open" | "done";
 const ROLE_SPEED: Record<string, number> = { patient: 2.1, staff: 2.7 };
 const STAFFED_BY: Partial<Record<RoomId, Role[]>> = Object.fromEntries(Object.entries(ROOMS).filter(([, d]) => d.staff).map(([k, d]) => [k, d.staff!]));
 /** The object a patient uses in each treatment room. */
-const PATIENT_OBJ: Record<Step | "reception", ObjectId> = { gp: "examBed", radiology: "xray", pharmacy: "pharmacyCounter", ward: "bed", theatre: "opTable", emergency: "traumaBed", reception: "receptionDesk" };
-const LIE_ON = new Set<ObjectId>(["examBed", "bed", "opTable", "traumaBed"]);
+const PATIENT_OBJ: Record<Step | "reception", ObjectId> = {
+  gp: "examBed",
+  radiology: "xray",
+  pharmacy: "pharmacyCounter",
+  ward: "bed",
+  theatre: "opTable",
+  emergency: "traumaBed",
+  reception: "receptionDesk",
+  icu: "icuBed",
+  maternity: "birthingBed",
+  psych: "therapyCouch",
+  mri: "mriScanner",
+};
+const LIE_ON = new Set<ObjectId>(["examBed", "bed", "opTable", "traumaBed", "icuBed", "birthingBed", "therapyCouch", "mriScanner"]);
+const MEDICAL = new Set<Role>(["doctor", "nurse", "surgeon", "midwife", "psychiatrist", "receptionist"]);
+
+/** Staff level from experience: 1 to 5. Each level works 10% faster. */
+export function levelOf(xp: number) {
+  return Math.min(5, 1 + Math.floor(Math.sqrt(Math.max(0, xp) / 6)));
+}
+
+export interface ScenarioState {
+  id: ScenarioId;
+  endsAt: number;
+  medal: number;
+  finished: boolean;
+}
 
 export class Sim {
   world = new World();
@@ -187,6 +233,13 @@ export class Sim {
   grants: Partial<Record<GrantId, GrantState>> = { opening: "open", firstTen: "open" };
   events: { id: EventId; until: number }[] = [];
   loan = 0;
+  /** Research: the project under way, points put into it, projects finished. */
+  research: { current: ResearchId | null; points: number; done: ResearchId[] } = { current: null, points: 0, done: [] };
+  /** A campaign scenario being played (null in free play). */
+  scenario: ScenarioState | null = null;
+  /** This week's numbers, for the awards on day 8, 15, ... */
+  week = { treated: 0, deaths: 0, left: 0, hyg: 0, hours: 0 };
+  lastAwards: { name: string; prize: number }[] = [];
   notices: Notice[] = [];
   /** One-off messages for the UI to show and clear. */
   messages: { text: string; kind: "info" | "good" | "bad" }[] = [];
@@ -233,8 +286,8 @@ export class Sim {
   }
 
   private addJob(kind: JobKind, cell: number, obj = 0) {
-    const work = kind === "floor" ? 1.2 : kind === "wall" ? 3 : kind === "door" ? 4 : OBJECTS[this.world.objects.get(obj)!.kind].build;
-    const j: Job = { id: this.nextId++, kind, cell, obj, work, done: 0, needsCrate: kind !== "floor", crate: 0, worker: 0 };
+    const work = kind === "floor" ? 1.2 : kind === "wall" ? 3 : kind === "door" ? 4 : kind === "repair" ? 6 : OBJECTS[this.world.objects.get(obj)!.kind].build;
+    const j: Job = { id: this.nextId++, kind, cell, obj, work, done: 0, needsCrate: kind !== "floor" && kind !== "repair", crate: 0, worker: 0 };
     this.jobs.set(j.id, j);
     if (j.needsCrate) this.orders.push(j.id);
     return j;
@@ -386,7 +439,7 @@ export class Sim {
     }
     if (refund) {
       const w = this.world;
-      const back = j.kind === "wall" ? WALL_COST : j.kind === "door" ? DOOR_COST : j.kind === "floor" ? FLOORS[FLOOR_IDS[(w.floorPlan[j.cell] || 1) - 1]].cost : OBJECTS[w.objects.get(j.obj)?.kind ?? "plant"].cost;
+      const back = j.kind === "repair" ? 0 : j.kind === "wall" ? WALL_COST : j.kind === "door" ? DOOR_COST : j.kind === "floor" ? FLOORS[FLOOR_IDS[(w.floorPlan[j.cell] || 1) - 1]].cost : OBJECTS[w.objects.get(j.obj)?.kind ?? "plant"].cost;
       this.earn(back);
       this.stats.income -= back;
       this.stats.today.income -= back;
@@ -401,7 +454,7 @@ export class Sim {
     const cells = new Set(this.cellsIn(x0, z0, x1, z1));
     let did = false;
     for (const j of [...this.jobs.values()]) {
-      const hit = j.kind === "object" ? objCells(w.objects.get(j.obj)!).some((c) => cells.has(c)) : cells.has(j.cell);
+      const hit = j.kind === "object" || j.kind === "repair" ? objCells(w.objects.get(j.obj)!).some((c) => cells.has(c)) : cells.has(j.cell);
       if (!hit) continue;
       this.cancelJob(j.id, true);
       did = true;
@@ -443,7 +496,24 @@ export class Sim {
 
   unlocked(role: Role) {
     const need = ROLES[role].unlock;
-    return !need || this.adminActive(need);
+    const res = ROLES[role].research;
+    return (!need || this.adminActive(need)) && (!res || this.research.done.includes(res));
+  }
+
+  researched(id: ResearchId) {
+    return this.research.done.includes(id);
+  }
+
+  /** Projects that can be started now (not done, prerequisites met). */
+  researchOpen() {
+    return RESEARCH_ORDER.filter((id) => !this.research.done.includes(id) && (!RESEARCH[id].needs || this.research.done.includes(RESEARCH[id].needs!)));
+  }
+
+  setResearch(id: ResearchId) {
+    if (!this.researchOpen().includes(id)) return false;
+    if (this.research.current !== id) this.research.points = 0;
+    this.research.current = id;
+    return true;
   }
 
   /** An administrator counts once they're at their desk in an office. */
@@ -454,7 +524,8 @@ export class Sim {
 
   roomUnlocked(room: RoomId) {
     const need = ROOMS[room].unlock;
-    return !need || this.adminActive(need);
+    const res = ROOMS[room].research;
+    return (!need || this.adminActive(need)) && (!res || this.research.done.includes(res));
   }
 
   hire(role: Role) {
@@ -525,6 +596,7 @@ export class Sim {
       at: null,
       seat: null,
       cool: 0,
+      xp: 0,
       failCell: -1,
       failUntil: 0,
       needTarget: null,
@@ -591,6 +663,13 @@ export class Sim {
 
   /** Rooms changed: drop staff and claims from rooms that are gone or broken. */
   private afterRooms() {
+    for (const r of this.world.rooms) {
+      const res = ROOMS[r.type].research;
+      if (res && !this.research.done.includes(res)) {
+        r.issues.unshift(`Research "${RESEARCH[res].name}" first`);
+        r.valid = false;
+      }
+    }
     const keys = new Map(this.world.rooms.map((r) => [r.cells[0], r]));
     for (const p of this.people.values()) {
       if (p.kind !== "staff" || !p.room) continue;
@@ -617,6 +696,10 @@ export class Sim {
       this.vehicles.push({ id: this.nextId++, kind: "truck", x: -6, stop: this.deliveryStop(), state: "in", t: 0, payload: 0 });
     }
     for (const v of this.vehicles) {
+      if (v.kind === "helicopter") {
+        this.flyHelicopter(v, t);
+        continue;
+      }
       const speed = v.kind === "ambulance" ? 9 : 6;
       if (v.state === "in") {
         v.x = Math.min(v.stop, v.x + speed * t);
@@ -631,7 +714,56 @@ export class Sim {
         if (v.t > (v.kind === "truck" ? 4 : 3)) v.state = "out";
       } else v.x += speed * t;
     }
-    this.vehicles = this.vehicles.filter((v) => v.x < W + 8);
+    this.vehicles = this.vehicles.filter((v) => (v.kind === "helicopter" ? v.state !== "out" || v.t < 9 : v.x < W + 8));
+  }
+
+  /** In from the west at height, down onto the pad, a patient off, and away. */
+  private flyHelicopter(v: Vehicle, t: number) {
+    v.t += t;
+    const tx = v.tx!;
+    const tz = v.tz!;
+    if (v.state === "in") {
+      const k = Math.min(1, v.t / 8);
+      const e = k * k * (3 - 2 * k);
+      v.x = -30 + (tx + 30) * e;
+      v.z = tz - 20 + 20 * e;
+      v.y = 1.6 + 28 * (1 - e) * (1 - e);
+      if (k >= 1) {
+        v.state = "stopped";
+        v.t = 0;
+        this.helicopterLands(v);
+      }
+    } else if (v.state === "stopped") {
+      v.y = 1.6;
+      if (v.t > 4) {
+        v.state = "out";
+        v.t = 0;
+      }
+    } else {
+      v.y = 1.6 + v.t * v.t * 0.8;
+      v.x = tx + v.t * v.t * 1.2;
+    }
+  }
+
+  private helicopterLands(v: Vehicle) {
+    const pad = this.world.roomsOf("helipad").find((r) => r.valid);
+    const cond = (Object.keys(CONDITIONS) as ConditionId[]).filter((id) => CONDITIONS[id].air);
+    const p = this.spawn("patient", null, this.rng.pick(cond), true);
+    const cell = pad ? this.world.nearestWalkable(pad.x, pad.z) : idx(GATE.x, PAVEMENT_Z - 1);
+    p.x = cx(cell) + 0.5;
+    p.z = cz(cell) + 0.5;
+    p.air = true;
+    this.messages.push({ text: `Air ambulance: ${p.name}, ${CONDITIONS[p.cond!].name.toLowerCase()}.`, kind: "info" });
+    void v;
+  }
+
+  private callHelicopter() {
+    const pad = this.world.roomsOf("helipad").find((r) => r.valid);
+    if (!pad || this.vehicles.some((v) => v.kind === "helicopter")) return;
+    const o = pad.objects.map((id) => this.world.objects.get(id)!).find((x) => x.kind === "helipad");
+    const tx = o ? o.x + 2 : pad.x;
+    const tz = o ? o.z + 2 : pad.z;
+    this.vehicles.push({ id: this.nextId++, kind: "helicopter", x: -30, z: tz - 20, y: 30, tx, tz, stop: tx, state: "in", t: 0, payload: 0 });
   }
 
   private deliveryCells() {
@@ -681,14 +813,17 @@ export class Sim {
   }
 
   private pickCondition(critical: boolean): ConditionId {
-    const pool = (Object.entries(CONDITIONS) as [ConditionId, (typeof CONDITIONS)[ConditionId]][]).filter(([, c]) => !!c.critical === critical && c.weight > 0);
-    const weight = (id: ConditionId, base: number) => base * (id === "flu" && this.eventOn("fluSeason") ? 3 : 1) * (id === "burns" && this.eventOn("heatwave") ? 3 : 1);
-    // Without a chief of medicine there's no surgery; send fewer surgical cases until there is.
-    const surgical = this.roomUnlocked("theatre") && this.world.roomsOf("theatre").some((r) => r.valid);
-    const total = pool.reduce((n, [id, c]) => n + weight(id, c.weight) * (!surgical && c.path.includes("theatre") ? 0.3 : 1), 0);
+    const pool = (Object.entries(CONDITIONS) as [ConditionId, (typeof CONDITIONS)[ConditionId]][]).filter(([, c]) => !!c.critical === critical && c.weight > 0 && !c.air);
+    const flu = this.eventOn("fluSeason") || this.scenarioDef()?.twist === "flu";
+    // Cases the hospital can't treat yet (rooms not researched or unlocked, or not built) come
+    // much more rarely: word gets round about what a hospital can do.
+    const can = (c: (typeof CONDITIONS)[ConditionId]) => c.path.every((st) => this.roomUnlocked(STEP_ROOM[st]) && this.validRoom(STEP_ROOM[st]));
+    const weight = (id: ConditionId, c: (typeof CONDITIONS)[ConditionId]) =>
+      c.weight * (id === "flu" && flu ? 3 : 1) * (id === "burns" && this.eventOn("heatwave") ? 3 : 1) * (id === "pregnancy" && this.eventOn("babyBoom") ? 3 : 1) * (can(c) ? 1 : c.path.every((st) => this.roomUnlocked(STEP_ROOM[st])) ? 0.45 : 0.15);
+    const total = pool.reduce((n, [id, c]) => n + weight(id, c), 0);
     let r = this.rng.next() * total;
     for (const [id, c] of pool) {
-      r -= weight(id, c.weight) * (!surgical && c.path.includes("theatre") ? 0.3 : 1);
+      r -= weight(id, c);
       if (r <= 0) return id;
     }
     return pool[0][0];
@@ -704,12 +839,16 @@ export class Sim {
     const night = h < 6 || h >= 22 ? 0.35 : h < 9 || h > 19 ? 0.7 : 1;
     if (this.validRoom("reception")) {
       const gps = this.world.roomsOf("gp").filter((r) => r.valid).length;
-      const rate = (1.1 + this.rep * 0.75) * night * Math.min(1.6, 0.45 + 0.3 * gps);
+      const rate = (1.1 + this.rep * 0.75) * night * Math.min(1.6, 0.45 + 0.3 * gps) * (this.researched("telehealth") ? 1.2 : 1);
       if (this.rng.next() < (rate / 60) * dm) this.spawn("patient", null, this.pickCondition(false));
     }
     if (this.validRoom("emergency")) {
-      const rate = (0.12 + this.rep * 0.05) * (night < 1 ? 0.7 : 1);
+      const rate = (0.12 + this.rep * 0.05) * (night < 1 ? 0.7 : 1) * (this.scenarioDef()?.twist === "crashes" ? 3 : 1);
       if (this.rng.next() < (rate / 60) * dm) this.callAmbulance();
+    }
+    if (this.validRoom("helipad") && this.validRoom("emergency")) {
+      const rate = 0.07 + this.rep * 0.02;
+      if (this.rng.next() < (rate / 60) * dm) this.callHelicopter();
     }
   }
 
@@ -809,6 +948,10 @@ export class Sim {
       const beds = r.objects.filter((id) => this.world.objects.get(id)?.kind === "bed").length;
       return Math.max(1, Math.ceil(beds / 4));
     }
+    if (r.type === "icu" && role === "nurse") {
+      const beds = r.objects.filter((id) => this.world.objects.get(id)?.kind === "icuBed").length;
+      return Math.max(1, Math.ceil(beds / 3));
+    }
     return 1;
   }
 
@@ -836,6 +979,8 @@ export class Sim {
     // Sit on the room's chair when it has one (reception, consulting rooms, offices).
     const chair = find("chair");
     if (chair && (r.type === "reception" || r.type === "gp" || r.type === "office")) return { cell: objCells(chair)[0], at: { x: chair.x + 0.5, z: chair.z + 0.5 } };
+    const arm = find("armchair");
+    if (arm && r.type === "psychiatry") return { cell: objCells(arm)[0], at: { x: arm.x + 0.5, z: arm.z + 0.5 } };
     const by = (k: ObjectId) => {
       const o = find(k);
       if (!o) return null;
@@ -854,7 +999,7 @@ export class Sim {
       }
       return by("anesthesia") ?? { cell: w.nearestWalkable(r.x, r.z), at: null };
     }
-    const spot = { radiology: "leadScreen", pharmacy: "medCabinet", emergency: "defib", ward: "monitor" } as Partial<Record<RoomId, ObjectId>>;
+    const spot = { radiology: "leadScreen", pharmacy: "medCabinet", emergency: "defib", ward: "monitor", icu: role === "doctor" ? "ventilator" : "icuBed", maternity: "incubator", mri: "mriConsole", research: "labBench" } as Partial<Record<RoomId, ObjectId>>;
     const k = spot[r.type];
     const s = k ? by(k) : null;
     if (s && w.walkable(s.cell)) return s;
@@ -865,8 +1010,8 @@ export class Sim {
 
   private staffStep(p: Person, t: number, dm: number) {
     const role = p.role!;
-    const medical = role === "doctor" || role === "nurse" || role === "surgeon" || role === "receptionist";
-    if (medical) p.energy = Math.max(0, p.energy - (dm / 60) * (p.onDuty ? 4 : 2));
+    const medical = MEDICAL.has(role);
+    if (medical) p.energy = Math.max(0, p.energy - (dm / 60) * (p.onDuty ? 4 : 2) * (this.researched("ergonomics") ? 0.7 : 1));
     if (role === "workman") return this.workmanStep(p, t);
     if (role === "janitor") return this.janitorStep(p, t);
     // Tired: rest in the staff room if there is one.
@@ -904,7 +1049,7 @@ export class Sim {
     // Find a room to work in (at most once a second while there's none).
     if (!p.room && this.time < p.cool) return;
     if (!p.room) {
-      const rooms = this.world.rooms.filter((r) => r.valid && this.wants(r, role) > this.assigned(r, role) && (r.type !== "theatre" || this.roomUnlocked("theatre")));
+      const rooms = this.world.rooms.filter((r) => r.valid && this.wants(r, role) > this.assigned(r, role) && this.roomUnlocked(r.type));
       if (!rooms.length) {
         p.cool = this.time + 1;
         if (p.state !== "wander" || this.arrived(p)) {
@@ -954,7 +1099,7 @@ export class Sim {
 
   private workmanStep(p: Person, t: number) {
     const w = this.world;
-    const rate = this.adminActive("facilities") ? 1.3 : 1;
+    const rate = (this.adminActive("facilities") ? 1.3 : 1) * (1 + 0.1 * (levelOf(p.xp) - 1));
     if (p.carrying || p.task) {
       const j = this.jobs.get(p.task);
       if (!j) {
@@ -1012,7 +1157,7 @@ export class Sim {
         const c = j.crate ? this.crates.get(j.crate) : null;
         if (!c || c.carriedBy) continue;
       }
-      const at = j.kind === "object" ? objCells(w.objects.get(j.obj)!)[0] : j.cell;
+      const at = j.kind === "object" || j.kind === "repair" ? objCells(w.objects.get(j.obj)!)[0] : j.cell;
       const d = Math.hypot(cx(at) - p.x, cz(at) - p.z) + (j.kind === "floor" ? 0 : 2);
       if (d < bd) {
         bd = d;
@@ -1038,7 +1183,7 @@ export class Sim {
   private jobSite(j: Job, p: Person) {
     const w = this.world;
     let cells: number[];
-    if (j.kind === "object") {
+    if (j.kind === "object" || j.kind === "repair") {
       const o = w.objects.get(j.obj);
       if (!o) return -1;
       const a = accessCell(o);
@@ -1076,7 +1221,12 @@ export class Sim {
     p.task = 0;
     p.state = "idle";
     p.goal = -1;
-    if (j.kind === "floor") {
+    p.xp += j.kind === "floor" ? 0.1 : 1;
+    if (j.kind === "repair") {
+      const o = w.objects.get(j.obj);
+      if (o) o.wear = 0;
+      this.stats.repairs++;
+    } else if (j.kind === "floor") {
       w.floor[j.cell] = w.floorPlan[j.cell] || w.floor[j.cell];
       w.floorPlan[j.cell] = 0;
     } else if (j.kind === "wall") {
@@ -1109,7 +1259,7 @@ export class Sim {
 
   private janitorStep(p: Person, t: number) {
     const w = this.world;
-    const rate = (w.roomsOf("janitor").some((r) => r.valid) ? 1.4 : 1) * (this.adminActive("facilities") ? 1.3 : 1);
+    const rate = (w.roomsOf("janitor").some((r) => r.valid) ? 1.4 : 1) * (this.adminActive("facilities") ? 1.3 : 1) * (1 + 0.1 * (levelOf(p.xp) - 1));
     if (p.state === "clean" && p.task >= 0 && w.dirt[p.task] > 0.04) {
       if (this.arrived(p) || this.cellOf(p) === p.task) {
         p.pose = "clean";
@@ -1122,7 +1272,10 @@ export class Sim {
       }
       return;
     }
-    if (p.state === "clean") this.cleanTargets.delete(p.task);
+    if (p.state === "clean") {
+      this.cleanTargets.delete(p.task);
+      p.xp += 0.2;
+    }
     // The dirtiest reachable cell nearby that nobody else is on.
     let best = -1;
     let bs = 0.18;
@@ -1205,13 +1358,13 @@ export class Sim {
     const inTreatment = p.state === "inStep";
     const step = this.stepNow(p);
     // Health: falls while untreated (half as fast once diagnosed), rises in a ward bed.
-    if (inTreatment && step === "ward") p.health = Math.min(100, p.health + hours * 7);
+    if (inTreatment && (step === "ward" || step === "icu")) p.health = Math.min(100, p.health + hours * (step === "icu" ? 9 : 7));
     else if (!inTreatment) p.health -= hours * cond.decay * (p.step > 0 ? 0.5 : 1);
     p.hunger = Math.min(100, p.hunger + hours * 5);
     p.bladder = Math.min(100, p.bladder + hours * 7);
     if (!inTreatment) p.waited += dm;
     // Dirty floors make people sick.
-    if (!p.infected && this.world.dirt[this.cellOf(p)] > 0.6 && this.rng.next() < hours * 0.05) {
+    if (!p.infected && this.world.dirt[this.cellOf(p)] > 0.6 && this.rng.next() < hours * (this.researched("antibiotics") ? 0.025 : 0.05)) {
       p.infected = true;
       this.stats.infections++;
     }
@@ -1220,6 +1373,7 @@ export class Sim {
     if (!cond.critical && p.waited > 10 * 60 && p.state === "waitStep") {
       this.stats.left++;
       this.stats.recent.l++;
+      this.week.left++;
       this.messages.push({ text: `${p.name} gave up waiting and left.`, kind: "bad" });
       return this.leave(p);
     }
@@ -1282,6 +1436,7 @@ export class Sim {
     this.stats.deaths++;
     this.stats.recent.d++;
     this.stats.today.deaths++;
+    this.week.deaths++;
     this.rep = Math.max(0, this.rep - 0.08);
     this.messages.push({ text: `${p.name} died of ${CONDITIONS[p.cond!].name.toLowerCase()}.`, kind: "bad" });
   }
@@ -1444,17 +1599,38 @@ export class Sim {
     }
     // Work only happens with the staff at their stations.
     if (!this.staffed(r)) return;
-    let need = step === "ward" ? (CONDITIONS[p.cond!].wardHours ?? 8) * 60 : STEP_MINUTES[step];
-    // A monitor on the ward speeds recovery.
+    const cond = CONDITIONS[p.cond!];
+    let need = step === "ward" ? (cond.wardHours ?? 8) * 60 : step === "icu" ? (cond.icuHours ?? 12) * 60 : STEP_MINUTES[step];
+    // A monitor on the ward speeds recovery; research and experienced staff speed things up.
     if (step === "ward" && r.objects.some((id) => this.world.objects.get(id)?.kind === "monitor")) need *= 0.8;
-    p.timer += dm;
+    if ((step === "gp" || step === "radiology") && this.researched("diagnostics")) need *= 0.75;
+    if (step === "theatre" && this.researched("robotics")) need *= 0.7;
+    const crew = [...this.people.values()].filter((q) => q.kind === "staff" && q.room === r.cells[0] && q.onDuty);
+    const lvl = crew.reduce((m, q) => Math.max(m, levelOf(q.xp)), 1);
+    p.timer += dm * (1 + 0.1 * (lvl - 1));
     if (p.timer < need) return;
+    // Staff learn from every patient; machines wear with use.
+    for (const q of crew) q.xp += 1;
+    for (const id of r.objects) {
+      const ob = this.world.objects.get(id);
+      if (ob && (OBJECTS[ob.kind].power ?? 0) > 0) {
+        ob.wear = Math.min(1, (ob.wear ?? 0) + 0.035 + this.rng.next() * 0.03);
+        if (ob.wear >= 1) {
+          this.messages.push({ text: `The ${OBJECTS[ob.kind].name.toLowerCase()} in ${ROOMS[r.type].name.toLowerCase()} has broken down.`, kind: "bad" });
+          this.world.touch();
+        }
+      }
+    }
     // Step done.
     if (step === "radiology") this.stats.scans++;
     if (step === "pharmacy") this.stats.meds++;
     if (step === "theatre") this.stats.ops++;
     if (step === "emergency") this.stats.er++;
     if (step === "ward") this.stats.wardDone++;
+    if (step === "icu") this.stats.icu++;
+    if (step === "maternity") this.stats.births++;
+    if (step === "psych") this.stats.therapy++;
+    if (step === "mri") this.stats.mri++;
     this.release(o.id);
     p.at = null;
     p.timer = 0;
@@ -1481,6 +1657,9 @@ export class Sim {
     this.stats.treated++;
     this.stats.recent.t++;
     this.stats.today.treated++;
+    this.week.treated++;
+    if (p.air) this.stats.air++;
+    if (cond.path.includes("maternity")) this.messages.push({ text: `${p.name} had a healthy baby.`, kind: "good" });
     this.stats.recent.wait += (this.minutes - p.arrived) / 60;
     this.stats.recent.waits++;
     if (this.stats.treated % 10 === 0) this.messages.push({ text: `${this.stats.treated} patients treated.`, kind: "good" });
@@ -1519,6 +1698,10 @@ export class Sim {
     const target = 5 * (0.5 * cure + 0.25 * this.hygiene + 0.25 * Math.max(0, Math.min(1, 1 - (wait - 1) / 6)));
     this.rep += (target - this.rep) * 0.06;
     this.rep = Math.max(0, Math.min(5, this.rep));
+    this.week.hyg += this.hygiene;
+    this.week.hours++;
+    this.researchHour();
+    this.repairs();
     // Events: one roll each morning.
     if (h === 6 && this.day > 1 && this.rng.next() < 0.45) this.startEvent();
     if (h === 14 && this.eventOn("inspection")) this.inspect();
@@ -1537,21 +1720,119 @@ export class Sim {
       rc.l *= 0.6;
       rc.wait *= 0.6;
       rc.waits *= 0.6;
+      if (this.day > 1 && (this.day - 1) % 7 === 0) this.awards();
     }
+    this.checkScenario();
     this.events = this.events.filter((e) => e.until > this.minutes);
     this.checkGrants();
     this.updateNotices();
   }
 
+  /** Research labs with a doctor at the bench put points into the current project. */
+  private researchHour() {
+    const r = this.research;
+    if (!r.current) {
+      const open = this.researchOpen();
+      if (!open.length) return;
+      if (this.world.roomsOf("research").some((x) => x.valid)) r.current = open[0];
+      else return;
+    }
+    let pts = 0;
+    for (const room of this.world.roomsOf("research")) {
+      if (!room.valid || !this.staffed(room)) continue;
+      const scopes = room.objects.filter((id) => this.world.objects.get(id)?.kind === "microscope").length;
+      const benches = room.objects.filter((id) => this.world.objects.get(id)?.kind === "labBench").length;
+      const crew = [...this.people.values()].filter((q) => q.room === room.cells[0] && q.onDuty);
+      const lvl = crew.reduce((m, q) => Math.max(m, levelOf(q.xp)), 1);
+      pts += (2 + Math.min(scopes, 2) + 0.5 * (benches - 1)) * (1 + 0.1 * (lvl - 1));
+      for (const q of crew) q.xp += 0.25;
+    }
+    if (!pts) return;
+    r.points += pts;
+    const def = RESEARCH[r.current];
+    if (r.points >= def.cost) {
+      r.done.push(r.current);
+      this.messages.push({ text: `Research complete: ${def.name}. ${def.desc}`, kind: "good" });
+      r.current = null;
+      r.points = 0;
+      this.world.touch();
+    }
+  }
+
+  /** Machines that are wearing out get a workman sent to fix them ($250 in parts). */
+  private repairs() {
+    for (const o of this.world.objects.values()) {
+      if (!o.built || (o.wear ?? 0) < 0.75) continue;
+      if ([...this.jobs.values()].some((j) => j.kind === "repair" && j.obj === o.id)) continue;
+      this.spend(250);
+      this.addJob("repair", objCells(o)[0], o.id);
+    }
+  }
+
+  /** Every seven days: prizes for the week. */
+  private awards() {
+    const wk = this.week;
+    const won: { name: string; prize: number }[] = [];
+    const hyg = wk.hours ? wk.hyg / wk.hours : 0;
+    if (hyg >= 0.9) won.push({ name: "Cleanest hospital", prize: 10_000 });
+    if (wk.treated >= 30 && wk.treated / Math.max(1, wk.treated + wk.deaths + wk.left) >= 0.9) won.push({ name: "Best patient care", prize: 20_000 });
+    if (wk.treated >= 10 && wk.deaths === 0) won.push({ name: "Lifesaver: no deaths all week", prize: 8_000 });
+    if (wk.treated >= 80) won.push({ name: "Busiest hospital", prize: 15_000 });
+    for (const a of won) {
+      this.earn(a.prize);
+      this.messages.push({ text: `Award: ${a.name} (+$${a.prize.toLocaleString("en-US")})`, kind: "good" });
+    }
+    if (!won.length) this.messages.push({ text: "No awards this week. Keep floors clean and patients alive.", kind: "info" });
+    this.lastAwards = won;
+    this.week = { treated: 0, deaths: 0, left: 0, hyg: 0, hours: 0 };
+  }
+
+  scenarioDef() {
+    return this.scenario ? SCENARIOS[this.scenario.id] : null;
+  }
+
+  /** The number a scenario is judged on. */
+  scenarioScore() {
+    const d = this.scenarioDef();
+    if (!d) return 0;
+    return d.metric === "treated" ? this.stats.treated : d.metric === "er" ? this.stats.er : d.metric === "research" ? this.research.done.length : this.stats.air;
+  }
+
+  startScenario(id: ScenarioId) {
+    const d = SCENARIOS[id];
+    this.scenario = { id, endsAt: this.minutes + d.days * 1440, medal: 0, finished: false };
+    this.cash = d.cash;
+  }
+
+  private checkScenario() {
+    const sc = this.scenario;
+    const d = this.scenarioDef();
+    if (!sc || !d || sc.finished) return;
+    const score = this.scenarioScore();
+    const medal = d.goals.filter((g) => score >= g).length;
+    if (medal > sc.medal) {
+      sc.medal = medal;
+      this.messages.push({ text: `${["", "Bronze", "Silver", "Gold"][medal]} medal: ${score} ${METRIC_NAME[d.metric]}!`, kind: "good" });
+    }
+    if (this.minutes >= sc.endsAt || medal === 3) {
+      sc.finished = true;
+      this.messages.push({ text: medal ? `Scenario over: ${["", "bronze", "silver", "gold"][medal]} medal.` : "Scenario over: no medal this time.", kind: medal ? "good" : "bad" });
+    }
+  }
+
   private startEvent() {
     const pool: EventId[] = ["fluSeason", "inspection", "donation", "heatwave"];
+    if ([...this.world.objects.values()].some((o) => (OBJECTS[o.kind].power ?? 0) > 0)) pool.push("breakdowns");
     if (this.validRoom("emergency")) pool.push("busCrash");
+    if (this.validRoom("maternity")) pool.push("babyBoom");
     const id = this.rng.pick(pool);
     const until = this.minutes + (id === "fluSeason" ? 48 : 24) * 60;
     this.events.push({ id, until });
     this.messages.push({ text: `${EVENTS[id].name}: ${EVENTS[id].desc}`, kind: id === "donation" ? "good" : "info" });
     if (id === "donation") this.earn(3_000 + Math.round(this.rng.next() * 5) * 1_000);
     if (id === "busCrash") for (let i = 0; i < 5; i++) this.callAmbulance();
+    if (id === "breakdowns")
+      for (const o of this.world.objects.values()) if (o.built && (OBJECTS[o.kind].power ?? 0) > 0) o.wear = Math.min(0.95, (o.wear ?? 0) + 0.5);
   }
 
   private inspect() {
@@ -1592,6 +1873,12 @@ export class Sim {
         return this.rep >= 4;
       case "hundred":
         return s.treated >= 100;
+      case "discovery":
+        return this.research.done.length >= 1;
+      case "newborns":
+        return s.births >= 3;
+      case "airlift":
+        return s.air >= 3;
     }
   }
 
@@ -1636,7 +1923,8 @@ export class Sim {
       if (!this.world.roomsOf(room).some((r) => r.valid && this.staffed(r))) missing.set(room, (missing.get(room) ?? 0) + 1);
     }
     for (const [room, n] of missing) {
-      const locked = !this.roomUnlocked(room) ? ` (hire a ${ROLES[ROOMS[room].unlock!].name.toLowerCase()} to unlock it)` : "";
+      const def = ROOMS[room];
+      const locked = this.roomUnlocked(room) ? "" : def.research && !this.researched(def.research) ? ` (research "${RESEARCH[def.research].name}" first)` : def.unlock ? ` (hire a ${ROLES[def.unlock].name.toLowerCase()} to unlock it)` : "";
       out.push({ kind: "warn", text: `${n} waiting for a working ${ROOMS[room].name.toLowerCase()}${locked}.` });
     }
     const tired = staff.filter((p) => p.energy < 10).length;
@@ -1645,6 +1933,9 @@ export class Sim {
       out.push({ kind: "warn", text: `${ROLES[p.role!].name} needs an office to work from.` });
       break;
     }
+    if (this.validRoom("research") && !this.research.current && this.researchOpen().length) out.push({ kind: "info", text: "Pick a research project in the Research panel." });
+    const broken = [...w.objects.values()].filter((o) => (o.wear ?? 0) >= 1).length;
+    if (broken && !has("workman")) out.push({ kind: "warn", text: `${broken} machine${broken > 1 ? "s are" : " is"} broken. Hire a workman to repair them.` });
     for (const r of w.rooms) if (!r.valid && r.issues.length) out.push({ kind: "info", text: `${ROOMS[r.type].name}: ${r.issues[0]}.` });
     this.notices = out.slice(0, 8);
   }
@@ -1662,7 +1953,10 @@ export class Sim {
         w.door[j.cell] = BUILT;
       } else {
         const o = w.objects.get(j.obj);
-        if (o) o.built = true;
+        if (o) {
+          o.built = true;
+          if (j.kind === "repair") o.wear = 0;
+        }
       }
       if (j.crate) this.crates.delete(j.crate);
       this.jobs.delete(j.id);
@@ -1692,6 +1986,9 @@ export class Sim {
       nextId: this.nextId,
       rng: this.rng.s,
       lastTruck: this.lastTruck,
+      research: this.research,
+      scenario: this.scenario,
+      week: this.week,
     };
   }
 
@@ -1717,6 +2014,10 @@ export class Sim {
     s.nextId = j.nextId;
     s.rng.s = j.rng;
     s.lastTruck = j.lastTruck;
+    if (j.research) s.research = { current: j.research.current, points: j.research.points, done: [...j.research.done] };
+    s.scenario = j.scenario ?? null;
+    if (j.week) s.week = { ...j.week };
+    for (const p of s.people.values()) p.xp ??= 0;
     s.lastHour = Math.floor(s.minutes / 60);
     return s;
   }
@@ -1737,6 +2038,12 @@ export function freshStats(): Stats {
     expense: 0,
     recent: { t: 0, d: 0, l: 0, wait: 0, waits: 0 },
     cleanHours: 0,
+    births: 0,
+    icu: 0,
+    therapy: 0,
+    mri: 0,
+    air: 0,
+    repairs: 0,
     history: [],
     today: { day: 1, income: 0, expense: 0, treated: 0, deaths: 0 },
   };

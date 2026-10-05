@@ -25,6 +25,8 @@ export interface Obj {
   z: number;
   rot: number;
   built: boolean;
+  /** Machines wear with use (0 new, 1 broken); workmen repair them. */
+  wear?: number;
 }
 
 export interface RoomInstance {
@@ -240,14 +242,22 @@ export class World {
     const area = r.cells.filter((c) => !this.wall[c]).length;
     if (area < def.min) issues.push(`Needs at least ${def.min} m² (has ${area})`);
     const have = new Map<ObjectId, number>();
+    const broken: string[] = [];
     for (const id of r.objects) {
       const o = this.objects.get(id)!;
-      if (o.built) have.set(o.kind, (have.get(o.kind) ?? 0) + 1);
+      if (!o.built) continue;
+      // A broken machine doesn't count until it's repaired.
+      if ((o.wear ?? 0) >= 1) {
+        broken.push(OBJECTS[o.kind].name.toLowerCase());
+        continue;
+      }
+      have.set(o.kind, (have.get(o.kind) ?? 0) + 1);
     }
     for (const [k, n] of Object.entries(def.needs) as [ObjectId, number][]) {
       const got = have.get(k) ?? 0;
       if (got < n) issues.push(`Needs ${n > 1 ? `${n} × ` : ""}${OBJECTS[k].name.toLowerCase()}${got ? ` (has ${got})` : ""}`);
     }
+    for (const b of new Set(broken)) if (issues.some((i) => i.includes(b))) issues.push(`The ${b} is broken: a workman will repair it`);
     if (def.indoor && r.cells.some((c) => !this.found[c] || !this.floor[c])) issues.push("Must be indoors, on a finished floor");
     if (def.enclosed) {
       let open = false;

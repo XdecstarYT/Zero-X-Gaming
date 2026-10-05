@@ -90,3 +90,52 @@ export function starterHospital(s: Sim, opts: { build: boolean; full?: boolean }
   }
   if (opts.build) s.instantBuild();
 }
+
+/**
+ * The mega-update wing east of the main block: intensive care, maternity, psychiatry,
+ * an MRI suite, a research lab and a helipad. Doors face the gap at x = 49.
+ */
+export function megaWing(s: Sim, opts: { build: boolean }) {
+  s.foundation(50, 2, 62, 10, "tile");
+  s.door(idx(50, 6));
+  s.paintRoom(51, 3, 61, 9, "icu");
+  s.placeObject("icuBed", 52, 4, 0);
+  s.placeObject("ventilator", 53, 4, 0);
+  s.placeObject("icuBed", 56, 4, 0);
+  s.placeObject("ventilator", 57, 4, 0);
+  s.placeObject("monitor", 60, 4, 0);
+
+  s.foundation(50, 11, 62, 19, "lino");
+  s.door(idx(50, 15));
+  s.paintRoom(51, 12, 61, 18, "maternity");
+  s.placeObject("birthingBed", 53, 13, 0);
+  s.placeObject("incubator", 54, 13, 0);
+  s.placeObject("birthingBed", 57, 13, 0);
+  s.placeObject("sink", 60, 13, 0);
+
+  s.foundation(50, 20, 56, 26, "carpet");
+  s.door(idx(50, 23));
+  s.paintRoom(51, 21, 55, 25, "psychiatry");
+  s.placeObject("therapyCouch", 51, 22, 0);
+  s.placeObject("armchair", 54, 22, 0);
+  s.placeObject("bookshelf", 53, 24, 0);
+
+  s.foundation(57, 20, 63, 28, "tile");
+  s.door(idx(60, 28));
+  s.paintRoom(58, 21, 62, 27, "mri");
+  s.placeObject("mriScanner", 58, 21, 0);
+  s.placeObject("mriConsole", 61, 25, 0);
+
+  s.foundation(50, 32, 56, 38, "tile");
+  s.door(idx(50, 35));
+  s.paintRoom(51, 33, 55, 37, "research");
+  s.placeObject("labBench", 51, 33, 0);
+  s.placeObject("microscope", 54, 33, 0);
+
+  s.paintRoom(57, 31, 62, 37, "helipad");
+  s.placeObject("helipad", 58, 32, 0);
+  s.placeObject("fountain", 43, 41, 0);
+  s.placeObject("generator", 40, 4, 0);
+  s.placeObject("generator", 44, 4, 0);
+  if (opts.build) s.instantBuild();
+}

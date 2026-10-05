@@ -1,5 +1,5 @@
 import { createStore } from "zustand/vanilla";
-import type { FloorId, GrantId, ObjectId, Role, RoomId } from "./data";
+import type { FloorId, GrantId, ObjectId, ResearchId, Role, RoomId, ScenarioId } from "./data";
 import type { GrantState, Notice, Stats } from "./sim";
 
 export type Tool =
@@ -12,7 +12,7 @@ export type Tool =
   | { kind: "demolish" };
 
 export type Category = "build" | "rooms" | "objects" | "staff" | null;
-export type Panel = "staff" | "reports" | "grants" | "help" | null;
+export type Panel = "staff" | "reports" | "grants" | "research" | "help" | null;
 
 export interface Selected {
   kind: "person" | "room";
@@ -37,7 +37,15 @@ export interface HudState {
   stats: Stats | null;
   notices: Notice[];
   grants: Partial<Record<GrantId, GrantState>>;
-  staff: { id: number; role: Role; name: string; energy: number; onDuty: boolean; state: string }[];
+  staff: { id: number; role: Role; name: string; energy: number; onDuty: boolean; state: string; level: number }[];
+  research: { current: ResearchId | null; points: number; done: ResearchId[]; open: ResearchId[]; labs: number };
+  scenario: { id: ScenarioId; score: number; medal: number; finished: boolean; hoursLeft: number } | null;
+  /** Best medal per scenario on this device. */
+  medals: Partial<Record<ScenarioId, number>>;
+  /** Show the end-of-scenario card. */
+  result: boolean;
+  /** The camera follows the selected person. */
+  follow: boolean;
   patients: number;
   jobs: number;
   loan: number;
@@ -69,6 +77,11 @@ export function makeStore() {
     notices: [],
     grants: {},
     staff: [],
+    research: { current: null, points: 0, done: [], open: [], labs: 0 },
+    scenario: null,
+    medals: {},
+    result: false,
+    follow: false,
     patients: 0,
     jobs: 0,
     loan: 0,
