@@ -281,9 +281,9 @@ export const GAMES: Game[] = [
     title: "Zero City",
     tagline: "Draw roads. Paint zones. Watch a city come alive.",
     description:
-      "The ZLink+ exclusive city builder. Pick one of ten maps, from flat farmland to river crossings, island chains and mountain ridges, and lay roads off the highway in eight ways: straight, curves, S-curves, freehand, roundabouts, lane layouts, one-ways and upgrades, with bridges and cuttings built for you. Paint homes, shops, industry and mixed-use beside your streets and watch red-brick walk-ups, cream mid-rises and glass towers rise on their own, while cars, vans, buses and people fill the streets, queue at junctions and cross at zebras. Tilt down to street level, click any car to see where it's going, and grow from a hamlet to a city of thousands through day and night. Sandbox, unlimited money, eight languages. Members only.",
+      "The ZLink+ exclusive city builder. Pick one of ten maps, from flat farmland to river crossings, island chains and mountain ridges, and lay roads off the highway in eight ways: straight, curves, S-curves, freehand, roundabouts, lane layouts, one-ways and upgrades, with bridges and cuttings built for you. Paint homes, shops, industry and mixed-use beside your streets and watch red-brick walk-ups, cream mid-rises and glass towers rise on their own, while cars, vans, buses and people fill the streets, queue at junctions and cross at zebras. Tilt down to street level, click any car to see where it's going, and grow from a hamlet to a city of thousands through day and night. Play Sandbox with unlimited money, or Mayor mode: set taxes, balance the budget, win over five groups of voters, get policies through a seven-seat council, answer dilemmas and keep your promises before every election. Liquid-glass interface, eight languages. Members only.",
     category: "sim",
-    tags: ["zlink+ exclusive", "city builder", "3d", "sandbox"],
+    tags: ["zlink+ exclusive", "city builder", "3d", "sandbox", "politics"],
     status: "live",
     palette: ["#22e5ff", "#f5a25a"],
     rating: 0,

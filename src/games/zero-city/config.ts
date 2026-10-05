@@ -1,7 +1,7 @@
 /** Rename the game here: every screen, the logo and the saves read this. */
 export const GAME_NAME = "Zero City";
 export const GAME_SLUG = "zero-city";
-export const VERSION = "0.5";
+export const VERSION = "0.6";
 /** Save format version; bump it and add a migration in save.ts. */
 export const SAVE_VERSION = 1;
 

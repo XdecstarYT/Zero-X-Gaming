@@ -72,11 +72,20 @@ export interface SimWorld {
   /** Map resources 0–2: water, wood, farmland, oil. */
   res: number[];
 }
+/** What city policy (Mayor mode) does to growth: demand nudges, a height limit, fewer cars. */
+export interface SimPolicy {
+  bias: { R: number; C: number; I: number; M: number };
+  maxTier: number;
+  carShare: number;
+}
+export const NO_POLICY: SimPolicy = { bias: { R: 0, C: 0, I: 0, M: 0 }, maxTier: 9, carShare: 1 };
+
 export interface SimSettings {
   traffic: boolean;
   peds: boolean;
   trafficDensity: number;
   pedDensity: number;
+  policy?: SimPolicy;
 }
 
 export interface Building {
@@ -113,6 +122,13 @@ export interface Stats {
   power: boolean;
   water: boolean;
   staff: number;
+  /** Share of residents within reach of each civic service, 0–1. */
+  coverage: { police: number; fire: number; clinic: number; school: number; park: number };
+  /** Share of residents living next to industry, 0–1. */
+  pollution: number;
+  /** Jobs by kind. */
+  cJobs: number;
+  iJobs: number;
 }
 
 export interface Notice {
@@ -189,6 +205,9 @@ interface NodeInfo {
 
 const SERVICE_STAFF: Record<string, number> = { police: 12, fire: 10, clinic: 14, school: 20, power: 15, water: 6, park: 2 };
 const SERVICE_RADIUS: Record<string, number> = { police: 340, fire: 360, clinic: 320, school: 420, park: 200 };
+const COVER_KINDS = ["police", "fire", "clinic", "school", "park"] as const;
+const COVER_BIT: Record<string, number> = { police: 1, fire: 2, clinic: 4, school: 8, park: 16 };
+const POLLUTED = 32;
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -221,6 +240,8 @@ export class Sim {
   private changed = new Set<number>();
   private removedLots = new Set<number>();
   private svcGrid = new Map<string, SimService[]>();
+  /** Lot id → which services reach it (COVER_BIT) and whether industry is next door. */
+  private cover = new Map<number, number>();
   private indGrid = new Map<string, number>();
 
   load(save: SimSave | null) {
@@ -398,6 +419,7 @@ export class Sim {
     }
     const power = this.hasService("power");
     const water = this.hasService("water");
+    const maxTier = this.settings.policy?.maxTier ?? 9;
     for (const z of ["R", "C", "I", "M"] as Zone[]) {
       const d = dem[z];
       if (d <= 0.02 || lotsBy[z].length === 0) continue;
@@ -419,7 +441,7 @@ export class Sim {
       const l = this.lots.get(b.lot);
       if (!l) continue;
       const cap = tierCap(l.zone, l.w, l.d);
-      if (b.tier >= cap) continue;
+      if (b.tier >= Math.min(cap, maxTier)) continue;
       const lv = this.lv.get(l.id) ?? 0.3;
       const need = [0, 0.32, 0.46, 0.6][b.tier] ?? 1;
       if (lv < need) continue;
@@ -460,8 +482,10 @@ export class Sim {
       const k = `${Math.floor(l.cx / 128)},${Math.floor(l.cz / 128)}`;
       this.indGrid.set(k, (this.indGrid.get(k) ?? 0) + b.tier);
     }
+    this.cover.clear();
     for (const l of this.lots.values()) {
       let v = 0.3;
+      let mask = 0;
       const gx = Math.floor(l.cx / 128);
       const gz = Math.floor(l.cz / 128);
       const seen = new Set<string>();
@@ -472,11 +496,17 @@ export class Sim {
             if (!r || seen.has(s.kind)) continue;
             if (Math.hypot(s.cx - l.cx, s.cz - l.cz) <= r) {
               seen.add(s.kind);
+              mask |= COVER_BIT[s.kind] ?? 0;
               v += s.kind === "park" ? 0.12 : 0.08;
             }
           }
-          if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1 && l.zone !== "I") v -= Math.min(0.3, (this.indGrid.get(`${gx + dx},${gz + dz}`) ?? 0) * 0.025);
+          if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1 && l.zone !== "I") {
+            const ind = this.indGrid.get(`${gx + dx},${gz + dz}`) ?? 0;
+            if (ind > 0) mask |= POLLUTED;
+            v -= Math.min(0.3, ind * 0.025);
+          }
         }
+      this.cover.set(l.id, mask);
       if (l.wet) v += 0.12;
       v -= (this.congestion.get(l.edge) ?? 0) * 0.12;
       const b = this.buildings.get(l.id);
@@ -500,19 +530,30 @@ export class Sim {
       if (b.zone === "C" || b.zone === "M") cJobs += b.capJobs;
       if (b.zone === "I") iJobs += b.capJobs;
     }
+    // Who can reach which service, weighted by residents.
+    const cov = { police: 0, fire: 0, clinic: 0, school: 0, park: 0 };
+    let polluted = 0;
+    for (const b of this.buildings.values()) {
+      if (!b.residents) continue;
+      const m = this.cover.get(b.lot) ?? 0;
+      for (const k of COVER_KINDS) if (m & COVER_BIT[k]) cov[k] += b.residents;
+      if (m & POLLUTED) polluted += b.residents;
+    }
+    for (const k of COVER_KINDS) cov[k] = pop ? cov[k] / pop : 0;
     const svcJobs = this.world.services.reduce((n, s) => n + (SERVICE_STAFF[s.kind] ?? 0), 0);
     const labour = pop * 0.52;
     const res = this.world.res;
     const traffic = this.avgCongestion();
-    const R = clamp(0.5 + (0.75 * (jobs + svcJobs - labour)) / (labour * 0.5 + 60) - traffic * 0.25, -1, 1);
-    const C = clamp(0.12 + (pop * 0.16 - cJobs) / (pop * 0.08 + 24) - traffic * 0.15, -1, 1);
-    const I = clamp(0.3 + (labour * 0.36 - iJobs) / (labour * 0.22 + 24) + 0.05 * (res[1] + res[2] + res[3]) - traffic * 0.15, -1, 1);
+    const bias = this.settings.policy?.bias ?? NO_POLICY.bias;
+    const R = clamp(bias.R + 0.5 + (0.75 * (jobs + svcJobs - labour)) / (labour * 0.5 + 60) - traffic * 0.25, -1, 1);
+    const C = clamp(bias.C + 0.12 + (pop * 0.16 - cJobs) / (pop * 0.08 + 24) - traffic * 0.15, -1, 1);
+    const I = clamp(bias.I + 0.3 + (labour * 0.36 - iJobs) / (labour * 0.22 + 24) + 0.05 * (res[1] + res[2] + res[3]) - traffic * 0.15, -1, 1);
     this.stats = {
       population: pop,
       jobs: jobs + svcJobs,
       workers: Math.min(workers + svcJobs, Math.round(labour)),
       unemployed: Math.max(0, Math.round(labour - workers - svcJobs)),
-      demand: { R, C, I, M: (R + C) / 2 },
+      demand: { R, C, I, M: clamp((R + C) / 2 + bias.M, -1, 1) },
       buildings: count,
       cars: this.cars.length,
       peds: this.peds.length,
@@ -520,6 +561,10 @@ export class Sim {
       power: this.hasService("power"),
       water: this.hasService("water"),
       staff: svcJobs,
+      coverage: cov,
+      pollution: pop ? polluted / pop : 0,
+      cJobs,
+      iJobs,
     };
   }
 
@@ -653,7 +698,7 @@ export class Sim {
     const day = hour < 5 ? 0.25 : hour < 7 ? 0.7 : hour < 10 ? 1.25 : hour < 16 ? 0.9 : hour < 19 ? 1.3 : hour < 22 ? 0.8 : 0.45;
     const want = (st.population * 0.07 + st.jobs * 0.03) * day + (this.buildings.size > 0 ? 4 : 0);
     const cap = 80 + 1700 * (this.settings.trafficDensity / 100);
-    return Math.min(cap, Math.round(want * (0.4 + 0.6 * (this.settings.trafficDensity / 100))));
+    return Math.min(cap, Math.round(want * (this.settings.policy?.carShare ?? 1) * (0.4 + 0.6 * (this.settings.trafficDensity / 100))));
   }
 
   private targetPeds() {
@@ -1248,7 +1293,7 @@ export class Sim {
 }
 
 function emptyStats(): Stats {
-  return { population: 0, jobs: 0, workers: 0, unemployed: 0, demand: { R: 0.5, C: 0.12, I: 0.3, M: 0.3 }, buildings: 0, cars: 0, peds: 0, congestion: 0, power: false, water: false, staff: 0 };
+  return { population: 0, jobs: 0, workers: 0, unemployed: 0, demand: { R: 0.5, C: 0.12, I: 0.3, M: 0.3 }, buildings: 0, cars: 0, peds: 0, congestion: 0, power: false, water: false, staff: 0, coverage: { police: 0, fire: 0, clinic: 0, school: 0, park: 0 }, pollution: 0, cJobs: 0, iJobs: 0 };
 }
 
 /** Binary min-heap of node ids by priority. */

@@ -152,6 +152,20 @@ describe("zoning and lots", () => {
     expect(c.roads.edges.size).toBeLessThan(edges);
   });
 
+  it("money spent building is part of each undo step (Mayor mode refunds on undo)", () => {
+    const { c, x, z } = street();
+    const before = c.spent;
+    c.record();
+    c.addRoad([x + 50, z - 80, x + 50, z + 80], "avenue", { record: false });
+    c.spent += 3_520;
+    expect(c.undo()).toBe(true);
+    expect(c.spent).toBe(before);
+    expect(c.redo()).toBe(true);
+    expect(c.spent).toBe(before + 3_520);
+    const d = new City(c.map.id, c.name, JSON.parse(JSON.stringify(c.toJSON(null))));
+    expect(d.spent).toBe(before + 3_520);
+  });
+
   it("a city survives a save round trip", () => {
     const { c, e } = street();
     c.paint(e.id, 1, 0, 1e6, { zone: "I", width: 2, depth: 3, mixed: true }, true);

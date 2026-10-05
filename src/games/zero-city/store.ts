@@ -3,6 +3,7 @@ import type { Lang, StringKey } from "./i18n";
 import type { Player, SaveSummary } from "./platform/zeroxAdapter";
 import type { Settings } from "./settings";
 import type { Notice, Stats } from "./sim/sim";
+import type { BillResult, DilemmaId, ElectionResult, Faction, Ledger, PolicyId, PromiseId, Taxes } from "./politics/politics";
 import type { Zone, ServiceKind } from "./world/lots";
 import type { RoadTypeId } from "./world/roads";
 
@@ -42,6 +43,32 @@ export interface VehicleInfo {
   type: number;
   kind: string;
   road: string;
+}
+
+export type GameMode = "sandbox" | "mayor";
+export type HallTab = "overview" | "budget" | "policies" | "council";
+
+/** What the HUD shows of Mayor mode (a snapshot, refreshed a few times a second). */
+export interface PoliticsView {
+  cash: number;
+  net: number;
+  ledger: Ledger;
+  taxes: Taxes;
+  policies: PolicyId[];
+  approval: Record<Faction, number>;
+  shares: Record<Faction, number>;
+  overall: number;
+  term: number;
+  /** Game minutes until the election. */
+  termLeft: number;
+  council: Faction[];
+  polls: { m: number; a: number }[];
+  dilemma: DilemmaId | null;
+  promise: PromiseId | null;
+  promiseKept: boolean | null;
+  challenger: string;
+  status: "office" | "ousted";
+  townHallReady: boolean;
 }
 
 export interface UIState {
@@ -95,6 +122,13 @@ export interface UIState {
   saving: "idle" | "saving" | "saved";
   posted: "idle" | "posted" | "signed-out" | "failed";
   hint: StringKey | null;
+  mode: GameMode;
+  /** The mode picked on the map screen for a new city. */
+  newMode: GameMode;
+  politics: PoliticsView | null;
+  hall: HallTab | null;
+  bill: BillResult | null;
+  election: ElectionResult | null;
 }
 
 export type Store = ReturnType<typeof makeStore>;
@@ -148,5 +182,11 @@ export function makeStore(settings: Settings) {
     saving: "idle",
     posted: "idle",
     hint: null,
+    mode: "sandbox",
+    newMode: "sandbox",
+    politics: null,
+    hall: null,
+    bill: null,
+    election: null,
   }));
 }

@@ -20,9 +20,15 @@ import type { Store, Tab } from "./store";
 import { TABS } from "./store";
 import { Tools } from "./tools";
 import { ALL_MAP_IDS, City, type CityJSON } from "./world/city";
+import * as Pol from "./politics/politics";
+import type { GameMode, HallTab } from "./store";
+import type { ServiceKind } from "./world/lots";
+import type { RoadTypeId } from "./world/roads";
+import { cumulative } from "./core/geom";
+import { formatNumber } from "./i18n";
 import { MAPS, mapById } from "./world/maps";
 
-export const ACHIEVEMENTS = ["first-road", "first-zone", "pop-1000", "pop-5000", "pop-10000", "hours-10", "all-maps"] as const;
+export const ACHIEVEMENTS = ["first-road", "first-zone", "pop-1000", "pop-5000", "pop-10000", "hours-10", "all-maps", "reelected", "landslide"] as const;
 export const ACH_LABEL: Record<(typeof ACHIEVEMENTS)[number], StringKey> = {
   "first-road": "a.firstRoad",
   "first-zone": "a.firstZone",
@@ -31,6 +37,8 @@ export const ACH_LABEL: Record<(typeof ACHIEVEMENTS)[number], StringKey> = {
   "pop-10000": "a.pop10k",
   "hours-10": "a.hours10",
   "all-maps": "a.allMaps",
+  reelected: "a.reelected",
+  landslide: "a.landslide",
 };
 
 /** Views of one city in the scene. */
@@ -92,6 +100,10 @@ export class Game {
   mode: "menu" | "game" = "menu";
   slot = "";
   buildings = new Map<number, Building>();
+  /** Mayor mode's politics (null in Sandbox). */
+  politics: Pol.PoliticsState | null = null;
+  private roadKm = { version: -1, km: 0 };
+  private speedBeforeElection = 1;
   private demo: ReturnType<typeof demoCity> | null = null;
   private raf = 0;
   private last = performance.now();
@@ -232,7 +244,7 @@ export class Game {
 
   // ---------------------------------------------------------- new / load
 
-  async newCity(mapId: string, name: string) {
+  async newCity(mapId: string, name: string, mode: GameMode = "sandbox") {
     const set = this.store.setState;
     const label = this.t("loadingMap", { map: this.t(`map.${mapId}` as StringKey) });
     set({ screen: "loading", overlay: null, loading: { label, progress: 0.1, tip: 1 + Math.floor(Math.random() * 6) } });
@@ -241,11 +253,11 @@ export class Game {
     set({ loading: { label, progress: 0.55, tip: this.store.getState().loading.tip } });
     await frame();
     this.slot = `city-${city.created}`;
-    this.enterCity(city, null, null);
+    this.enterCity(city, null, null, mode, null);
     set({ loading: { label, progress: 1, tip: this.store.getState().loading.tip } });
     await wait(250);
     set({ screen: "game" });
-    this.platform.track("new_city", { map: mapId });
+    this.platform.track("new_city", { map: mapId, mode });
     void this.save(true);
   }
 
@@ -270,16 +282,21 @@ export class Game {
     set({ loading: { label, progress: 0.8, tip: this.store.getState().loading.tip } });
     await frame();
     this.slot = slot;
-    this.enterCity(city, json.sim, json.camera ?? null);
+    this.enterCity(city, json.sim, json.camera ?? null, json.mode ?? "sandbox", json.politics);
     set({ loading: { label, progress: 1, tip: this.store.getState().loading.tip } });
     await wait(200);
     set({ screen: "game" });
     this.platform.track("load_city", { map: json.mapId });
   }
 
-  private enterCity(city: City, simSave: SimSave | null, camera: CityJSON["camera"] | null) {
+  private enterCity(city: City, simSave: SimSave | null, camera: CityJSON["camera"] | null, mode: GameMode, politics: unknown) {
     this.mode = "game";
     this.city = city;
+    const minutes = simSave?.minutes ?? 8 * 60;
+    this.politics = mode === "mayor" ? (politics ? Pol.normalisePolitics(politics as Partial<Pol.PoliticsState>, minutes) : Pol.newPolitics((city.created % 1_000_003) + 1, minutes)) : null;
+    // An ousted mayor's city carries on as a sandbox.
+    const live = mode === "mayor" && this.politics?.status !== "ousted" ? "mayor" : mode;
+    this.store.setState({ mode: live, hall: null, bill: null, election: null, politics: null });
     this.buildings.clear();
     for (const b of simSave?.buildings ?? []) this.buildings.set(b.lot, b);
     this.setViews(city, [...this.buildings.values()]);
@@ -321,15 +338,16 @@ export class Game {
 
   private simSettings() {
     const s = this.settings;
-    return { traffic: s.traffic, peds: s.pedestrians, trafficDensity: s.trafficDensity, pedDensity: s.pedDensity };
+    return { traffic: s.traffic, peds: s.pedestrians, trafficDensity: s.trafficDensity, pedDensity: s.pedDensity, policy: this.mayor ? Pol.simPolicy(this.politics!) : undefined };
   }
 
   async quitToMenu() {
     await this.save();
     this.sim?.dispose();
     this.sim = null;
+    this.politics = null;
     this.tools.reset();
-    this.store.setState({ tab: null, overlay: null, inspect: null, vehicle: null, saves: await this.platform.listSaves() });
+    this.store.setState({ tab: null, overlay: null, inspect: null, vehicle: null, mode: "sandbox", politics: null, hall: null, bill: null, election: null, saves: await this.platform.listSaves() });
     this.showMenuBackdrop();
     this.store.setState({ screen: "menu" });
   }
@@ -344,6 +362,10 @@ export class Game {
     city.playSeconds = this.store.getState().playSeconds;
     const pop = this.lastTick?.stats.population ?? 0;
     const json = city.toJSON(simSave, this.rig?.state, this.visited);
+    if (this.politics) {
+      json.mode = "mayor";
+      json.politics = this.politics;
+    }
     const summary = {
       slot: this.slot,
       name: city.name,
@@ -586,6 +608,7 @@ export class Game {
       const play = st.playSeconds + this.hudAcc * (st.speed > 0 ? 1 : 1);
       this.hudAcc = 0;
       this.store.setState({ minutes, stats: this.lastTick?.stats ?? st.stats, notices: this.lastTick?.notices ?? st.notices, playSeconds: play });
+      if (this.mayor && this.lastTick) this.politicsTick(this.lastTick.minutes, this.lastTick.stats);
       if (this.lastTick) this.onPopulation?.(this.lastTick.stats.population);
       if (now > this.autosaveAt) {
         this.autosaveAt = now + AUTOSAVE_MS;
@@ -593,6 +616,214 @@ export class Game {
       }
     }
   };
+
+  // ------------------------------------------------------------ Mayor mode
+
+  get mayor() {
+    return !!this.politics && this.politics.status === "office" && this.store.getState().mode === "mayor";
+  }
+
+  money(n: number) {
+    return `$${formatNumber(this.store.getState().lang, Math.round(n))}`;
+  }
+
+  /** Construction cost of a road along `pts` (bridges over water cost three times as much). */
+  roadCost(pts: number[], type: RoadTypeId) {
+    const city = this.city;
+    if (!city || pts.length < 4) return 0;
+    const cum = cumulative(pts);
+    const L = cum[cum.length - 1];
+    let wet = 0;
+    const n = Math.max(2, Math.ceil(L / 8));
+    for (let i = 0; i <= n; i++) {
+      const s = (L * i) / n;
+      let k = 1;
+      while (k < cum.length - 1 && cum[k] < s) k++;
+      const t = cum[k] > cum[k - 1] ? (s - cum[k - 1]) / (cum[k] - cum[k - 1]) : 0;
+      const x = pts[(k - 1) * 2] + (pts[k * 2] - pts[(k - 1) * 2]) * t;
+      const z = pts[(k - 1) * 2 + 1] + (pts[k * 2 + 1] - pts[(k - 1) * 2 + 1]) * t;
+      if (city.terrain.isWater(x, z)) wet++;
+    }
+    const wetShare = wet / (n + 1);
+    return Math.round(L * Pol.ROAD_COST[type] * (1 + 2 * wetShare));
+  }
+
+  serviceCost(kind: ServiceKind) {
+    return this.mayor ? Pol.SERVICE_COST[kind].build : 0;
+  }
+
+  /** Can the city pay for this? In Sandbox, always. Says so (and buzzes) when it can't, unless quiet. */
+  canAfford(cost: number, quiet = false) {
+    if (!this.mayor || cost <= 0) return true;
+    if (Pol.canAfford(this.politics!, cost)) return true;
+    if (!quiet) {
+      this.audio.error();
+      this.toast(this.t("cantAfford"), this.money(cost));
+    }
+    return false;
+  }
+
+  /** Pay for construction (after the action is recorded for undo). */
+  charge(cost: number) {
+    if (!this.mayor || cost <= 0 || !this.city) return;
+    this.politics!.cash -= cost;
+    this.city.spent += cost;
+    this.publishPolitics();
+  }
+
+  /** Undo/redo moved the city's spending: give the difference back (or take it). */
+  private refund(before: number) {
+    if (!this.politics || !this.city) return;
+    this.politics.cash += before - this.city.spent;
+    this.publishPolitics();
+  }
+
+  private facts(): Pol.CityFacts {
+    const city = this.city!;
+    if (this.roadKm.version !== city.version) {
+      let m = 0;
+      for (const e of city.roads.edges.values()) {
+        const c = cumulative(e.pts);
+        m += c[c.length - 1];
+      }
+      this.roadKm = { version: city.version, km: m / 1000 };
+    }
+    const services: Partial<Record<ServiceKind, number>> = {};
+    for (const sv of city.lots.services.values()) services[sv.kind] = (services[sv.kind] ?? 0) + 1;
+    let residents = 0;
+    let cJobs = 0;
+    let iJobs = 0;
+    for (const b of this.buildings.values()) {
+      if (b.progress < 1) continue;
+      residents += b.residents;
+      if (b.zone === "I") iJobs += b.workers;
+      else cJobs += b.workers;
+    }
+    return { roadKm: this.roadKm.km, services, lines: city.lines.length, residents, cJobs, iJobs };
+  }
+
+  private politicsTick(minutes: number, stats: NonNullable<typeof this.lastTick>["stats"]) {
+    const p = this.politics!;
+    const policyBefore = JSON.stringify(Pol.simPolicy(p));
+    const events = Pol.advance(p, minutes, stats, this.facts());
+    for (const e of events) {
+      if (e.t === "dilemma") {
+        this.toast(this.t("n.decision"), this.t(`d.${e.id}.t` as StringKey));
+        this.audio.chime();
+      } else if (e.t === "campaign") this.toast(this.t("n.campaign"), this.t("campaignOn", { name: e.challenger }));
+      else if (e.t === "broke") this.toast(this.t("treasury"), this.t("broke", { n: this.money(Pol.CREDIT) }));
+      else if (e.t === "election") this.electionNight(e.result);
+    }
+    if (JSON.stringify(Pol.simPolicy(p)) !== policyBefore) this.sim?.setSettings(this.simSettings());
+    this.publishPolitics(stats);
+  }
+
+  /** Push a snapshot of the politics to the HUD. */
+  publishPolitics(stats = this.lastTick?.stats) {
+    const p = this.politics;
+    if (!p || !this.city) return;
+    const f = this.facts();
+    const st = stats ?? null;
+    const shares = st ? Pol.shares(st) : { workers: 0.2, business: 0.2, families: 0.2, greens: 0.2, seniors: 0.2 };
+    const l = Pol.ledger(p, f);
+    const minutes = this.lastTick?.minutes ?? this.store.getState().minutes;
+    this.store.setState({
+      politics: {
+        cash: p.cash,
+        net: Pol.net(l),
+        ledger: l,
+        taxes: { ...p.taxes },
+        policies: [...p.policies],
+        approval: { ...p.approval },
+        shares,
+        overall: Pol.overall(p.approval, shares),
+        term: p.term,
+        termLeft: Math.max(0, p.termStart + Pol.TERM_MINUTES - minutes),
+        council: [...p.council],
+        polls: p.polls,
+        dilemma: p.dilemma,
+        promise: p.promise,
+        promiseKept: st ? Pol.promiseKept(p, st, f) : null,
+        challenger: p.challenger,
+        status: p.status,
+        townHallReady: minutes - p.townHallAt >= 24 * 60,
+      },
+    });
+  }
+
+  openHall(tab: HallTab | null) {
+    this.store.setState({ hall: tab, bill: null, statsOpen: false, noticesOpen: false });
+    this.audio.tick();
+  }
+
+  setTax(zone: keyof Pol.Taxes, rate: number) {
+    if (!this.mayor) return;
+    Pol.setTax(this.politics!, zone, rate);
+    this.sim?.setSettings(this.simSettings());
+    this.publishPolitics();
+  }
+
+  proposePolicy(id: Pol.PolicyId, enable: boolean) {
+    if (!this.mayor) return;
+    const r = Pol.propose(this.politics!, id, enable);
+    this.store.setState({ bill: r });
+    if (r.passed) {
+      this.audio.chime();
+      this.sim?.setSettings(this.simSettings());
+    } else this.audio.error();
+    this.platform.track("bill", { policy: id, enable, passed: r.passed });
+    this.publishPolitics();
+  }
+
+  decide(pick: "a" | "b") {
+    if (!this.mayor) return;
+    const c = Pol.decide(this.politics!, pick);
+    if (!c) return;
+    if (c.policy) this.sim?.setSettings(this.simSettings());
+    this.audio.click();
+    this.publishPolitics();
+  }
+
+  townHall() {
+    if (!this.mayor) return;
+    const minutes = this.lastTick?.minutes ?? this.store.getState().minutes;
+    if (Pol.townHall(this.politics!, minutes)) {
+      this.toast(this.t("townHallDone"));
+      this.audio.chime();
+    } else this.audio.error();
+    this.publishPolitics();
+  }
+
+  promise(id: Pol.PromiseId) {
+    if (!this.mayor || !this.city) return;
+    const parks = [...this.city.lots.services.values()].filter((s) => s.kind === "park").length;
+    if (Pol.makePromise(this.politics!, id, this.lastTick?.stats.population ?? 0, parks)) this.audio.click();
+    this.publishPolitics();
+  }
+
+  private electionNight(result: Pol.ElectionResult) {
+    this.speedBeforeElection = this.store.getState().speed || 1;
+    this.sim?.setSpeed(0);
+    this.store.setState({ election: result, speed: 0, hall: null, tab: null });
+    this.tools.reset();
+    if (result.won) {
+      this.audio.chime();
+      void this.achieve("reelected");
+      if (result.share >= 0.65) void this.achieve("landslide");
+    } else this.audio.error();
+    this.platform.track("election", { won: result.won, share: Math.round(result.share * 100) });
+    void this.save(true);
+  }
+
+  /** Close election night: a winner starts the next term; a loser keeps building in Sandbox. */
+  afterElection() {
+    const won = this.store.getState().election?.won;
+    this.store.setState({ election: null });
+    if (!won) this.store.setState({ mode: "sandbox" });
+    this.sim?.setSettings(this.simSettings());
+    this.setSpeed(this.speedBeforeElection);
+    this.publishPolitics();
+  }
 
   /** Session length for score posting (ms of active play this session). */
   sessionMs() {
@@ -619,7 +850,9 @@ export class Game {
   }
 
   undo() {
+    const spent = this.city?.spent ?? 0;
     if (this.city?.undo()) {
+      this.refund(spent);
       this.views?.roads.rebuildAll();
       this.views?.overlays.rebuildStops();
       this.worldChanged();
@@ -628,7 +861,9 @@ export class Game {
   }
 
   redo() {
+    const spent = this.city?.spent ?? 0;
     if (this.city?.redo()) {
+      this.refund(spent);
       this.views?.roads.rebuildAll();
       this.views?.overlays.rebuildStops();
       this.worldChanged();
@@ -761,7 +996,23 @@ export class Game {
       threaded: this.sim?.threaded ?? false,
       version: VERSION,
       maps: MAPS.length,
+      gameMode: st.mode,
+      cash: this.politics ? Math.round(this.politics.cash) : null,
+      spent: this.city?.spent ?? 0,
+      policies: this.politics?.policies ?? [],
+      term: this.politics?.term ?? 0,
     };
+  }
+
+  /** Test hook: bring the next dilemma or the election forward to the next game hour. */
+  debugPolitics(what: "dilemma" | "election") {
+    const p = this.politics;
+    if (!p) return;
+    const now = this.lastTick?.minutes ?? this.store.getState().minutes;
+    if (what === "dilemma") {
+      p.dilemma = null;
+      p.nextDilemma = now;
+    } else p.termStart = now - Pol.TERM_MINUTES + 30;
   }
 
   dispose() {

@@ -64,6 +64,9 @@ const paths: Record<string, string> = {
   mirror: "M12 3v18M5 7l-3 5 3 5M19 7l3 5-3 5",
   info: "M12 8h.01M11 12h1v5h1M12 21a9 9 0 1 0-.01 0",
   car: "M5 13l2-5h10l2 5M3 13h18v5H3zM7 18v2M17 18v2M7 15h.01M17 15h.01",
+  hall: "M3 21h18M4 10h16M12 3l9 5H3zM6 10v8M10 10v8M14 10v8M18 10v8",
+  vote: "M4 13h16v8H4zM8 13V4h8v9M10 8l1.5 1.5L14 7",
+  mega: "M3 10v4h3l7 4V6l-7 4zM17 9a4 4 0 0 1 0 6",
 };
 
 export function Icon({ name, size = 22, className, style }: { name: string; size?: number; className?: string; style?: React.CSSProperties }) {

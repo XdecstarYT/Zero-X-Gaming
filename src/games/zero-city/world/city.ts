@@ -50,9 +50,15 @@ export interface CityJSON {
   sim: SimSave | null;
   camera?: { x: number; z: number; dist: number; yaw: number; pitch: number };
   visited: string[];
+  /** Mayor mode (absent = Sandbox). */
+  mode?: "sandbox" | "mayor";
+  politics?: unknown;
+  /** Money spent building, all time (undo refunds it). */
+  spent?: number;
 }
 
 interface Snapshot {
+  spent: number;
   roads: string;
   lots: string;
   stops: string;
@@ -76,6 +82,8 @@ export class City {
   name: string;
   created = Date.now();
   playSeconds = 0;
+  /** Money spent on construction so far; part of each undo step, so undoing refunds it. */
+  spent = 0;
   /** Edge id → road surface height at each polyline vertex. */
   profiles = new Map<number, Float32Array>();
   changes: Changes = freshChanges();
@@ -101,6 +109,7 @@ export class City {
       this.nextTransit = json.nextTransit;
       this.created = json.created;
       this.playSeconds = json.playSeconds;
+      this.spent = json.spent ?? 0;
       for (const e of this.roads.edges.values()) this.profiles.set(e.id, this.computeProfile(e));
     } else {
       this.trees = generateTrees(this.map, this.terrain);
@@ -129,6 +138,7 @@ export class City {
 
   private snapshot(): Snapshot {
     return {
+      spent: this.spent,
       roads: JSON.stringify(this.roads.toJSON()),
       lots: JSON.stringify(this.lots.toJSON()),
       stops: JSON.stringify(this.stops),
@@ -169,6 +179,7 @@ export class City {
   }
 
   private restore(s: Snapshot) {
+    this.spent = s.spent;
     for (const e of this.roads.edges.keys()) this.changes.removedEdges.add(e);
     this.roads = RoadGraph.from(JSON.parse(s.roads));
     this.occ = new Occupancy();
@@ -639,6 +650,7 @@ export class City {
       sim,
       camera,
       visited,
+      spent: this.spent,
     };
   }
 

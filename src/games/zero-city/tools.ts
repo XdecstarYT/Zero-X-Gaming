@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { LOT_UNIT, WATER_LEVEL } from "./config";
 import { chaikin, cubic, cumulative, polyLength, quadratic, sampleAt, snapAngle, type P } from "./core/geom";
 import type { Game } from "./game";
+import { STOP_COST, TERRAIN_COST } from "./politics/politics";
 import { RoadView } from "./render/roadView";
 import { theme } from "./theme";
 import type { Tab } from "./store";
@@ -415,12 +416,24 @@ export class Tools {
     }
   }
 
+  private costAcc = 0;
+
   /** Per-frame work: terrain brushing while held. */
   frame(now: number) {
     const dt = Math.min(0.1, (now - (this.lastFrame || now)) / 1000);
     this.lastFrame = now;
     if (!this.brushOn || !this.hover || !this.city) return;
     const st = this.st;
+    // Earthworks cost money in Mayor mode, a dab at a time.
+    this.costAcc += dt;
+    if (this.costAcc > 0.25) {
+      this.costAcc = 0;
+      if (!this.g.canAfford(TERRAIN_COST)) {
+        this.brushOn = false;
+        return;
+      }
+      this.g.charge(TERRAIN_COST);
+    }
     const t = this.city.terrain;
     const p = this.hover;
     const r = st.brush;
@@ -568,11 +581,14 @@ export class Tools {
       this.pts = [];
       this.g.views?.overlays.clearGhosts();
       if (!arcs.length) return;
+      const cost = arcs.reduce((n, arc) => n + this.g.roadCost(arc, st.roadType), 0);
+      if (!this.g.canAfford(cost)) return;
       this.city!.record();
       const type = st.roadType;
       const lanes: [number, number] = [Math.max(1, Math.ceil(ROAD_TYPES[type].lanes / 2)), 0];
       const name = this.city!.roads.newName(type).replace(/ \w+$/, " Circle");
       for (const arc of arcs) this.city!.addRoad(arc, type, { record: false, name, lanes });
+      this.g.charge(cost);
       this.afterRoad();
       return;
     }
@@ -685,7 +701,10 @@ export class Tools {
       this.g.audio.error();
       return false;
     }
+    const cost = this.g.roadCost(pts, this.st.roadType);
+    if (!this.g.canAfford(cost)) return false;
     city.addRoad(pts, this.st.roadType);
+    this.g.charge(cost);
     this.g.views?.overlays.clearGhosts();
     this.g.store.setState({ cursorLabel: null });
     this.afterRoad();
@@ -711,7 +730,9 @@ export class Tools {
     const end = new THREE.Vector3(pts[pts.length - 2], ys[ys.length - 1], pts[pts.length - 1]);
     const scr = this.g.toScreen(end);
     const len = Math.round(polyLength(pts));
-    if (scr) this.g.store.setState({ cursorLabel: { x: scr.x, y: scr.y, text: this.g.t("metres", { n: len }), bad: !ok } });
+    const cost = this.g.mayor ? (roundabout ? 0 : this.g.roadCost(pts, this.st.roadType)) : 0;
+    const text = cost ? `${this.g.t("metres", { n: len })} · ${this.g.money(cost)}` : this.g.t("metres", { n: len });
+    if (scr) this.g.store.setState({ cursorLabel: { x: scr.x, y: scr.y, text, bad: !ok || (cost > 0 && !this.g.canAfford(cost, true)) } });
   }
 
   private showSnapDot(p: V3) {
@@ -746,7 +767,10 @@ export class Tools {
     if (!near || this.upgradeSeen.has(near.edge.id)) return;
     this.upgradeSeen.add(near.edge.id);
     if (near.edge.type === this.st.roadType) return;
+    const cost = Math.max(0, this.g.roadCost(near.edge.pts, this.st.roadType) - this.g.roadCost(near.edge.pts, near.edge.type));
+    if (!this.g.canAfford(cost)) return;
     this.city!.editEdge(near.edge.id, { type: this.st.roadType }, false);
+    this.g.charge(cost);
     this.g.audio.click();
     this.g.worldChanged();
   }
@@ -1020,8 +1044,12 @@ export class Tools {
       this.g.audio.error();
       return;
     }
+    const cost = this.g.serviceCost(this.st.service);
+    if (!this.g.canAfford(cost)) return;
+    this.city.record();
     const svc = this.city.addService(this.st.service, spot.edge, spot.side, spot.s);
     if (svc) {
+      this.g.charge(cost);
       this.g.audio.thud();
       this.g.worldChanged();
     }
@@ -1060,8 +1088,10 @@ export class Tools {
     if (st.transitMode === "stop") {
       const near = city.roads.nearestEdge(p, 20);
       if (!near) return;
+      if (!this.g.canAfford(STOP_COST)) return;
       const stop = city.addStop(near.edge.id, near.s, near.side);
       if (stop) {
+        this.g.charge(STOP_COST);
         this.g.audio.click();
         this.g.worldChanged();
       } else this.g.audio.error();
@@ -1098,8 +1128,12 @@ export class Tools {
     const owner = city.lots.ownerAt(p.x, p.z);
     const mode = this.st.moveMode;
     if (mode === "copy" && this.selectedService >= 0 && owner === 0) {
+      const kind = city.lots.services.get(this.selectedService)?.kind;
+      const cost = kind ? this.g.serviceCost(kind) : 0;
+      if (!this.g.canAfford(cost)) return;
       const svc = city.lots.copyService(this.selectedService, p.x, p.z);
       if (svc) {
+        this.g.charge(cost);
         city.changes.services = true;
         this.g.audio.thud();
         this.g.worldChanged();

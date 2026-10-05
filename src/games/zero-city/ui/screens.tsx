@@ -9,6 +9,7 @@ import { Segmented, Sheet, Skyline, Slider, Toggle } from "./common";
 import { useGame, useNum, useT, useUI } from "./hooks";
 import { Icon } from "./Icons";
 import { Logo, Mark } from "./Mark";
+import type { GameMode } from "../store";
 
 // ---------------------------------------------------------------- loading
 
@@ -171,6 +172,7 @@ export function MapSelect() {
   const [sel, setSel] = useState(MAPS[0].id);
   const def = MAPS.find((m) => m.id === sel)!;
   const [name, setName] = useState("");
+  const newMode = useUI((s) => s.newMode);
   const big = useThumb(def, 320);
   const levels: StringKey[] = ["level.0", "level.1", "level.2"];
   const res: [StringKey, string][] = [
@@ -249,13 +251,29 @@ export function MapSelect() {
                   data-testid="zc-cityname"
                 />
               </label>
+              <div className="flex flex-col gap-1">
+                <span className="zc-label opacity-70">{t("mode")}</span>
+                <Segmented<GameMode>
+                  label={t("mode")}
+                  value={newMode}
+                  onChange={(m) => g.store.setState({ newMode: m })}
+                  options={[
+                    { id: "sandbox", label: t("mode.sandbox") },
+                    { id: "mayor", label: t("mode.mayor") },
+                  ]}
+                  testId="zc-mode"
+                />
+                <p className="text-[0.82em] opacity-75" data-testid="zc-mode-desc">
+                  {newMode === "mayor" ? t("mode.mayorDesc") : t("mode.sandboxDesc")}
+                </p>
+              </div>
               <button
                 type="button"
                 className="zc-btn zc-on mt-1 min-h-[52px] text-[1.1em] font-black uppercase tracking-[0.15em]"
                 onClick={() => {
                   g.audio.unlock();
                   g.audio.click();
-                  void g.newCity(def.id, name.trim());
+                  void g.newCity(def.id, name.trim(), newMode);
                 }}
                 data-testid="zc-start"
               >

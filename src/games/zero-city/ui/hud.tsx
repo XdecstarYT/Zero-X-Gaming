@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { formatClock, type StringKey } from "../i18n";
 import { ACHIEVEMENTS, ACH_LABEL } from "../game";
 import type { DrawMode, MoveMode, Tab, TerrainMode, ZoneMode, BulldozeMode } from "../store";
@@ -9,6 +9,7 @@ import { GROUPS, ROAD_TYPES, type RoadTypeId } from "../world/roads";
 import { Segmented, Stepper } from "./common";
 import { useGame, useNum, useT, useUI } from "./hooks";
 import { Icon } from "./Icons";
+import { CityHall, DilemmaCard, ElectionNight, HallButton, TreasuryChip } from "./politics";
 import { rampColor } from "../render/overlayView";
 import { VEHICLES } from "../sim/sim";
 
@@ -16,12 +17,27 @@ const TAB_ICON: Record<Tab, string> = { roads: "roads", zoning: "zoning", transi
 
 export function Hud() {
   const tab = useUI((s) => s.tab);
+  const root = useRef<HTMLDivElement>(null);
+  const row = useRef<HTMLDivElement>(null);
+  // Panels open below the top row, however many lines it wraps to (--zc-top).
+  useEffect(() => {
+    const r = row.current;
+    if (!r || !root.current) return;
+    const ro = new ResizeObserver(() => root.current?.style.setProperty("--zc-top", `${r.offsetHeight}px`));
+    ro.observe(r);
+    return () => ro.disconnect();
+  }, []);
   return (
-    <div className="@container pointer-events-none absolute inset-0 z-10" data-testid="zc-hud">
-      <TopStart />
-      <TopEnd />
+    <div ref={root} className="@container pointer-events-none absolute inset-0 z-10" data-testid="zc-hud">
+      {/* One wrapping row: when the stage is narrow the right-hand group drops below instead of overlapping. */}
+      <div ref={row} className="pointer-events-none absolute inset-x-2 top-2 flex flex-wrap items-start justify-between gap-2 sm:inset-x-3 sm:top-3">
+        <TopStart />
+        <TopEnd />
+      </div>
       <StatsPanel />
       <NoticesPanel />
+      <CityHall />
+      <DilemmaCard />
       <Inspector />
       <VehicleCard />
       <CursorLabel />
@@ -32,6 +48,7 @@ export function Hud() {
         {tab && <ContextBar tab={tab} />}
         <Toolbar />
       </div>
+      <ElectionNight />
     </div>
   );
 }
@@ -45,7 +62,7 @@ function TopStart() {
   const canUndo = useUI((s) => s.canUndo);
   const canRedo = useUI((s) => s.canRedo);
   return (
-    <div className="pointer-events-auto absolute start-2 top-2 flex flex-wrap items-center gap-2 sm:start-3 sm:top-3">
+    <div className="pointer-events-auto flex flex-wrap items-center gap-2">
       <div className="zc-glass-dark flex items-center gap-1 rounded-full p-1">
         <button
           type="button"
@@ -87,19 +104,27 @@ function TopEnd() {
   const num = useNum();
   const stats = useUI((s) => s.stats);
   const notices = useUI((s) => s.notices);
+  const mode = useUI((s) => s.mode);
   return (
-    <div className="pointer-events-auto absolute end-2 top-2 flex flex-wrap items-center justify-end gap-2 sm:end-3 sm:top-3">
-      <span className="zc-glass-dark flex min-h-[44px] items-center gap-2 rounded-full px-4 font-black" aria-label={t("unlimited")}>
-        <Icon name="money" size={18} style={{ color: theme.on }} />
-        <span className="zc-label">{t("unlimited")}</span>
-      </span>
-      <button type="button" className="zc-glass-dark zc-btn rounded-full px-4 font-black" onClick={() => g.store.setState((s) => ({ statsOpen: !s.statsOpen, noticesOpen: false }))} aria-label={t("population")} data-testid="zc-pop">
+    <div className="pointer-events-auto ms-auto flex flex-wrap items-center justify-end gap-2">
+      {mode === "mayor" ? (
+        <>
+          <TreasuryChip />
+          <HallButton />
+        </>
+      ) : (
+        <span className="zc-glass-dark flex min-h-[44px] items-center gap-2 rounded-full px-4 font-black" aria-label={t("unlimited")}>
+          <Icon name="money" size={18} style={{ color: theme.on }} />
+          <span className="zc-label">{t("unlimited")}</span>
+        </span>
+      )}
+      <button type="button" className="zc-glass-dark zc-btn rounded-full px-4 font-black" onClick={() => g.store.setState((s) => ({ statsOpen: !s.statsOpen, noticesOpen: false, hall: null }))} aria-label={t("population")} data-testid="zc-pop">
         <Icon name="people" size={18} />
         <span className="tabular-nums" data-testid="zc-pop-value">
           {num(stats?.population ?? 0)}
         </span>
       </button>
-      <button type="button" className="zc-glass-dark zc-btn rounded-full px-3 font-black" onClick={() => g.store.setState((s) => ({ noticesOpen: !s.noticesOpen, statsOpen: false }))} aria-label={`${t("staff")}: ${stats?.staff ?? 0}, ${t("notifications")}: ${notices.length}`} data-testid="zc-staff">
+      <button type="button" className="zc-glass-dark zc-btn rounded-full px-3 font-black" onClick={() => g.store.setState((s) => ({ noticesOpen: !s.noticesOpen, statsOpen: false, hall: null }))} aria-label={`${t("staff")}: ${stats?.staff ?? 0}, ${t("notifications")}: ${notices.length}`} data-testid="zc-staff">
         <Icon name="staff" size={18} />
         <span className="tabular-nums">{num(stats?.staff ?? 0)}</span>
         {notices.length > 0 && (
@@ -454,7 +479,7 @@ function StatsPanel() {
   const h = Math.floor(play / 3600);
   const m = Math.floor((play % 3600) / 60);
   return (
-    <section className="zc-glass zc-slide pointer-events-auto absolute end-2 top-16 w-[min(92vw,340px)] p-4 sm:end-3" aria-label={t("statsTitle")} data-testid="zc-stats">
+    <section className="zc-glass zc-slide pointer-events-auto absolute end-2 top-[calc(var(--zc-top,3rem)+1rem)] w-[min(92vw,340px)] p-4 sm:end-3" aria-label={t("statsTitle")} data-testid="zc-stats">
       <div className="flex items-center">
         <h3 className="zc-h flex-1 text-[1.15em]">{t("statsTitle")}</h3>
         <button type="button" className="zc-btn border-0 bg-transparent px-0" onClick={() => g.store.setState({ statsOpen: false })} aria-label={t("close")}>
@@ -502,7 +527,7 @@ function NoticesPanel() {
   const notices = useUI((s) => s.notices);
   if (!open) return null;
   return (
-    <section className="zc-glass zc-slide pointer-events-auto absolute end-2 top-16 w-[min(92vw,340px)] p-4 sm:end-3" aria-label={t("notifications")} data-testid="zc-notices">
+    <section className="zc-glass zc-slide pointer-events-auto absolute end-2 top-[calc(var(--zc-top,3rem)+1rem)] w-[min(92vw,340px)] p-4 sm:end-3" aria-label={t("notifications")} data-testid="zc-notices">
       <div className="flex items-center">
         <h3 className="zc-h flex-1 text-[1.15em]">{t("notifications")}</h3>
         <button type="button" className="zc-btn border-0 bg-transparent px-0" onClick={() => g.store.setState({ noticesOpen: false })} aria-label={t("close")}>
@@ -532,7 +557,7 @@ function Inspector() {
   const ins = useUI((s) => s.inspect);
   if (!ins) return null;
   return (
-    <section className="zc-glass zc-slide pointer-events-auto absolute start-2 top-20 w-[min(86vw,280px)] p-4 sm:start-3" aria-label={t("inspector")} data-testid="zc-inspector">
+    <section className="zc-glass zc-slide pointer-events-auto absolute start-2 top-[calc(var(--zc-top,3rem)+1rem)] w-[min(86vw,280px)] p-4 sm:start-3" aria-label={t("inspector")} data-testid="zc-inspector">
       <div className="flex items-center">
         <h3 className="zc-h flex-1 text-[1.05em]">{ins.kind === "service" ? t(`svc.${ins.service}` as StringKey) : t(`zone.${ins.zone}` as StringKey)}</h3>
         <button type="button" className="zc-btn border-0 bg-transparent px-0" onClick={() => g.store.setState({ inspect: null })} aria-label={t("close")}>
@@ -565,7 +590,7 @@ function VehicleCard() {
   if (!v) return null;
   const kind: Record<string, StringKey> = { home: "headingHome", work: "headingWork", deliver: "delivering", visit: "headingWork", bus: "onRoute" };
   return (
-    <section className="zc-glass zc-slide pointer-events-auto absolute start-1/2 top-16 flex -translate-x-1/2 items-center gap-3 px-4 py-2" data-testid="zc-vehicle" aria-live="polite">
+    <section className="zc-glass zc-slide pointer-events-auto absolute start-1/2 top-[calc(var(--zc-top,3rem)+1rem)] flex -translate-x-1/2 items-center gap-3 px-4 py-2" data-testid="zc-vehicle" aria-live="polite">
       <Icon name={v.type === 3 ? "bus" : "car"} size={22} style={{ color: "#4ade80" }} />
       <div>
         <p className="font-black">{t(`v.${VEHICLES[v.type]}` as StringKey)}</p>
@@ -594,7 +619,7 @@ function CursorLabel() {
 function Toasts() {
   const toasts = useUI((s) => s.toasts);
   return (
-    <div className="pointer-events-none absolute end-2 top-20 flex flex-col items-end gap-2 sm:end-3" aria-live="polite">
+    <div className="pointer-events-none absolute end-2 top-[calc(var(--zc-top,3rem)+1rem)] flex flex-col items-end gap-2 sm:end-3" aria-live="polite">
       {toasts.map((t) => (
         <div key={t.id} className="zc-glass zc-toast px-4 py-2" style={t.kind === "achievement" ? { borderColor: theme.accent } : undefined}>
           <p className="font-black" style={t.kind === "achievement" ? { color: theme.accent } : undefined}>

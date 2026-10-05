@@ -38,7 +38,44 @@ without workers.
 | `tools.ts` | Input routing (camera vs tool) and every tool |
 | `game.ts` | The controller: screens, loading, saves, autosave, achievements, scores, audio |
 | `audio.ts` | Generative ambient music, city hum, effects (all synthesised) |
-| `ui/*` | React screens (loading, menu, map select, settings, load, update log, credits, pause) and HUD |
+| `politics/politics.ts` | Mayor mode: treasury, taxes, voter groups, approval, policies, council votes, dilemmas, promises, elections (pure, unit-tested) |
+| `ui/*` | React screens (loading, menu, map select, settings, load, update log, credits, pause), HUD, City Hall (`politics.tsx`) and the liquid glass (`glass.tsx`) |
+
+## Mayor mode
+
+Pick **Mayor** instead of **Sandbox** on the map screen. The rules live in
+`politics/politics.ts` and run on the main thread from the sim's stats every game hour:
+
+- **Money.** The city starts with $80,000 and a $25,000 credit line. Roads cost per
+  metre by type (three times over water), civic buildings, bus stops and earthworks cost
+  money; zoning is free. Undo and redo refund and re-charge (the city's `spent` total is
+  part of each undo step). Every hour taxes come in (residents, commercial and industrial
+  jobs × rate) and upkeep goes out (roads per km, services, policies, bus lines).
+- **Voters.** Workers, Business, Families, Greens and Seniors each have an approval
+  heading toward a target computed from what they care about (jobs, taxes, traffic,
+  service coverage, pollution, parks, the books) plus policies and short-lived moods.
+  Their share of the electorate follows the kind of city it is.
+- **Council and policies.** Ten policies (free buses, a heritage height limit, a rent
+  cap, …) each change the sim (demand, max tier, car share) and cost per day. Proposing
+  or repealing one goes to the seven-seat council: each councillor weighs their voters'
+  stance and their view of you.
+- **Dilemmas, promises, town halls.** A dilemma lands on the desk every half day or so;
+  ignoring it costs approval. One campaign promise per term pays off (or costs 1.5×) on
+  election day. A town hall once a day buys a little goodwill.
+- **Elections.** Every term is four game days. With a day to go a challenger appears; on
+  election day each group votes by how it feels, the council is reseated by share, and
+  you either begin the next term or carry on building in Sandbox.
+
+The sim side is `SimSettings.policy` (demand bias, a tier cap, a car-share multiplier) and
+the coverage/pollution numbers in `Stats`. Saves keep `mode`, `politics` and `spent`.
+
+## Liquid glass
+
+Panels refract the city at their rims with an SVG displacement filter used as a
+`backdrop-filter` (`ui/glass.tsx` builds the lens maps at runtime; Chromium only, others
+get the same rim, sheen and tint over a blur). The styles are in `theme.ts` under
+`.zc-ui-liquid`; Settings → Interface glass switches to Frosted or Solid, and systems
+asking for reduced transparency get Solid.
 
 ## Wiring the Zero X adapter
 
@@ -115,7 +152,7 @@ twist to rotate and slide up/down together to tilt. Every button is at least 44 
 
 - Rail is a stub ("coming soon") in the Transit tab; bus stops and lines work.
 - Custom maps (heightmap import) is a stub tab.
-- Money is always UNLIMITED (sandbox); a budget mode can sit on top later.
+- Money is UNLIMITED in Sandbox; Mayor mode has the real budget.
 - Road names are generated from English word lists in every language (they are
   proper nouns in the save).
 - "Building density" thins optional building details (rooftop units, fences, yard
