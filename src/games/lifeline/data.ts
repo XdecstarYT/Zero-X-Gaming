@@ -76,7 +76,9 @@ export type ObjectId =
   | "microscope"
   | "bookshelf"
   | "helipad"
-  | "fountain";
+  | "fountain"
+  | "triageDesk"
+  | "extinguisher";
 
 export type ObjectCat = "medical" | "furniture" | "facilities" | "outdoor";
 
@@ -141,6 +143,8 @@ export const OBJECTS: Record<ObjectId, ObjectDef> = {
   bookshelf: { name: "Bookshelf", cat: "furniture", cost: 350, w: 2, d: 1, build: 3, indoor: true, desc: "Calm, quiet, and full of answers." },
   helipad: { name: "Helipad", cat: "outdoor", cost: 15_000, w: 4, d: 4, build: 14, walkable: true, desc: "Air ambulances land here with major trauma cases." },
   fountain: { name: "Fountain", cat: "outdoor", cost: 1_800, w: 2, d: 2, build: 6, desc: "A garden centrepiece. Patients love it." },
+  triageDesk: { name: "Triage desk", cat: "medical", cost: 1_600, w: 2, d: 1, build: 5, indoor: true, desc: "A nurse sorts ambulance cases by how sick they are." },
+  extinguisher: { name: "Fire extinguisher", cat: "facilities", cost: 120, w: 1, d: 1, build: 1, indoor: true, desc: "Fires in this room go out twice as fast." },
 };
 
 // ------------------------------------------------------------------- rooms
@@ -166,7 +170,9 @@ export type RoomId =
   | "psychiatry"
   | "mri"
   | "research"
-  | "helipad";
+  | "helipad"
+  | "triage"
+  | "ambulanceBay";
 
 export type Role = "doctor" | "nurse" | "surgeon" | "midwife" | "psychiatrist" | "receptionist" | "janitor" | "workman" | "director" | "accountant" | "chief" | "facilities";
 
@@ -211,6 +217,8 @@ export const ROOMS: Record<RoomId, RoomDef> = {
   mri: { name: "MRI suite", color: "#38bdf8", min: 16, needs: { mriScanner: 1, mriConsole: 1 }, enclosed: true, indoor: true, staff: ["doctor"], research: "mri", desc: "Scans brains and spines." },
   research: { name: "Research lab", color: "#c084fc", min: 12, needs: { labBench: 1 }, enclosed: true, indoor: true, staff: ["doctor"], desc: "Doctors here work on research projects." },
   helipad: { name: "Helipad zone", color: "#fde68a", min: 16, needs: { helipad: 1 }, enclosed: false, indoor: false, research: "airAmbulance", desc: "Air ambulances land here." },
+  triage: { name: "Triage", color: "#fb7185", min: 6, needs: { triageDesk: 1, chair: 1 }, enclosed: false, indoor: true, staff: ["nurse"], desc: "A nurse sees every ambulance case first: the sickest are treated first, and they're stabilised while they wait." },
+  ambulanceBay: { name: "Ambulance bay", color: "#f43f5e", min: 8, needs: {}, enclosed: false, indoor: false, desc: "Ambulances pull in here and paramedics hand over at the door. Patients arrive steadier." },
 };
 
 // ------------------------------------------------------------------- staff
@@ -247,7 +255,7 @@ export const ADMINS: Role[] = ["director", "accountant", "chief", "facilities"];
 
 // -------------------------------------------------------------- conditions
 
-export type Step = "gp" | "radiology" | "pharmacy" | "ward" | "theatre" | "emergency" | "icu" | "maternity" | "psych" | "mri";
+export type Step = "gp" | "radiology" | "pharmacy" | "ward" | "theatre" | "emergency" | "icu" | "maternity" | "psych" | "mri" | "triage";
 
 export interface ConditionDef {
   name: string;
@@ -319,9 +327,9 @@ export const CONDITIONS: Record<ConditionId, ConditionDef> = {
 };
 
 /** Which room each step needs. */
-export const STEP_ROOM: Record<Step, RoomId> = { gp: "gp", radiology: "radiology", pharmacy: "pharmacy", ward: "ward", theatre: "theatre", emergency: "emergency", icu: "icu", maternity: "maternity", psych: "psychiatry", mri: "mri" };
+export const STEP_ROOM: Record<Step, RoomId> = { gp: "gp", radiology: "radiology", pharmacy: "pharmacy", ward: "ward", theatre: "theatre", emergency: "emergency", icu: "icu", maternity: "maternity", psych: "psychiatry", mri: "mri", triage: "triage" };
 /** Game minutes a step takes once the patient is in the room with staff (ward and ICU stays use the condition's hours). */
-export const STEP_MINUTES: Record<Exclude<Step, "ward" | "icu">, number> = { gp: 30, radiology: 40, pharmacy: 15, theatre: 120, emergency: 60, maternity: 180, psych: 60, mri: 50 };
+export const STEP_MINUTES: Record<Exclude<Step, "ward" | "icu">, number> = { gp: 30, radiology: 40, pharmacy: 15, theatre: 120, emergency: 60, maternity: 180, psych: 60, mri: 50, triage: 8 };
 
 // ---------------------------------------------------------------- research
 
@@ -375,7 +383,7 @@ export interface GrantDef {
   /** Needs the director first (after the first two). */
   director?: boolean;
 }
-export type GrantId = "opening" | "firstTen" | "pharmacy" | "ward" | "radiology" | "emergency" | "surgery" | "clean" | "fifty" | "stars" | "hundred" | "discovery" | "newborns" | "airlift";
+export type GrantId = "opening" | "firstTen" | "pharmacy" | "ward" | "radiology" | "emergency" | "surgery" | "clean" | "fifty" | "stars" | "hundred" | "discovery" | "newborns" | "airlift" | "goldenHour" | "triage" | "majorIncident";
 export const GRANTS: Record<GrantId, GrantDef> = {
   opening: { name: "Open the doors", desc: "Build a reception, a waiting room and a consulting room, and hire a receptionist and a doctor.", reward: 12_000 },
   firstTen: { name: "First ten", desc: "Treat ten patients.", reward: 8_000 },
@@ -391,8 +399,11 @@ export const GRANTS: Record<GrantId, GrantDef> = {
   discovery: { name: "Discovery", desc: "Finish your first research project.", reward: 15_000, director: true },
   newborns: { name: "New arrivals", desc: "Deliver three babies in maternity.", reward: 14_000, director: true },
   airlift: { name: "Airlift", desc: "Treat three patients flown in by air ambulance.", reward: 35_000, director: true },
+  goldenHour: { name: "Golden hour", desc: "Save a patient from a Code Blue.", reward: 12_000, director: true },
+  triage: { name: "First things first", desc: "Run a triage room and triage five ambulance cases.", reward: 10_000, director: true },
+  majorIncident: { name: "All hands", desc: "Get through a major incident without losing anyone.", reward: 30_000, director: true },
 };
-export const GRANT_ORDER: GrantId[] = ["opening", "firstTen", "pharmacy", "ward", "radiology", "emergency", "surgery", "clean", "discovery", "newborns", "fifty", "stars", "airlift", "hundred"];
+export const GRANT_ORDER: GrantId[] = ["opening", "firstTen", "pharmacy", "ward", "radiology", "emergency", "surgery", "clean", "discovery", "newborns", "triage", "goldenHour", "fifty", "stars", "majorIncident", "airlift", "hundred"];
 
 // ------------------------------------------------------------------ events
 
@@ -407,6 +418,17 @@ export const EVENTS: Record<EventId, { name: string; desc: string }> = {
   babyBoom: { name: "Baby boom", desc: "Three times as many births for two days." },
   breakdowns: { name: "Power surge", desc: "A surge has worn down every machine. Workmen will be busy." },
 };
+
+// ------------------------------------------------------------- emergencies
+
+export type EmergencyKind = "codeBlue" | "majorIncident" | "fire";
+export const EMERGENCIES: Record<EmergencyKind, { name: string; desc: string; color: string }> = {
+  codeBlue: { name: "Code Blue", desc: "A patient's heart has stopped. The nearest doctor or nurse is running to them: a defibrillator in the hospital makes it much more likely they're saved.", color: "#3b82f6" },
+  majorIncident: { name: "Major incident", desc: "A pile-up on the motorway. A wave of critical patients is on the way: every one saved pays $1,500, and $10,000 more if nobody is lost.", color: "#ef4444" },
+  fire: { name: "Fire", desc: "A fire has broken out. Workmen will put it out; until then the room is closed and its equipment is burning. Extinguishers help.", color: "#f97316" },
+};
+/** Minutes a heart can be stopped before it's too late. */
+export const CODE_BLUE_MINUTES = 40;
 
 /** First names for staff and patients (invented city, everyday names). */
 export const FIRST = ["Alex", "Sam", "Jo", "Priya", "Tom", "Mia", "Leo", "Ana", "Omar", "Grace", "Ben", "Zoe", "Kai", "Nina", "Ravi", "Lucy", "Theo", "Ivy", "Hugo", "Maya", "Finn", "Rosa", "Eli", "Aisha", "Noah", "Ella", "Max", "Lena", "Yusuf", "Chloe"];

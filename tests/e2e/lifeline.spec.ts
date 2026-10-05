@@ -80,6 +80,8 @@ test("Lifeline: build a hospital from an empty plot, staff it, and treat patient
   const chair = (await ll(page, (g) => g.screenOf(18, 23)))!;
   await page.mouse.click(chair.x, chair.y);
   await page.keyboard.press("Escape");
+  // The defibrillator and monitor need power.
+  await ll(page, (g) => (g as unknown as { sim: { placeObject: (k: string, x: number, z: number, r: number) => unknown } }).sim.placeObject("generator", 52, 30, 0));
   await ll(page, (g) => g.buildNow());
   await ll(page, (g) => g.fastForward(0.2));
   const built = await ll(page, (g) => g.debugState());
@@ -166,5 +168,62 @@ test("Lifeline mega update: what's new, the campaign, research and follow cam", 
   await expect(page.getByTestId("ll-follow")).toHaveText("Following");
   await page.waitForTimeout(1500);
   await shot(page, "11-follow");
+  expect(errors).toEqual([]);
+});
+
+test("Lifeline: quick rooms, the ambulance radio and emergencies", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "covered on desktop");
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/games/lifeline?ll");
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByTestId("ll-menu")).toBeVisible({ timeout: 60_000 });
+  await page.getByTestId("ll-news").click();
+  await expect(page.getByTestId("ll-news-list")).toContainText("Quick rooms");
+  await page.getByRole("button", { name: "← Back" }).click();
+  await page.getByTestId("ll-starter").click();
+  const before = await ll(page, (g) => g.debugState());
+  // An emergency department east of the starter hospital, turned once.
+  await ll(page, (g) => g.look(44, 22, 40, 1.15, 0));
+  await page.waitForTimeout(400);
+  await page.getByTestId("ll-cat-quick").click();
+  await page.getByTestId("ll-q-ed").click();
+  await page.keyboard.press("KeyR");
+  const at = (await ll(page, (g) => g.screenOf(44, 22)))!;
+  await page.mouse.move(at.x - 20, at.y);
+  await page.mouse.move(at.x, at.y, { steps: 4 });
+  await expect(page.getByTestId("ll-cursor")).toContainText("Emergency department");
+  await expect(page.getByTestId("ll-cursor")).toContainText("$");
+  await page.waitForTimeout(300);
+  await shot(page, "20-quick-ghost");
+  await page.mouse.click(at.x, at.y);
+  const placed = await ll(page, (g) => g.debugState());
+  expect(placed.objects).toBe(before.objects + 11);
+  expect(placed.cash).toBeLessThan(before.cash);
+  await page.keyboard.press("Escape");
+  // The defibrillator and monitor need power.
+  await ll(page, (g) => (g as unknown as { sim: { placeObject: (k: string, x: number, z: number, r: number) => unknown } }).sim.placeObject("generator", 52, 30, 0));
+  await ll(page, (g) => g.buildNow());
+  await ll(page, (g) => g.fastForward(0.2));
+  const rooms = (await ll(page, (g) => g.debugState())).rooms;
+  expect(rooms.filter((r) => ["triage", "emergency"].includes(r.type)).every((r) => r.valid)).toBe(true);
+  // Staff it, and an ambulance radios in.
+  await page.getByTestId("ll-cat-staff").click();
+  for (const r of ["receptionist", "doctor", "doctor", "nurse", "nurse"]) await page.getByTestId(`ll-hire-${r}`).click();
+  await page.getByTestId("ll-cat-staff").click();
+  await ll(page, (g) => (g as unknown as { radioAmbulance: () => void }).radioAmbulance());
+  await expect(page.getByTestId("ll-incoming")).toContainText("min");
+  // A fire.
+  expect(await ll(page, (g) => (g as unknown as { emergencyNow: (k: string) => boolean }).emergencyNow("fire"))).toBe(true);
+  await expect(page.getByTestId("ll-emergency")).toContainText("Fire");
+  await page.getByTestId("ll-emergency-go").click();
+  await page.waitForTimeout(1200);
+  await shot(page, "21-fire");
+  await ll(page, (g) => g.fastForward(6));
+  await expect(page.getByTestId("ll-emergency")).toHaveCount(0);
+  await ll(page, (g) => g.look(44, 22, 40, 1.0, 0.4));
+  await page.waitForTimeout(800);
+  await shot(page, "22-ed");
   expect(errors).toEqual([]);
 });

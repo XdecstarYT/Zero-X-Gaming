@@ -1,7 +1,9 @@
 import * as THREE from "three";
-import { ADMINS, EVENTS, RESEARCH_ORDER, FLOORS, H, OBJECTS, PAVEMENT_Z, ROLES, ROOMS, SAVE_KEY, SAVE_VERSION, SCENARIOS, W, WALL_COST, DOOR_COST, type ObjectId, type ResearchId, type Role, type RoomId, type ScenarioId } from "./data";
+import { ADMINS, CONDITIONS, EVENTS, STEP_ROOM, RESEARCH_ORDER, FLOORS, H, OBJECTS, PAVEMENT_Z, ROLES, ROOMS, SAVE_KEY, SAVE_VERSION, SCENARIOS, W, WALL_COST, DOOR_COST, type ObjectId, type ResearchId, type Role, type RoomId, type ScenarioId } from "./data";
 import { megaWing, starterHospital } from "./plan";
+import { layoutQuick, QUICK_ROOMS, quickSize, type QuickId } from "./quick";
 import { AgentView } from "./render/agents";
+import { EmergencyFX } from "./render/fx";
 import { BuildingView } from "./render/buildingView";
 import { Engine } from "./render/engine";
 import { GHOST_BAD, GHOST_OK, makeObject, ObjectView, placeModel } from "./render/objects";
@@ -50,6 +52,9 @@ class Sound {
     this.tone(880, 0.25, "sine", 0.1);
     setTimeout(() => this.tone(1320, 0.3, "sine", 0.08), 120);
   }
+  alarm() {
+    for (let i = 0; i < 6; i++) setTimeout(() => this.tone(i % 2 ? 520 : 700, 0.18, "square", 0.03), i * 220);
+  }
   siren() {
     for (let i = 0; i < 4; i++) setTimeout(() => this.tone(i % 2 ? 660 : 880, 0.28, "sawtooth", 0.025), i * 300);
   }
@@ -73,6 +78,8 @@ export class Game {
   private building: BuildingView | null = null;
   private objects: ObjectView | null = null;
   private agents: AgentView | null = null;
+  private fx: EmergencyFX | null = null;
+  private lastEmergency = "";
   private preview = new THREE.Group();
   private ghost: { key: string; g: THREE.Group } | null = null;
   readonly sound = new Sound();
@@ -110,7 +117,8 @@ export class Game {
     this.building = new BuildingView();
     this.objects = new ObjectView();
     this.agents = new AgentView();
-    this.engine.scene.add(this.building.group, this.objects.group, this.agents.group, this.preview);
+    this.fx = new EmergencyFX();
+    this.engine.scene.add(this.building.group, this.objects.group, this.agents.group, this.fx.group, this.preview);
     const ro = new ResizeObserver(() => this.engine?.resize());
     ro.observe(host);
     this.disposers.push(() => ro.disconnect());
@@ -139,6 +147,7 @@ export class Game {
     for (let i = 0; i < 600; i++) s.step(0.1, 4);
     // A helicopter on its way in, for the show.
     (s as unknown as { callHelicopter: () => void }).callHelicopter();
+    for (const c of s.incoming) c.eta = s.minutes;
     s.messages = [];
     this.sim = s;
     this.engine?.setView({ x: 36, z: 26, dist: 66, yaw: 0.5, pitch: 0.82 }, true);
@@ -277,6 +286,10 @@ export class Game {
       else this.store.setState({ follow: false });
     }
     this.agents!.update(this.sim.people, this.sim.crates, this.sim.vehicles, this.time, e.night);
+    this.fx!.update(this.sim.emergency, this.sim.people, this.time);
+    const em = this.sim.emergency ? `${this.sim.emergency.kind}:${this.sim.emergency.started}` : "";
+    if (inGame && em && em !== this.lastEmergency) this.sound.alarm();
+    this.lastEmergency = em;
     if (!inGame) e.rotate(dt * 0.05);
     e.render();
     this.hudAcc += dt;
@@ -326,12 +339,50 @@ export class Game {
       staff: [...s.people.values()].filter((p) => p.kind === "staff").map((p) => ({ id: p.id, role: p.role!, name: p.name, energy: p.energy, onDuty: p.onDuty, state: p.state, level: levelOf(p.xp) })),
       research: { current: s.research.current, points: s.research.points, done: [...s.research.done], open: s.researchOpen(), labs: s.world.roomsOf("research").filter((r) => r.valid).length },
       scenario: s.scenario ? { id: s.scenario.id, score: s.scenarioScore(), medal: s.scenario.medal, finished: s.scenario.finished, hoursLeft: Math.max(0, (s.scenario.endsAt - s.minutes) / 60) } : null,
+      incoming: s.incoming
+        .map((c) => {
+          const first = CONDITIONS[c.cond].path[0];
+          return { id: c.id, kind: c.kind, cond: CONDITIONS[c.cond].name, first: ROOMS[STEP_ROOM[first]].name, minutes: Math.max(0, Math.round(c.eta - s.minutes)), dispatched: c.dispatched, incident: c.incident, ready: CONDITIONS[c.cond].path.every((st) => s.world.roomsOf(STEP_ROOM[st]).some((r) => r.valid)) };
+        })
+        .sort((a, b) => a.minutes - b.minutes),
+      emergency: s.emergency ? { kind: s.emergency.kind, detail: this.emergencyDetail(), minutes: Math.max(0, Math.round(s.emergency.until - s.minutes)) } : null,
       patients: [...s.people.values()].filter((p) => p.kind === "patient" && p.state !== "dead" && p.state !== "leaving").length,
       jobs: s.jobs.size,
       loan: s.loan,
       unlocked,
       events: s.events.filter((e) => e.until > s.minutes).map((e) => EVENTS[e.id].name),
     });
+  }
+
+  private emergencyDetail() {
+    const s = this.sim;
+    const e = s.emergency!;
+    if (e.kind === "codeBlue") {
+      const p = s.people.get(e.patient);
+      const r = e.responder ? s.people.get(e.responder) : null;
+      return `${p?.name ?? "A patient"} · ${r ? `${r.name} ${Math.hypot(r.x - (p?.x ?? 0), r.z - (p?.z ?? 0)) < 1.6 ? "is working on them" : "is running there"}` : "no doctor or nurse can get there"}`;
+    }
+    if (e.kind === "majorIncident") return `${e.saved} saved · ${e.lost} lost · ${Math.max(0, e.total - e.saved - e.lost)} to go`;
+    const room = s.roomByKey(e.room);
+    return `${room ? ROOMS[room.type].name : "A room"} · ${Object.keys(e.fire).length} cells burning`;
+  }
+
+  /** Jump the camera to the emergency. */
+  focusEmergency() {
+    const s = this.sim;
+    const e = s.emergency;
+    if (!e || !this.engine) return;
+    let at: { x: number; z: number } | null = null;
+    if (e.kind === "codeBlue") at = s.people.get(e.patient) ?? null;
+    else if (e.kind === "fire") {
+      const r = s.roomByKey(e.room);
+      if (r) at = { x: r.x, z: r.z };
+    } else {
+      const er = s.world.roomsOf("emergency")[0];
+      if (er) at = { x: er.x, z: er.z };
+    }
+    if (at) this.engine.setView({ ...this.engine.state, x: at.x, z: at.z, dist: Math.min(this.engine.state.dist, 34) });
+    this.sound.click();
   }
 
   toast(text: string, kind: "info" | "good" | "bad" = "info") {
@@ -398,7 +449,7 @@ export class Game {
 
   rotateTool() {
     const t = this.store.getState().tool;
-    if (t?.kind === "object") this.store.setState({ tool: { ...t, rot: (t.rot + 1) % 4 } });
+    if (t?.kind === "object" || t?.kind === "quick") this.store.setState({ tool: { ...t, rot: (t.rot + 1) % 4 } });
   }
 
   // ------------------------------------------------------------------ input
@@ -600,6 +651,13 @@ export class Game {
       case "demolish":
         ok = s.demolish(x0, z0, x1, z1);
         break;
+      case "quick": {
+        const at = this.quickAt(tool.id, tool.rot, x1, z1);
+        const plan = s.quickPlan(tool.id, at.x, at.z, tool.rot);
+        ok = plan.ok && s.placeQuickRoom(tool.id, at.x, at.z, tool.rot);
+        if (!ok) this.toast(`${QUICK_ROOMS[tool.id].name}: ${plan.reason.toLowerCase()}.`, "bad");
+        break;
+      }
     }
     if (ok) this.sound.place();
     else {
@@ -610,6 +668,45 @@ export class Game {
   }
 
   // --------------------------------------------------------------- previews
+
+  /** A quick room's corner, centred on the cell under the pointer. */
+  private quickAt(id: QuickId, rot: number, x: number, z: number) {
+    const f = quickSize(id, rot);
+    return { x: x - Math.floor((f.w - 1) / 2), z: z - Math.floor((f.d - 1) / 2) };
+  }
+
+  /** A blueprint of a quick room: floor, walls, doors and furniture ghosts, at the origin. */
+  private quickGhost(id: QuickId, rot: number, ok: boolean) {
+    const g = new THREE.Group();
+    const L = layoutQuick(id, 0, 0, rot);
+    const q = QUICK_ROOMS[id];
+    const cells: { x: number; z: number; h: number; c: string }[] = [];
+    const doors = new Set(L.doors.map((d) => `${d.x},${d.z}`));
+    const inner = (x: number, z: number) => L.walls.some(([x0, z0, x1, z1]) => x >= x0 && x <= x1 && z >= z0 && z <= z1);
+    for (let z = L.z0; z <= L.z1; z++)
+      for (let x = L.x0; x <= L.x1; x++) {
+        const edge = !q.outdoor && (x === L.x0 || x === L.x1 || z === L.z0 || z === L.z1);
+        const door = doors.has(`${x},${z}`);
+        const room = L.rooms.find((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+        const color = !ok ? "#f87171" : door ? "#fde047" : edge || inner(x, z) ? "#38bdf8" : room ? ROOMS[room.room].color : "#94a3b8";
+        cells.push({ x, z, h: door ? 0.3 : edge || inner(x, z) ? 0.75 : 0.06, c: color });
+      }
+    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.38, depthWrite: false }), cells.length);
+    const m = new THREE.Matrix4();
+    const col = new THREE.Color();
+    cells.forEach((c, i) => {
+      mesh.setMatrixAt(i, m.makeScale(0.98, c.h, 0.98).setPosition(c.x + 0.5, 0.03, c.z + 0.5));
+      mesh.setColorAt(i, col.set(c.c));
+    });
+    mesh.renderOrder = 10;
+    g.add(mesh);
+    for (const it of L.items) {
+      const o = makeObject(it.kind, ok ? GHOST_OK : GHOST_BAD);
+      placeModel(o, it);
+      g.add(o);
+    }
+    return g;
+  }
 
   private clearPreview() {
     this.preview.clear();
@@ -627,7 +724,20 @@ export class Game {
     const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
     let text = "";
     let bad = false;
-    if (tool.kind === "object") {
+    if (tool.kind === "quick") {
+      const at = this.quickAt(tool.id, tool.rot, h.x, h.z);
+      const plan = this.sim.quickPlan(tool.id, at.x, at.z, tool.rot);
+      const key = `q:${tool.id}:${tool.rot}:${plan.ok}`;
+      if (!this.ghost || this.ghost.key !== key) {
+        this.preview.clear();
+        const g = this.quickGhost(tool.id, tool.rot, plan.ok);
+        this.ghost = { key, g };
+        this.preview.add(g);
+      }
+      this.ghost.g.position.set(at.x, 0, at.z);
+      text = `${QUICK_ROOMS[tool.id].name} · ${plan.ok ? money(plan.cost) : plan.reason}${plan.ok ? " · R to turn" : ""}`;
+      bad = !plan.ok;
+    } else if (tool.kind === "object") {
       const f = footprint(tool.obj, tool.rot);
       const ox = h.x - Math.floor((f.w - 1) / 2);
       const oz = h.z - Math.floor((f.d - 1) / 2);
@@ -707,6 +817,17 @@ export class Game {
   fastForward(hours: number) {
     const end = this.sim.minutes + hours * 60;
     while (this.sim.minutes < end) this.sim.step(0.1, 4);
+    this.publish();
+  }
+  /** Tests: start an emergency now. */
+  emergencyNow(kind: "codeBlue" | "majorIncident" | "fire") {
+    const ok = this.sim.triggerEmergency(kind);
+    this.publish();
+    return ok;
+  }
+  /** Tests: radio in an ambulance due in a few minutes. */
+  radioAmbulance() {
+    (this.sim as unknown as { callAmbulance: (i: boolean, eta: number) => void }).callAmbulance(false, 30);
     this.publish();
   }
   /** Tests: finish all construction now. */

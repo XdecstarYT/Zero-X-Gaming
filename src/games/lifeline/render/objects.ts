@@ -357,6 +357,22 @@ const BUILDERS: Record<ObjectId, B> = {
     cyl(g, 0.4, 0.1, "#cbd5e1", 0, 1.05, 0);
     sphere(g, 0.12, "#bae6fd", 0, 1.3, 0, { glow: 0.5 });
   },
+  triageDesk: (g) => {
+    box(g, 1.9, 0.95, 0.7, WHITE, 0, 0, 0.05);
+    box(g, 1.95, 0.07, 0.85, "#fda4af", 0, 0.95, 0.05);
+    box(g, 1.7, 0.1, 0.02, "#f43f5e", 0, 0.6, 0.41, { glow: 0.7 });
+    box(g, 0.45, 0.3, 0.04, DARK, 0.45, 1.02, -0.15);
+    box(g, 0.41, 0.25, 0.01, SCREEN, 0.45, 1.05, -0.125, { glow: 0.5 });
+    // A blood-pressure cuff and a clipboard.
+    cyl(g, 0.08, 0.1, "#1e3a8a", -0.5, 1.02, 0.05);
+    box(g, 0.24, 0.02, 0.32, "#fefce8", -0.15, 1.02, 0.1);
+  },
+  extinguisher: (g) => {
+    box(g, 0.34, 0.5, 0.08, "#fef2f2", 0, 0.45, -0.38);
+    cyl(g, 0.11, 0.55, "#dc2626", 0, 0.2, -0.28, { rough: 0.35 });
+    cyl(g, 0.04, 0.08, DARK, 0, 0.75, -0.28);
+    box(g, 0.16, 0.03, 0.04, DARK, 0.04, 0.82, -0.28);
+  },
 };
 
 /** Build the model for an object (or its blueprint). */

@@ -1,5 +1,6 @@
 import { createStore } from "zustand/vanilla";
-import type { FloorId, GrantId, ObjectId, ResearchId, Role, RoomId, ScenarioId } from "./data";
+import type { EmergencyKind, FloorId, GrantId, ObjectId, ResearchId, Role, RoomId, ScenarioId } from "./data";
+import type { QuickId } from "./quick";
 import type { GrantState, Notice, Stats } from "./sim";
 
 export type Tool =
@@ -9,9 +10,10 @@ export type Tool =
   | { kind: "floor"; floor: FloorId }
   | { kind: "room"; room: RoomId | null }
   | { kind: "object"; obj: ObjectId; rot: number }
+  | { kind: "quick"; id: QuickId; rot: number }
   | { kind: "demolish" };
 
-export type Category = "build" | "rooms" | "objects" | "staff" | null;
+export type Category = "build" | "quick" | "rooms" | "objects" | "staff" | null;
 export type Panel = "staff" | "reports" | "grants" | "research" | "help" | null;
 
 export interface Selected {
@@ -46,6 +48,9 @@ export interface HudState {
   result: boolean;
   /** The camera follows the selected person. */
   follow: boolean;
+  /** Ambulances and helicopters on the radio. */
+  incoming: { id: number; kind: "ambulance" | "helicopter"; cond: string; first: string; minutes: number; dispatched: boolean; incident: boolean; ready: boolean }[];
+  emergency: { kind: EmergencyKind; detail: string; minutes: number } | null;
   patients: number;
   jobs: number;
   loan: number;
@@ -82,6 +87,8 @@ export function makeStore() {
     medals: {},
     result: false,
     follow: false,
+    incoming: [],
+    emergency: null,
     patients: 0,
     jobs: 0,
     loan: 0,

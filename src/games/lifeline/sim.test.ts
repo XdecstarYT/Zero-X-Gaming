@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { START_CASH } from "./data";
 import { starterHospital } from "./plan";
+import { QUICK_ORDER, QUICK_ROOMS } from "./quick";
 import { Sim } from "./sim";
 import { BUILT, idx, PLANNED, World } from "./world";
 
@@ -117,6 +118,8 @@ describe("patients", () => {
     s.hire("doctor");
     s.hire("doctor");
     s.hire("receptionist");
+    // Someone to fix the x-ray when it wears out.
+    s.hire("workman");
     run(s, 72);
     expect(s.power.ok).toBe(true);
     expect(s.world.roomsOf("radiology")[0].valid).toBe(true);
@@ -243,6 +246,10 @@ describe("mega update", () => {
     const s = bigHospital(23);
     run(s, 0.5);
     (s as unknown as { callHelicopter: () => void }).callHelicopter();
+    // Radioed in first, then in the air when it's due.
+    expect(s.incoming.map((c) => c.kind)).toEqual(["helicopter"]);
+    s.incoming[0].eta = s.minutes;
+    s.step(0.1, 1);
     expect(s.vehicles.some((v) => v.kind === "helicopter")).toBe(true);
     for (let i = 0; i < 300 && ![...s.people.values()].some((p) => p.air); i++) s.step(0.1, 1);
     const flown = [...s.people.values()].filter((p) => p.air);
@@ -297,5 +304,132 @@ describe("mega update", () => {
     expect(s.lastAwards.map((a) => a.name)).toHaveLength(4);
     expect(s.cash - cash).toBe(10_000 + 20_000 + 8_000 + 15_000);
     expect(s.week.treated).toBe(0);
+  });
+});
+
+describe("quick rooms and the emergency department", () => {
+  it("every quick room builds into working rooms, whichever way it's turned", () => {
+    for (const id of QUICK_ORDER)
+      for (let rot = 0; rot < 4; rot++) {
+        const s = new Sim(3);
+        s.cash = 1_000_000;
+        s.research.done = [...RESEARCH_ORDER];
+        s.adminActive = () => true;
+        const plan = s.quickPlan(id, 10, 10, rot);
+        expect(plan.ok, `${id} ${rot}: ${plan.reason}`).toBe(true);
+        expect(s.placeQuickRoom(id, 10, 10, rot)).toBe(true);
+        expect(s.world.objects.size, `${id} ${rot}`).toBe(QUICK_ROOMS[id].items.length);
+        s.placeObject("generator", 1, 1, 0);
+        s.instantBuild();
+        s.step(0.1, 1);
+        for (const r of plan.layout.rooms) {
+          const key = s.world.roomOf[idx(Math.floor((r.x0 + r.x1) / 2), Math.floor((r.z0 + r.z1) / 2))];
+          const room = s.world.rooms.find((x) => x.id === key);
+          expect(room?.type, `${id} ${rot}`).toBe(r.room);
+          expect(room?.issues, `${id} ${rot} ${r.room}`).toEqual([]);
+        }
+      }
+  });
+
+  it("quick rooms share walls with what's there, but not floor space, and cost what they say", () => {
+    const s = new Sim(4);
+    s.cash = 200_000;
+    starterHospital(s, { build: true });
+    // Sharing the main block's east wall (x = 33).
+    const before = s.cash;
+    const plan = s.quickPlan("gp", 33, 14, 0);
+    expect(plan.ok).toBe(true);
+    expect(s.placeQuickRoom("gp", 33, 14, 0)).toBe(true);
+    expect(before - s.cash).toBe(plan.cost);
+    // Inside the hospital: no.
+    expect(s.quickPlan("office", 20, 28, 0).ok).toBe(false);
+    // Locked rooms say why.
+    expect(s.quickPlan("icu", 40, 2, 0).reason).toMatch(/Research/);
+  });
+
+  it("ambulances are radioed in with their condition and arrive on time, at the ambulance bay", () => {
+    const s = bigHospital(31);
+    s.placeQuickRoom("ambulanceBay", 20, 41, 0);
+    s.instantBuild();
+    (s as unknown as { callAmbulance: () => void }).callAmbulance();
+    expect(s.incoming.length).toBe(1);
+    const call = s.incoming[0];
+    expect(call.eta).toBeGreaterThan(s.minutes);
+    expect(["allergy", "burns", "heartAttack", "stroke", "prematureLabour", "sepsis"]).toContain(call.cond);
+    while (s.minutes < call.eta + 30) s.step(0.1, 4);
+    expect(s.incoming.length).toBe(0);
+    const p = [...s.people.values()].find((q) => q.ambulance && q.cond === call.cond);
+    expect(p).toBeTruthy();
+  });
+
+  it("a staffed triage room sees ambulance cases first and they wait in order of need", () => {
+    const s = bigHospital(32);
+    expect(s.placeQuickRoom("triage", 4, 4, 0)).toBe(true);
+    s.instantBuild();
+    s.hire("nurse");
+    s.hire("nurse");
+    s.step(0.1, 1);
+    for (let i = 0; i < 4; i++) (s as unknown as { callAmbulance: (a: boolean, e: number) => void }).callAmbulance(false, 2 + i);
+    run(s, 8);
+    expect(s.stats.triaged).toBeGreaterThan(0);
+    expect(s.stats.er).toBeGreaterThan(0);
+  });
+
+  it("Code Blue: the nearest doctor or nurse runs to the patient", () => {
+    const s = bigHospital(33);
+    s.minutes = 9 * 60;
+    run(s, 3);
+    expect(s.triggerEmergency("codeBlue")).toBe(true);
+    expect(s.emergency?.kind).toBe("codeBlue");
+    const pt = s.people.get(s.emergency!.patient)!;
+    expect(pt.arrest).toBeGreaterThan(0);
+    run(s, 1);
+    expect(s.emergency).toBeNull();
+    expect(s.stats.codeSaved + s.stats.codeLost).toBe(1);
+  });
+
+  it("fires close the room and wreck things until workmen put them out", () => {
+    const s = bigHospital(34);
+    s.hire("workman");
+    s.hire("workman");
+    run(s, 1);
+    expect(s.triggerEmergency("fire")).toBe(true);
+    const room = s.roomByKey(s.emergency!.room)!;
+    expect(s.burning(room)).toBe(true);
+    // Burning while the crew gets there.
+    s.step(0.1, 1);
+    let hours = 0;
+    while (s.emergency && hours < 6) {
+      run(s, 0.5);
+      hours += 0.5;
+    }
+    expect(s.emergency).toBeNull();
+    expect(s.stats.fires).toBe(1);
+  });
+
+  it("a major incident sends a wave of critical patients, then pays for the ones saved", () => {
+    const s = bigHospital(35);
+    s.minutes = 9 * 60;
+    run(s, 1);
+    expect(s.triggerEmergency("majorIncident")).toBe(true);
+    const total = s.emergency!.total;
+    expect(total).toBeGreaterThanOrEqual(5);
+    expect(s.incoming.filter((c) => c.incident).length).toBe(total);
+    // Only one emergency at a time.
+    expect(s.triggerEmergency("fire")).toBe(false);
+    run(s, 19);
+    expect(s.emergency).toBeNull();
+    expect(s.stats.incidents).toBe(1);
+  });
+
+  it("radio calls and emergencies survive a save", () => {
+    const s = bigHospital(36);
+    run(s, 1);
+    s.triggerEmergency("fire");
+    (s as unknown as { callAmbulance: () => void }).callAmbulance();
+    const t = Sim.from(JSON.parse(JSON.stringify(s.toJSON())));
+    expect(t.incoming.length).toBe(s.incoming.length);
+    expect(t.emergency?.kind).toBe("fire");
+    expect(Object.keys(t.emergency!.fire).length).toBeGreaterThan(0);
   });
 });

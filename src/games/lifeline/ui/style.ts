@@ -31,6 +31,9 @@ export const css = `
 .ll-pill{display:inline-flex;align-items:center;gap:.3em;border-radius:999px;padding:.1em .55em;font-size:.72em;font-weight:900}
 .ll-in{animation:ll-in .2s ease-out both}
 @keyframes ll-in{from{opacity:0;transform:translateY(8px)}}
+.ll-pulse{animation:ll-pulse 1s ease-in-out infinite}
+@keyframes ll-pulse{50%{opacity:.25;transform:scale(.8)}}
+@media (prefers-reduced-motion:reduce){.ll-pulse,.ll-in{animation:none}}
 .ll :focus-visible{outline:3px solid var(--ll-accent);outline-offset:2px}
 .ll-bar{height:7px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden}
 .ll-bar>i{display:block;height:100%;border-radius:999px}

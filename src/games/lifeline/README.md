@@ -46,6 +46,24 @@ A 3D hospital management sim at `/games/lifeline`, open to everyone. Score = liv
 - **Weekly awards**, new grants (discovery, newborns, airlift), baby-boom and power-surge
   events, and a follow camera.
 
+## Quick rooms and the emergency department
+
+- **Quick rooms** (`quick.ts`). There are 24 ready-made rooms, from a full emergency department to a janitor's closet.
+  - Pick one, turn it with R, and click. `Sim.placeQuickRoom` orders the foundation, inner walls, doors, zones and furniture as ordinary jobs.
+  - `quickPlan` checks the space and gives the cost. Outer walls may share walls that are already there; the inside must be clear. Locked rooms say why.
+  - Layouts are written facing south and turned with `layoutQuick`.
+- **Triage.** A triage room has a triage desk and a chair, and a nurse sits behind the desk.
+  - Ambulance and helicopter cases see the triage nurse first (the `triage` step).
+  - Triaged patients lose health 40% more slowly while waiting.
+  - The emergency room takes the sickest patient first.
+- **Ambulance bay.** An outdoor zone. Ambulances stop there, and patients arrive at the bay a little steadier.
+- **Incoming.** Ambulances and helicopters are radioed in (`Sim.incoming`) with their condition and arrival time before they set off. The HUD lists them.
+- **Emergencies** (`Sim.emergency`, one at a time, rolled hourly from day 2, or `triggerEmergency`):
+  - **Code Blue.** A patient's heart stops. The nearest doctor or nurse runs to them within `CODE_BLUE_MINUTES`; a defibrillator anywhere in the hospital raises the odds.
+  - **Major incident.** Five to eight radioed casualties. Each one saved pays $1,500, plus $10,000 if nobody is lost.
+  - **Fire.** It spreads within a room, closes the room and wrecks equipment. Workmen and janitors put it out, twice as fast with an extinguisher. Flames are drawn by `render/fx.ts`.
+- New grants: Golden hour, First things first, and All hands.
+
 `plan.ts` has `megaWing`, a ready-made wing with every new department (used by the tests
 and the menu backdrop).
 
@@ -56,6 +74,7 @@ and the menu backdrop).
 | `data.ts` | Every floor, object, room, role, condition, grant and event |
 | `world.ts` | The grid (foundations, floors, walls, doors, rooms, dirt), objects, room detection and checks, A* pathfinding, save encoding |
 | `sim.ts` | The rules: jobs and deliveries, staff and patient behaviour, money, reputation, grants, events, notices, saves (pure, unit-tested) |
+| `quick.ts` | Quick-room layouts, turning, and cost estimates |
 | `plan.ts` | A ready-made starter hospital (tests, the menu backdrop, the "small hospital" start) |
 | `render/*` | three.js: camera and day/night (`engine`), floors/walls/doors/rooms/dirt (`buildingView`), object models (`objects`), people, crates and vehicles (`agents`) |
 | `game.ts` | Controller: loop, input and build tools with previews, saves (localStorage), sound, score |

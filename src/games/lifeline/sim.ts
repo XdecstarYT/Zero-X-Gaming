@@ -5,6 +5,7 @@
  */
 import {
   ADMINS,
+  CODE_BLUE_MINUTES,
   CONDITIONS,
   DOOR_COST,
   EVENTS,
@@ -30,6 +31,7 @@ import {
   W,
   WALL_COST,
   type ConditionId,
+  type EmergencyKind,
   type EventId,
   type FloorId,
   type GrantId,
@@ -40,6 +42,7 @@ import {
   type ScenarioId,
   type Step,
 } from "./data";
+import { layoutQuick, QUICK_ROOMS, type QuickId, type QuickLayout } from "./quick";
 import { accessCell, BUILT, cx, cz, FLOOR_IDS, FRONT, idx, inside, NONE, objCells, PLANNED, ROOM_IDS, slots, World, type Obj, type RoomInstance } from "./world";
 
 // --------------------------------------------------------------------- rng
@@ -127,6 +130,12 @@ export interface Person {
   failCell: number;
   failUntil: number;
   needTarget: "food" | "toilet" | null;
+  /** Ambulance cases: 1 = to be triaged, 2 = triaged (stabilised, seen in order of need). */
+  triage?: number;
+  /** Heart stopped (Code Blue): the game minute it's too late. */
+  arrest?: number;
+  /** Part of a major incident. */
+  incident?: boolean;
 }
 
 export interface Vehicle {
@@ -143,6 +152,38 @@ export interface Vehicle {
   state: "in" | "stopped" | "out";
   t: number;
   payload: number;
+  /** The patient on board (ambulances and helicopters), and their radio call. */
+  cond?: ConditionId;
+  call?: number;
+}
+
+/** An ambulance or helicopter radioed in, before it gets here. */
+export interface Incoming {
+  id: number;
+  kind: "ambulance" | "helicopter";
+  cond: ConditionId;
+  /** Game minute it's due. */
+  eta: number;
+  incident: boolean;
+  /** On the road (or in the air) now. */
+  dispatched: boolean;
+}
+
+export interface EmergencyState {
+  kind: EmergencyKind;
+  started: number;
+  /** When it ends on its own (burns out, the incident is stood down, too late). */
+  until: number;
+  /** Code Blue: the patient and who's running to them. */
+  patient: number;
+  responder: number;
+  /** Major incident: casualties on the way, saved, lost. */
+  total: number;
+  saved: number;
+  lost: number;
+  /** Fire: the room (key) and burning cells → intensity 0..1. */
+  room: number;
+  fire: Record<number, number>;
 }
 
 export interface DayReport {
@@ -179,6 +220,13 @@ export interface Stats {
   mri: number;
   air: number;
   repairs: number;
+  /** Code Blues saved and lost, major incidents handled (and with nobody lost), fires out. */
+  codeSaved: number;
+  codeLost: number;
+  incidents: number;
+  incidentsClean: number;
+  fires: number;
+  triaged: number;
   history: DayReport[];
   today: DayReport;
 }
@@ -197,6 +245,7 @@ const PATIENT_OBJ: Record<Step | "reception", ObjectId> = {
   theatre: "opTable",
   emergency: "traumaBed",
   reception: "receptionDesk",
+  triage: "triageDesk",
   icu: "icuBed",
   maternity: "birthingBed",
   psych: "therapyCouch",
@@ -240,6 +289,10 @@ export class Sim {
   /** This week's numbers, for the awards on day 8, 15, ... */
   week = { treated: 0, deaths: 0, left: 0, hyg: 0, hours: 0 };
   lastAwards: { name: string; prize: number }[] = [];
+  /** Ambulances and helicopters radioed in. */
+  incoming: Incoming[] = [];
+  /** The emergency under way, if any. */
+  emergency: EmergencyState | null = null;
   notices: Notice[] = [];
   /** One-off messages for the UI to show and clear. */
   messages: { text: string; kind: "info" | "good" | "bad" }[] = [];
@@ -256,6 +309,9 @@ export class Sim {
   private assignedN = new Map<string, number>();
   private lastTruck = -1e9;
   private cleanTargets = new Set<number>();
+  /** Per substep: a staffed triage room is open; the sickest triaged patient waiting for emergency. */
+  private triageReady = false;
+  private erMin = Infinity;
 
   constructor(seed = 1) {
     this.rng = new Rng(seed);
@@ -401,6 +457,62 @@ export class Sim {
     this.spend(def.cost);
     this.addJob("object", objCells(o)[0], o.id);
     return o;
+  }
+
+  /**
+   * Can a quick room go here, and what would it cost? Inside the footprint everything must
+   * be clear; its outer walls may share walls that are already there.
+   */
+  quickPlan(id: QuickId, x: number, z: number, rot: number): { ok: boolean; cost: number; reason: string; layout: QuickLayout } {
+    const q = QUICK_ROOMS[id];
+    const L = layoutQuick(id, x, z, rot);
+    const w = this.world;
+    const bad = (reason: string) => ({ ok: false, cost: 0, reason, layout: L });
+    if (L.x0 < 0 || L.z0 < 0 || L.x1 >= W || L.z1 >= PAVEMENT_Z) return bad("Off the plot");
+    for (const r of L.rooms)
+      if (!this.roomUnlocked(r.room)) {
+        const def = ROOMS[r.room];
+        return bad(def.research && !this.researched(def.research) ? `Research "${RESEARCH[def.research].name}" first` : def.unlock ? `Hire a ${ROLES[def.unlock].name.toLowerCase()} first` : "Locked");
+      }
+    let cost = 0;
+    for (let zz = L.z0; zz <= L.z1; zz++)
+      for (let xx = L.x0; xx <= L.x1; xx++) {
+        const c = idx(xx, zz);
+        const edge = xx === L.x0 || xx === L.x1 || zz === L.z0 || zz === L.z1;
+        const clear = !w.found[c] && !w.wall[c] && !w.occ[c];
+        if (q.outdoor || !edge) {
+          if (!clear) return bad("Something's in the way");
+        } else if (!clear && !(w.found[c] && w.wall[c])) return bad("Something's in the way");
+      }
+    if (q.outdoor) {
+      if (q.floor) cost += this.floorCost(L.x0, L.z0, L.x1, L.z1, q.floor);
+    } else {
+      cost += this.foundationCost(L.x0, L.z0, L.x1, L.z1, q.floor ?? "lino");
+      for (const [x0, z0, x1, z1] of L.walls) cost += (x1 - x0 + 1) * (z1 - z0 + 1) * WALL_COST;
+      cost += L.doors.filter((d) => !w.door[idx(d.x, d.z)]).length * DOOR_COST;
+    }
+    for (const it of L.items) cost += OBJECTS[it.kind].cost;
+    if (!this.canAfford(cost)) return { ok: false, cost, reason: "Not enough money", layout: L };
+    return { ok: true, cost, reason: "", layout: L };
+  }
+
+  /** Lay down a ready-made room: foundation, walls, doors, rooms and furniture, all as jobs. */
+  placeQuickRoom(id: QuickId, x: number, z: number, rot: number) {
+    const plan = this.quickPlan(id, x, z, rot);
+    if (!plan.ok) return false;
+    const q = QUICK_ROOMS[id];
+    const L = plan.layout;
+    if (q.outdoor) {
+      if (q.floor) this.floor(L.x0, L.z0, L.x1, L.z1, q.floor);
+    } else {
+      this.foundation(L.x0, L.z0, L.x1, L.z1, q.floor ?? "lino");
+      for (const [x0, z0, x1, z1] of L.walls) this.walls(this.cellsIn(x0, z0, x1, z1));
+      for (const d of L.doors) if (!this.world.door[idx(d.x, d.z)]) this.door(idx(d.x, d.z));
+    }
+    for (const r of L.rooms) this.paintRoom(r.x0, r.z0, r.x1, r.z1, r.room);
+    for (const it of L.items) this.placeObject(it.kind, it.x, it.z, it.rot);
+    this.messages.push({ text: `${q.name} ordered ($${plan.cost.toLocaleString("en-US")}). The workmen will build it.`, kind: "info" });
+    return true;
   }
 
   paintRoom(x0: number, z0: number, x1: number, z1: number, room: RoomId | null) {
@@ -647,8 +759,13 @@ export class Sim {
     if (ok !== this.power.ok) w.touch();
     this.power = { supply, demand, ok };
     if (w.rebuildRooms(this.power)) this.afterRooms();
+    this.triageReady = w.roomsOf("triage").some((r) => r.valid && this.staffed(r));
+    this.erMin = Infinity;
+    for (const p of this.people.values())
+      if (p.kind === "patient" && p.triage === 2 && p.state === "waitStep" && !p.arrest && this.stepNow(p) === "emergency") this.erMin = Math.min(this.erMin, p.health);
     this.vehiclesStep(t);
     this.arrivals(dm);
+    this.emergencyStep(t, dm);
     for (const p of [...this.people.values()]) {
       if (p.kind === "staff") this.staffStep(p, t, dm);
       else this.patientStep(p, t, dm);
@@ -695,6 +812,27 @@ export class Sim {
       this.lastTruck = this.minutes;
       this.vehicles.push({ id: this.nextId++, kind: "truck", x: -6, stop: this.deliveryStop(), state: "in", t: 0, payload: 0 });
     }
+    // Radio calls that are due set off now.
+    for (const c of this.incoming) {
+      if (c.dispatched || c.eta > this.minutes) continue;
+      if (c.kind === "helicopter") {
+        if (this.vehicles.some((v) => v.kind === "helicopter")) continue;
+        const pad = this.world.roomsOf("helipad").find((r) => r.valid);
+        if (!pad) {
+          // Nowhere to land: the crew diverts to the road like an ambulance.
+          c.kind = "ambulance";
+        } else {
+          const o = pad.objects.map((id) => this.world.objects.get(id)!).find((x) => x.kind === "helipad");
+          const tx = o ? o.x + 2 : pad.x;
+          const tz = o ? o.z + 2 : pad.z;
+          this.vehicles.push({ id: this.nextId++, kind: "helicopter", x: -30, z: tz - 20, y: 30, tx, tz, stop: tx, state: "in", t: 0, payload: 0, cond: c.cond, call: c.id });
+          c.dispatched = true;
+          continue;
+        }
+      }
+      this.vehicles.push({ id: this.nextId++, kind: "ambulance", x: -6, stop: this.ambulanceStop(), state: "in", t: 0, payload: 0, cond: c.cond, call: c.id });
+      c.dispatched = true;
+    }
     for (const v of this.vehicles) {
       if (v.kind === "helicopter") {
         this.flyHelicopter(v, t);
@@ -707,7 +845,7 @@ export class Sim {
           v.state = "stopped";
           v.t = 0;
           if (v.kind === "truck") this.unload();
-          else this.ambulanceArrives();
+          else this.ambulanceArrives(v);
         }
       } else if (v.state === "stopped") {
         v.t += t;
@@ -747,23 +885,25 @@ export class Sim {
 
   private helicopterLands(v: Vehicle) {
     const pad = this.world.roomsOf("helipad").find((r) => r.valid);
-    const cond = (Object.keys(CONDITIONS) as ConditionId[]).filter((id) => CONDITIONS[id].air);
-    const p = this.spawn("patient", null, this.rng.pick(cond), true);
+    const air = (Object.keys(CONDITIONS) as ConditionId[]).filter((id) => CONDITIONS[id].air);
+    const call = this.incoming.find((c) => c.id === v.call);
+    const p = this.spawn("patient", null, v.cond ?? this.rng.pick(air), true);
     const cell = pad ? this.world.nearestWalkable(pad.x, pad.z) : idx(GATE.x, PAVEMENT_Z - 1);
     p.x = cx(cell) + 0.5;
     p.z = cz(cell) + 0.5;
     p.air = true;
+    p.triage = 1;
+    p.incident = !!call?.incident;
+    this.incoming = this.incoming.filter((c) => c.id !== v.call);
     this.messages.push({ text: `Air ambulance: ${p.name}, ${CONDITIONS[p.cond!].name.toLowerCase()}.`, kind: "info" });
-    void v;
   }
 
-  private callHelicopter() {
-    const pad = this.world.roomsOf("helipad").find((r) => r.valid);
-    if (!pad || this.vehicles.some((v) => v.kind === "helicopter")) return;
-    const o = pad.objects.map((id) => this.world.objects.get(id)!).find((x) => x.kind === "helipad");
-    const tx = o ? o.x + 2 : pad.x;
-    const tz = o ? o.z + 2 : pad.z;
-    this.vehicles.push({ id: this.nextId++, kind: "helicopter", x: -30, z: tz - 20, y: 30, tx, tz, stop: tx, state: "in", t: 0, payload: 0 });
+  /** Radio in an air ambulance (a major trauma case, due in 20–40 minutes). */
+  private callHelicopter(incident = false) {
+    if (!this.world.roomsOf("helipad").some((r) => r.valid)) return;
+    if (this.incoming.some((c) => c.kind === "helicopter") || this.vehicles.some((v) => v.kind === "helicopter")) return;
+    const air = (Object.keys(CONDITIONS) as ConditionId[]).filter((id) => CONDITIONS[id].air);
+    this.incoming.push({ id: this.nextId++, kind: "helicopter", cond: this.rng.pick(air), eta: this.minutes + 20 + this.rng.next() * 20, incident, dispatched: false });
   }
 
   private deliveryCells() {
@@ -797,12 +937,34 @@ export class Sim {
     }
   }
 
-  private ambulanceArrives() {
-    const v = this.vehicles.find((x) => x.kind === "ambulance" && x.state === "stopped" && !x.payload);
-    if (!v) return;
+  /** The ambulance bay nearest the road, if there's one. */
+  private bay() {
+    const bays = this.world.roomsOf("ambulanceBay").filter((r) => r.valid);
+    return bays.sort((a, b) => b.z - a.z)[0] ?? null;
+  }
+
+  private ambulanceStop() {
+    const b = this.bay();
+    return b ? Math.max(1, Math.min(W - 2, b.x)) : GATE.x;
+  }
+
+  private ambulanceArrives(v: Vehicle) {
+    if (v.payload) return;
     v.payload = 1;
-    const p = this.spawn("patient", null, this.pickCondition(true), true);
+    const call = this.incoming.find((c) => c.id === v.call);
+    const p = this.spawn("patient", null, v.cond ?? this.pickCondition(true), true);
     p.x = v.stop + 0.5;
+    p.triage = 1;
+    p.incident = !!call?.incident;
+    this.incoming = this.incoming.filter((c) => c.id !== v.call);
+    // Paramedics hand over at the bay: the patient's a little steadier.
+    const b = this.bay();
+    if (b) {
+      const cell = this.world.nearestWalkable(b.x, b.z);
+      p.x = cx(cell) + 0.5;
+      p.z = cz(cell) + 0.5;
+      p.health = Math.min(100, p.health + 8);
+    }
     this.messages.push({ text: `Ambulance: ${p.name}, ${CONDITIONS[p.cond!].name.toLowerCase()}.`, kind: "info" });
   }
 
@@ -844,7 +1006,7 @@ export class Sim {
     }
     if (this.validRoom("emergency")) {
       const rate = (0.12 + this.rep * 0.05) * (night < 1 ? 0.7 : 1) * (this.scenarioDef()?.twist === "crashes" ? 3 : 1);
-      if (this.rng.next() < (rate / 60) * dm) this.callAmbulance();
+      if (this.rng.next() < (rate / 60) * dm && this.incoming.filter((c) => !c.incident).length < 5) this.callAmbulance();
     }
     if (this.validRoom("helipad") && this.validRoom("emergency")) {
       const rate = 0.07 + this.rep * 0.02;
@@ -852,8 +1014,9 @@ export class Sim {
     }
   }
 
-  private callAmbulance() {
-    this.vehicles.push({ id: this.nextId++, kind: "ambulance", x: -6, stop: GATE.x, state: "in", t: 0, payload: 0 });
+  /** Radio in an ambulance: the condition is known now, the patient's here in 15–40 minutes. */
+  private callAmbulance(incident = false, eta = 15 + this.rng.next() * 25) {
+    this.incoming.push({ id: this.nextId++, kind: "ambulance", cond: this.pickCondition(true), eta: this.minutes + eta, incident, dispatched: false });
   }
 
   // ---------------------------------------------------------------- moving
@@ -978,7 +1141,7 @@ export class Sim {
     const role = p.role!;
     // Sit on the room's chair when it has one (reception, consulting rooms, offices).
     const chair = find("chair");
-    if (chair && (r.type === "reception" || r.type === "gp" || r.type === "office")) return { cell: objCells(chair)[0], at: { x: chair.x + 0.5, z: chair.z + 0.5 } };
+    if (chair && (r.type === "reception" || r.type === "gp" || r.type === "office" || r.type === "triage")) return { cell: objCells(chair)[0], at: { x: chair.x + 0.5, z: chair.z + 0.5 } };
     const arm = find("armchair");
     if (arm && r.type === "psychiatry") return { cell: objCells(arm)[0], at: { x: arm.x + 0.5, z: arm.z + 0.5 } };
     const by = (k: ObjectId) => {
@@ -1012,6 +1175,8 @@ export class Sim {
     const role = p.role!;
     const medical = MEDICAL.has(role);
     if (medical) p.energy = Math.max(0, p.energy - (dm / 60) * (p.onDuty ? 4 : 2) * (this.researched("ergonomics") ? 0.7 : 1));
+    if (this.emergency?.kind === "codeBlue" && this.emergency.responder === p.id) return this.respond(p, dm);
+    if ((role === "workman" || role === "janitor") && this.fightFire(p, t)) return;
     if (role === "workman") return this.workmanStep(p, t);
     if (role === "janitor") return this.janitorStep(p, t);
     // Tired: rest in the staff room if there is one.
@@ -1327,7 +1492,7 @@ export class Sim {
     }
     const kind = PATIENT_OBJ[type as Step | "reception"];
     for (const r of w.roomsOf(type)) {
-      if (!r.valid || !this.staffed(r)) continue;
+      if (!r.valid || !this.staffed(r) || this.burning(r)) continue;
       for (const id of r.objects) {
         const o = w.objects.get(id)!;
         if (o.kind === kind && o.built && !this.claims.has(id)) return o;
@@ -1338,6 +1503,8 @@ export class Sim {
 
   private stepNow(p: Person): Step | null {
     const c = CONDITIONS[p.cond!];
+    // Ambulance cases see the triage nurse first, when there's one on duty.
+    if (p.triage === 1 && p.step === 0 && this.triageReady) return "triage";
     return c.path[p.step] ?? null;
   }
 
@@ -1353,13 +1520,17 @@ export class Sim {
       if (!this.goTo(p, exit) || this.arrived(p) || this.cellOf(p) === exit) this.people.delete(p.id);
       return;
     }
+    if (p.arrest) return this.arrestStep(p);
     const cond = CONDITIONS[p.cond!];
     const hours = dm / 60;
     const inTreatment = p.state === "inStep";
     const step = this.stepNow(p);
     // Health: falls while untreated (half as fast once diagnosed), rises in a ward bed.
     if (inTreatment && (step === "ward" || step === "icu")) p.health = Math.min(100, p.health + hours * (step === "icu" ? 9 : 7));
-    else if (!inTreatment) p.health -= hours * cond.decay * (p.step > 0 ? 0.5 : 1);
+    else if (!inTreatment) p.health -= hours * cond.decay * (p.step > 0 ? 0.5 : 1) * (p.triage === 2 ? 0.6 : 1);
+    // Standing in a fire.
+    const fire = this.emergency?.kind === "fire" ? this.emergency.fire[this.cellOf(p)] : 0;
+    if (fire) p.health -= hours * 30 * fire;
     p.hunger = Math.min(100, p.hunger + hours * 5);
     p.bladder = Math.min(100, p.bladder + hours * 7);
     if (!inTreatment) p.waited += dm;
@@ -1375,6 +1546,7 @@ export class Sim {
       this.stats.recent.l++;
       this.week.left++;
       this.messages.push({ text: `${p.name} gave up waiting and left.`, kind: "bad" });
+      this.incidentLost(p);
       return this.leave(p);
     }
     // Waiting patients look around twice a second, not every tick.
@@ -1439,6 +1611,7 @@ export class Sim {
     this.week.deaths++;
     this.rep = Math.max(0, this.rep - 0.08);
     this.messages.push({ text: `${p.name} died of ${CONDITIONS[p.cond!].name.toLowerCase()}.`, kind: "bad" });
+    this.incidentLost(p);
   }
 
   private checkIn(p: Person, dm: number) {
@@ -1537,6 +1710,8 @@ export class Sim {
       p.needTarget = "toilet";
       return;
     }
+    // Triage: the emergency room takes the sickest first.
+    if (step === "emergency" && p.health > this.erMin + 4) return this.waitSeated(p);
     const o = this.freeSlot(STEP_ROOM[step], p);
     if (o) {
       this.claims.set(o.id, p.id);
@@ -1591,7 +1766,7 @@ export class Sim {
     const step = this.stepNow(p)!;
     const o = this.world.objects.get(p.slot);
     const r = o ? this.world.rooms.find((x) => x.objects.includes(o.id)) : null;
-    if (!o || !r || !r.valid) {
+    if (!o || !r || !r.valid || this.burning(r)) {
       if (o) this.release(o.id);
       p.state = "waitStep";
       p.at = null;
@@ -1600,7 +1775,7 @@ export class Sim {
     // Work only happens with the staff at their stations.
     if (!this.staffed(r)) return;
     const cond = CONDITIONS[p.cond!];
-    let need = step === "ward" ? (cond.wardHours ?? 8) * 60 : step === "icu" ? (cond.icuHours ?? 12) * 60 : STEP_MINUTES[step];
+    let need = step === "ward" ? (cond.wardHours ?? 8) * 60 : step === "icu" ? (cond.icuHours ?? 12) * 60 : STEP_MINUTES[step as Exclude<Step, "ward" | "icu">];
     // A monitor on the ward speeds recovery; research and experienced staff speed things up.
     if (step === "ward" && r.objects.some((id) => this.world.objects.get(id)?.kind === "monitor")) need *= 0.8;
     if ((step === "gp" || step === "radiology") && this.researched("diagnostics")) need *= 0.75;
@@ -1634,6 +1809,15 @@ export class Sim {
     this.release(o.id);
     p.at = null;
     p.timer = 0;
+    if (step === "triage") {
+      // Seen and sorted: stabilised while they wait, and next in line by need.
+      p.triage = 2;
+      this.stats.triaged++;
+      p.health = Math.min(100, p.health + 5);
+      p.state = "waitStep";
+      return;
+    }
+    if (step === "emergency" && p.incident) this.incidentSaved(p);
     p.step++;
     p.waited = 0;
     p.health = Math.max(p.health, step === "theatre" || step === "emergency" ? 55 : p.health);
@@ -1664,6 +1848,276 @@ export class Sim {
     this.stats.recent.waits++;
     if (this.stats.treated % 10 === 0) this.messages.push({ text: `${this.stats.treated} patients treated.`, kind: "good" });
     this.leave(p);
+  }
+
+  // ------------------------------------------------------------ emergencies
+
+  /** Is a fire burning in this room? */
+  burning(r: RoomInstance) {
+    const e = this.emergency;
+    return !!e && e.kind === "fire" && e.room === r.cells[0];
+  }
+
+  /** Start an emergency now (the hourly roll, a scenario, or the tests). False when it can't happen here. */
+  triggerEmergency(kind: EmergencyKind) {
+    if (this.emergency) return false;
+    const base = { kind, started: this.minutes, until: this.minutes + 60, patient: 0, responder: 0, total: 0, saved: 0, lost: 0, room: 0, fire: {} as Record<number, number> };
+    if (kind === "codeBlue") {
+      const pool = [...this.people.values()].filter((p) => p.kind === "patient" && !p.arrest && (p.state === "waitStep" || p.state === "inStep" || p.state === "checkin") && this.world.found[this.cellOf(p)]);
+      if (!pool.length) return false;
+      const p = this.rng.pick(pool);
+      if (p.slot) this.release(p.slot);
+      p.arrest = this.minutes + CODE_BLUE_MINUTES;
+      p.state = "waitStep";
+      p.seat = null;
+      p.path = [];
+      p.goal = -1;
+      p.timer = 0;
+      // Down on the floor where they were.
+      if (p.at) {
+        p.x = p.at.x;
+        p.z = p.at.z;
+        p.at = null;
+      }
+      const cell = this.world.walkable(this.cellOf(p)) ? this.cellOf(p) : this.world.nearestWalkable(p.x, p.z);
+      p.x = cx(cell) + 0.5;
+      p.z = cz(cell) + 0.5;
+      this.emergency = { ...base, patient: p.id, until: p.arrest };
+      this.messages.push({ text: `Code Blue! ${p.name}'s heart has stopped.`, kind: "bad" });
+      return true;
+    }
+    if (kind === "majorIncident") {
+      if (!this.validRoom("emergency")) return false;
+      const n = 5 + Math.floor(this.rng.next() * 4);
+      for (let i = 0; i < n; i++) this.callAmbulance(true, 12 + i * 9 + this.rng.next() * 6);
+      if (this.validRoom("helipad")) {
+        this.callHelicopter(true);
+        if (this.incoming.some((c) => c.kind === "helicopter" && c.incident)) base.total++;
+      }
+      this.emergency = { ...base, total: base.total + n, until: this.minutes + 18 * 60 };
+      this.stats.incidents++;
+      this.messages.push({ text: `Major incident declared: ${this.emergency.total} casualties on the way.`, kind: "bad" });
+      return true;
+    }
+    // Fire: in a room with things in it.
+    const rooms = this.world.rooms.filter((r) => ROOMS[r.type].indoor && r.objects.some((id) => this.world.objects.get(id)?.built));
+    if (!rooms.length) return false;
+    const r = this.rng.pick(rooms);
+    const cells = r.cells.filter((c) => !this.world.wall[c]);
+    const start = this.rng.pick(cells);
+    this.emergency = { ...base, room: r.cells[0], fire: { [start]: 0.35 }, until: this.minutes + 5 * 60 };
+    this.messages.push({ text: `Fire in the ${ROOMS[r.type].name.toLowerCase()}! Workmen and janitors are on their way.`, kind: "bad" });
+    for (const q of this.people.values()) if (q.kind === "staff" && q.room === r.cells[0]) this.idle(q);
+    return true;
+  }
+
+  private endEmergency(text: string, kind: "good" | "bad" | "info") {
+    const e = this.emergency;
+    if (!e) return;
+    if (e.responder) {
+      const q = this.people.get(e.responder);
+      if (q) this.idle(q);
+    }
+    this.emergency = null;
+    this.messages.push({ text, kind });
+  }
+
+  private emergencyStep(t: number, dm: number) {
+    const e = this.emergency;
+    if (!e) return;
+    if (e.kind === "codeBlue") {
+      const p = this.people.get(e.patient);
+      if (!p || p.state === "dead" || !p.arrest) return this.endEmergency("Code Blue stood down.", "info");
+      const r = e.responder ? this.people.get(e.responder) : null;
+      if (!r && this.time >= (this.cbRetry ?? 0)) {
+        // The nearest doctor or nurse drops everything.
+        this.cbRetry = this.time + 1;
+        const crew = [...this.people.values()].filter((q) => q.kind === "staff" && (q.role === "doctor" || q.role === "nurse"));
+        crew.sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z));
+        for (const q of crew) {
+          const at = this.world.nearestWalkable(p.x, p.z);
+          this.idle(q);
+          if (this.goTo(q, at)) {
+            e.responder = q.id;
+            q.state = "work";
+            q.timer = 0;
+            this.messages.push({ text: `${ROLES[q.role!].name} ${q.name} is responding to the Code Blue.`, kind: "info" });
+            break;
+          }
+        }
+      }
+      return;
+    }
+    if (e.kind === "majorIncident") {
+      if (e.saved + e.lost >= e.total) return this.finishIncident();
+      if (this.minutes >= e.until) return this.finishIncident();
+      return;
+    }
+    // Fire: grows, spreads within the room, wrecks equipment, and burns out in the end.
+    const w = this.world;
+    const hours = dm / 60;
+    const cells = Object.keys(e.fire).map(Number);
+    if (!cells.length) {
+      this.stats.fires++;
+      w.touch();
+      return this.endEmergency("The fire is out.", "good");
+    }
+    if (this.minutes >= e.until) {
+      w.touch();
+      return this.endEmergency("The fire has burnt itself out.", "info");
+    }
+    for (const c of cells) {
+      e.fire[c] = Math.min(1, e.fire[c] + hours * 0.9);
+      w.dirt[c] = Math.min(1, w.dirt[c] + hours * 0.5);
+      const o = w.occ[c] ? w.objects.get(w.occ[c]) : null;
+      if (o && o.built && e.fire[c] > 0.4) {
+        const before = o.wear ?? 0;
+        o.wear = Math.min(1, before + hours * 0.35);
+        if (before < 1 && o.wear >= 1) {
+          this.messages.push({ text: `The fire has wrecked a ${OBJECTS[o.kind].name.toLowerCase()}.`, kind: "bad" });
+          w.touch();
+        }
+      }
+      if (cells.length < 16 && this.rng.next() < hours * 0.7 * e.fire[c]) {
+        const [dx, dz] = FRONT[Math.floor(this.rng.next() * 4)];
+        const x = cx(c) + dx;
+        const z = cz(c) + dz;
+        if (inside(x, z)) {
+          const n = idx(x, z);
+          if (!(n in e.fire) && w.roomOf[n] === w.roomOf[c] && !w.wall[n]) e.fire[n] = 0.2;
+        }
+      }
+    }
+    void t;
+  }
+  private cbRetry = 0;
+
+  /** The heart's stopped: lie still until someone gets here, or it's too late. */
+  private arrestStep(p: Person) {
+    p.pose = "lie";
+    p.path = [];
+    p.at = null;
+    if (this.minutes < p.arrest!) return;
+    p.arrest = 0;
+    this.stats.codeLost++;
+    this.endEmergency(`Code Blue: nobody reached ${p.name} in time.`, "bad");
+    this.die(p);
+  }
+
+  /** The Code Blue responder: run there, then work on them for a few minutes. */
+  private respond(p: Person, dm: number) {
+    const e = this.emergency!;
+    const pt = this.people.get(e.patient);
+    if (!pt || !pt.arrest) {
+      e.responder = 0;
+      return this.idle(p);
+    }
+    const near = Math.hypot(pt.x - p.x, pt.z - p.z) < 1.6;
+    if (!near) {
+      if (!p.path.length && !this.goTo(p, this.world.nearestWalkable(pt.x, pt.z))) {
+        e.responder = 0;
+        this.idle(p);
+      }
+      return;
+    }
+    p.path = [];
+    p.pose = "work";
+    p.heading = Math.atan2(pt.x - p.x, pt.z - p.z);
+    p.timer += dm;
+    if (p.timer < 6) return;
+    p.timer = 0;
+    const defib = [...this.world.objects.values()].some((o) => o.kind === "defib" && o.built && (o.wear ?? 0) < 1);
+    const chance = (defib ? 0.9 : 0.55) + 0.02 * (levelOf(p.xp) - 1);
+    p.xp += 3;
+    pt.arrest = 0;
+    if (this.rng.next() < chance) {
+      pt.health = Math.max(pt.health, 35);
+      pt.state = "waitStep";
+      pt.pose = "stand";
+      this.stats.codeSaved++;
+      this.rep = Math.min(5, this.rep + 0.05);
+      this.endEmergency(`Code Blue: ${p.name} got ${pt.name}'s heart going again!`, "good");
+    } else {
+      this.stats.codeLost++;
+      this.endEmergency(`Code Blue: ${p.name} couldn't save ${pt.name}${defib ? "" : " (a defibrillator would have helped)"}.`, "bad");
+      this.die(pt);
+    }
+  }
+
+  /** Workmen and janitors drop what they're doing to put a fire out. True while they're on it. */
+  private fightFire(p: Person, t: number) {
+    const e = this.emergency;
+    if (!e || e.kind !== "fire") return false;
+    const cells = Object.keys(e.fire).map(Number);
+    if (!cells.length) return false;
+    if (p.task > 0 || p.carrying) {
+      // Put the crate down where they stand; the job waits.
+      const j = this.jobs.get(p.task);
+      if (j) j.worker = 0;
+      const c = this.crates.get(p.carrying);
+      if (c) {
+        c.carriedBy = 0;
+        c.x = p.x;
+        c.z = p.z;
+      }
+      p.carrying = 0;
+      p.task = 0;
+    }
+    if (p.role === "janitor" && p.state === "clean") this.cleanTargets.delete(p.task);
+    let best = cells[0];
+    let bd = Infinity;
+    for (const c of cells) {
+      const d = Math.hypot(cx(c) + 0.5 - p.x, cz(c) + 0.5 - p.z);
+      if (d < bd) {
+        bd = d;
+        best = c;
+      }
+    }
+    p.state = "work";
+    p.task = 0;
+    if (bd < 1.6) {
+      p.path = [];
+      p.pose = "work";
+      p.heading = Math.atan2(cx(best) + 0.5 - p.x, cz(best) + 0.5 - p.z);
+      const room = this.roomByKey(e.room);
+      const ext = room?.objects.some((id) => this.world.objects.get(id)?.kind === "extinguisher") ? 2 : 1;
+      e.fire[best] -= t * 0.3 * ext;
+      if (e.fire[best] <= 0) {
+        delete e.fire[best];
+        p.xp += 0.5;
+      }
+      return true;
+    }
+    if (!p.path.length || p.goal < 0) {
+      const target = this.world.walkable(best) ? best : this.world.nearestWalkable(cx(best) + 0.5, cz(best) + 0.5);
+      if (!this.goTo(p, target)) return false;
+    }
+    return true;
+  }
+
+  private incidentSaved(p: Person) {
+    p.incident = false;
+    if (this.emergency?.kind === "majorIncident") this.emergency.saved++;
+  }
+
+  private incidentLost(p: Person) {
+    if (!p.incident) return;
+    p.incident = false;
+    if (this.emergency?.kind === "majorIncident") this.emergency.lost++;
+  }
+
+  private finishIncident() {
+    const e = this.emergency!;
+    const pay = e.saved * 1_500 + (e.lost === 0 && e.saved > 0 ? 10_000 : 0);
+    if (pay) this.earn(pay);
+    if (e.lost === 0 && e.saved > 0) {
+      this.stats.incidentsClean++;
+      this.rep = Math.min(5, this.rep + 0.15);
+    }
+    // Anyone still on the way is now an ordinary case.
+    for (const c of this.incoming) c.incident = false;
+    for (const q of this.people.values()) q.incident = false;
+    this.endEmergency(`Major incident over: ${e.saved} saved, ${e.lost} lost${pay ? ` (+$${pay.toLocaleString("en-US")})` : ""}.`, e.lost === 0 && e.saved > 0 ? "good" : "info");
   }
 
   // ----------------------------------------------------------------- hourly
@@ -1705,6 +2159,7 @@ export class Sim {
     // Events: one roll each morning.
     if (h === 6 && this.day > 1 && this.rng.next() < 0.45) this.startEvent();
     if (h === 14 && this.eventOn("inspection")) this.inspect();
+    this.rollEmergency();
     // Midnight: the day's report, loan repayments, the rolling window fades.
     if (h === 0) {
       const today = { ...this.stats.today, day: this.day - 1 };
@@ -1835,6 +2290,21 @@ export class Sim {
       for (const o of this.world.objects.values()) if (o.built && (OBJECTS[o.kind].power ?? 0) > 0) o.wear = Math.min(0.95, (o.wear ?? 0) + 0.5);
   }
 
+  /** Each hour, a small chance of something going badly wrong. */
+  private rollEmergency() {
+    if (this.emergency || this.day < 2) return;
+    const inside = [...this.people.values()].filter((p) => p.kind === "patient" && p.state !== "dead" && p.state !== "leaving" && this.world.found[this.cellOf(p)]).length;
+    const r = this.rng.next();
+    const incident = 0.006 * (this.scenarioDef()?.twist === "crashes" ? 4 : 1);
+    if (r < 0.03) {
+      if (inside >= 4) this.triggerEmergency("codeBlue");
+    } else if (r < 0.03 + incident) {
+      if (this.validRoom("emergency")) this.triggerEmergency("majorIncident");
+    } else if (r < 0.036 + incident) {
+      if (this.world.rooms.length >= 4) this.triggerEmergency("fire");
+    }
+  }
+
   private inspect() {
     if (this.hygiene >= 0.8) {
       this.earn(5_000);
@@ -1879,6 +2349,12 @@ export class Sim {
         return s.births >= 3;
       case "airlift":
         return s.air >= 3;
+      case "goldenHour":
+        return s.codeSaved >= 1;
+      case "triage":
+        return this.validRoom("triage") && s.triaged >= 5;
+      case "majorIncident":
+        return s.incidentsClean >= 1;
     }
   }
 
@@ -1989,6 +2465,8 @@ export class Sim {
       research: this.research,
       scenario: this.scenario,
       week: this.week,
+      incoming: this.incoming,
+      emergency: this.emergency,
     };
   }
 
@@ -2017,6 +2495,8 @@ export class Sim {
     if (j.research) s.research = { current: j.research.current, points: j.research.points, done: [...j.research.done] };
     s.scenario = j.scenario ?? null;
     if (j.week) s.week = { ...j.week };
+    s.incoming = (j.incoming ?? []).map((c) => ({ ...c, dispatched: false }));
+    s.emergency = j.emergency ? { ...j.emergency, responder: 0, fire: { ...j.emergency.fire } } : null;
     for (const p of s.people.values()) p.xp ??= 0;
     s.lastHour = Math.floor(s.minutes / 60);
     return s;
@@ -2044,6 +2524,12 @@ export function freshStats(): Stats {
     mri: 0,
     air: 0,
     repairs: 0,
+    codeSaved: 0,
+    codeLost: 0,
+    incidents: 0,
+    incidentsClean: 0,
+    fires: 0,
+    triaged: 0,
     history: [],
     today: { day: 1, income: 0, expense: 0, treated: 0, deaths: 0 },
   };

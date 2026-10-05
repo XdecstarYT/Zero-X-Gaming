@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useStore } from "zustand";
-import { ADMINS, CONDITIONS, FLOORS, GRANT_ORDER, GRANTS, METRIC_NAME, OBJECTS, RESEARCH, RESEARCH_ORDER, ROLES, ROOMS, SCENARIO_ORDER, SCENARIOS, STEP_ROOM, type FloorId, type ObjectCat, type ObjectId, type Role, type RoomId } from "../data";
+import { ADMINS, CONDITIONS, EMERGENCIES, FLOORS, GRANT_ORDER, GRANTS, METRIC_NAME, OBJECTS, RESEARCH, RESEARCH_ORDER, ROLES, ROOMS, SCENARIO_ORDER, SCENARIOS, STEP_ROOM, type FloorId, type ObjectCat, type ObjectId, type Role, type RoomId } from "../data";
 import { levelOf } from "../sim";
+import { QUICK_GROUPS, QUICK_ORDER, QUICK_ROOMS, quickCost } from "../quick";
 import { OBJECT_LIST, STAFF_ROLES, type Game } from "../game";
 import type { HudState, Tool } from "../store";
 
@@ -128,6 +129,10 @@ function Menu() {
 
 function News() {
   const items: [string, string][] = [
+    ["Quick rooms", "24 ready-made rooms: pick one, turn it with R and click. Foundation, walls, doors, zones and furniture are all ordered at once."],
+    ["Emergency department", "Triage rooms and an ambulance bay. A triage nurse stabilises ambulance cases and sends the sickest to resus first."],
+    ["Incoming", "Ambulances and helicopters radio ahead: see each patient's condition and arrival time before they get here."],
+    ["Emergencies", "Code Blues (a defibrillator helps), major incidents with a wave of casualties, and fires that workmen and janitors put out."],
     ["Research", "Build a research lab, put a doctor at the bench and pick from ten projects: faster diagnosis, antibiotics, surgical robots, telehealth and more."],
     ["Six new departments", "Intensive care, maternity, psychiatry, an MRI suite, the research lab and a helipad, each with its own equipment."],
     ["Air ambulances", "With a helipad, helicopters fly in major trauma cases. They pay the most of anything."],
@@ -252,7 +257,8 @@ function Toolbar() {
   const rooms = useHud((s) => s.rooms);
   const items: { id: NonNullable<HudState["category"]>; label: string }[] = [
     { id: "build", label: "Build" },
-    { id: "rooms", label: "Rooms" },
+    { id: "quick", label: "Quick rooms" },
+    { id: "rooms", label: "Zones" },
     { id: "objects", label: "Objects" },
     { id: "staff", label: "Hire" },
   ];
@@ -270,8 +276,8 @@ function Toolbar() {
       <button type="button" aria-pressed={!cutaway} className="ll-btn shrink-0" onClick={() => g.toggleCutaway()} title="Full-height walls (C)">
         Walls
       </button>
-      <button type="button" aria-pressed={rooms} className="ll-btn shrink-0" onClick={() => g.toggleRooms()}>
-        Zones
+      <button type="button" aria-pressed={rooms} className="ll-btn shrink-0" onClick={() => g.toggleRooms()} title="Show room colours">
+        Colours
       </button>
     </nav>
   );
@@ -310,6 +316,7 @@ function Tray() {
   const unlocked = useHud((s) => s.unlocked);
   const [floor, setFloor] = useState<FloorId>("lino");
   const [objCat, setObjCat] = useState<ObjectCat>("medical");
+  const [quickGroup, setQuickGroup] = useState<(typeof QUICK_GROUPS)[number]>("Emergency");
   if (!cat) return null;
   const pick = (t: Tool) => g.setTool(same(tool, t) ? null : t);
   return (
@@ -339,6 +346,40 @@ function Tray() {
                 {FLOORS[f].name}
               </button>
             ))}
+          </div>
+        </>
+      )}
+      {cat === "quick" && (
+        <>
+          <div className="ll-scroll flex gap-1 overflow-x-auto" role="tablist" aria-label="Quick room groups">
+            {QUICK_GROUPS.map((q) => (
+              <button key={q} type="button" role="tab" aria-selected={quickGroup === q} className={`ll-btn shrink-0 text-[.82em] ${quickGroup === q ? "ll-on" : ""}`} onClick={() => setQuickGroup(q)} data-testid={`ll-qg-${q}`}>
+                {q}
+              </button>
+            ))}
+            {tool?.kind === "quick" && (
+              <button type="button" className="ll-btn ms-auto shrink-0 text-[.82em]" onClick={() => g.rotateTool()} data-testid="ll-rotate-quick">
+                Turn (R)
+              </button>
+            )}
+          </div>
+          <div className="ll-scroll flex gap-1 overflow-x-auto">
+            {QUICK_ORDER.filter((id) => QUICK_ROOMS[id].group === quickGroup).map((id) => {
+              const q = QUICK_ROOMS[id];
+              const lockedRoom = q.rooms.map(([r]) => r).find((r) => !unlocked[r]);
+              return (
+                <ToolCard
+                  key={id}
+                  on={tool?.kind === "quick" && tool.id === id}
+                  onClick={() => pick({ kind: "quick", id, rot: tool?.kind === "quick" ? tool.rot : 0 })}
+                  title={q.name}
+                  sub={lockedRoom ? lockText(ROOMS[lockedRoom]) : `${money(quickCost(id))} · ${q.w}×${q.d} · ${q.desc}`}
+                  swatch={ROOMS[q.rooms[q.rooms.length - 1][0]].color}
+                  testId={`ll-q-${id}`}
+                  disabled={!!lockedRoom}
+                />
+              );
+            })}
           </div>
         </>
       )}
@@ -593,6 +634,70 @@ function Notices() {
   );
 }
 
+/** The ambulance radio: who's on the way, what they've got, and when they'll be here. */
+function Incoming() {
+  const incoming = useHud((s) => s.incoming);
+  const sel = useHud((s) => s.selected);
+  const [open, setOpen] = useState(true);
+  if (!incoming.length || sel) return null;
+  return (
+    <section className="ll-glass pointer-events-auto absolute start-2 top-[calc(var(--ll-top,3.5rem)+.5rem)] w-[min(80%,290px)] p-2" aria-label="Incoming patients" data-testid="ll-incoming">
+      <button type="button" className="flex w-full items-center justify-between gap-2 px-1 font-bold" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span className="flex items-center gap-2">
+          <span className="ll-pulse inline-block h-2.5 w-2.5 rounded-full bg-[#ef4444]" aria-hidden />
+          Incoming ({incoming.length})
+        </span>
+        <span aria-hidden>{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <ul className="ll-scroll mt-1 flex max-h-[38vh] flex-col gap-1 overflow-y-auto text-[.82em]">
+          {incoming.map((c) => (
+            <li key={c.id} className="flex items-center gap-2 rounded-lg bg-white/5 p-1.5" data-testid="ll-incoming-item">
+              <span aria-hidden className="text-[1.1em]">
+                {c.kind === "helicopter" ? "🚁" : "🚑"}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate font-bold">
+                  {c.cond}
+                  {c.incident && <span className="ms-1 rounded bg-[#ef4444]/30 px-1 text-[.8em]">incident</span>}
+                </span>
+                <span className="truncate opacity-70" style={{ color: c.ready ? undefined : "var(--ll-warn)" }}>
+                  {c.ready ? `To ${c.first.toLowerCase()}` : `No working ${c.first.toLowerCase()} for the whole treatment`}
+                </span>
+              </span>
+              <span className="shrink-0 font-black tabular-nums">{c.dispatched || c.minutes === 0 ? "Arriving" : `${c.minutes} min`}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** A banner while an emergency is on. */
+function EmergencyBanner() {
+  const g = useGame();
+  const e = useHud((s) => s.emergency);
+  if (!e) return null;
+  const def = EMERGENCIES[e.kind];
+  return (
+    <div role="alert" className="ll-glass ll-in pointer-events-auto flex w-[min(100%,560px)] items-center gap-3 p-2 ps-3" style={{ borderColor: def.color, boxShadow: `0 0 0 1px ${def.color}, 0 0 24px ${def.color}55` }} data-testid="ll-emergency">
+      <span className="ll-pulse h-3 w-3 shrink-0 rounded-full" style={{ background: def.color }} aria-hidden />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="font-black uppercase tracking-wide" style={{ color: def.color }}>
+          {def.name}
+        </span>
+        <span className="truncate text-[.85em]">{e.detail}</span>
+        <span className="truncate text-[.75em] opacity-70">{def.desc}</span>
+      </span>
+      {e.kind === "codeBlue" && <span className="shrink-0 font-black tabular-nums">{e.minutes} min</span>}
+      <button type="button" className="ll-btn shrink-0" onClick={() => g.focusEmergency()} data-testid="ll-emergency-go">
+        Go to
+      </button>
+    </div>
+  );
+}
+
 function Inspector() {
   const g = useGame();
   const sel = useHud((s) => s.selected);
@@ -625,7 +730,13 @@ function Inspector() {
           <p className="mt-1 text-[.8em] opacity-70">
             Waiting {Math.round(p.waited)} min · {p.state === "inStep" ? "being treated" : p.state === "waitStep" ? "waiting" : p.state}
             {p.air ? " · flown in" : ""}
+            {p.triage === 2 ? " · triaged" : p.triage === 1 ? " · waiting for triage" : ""}
           </p>
+          {!!p.arrest && (
+            <p className="mt-1 rounded-lg bg-[#3b82f6]/25 p-1.5 text-[.82em] font-black" data-testid="ll-arrest">
+              Cardiac arrest: needs a doctor or nurse now
+            </p>
+          )}
           <div className="mt-2">
             <FollowButton />
           </div>
@@ -833,6 +944,7 @@ function Hud() {
         <TopBar />
       </div>
       <Notices />
+      <Incoming />
       <Inspector />
       {panel === "staff" && <StaffPanel />}
       {panel === "grants" && <GrantsPanel />}
@@ -845,6 +957,7 @@ function Hud() {
       <Cursor />
       <ResultCard />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-2 p-2">
+        <EmergencyBanner />
         <Tray />
         <Toolbar />
       </div>
