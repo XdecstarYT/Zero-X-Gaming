@@ -130,6 +130,10 @@ export const ar: Record<StringKey, string> = {
   reducedMotion: "تقليل الحركة",
   textSize: "حجم النص",
   colorBlind: "طبقات مناسبة لعمى الألوان",
+  glass: "زجاج الواجهة",
+  "glass.liquid": "سائل",
+  "glass.frosted": "مصنفر",
+  "glass.solid": "معتم",
 
   paused: "متوقف مؤقتًا",
   resume: "استئناف",

@@ -181,3 +181,24 @@ describe("buildings", () => {
     expect(oil.some((p) => p.k === "cyl")).toBe(true);
   });
 });
+
+describe("liquid glass", () => {
+  it("the lens map is flat in the middle and bends inward at the rim", async () => {
+    const { displacementMap } = await import("./ui/glass");
+    const w = 100, h = 60;
+    const m = displacementMap(w, h, 12, 16);
+    const px = (x: number, y: number) => [m[(y * w + x) * 4], m[(y * w + x) * 4 + 1]];
+    expect(px(50, 30)).toEqual([128, 128]);
+    // Right rim: red below 128 (sample from further left, i.e. inside); left rim the opposite.
+    expect(px(99, 30)[0]).toBeLessThan(40);
+    expect(px(0, 30)[0]).toBeGreaterThan(216);
+    // Bottom rim moves green the same way.
+    expect(px(50, 59)[1]).toBeLessThan(40);
+  });
+
+  it("stored settings keep a valid glass mode", () => {
+    expect(normaliseSettings({ glass: "neon" } as never, false, "en").glass).toBe("liquid");
+    expect(normaliseSettings({ glass: "solid" }, false, "en").glass).toBe("solid");
+    expect(defaultSettings(true).glass).toBe("frosted");
+  });
+});

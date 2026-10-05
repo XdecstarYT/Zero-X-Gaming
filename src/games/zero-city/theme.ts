@@ -92,4 +92,41 @@ export const css = `
 .zc input[type=range]{accent-color:var(--zc-accent);width:100%;min-height:32px}
 .zc select{background:rgba(255,255,255,.08);color:inherit;border:1px solid var(--zc-border);border-radius:var(--zc-rs);min-height:40px;padding:0 .6em;font:inherit;font-weight:700}
 .zc select option{background:#111722;color:#fff}
+
+/* ---- Liquid glass (root class zc-ui-liquid; zc-refract adds the lens where the browser can) ---- */
+.zc-ui-liquid{--zc-glass:rgba(22,28,40,.34);--zc-glass-strong:rgba(16,20,30,.44)}
+.zc-ui-liquid .zc-glass,.zc-ui-liquid .zc-glass-dark{
+  background:linear-gradient(145deg,rgba(255,255,255,.17),rgba(255,255,255,.05) 38%,rgba(255,255,255,.02) 62%,rgba(255,255,255,.09)),var(--zc-glass);
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -1px 0 rgba(255,255,255,.1),inset 0 0 22px rgba(255,255,255,.05),0 16px 44px -16px rgba(0,0,0,.55),0 2px 6px -2px rgba(0,0,0,.3);
+  backdrop-filter:blur(10px) saturate(1.9) brightness(1.06);-webkit-backdrop-filter:blur(10px) saturate(1.9) brightness(1.06);
+  isolation:isolate}
+.zc-ui-liquid .zc-glass-dark{background:linear-gradient(145deg,rgba(255,255,255,.14),rgba(255,255,255,.03) 45%,rgba(255,255,255,.07)),var(--zc-glass-strong)}
+.zc-ui-liquid :is(.zc-glass,.zc-glass-dark):not(.absolute):not(.fixed){position:relative}
+/* The rim: a bright edge on the lit side fading round to a faint one. */
+.zc-ui-liquid :is(.zc-glass,.zc-glass-dark)::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;z-index:1;
+  background:linear-gradient(155deg,rgba(255,255,255,.75),rgba(255,255,255,.12) 30%,rgba(255,255,255,0) 55%,rgba(255,255,255,.28) 85%,rgba(255,255,255,.5));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0)}
+/* The sheen: a soft highlight that follows the pointer (--mx/--my, set by trackSheen). */
+.zc-ui-liquid :is(.zc-glass,.zc-glass-dark)::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;
+  background:radial-gradient(90% 70% at var(--mx,22%) var(--my,0%),rgba(255,255,255,.2),rgba(255,255,255,0) 60%);transition:background .25s ease}
+.zc-ui-liquid.zc-refract .zc-glass:not(.zc-sheet){backdrop-filter:url(#zc-lg) blur(4px) saturate(1.9) brightness(1.06)}
+.zc-ui-liquid.zc-refract .zc-glass-dark{backdrop-filter:url(#zc-lg-bar) blur(3px) saturate(1.9) brightness(1.06)}
+.zc-ui-liquid .zc-sheet{backdrop-filter:blur(26px) saturate(1.8) brightness(.95);-webkit-backdrop-filter:blur(26px) saturate(1.8) brightness(.95);--zc-glass:rgba(16,20,30,.55)}
+/* Capsule buttons: domed, lit from above, squash a little when pressed. */
+.zc-ui-liquid .zc-btn{border-radius:999px;border-color:rgba(255,255,255,.16);
+  background:radial-gradient(120% 90% at var(--mx,50%) var(--my,0%),rgba(255,255,255,.2),rgba(255,255,255,0) 70%),linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.03));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.38),inset 0 -1px 1px rgba(0,0,0,.18),0 4px 14px -8px rgba(0,0,0,.6);
+  transition:transform .28s cubic-bezier(.3,1.6,.5,1),background .2s ease,box-shadow .2s ease}
+.zc-ui-liquid .zc-btn:hover{transform:translateY(-1px) scale(1.03)}
+.zc-ui-liquid .zc-btn:active{transform:scale(.94);transition-duration:.08s}
+.zc-ui-liquid .zc-btn[aria-pressed="true"],.zc-ui-liquid .zc-btn.zc-on{
+  background:radial-gradient(120% 90% at var(--mx,50%) var(--my,0%),rgba(255,255,255,.55),rgba(255,255,255,0) 60%),linear-gradient(180deg,color-mix(in srgb,var(--zc-accent) 80%,#fff),var(--zc-accent));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 -2px 4px rgba(0,0,0,.12),0 0 0 1px color-mix(in srgb,var(--zc-accent) 60%,transparent),0 8px 22px -8px var(--zc-accent)}
+.zc-ui-liquid .zc-pill{box-shadow:inset 0 1px 0 rgba(255,255,255,.45)}
+.zc-ui-liquid .zc-row{border-radius:16px}
+.zc-ui-liquid .zc-row:hover{background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.04));box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+/* Frosted: the original plain blur. Solid: no transparency at all (also the reduce-transparency default). */
+.zc-ui-solid{--zc-glass:#141a24;--zc-glass-strong:#0f141c}
+.zc-ui-solid .zc-glass,.zc-ui-solid .zc-glass-dark{backdrop-filter:none;-webkit-backdrop-filter:none}
 `;

@@ -130,6 +130,10 @@ export const zh: Record<StringKey, string> = {
   reducedMotion: "减少动画",
   textSize: "文字大小",
   colorBlind: "色盲友好覆盖层",
+  glass: "界面玻璃",
+  "glass.liquid": "液态",
+  "glass.frosted": "磨砂",
+  "glass.solid": "实色",
 
   paused: "已暂停",
   resume: "继续",

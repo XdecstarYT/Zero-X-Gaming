@@ -130,6 +130,10 @@ export const fr: Record<StringKey, string> = {
   reducedMotion: "Animations réduites",
   textSize: "Taille du texte",
   colorBlind: "Calques adaptés au daltonisme",
+  glass: "Verre de l’interface",
+  "glass.liquid": "Liquide",
+  "glass.frosted": "Dépoli",
+  "glass.solid": "Opaque",
 
   paused: "En pause",
   resume: "Reprendre",

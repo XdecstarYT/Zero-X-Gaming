@@ -58,7 +58,7 @@ export function Sheet({ title, onClose, children, chip, wide = false }: { title:
   const t = useT();
   return (
     <div className="absolute inset-0 z-30 flex items-stretch justify-center p-2 sm:p-6 zc-in" role="dialog" aria-modal="true" aria-label={title}>
-      <div className={`zc-glass zc-slide flex w-full flex-col overflow-hidden ${wide ? "max-w-6xl" : "max-w-3xl"}`}>
+      <div className={`zc-glass zc-sheet zc-slide flex w-full flex-col overflow-hidden ${wide ? "max-w-6xl" : "max-w-3xl"}`}>
         <div className="flex items-center gap-3 border-b border-white/10 px-5 py-3">
           <h2 className="zc-h flex-1 text-[1.4em]">{title}</h2>
           {chip}

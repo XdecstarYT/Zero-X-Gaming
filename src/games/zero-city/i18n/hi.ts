@@ -130,6 +130,10 @@ export const hi: Record<StringKey, string> = {
   reducedMotion: "कम हलचल",
   textSize: "अक्षर का आकार",
   colorBlind: "रंग-अंधता अनुकूल परतें",
+  glass: "इंटरफ़ेस ग्लास",
+  "glass.liquid": "तरल",
+  "glass.frosted": "धुंधला",
+  "glass.solid": "ठोस",
 
   paused: "रुका हुआ",
   resume: "जारी रखें",

@@ -130,6 +130,10 @@ export const es: Record<StringKey, string> = {
   reducedMotion: "Menos movimiento",
   textSize: "Tamaño del texto",
   colorBlind: "Capas aptas para daltonismo",
+  glass: "Cristal de la interfaz",
+  "glass.liquid": "Líquido",
+  "glass.frosted": "Esmerilado",
+  "glass.solid": "Sólido",
 
   paused: "En pausa",
   resume: "Continuar",

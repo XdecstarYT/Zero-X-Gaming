@@ -129,6 +129,10 @@ export const en = {
   reducedMotion: "Reduced motion",
   textSize: "Text size",
   colorBlind: "Colour-blind-safe overlays",
+  glass: "Interface glass",
+  "glass.liquid": "Liquid",
+  "glass.frosted": "Frosted",
+  "glass.solid": "Solid",
 
   paused: "Paused",
   resume: "Resume",

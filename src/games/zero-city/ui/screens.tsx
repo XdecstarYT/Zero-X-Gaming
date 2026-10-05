@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { VERSION } from "../config";
 import { formatAgo, formatPlaytime, LANGS, type StringKey } from "../i18n";
-import { applyPreset, changeSetting, sameSettings, type Preset, type Settings, type Shadows } from "../settings";
+import { applyPreset, changeSetting, sameSettings, type Preset, type Settings, type Shadows, type Glass } from "../settings";
 import { UPDATE_LOG } from "../updates";
 import { MAPS, drawThumbnail, generateTerrain, type MapDef } from "../world/maps";
 import { Segmented, Sheet, Skyline, Slider, Toggle } from "./common";
@@ -391,6 +391,8 @@ export function SettingsSheet() {
           <Toggle label={t("reducedMotion")} on={draft.reducedMotion} onChange={(v) => set("reducedMotion", v)} />
           <Toggle label={t("colorBlind")} on={draft.colorBlind} onChange={(v) => set("colorBlind", v)} />
           <Slider label={t("textSize")} value={draft.textScale} min={80} max={150} onChange={(v) => set("textScale", v)} />
+          <span className="mt-2 font-semibold">{t("glass")}</span>
+          <Segmented<Glass> label={t("glass")} value={draft.glass} onChange={(v) => set("glass", v)} options={(["liquid", "frosted", "solid"] as Glass[]).map((id) => ({ id, label: t(`glass.${id}` as StringKey) }))} testId="zc-glass" />
         </section>
       </div>
     </Sheet>

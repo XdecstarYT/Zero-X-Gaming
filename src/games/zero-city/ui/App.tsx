@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isRtl } from "../i18n";
 import { GameContext, useGame, useUI } from "./hooks";
+import { GlassDefs, canRefract, trackSheen } from "./glass";
 import { Hud } from "./hud";
 import { CreditsSheet, LoadingScreen, LoadSheet, LogSheet, MainMenu, MapSelect, PauseMenu, SettingsSheet } from "./screens";
 import type { Game } from "../game";
@@ -14,12 +15,24 @@ function Root() {
   const scale = useUI((s) => s.settings.textScale);
   const draftScale = useUI((s) => s.draft.textScale);
   const reduce = useUI((s) => s.settings.reducedMotion || s.draft.reducedMotion);
+  const glassSaved = useUI((s) => s.settings.glass);
+  const glassDraft = useUI((s) => s.draft.glass);
+  const root = useRef<HTMLDivElement>(null);
+  // The game renders only on the client, so the browser can be asked straight away.
+  const [refract] = useState(canRefract);
+  const [lowTransparency] = useState(() => !!window.matchMedia?.("(prefers-reduced-transparency: reduce)").matches);
   useEffect(() => {
     if (host.current) g.mount(host.current);
   }, [g]);
+  useEffect(() => {
+    return root.current ? trackSheen(root.current) : undefined;
+  }, []);
+  // The settings sheet previews its draft live.
+  const glass = lowTransparency ? "solid" : overlay === "settings" ? glassDraft : glassSaved;
   const zoom = (overlay === "settings" ? draftScale : scale) / 100;
   return (
-    <div className={`zc absolute inset-0 overflow-hidden bg-[#0b0f14] ${reduce ? "zc-reduce" : ""}`} dir={isRtl(lang) ? "rtl" : "ltr"} lang={lang} data-testid="zero-city">
+    <div ref={root} className={`zc zc-ui-${glass} ${refract ? "zc-refract" : ""} absolute inset-0 overflow-hidden bg-[#0b0f14] ${reduce ? "zc-reduce" : ""}`} dir={isRtl(lang) ? "rtl" : "ltr"} lang={lang} data-testid="zero-city">
+      {glass === "liquid" && refract && <GlassDefs />}
       <div ref={host} className="absolute inset-0" />
       <div className="absolute inset-0" style={{ zoom, pointerEvents: "none" }}>
         <div className="absolute inset-0" style={{ pointerEvents: "none" }}>

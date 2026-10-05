@@ -130,6 +130,10 @@ export const bn: Record<StringKey, string> = {
   reducedMotion: "কম অ্যানিমেশন",
   textSize: "লেখার আকার",
   colorBlind: "বর্ণান্ধতা-বান্ধব স্তর",
+  glass: "ইন্টারফেস কাচ",
+  "glass.liquid": "তরল",
+  "glass.frosted": "ঘষা কাচ",
+  "glass.solid": "নিরেট",
 
   paused: "থেমে আছে",
   resume: "চালিয়ে যান",

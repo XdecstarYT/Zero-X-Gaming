@@ -130,6 +130,10 @@ export const de: Record<StringKey, string> = {
   reducedMotion: "Weniger Bewegung",
   textSize: "Textgröße",
   colorBlind: "Farbenblind-sichere Ansichten",
+  glass: "Glas der Oberfläche",
+  "glass.liquid": "Flüssig",
+  "glass.frosted": "Milchglas",
+  "glass.solid": "Deckend",
 
   paused: "Pausiert",
   resume: "Weiter",

@@ -2,6 +2,8 @@ import type { Lang } from "./i18n";
 
 export type Preset = "low" | "medium" | "high" | "ultra" | "custom";
 export type Shadows = "off" | "soft" | "sharp";
+/** How the interface panels are drawn: refracting glass, plain blur, or opaque. */
+export type Glass = "liquid" | "frosted" | "solid";
 
 export interface Settings {
   preset: Preset;
@@ -24,6 +26,7 @@ export interface Settings {
   reducedMotion: boolean;
   textScale: number;
   colorBlind: boolean;
+  glass: Glass;
 }
 
 type Quality = Pick<Settings, "renderScale" | "viewDistance" | "buildingDensity" | "pedDensity" | "trafficDensity" | "shadows" | "aa" | "ao" | "bloom">;
@@ -52,6 +55,8 @@ export function defaultSettings(coarse: boolean, language: Lang = "en"): Setting
     reducedMotion: false,
     textScale: 100,
     colorBlind: true,
+    // Refraction costs a little GPU time every frame; phones start on plain frosted glass.
+    glass: coarse ? "frosted" : "liquid",
   };
 }
 
@@ -87,5 +92,6 @@ export function normaliseSettings(raw: Partial<Settings> | null | undefined, coa
     const v = raw[k];
     if (v !== undefined && typeof v === typeof base[k]) (out as Record<string, unknown>)[k] = v;
   }
+  if (!["liquid", "frosted", "solid"].includes(out.glass)) out.glass = base.glass;
   return out;
 }
