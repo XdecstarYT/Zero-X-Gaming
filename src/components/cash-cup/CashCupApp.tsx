@@ -15,11 +15,12 @@ import { readGraphics, writeGraphics, type Graphics } from "@/games/neon-siege/l
 /**
  * Cash Cup: the tournament app. A cinematic intro, a loading screen while the
  * arena and the 3D engine load, then a reveal into the lobby. Enter (10 ZX
- * Cash, or a battle pass free entry), drop into a 32-player Neon Siege
- * tournament on the Cash Cup Arena, and the prize is counted out at the end.
+ * Cash, or a battle pass free entry), drop into a 55-player Neon Siege
+ * tournament on the Cash Cup Arena, and the prize is counted out at the end
+ * (after a champion's celebration, for a win).
  */
 
-type Phase = "intro" | "loading" | "reveal" | "lobby" | "ticket" | "match" | "payout";
+type Phase = "intro" | "loading" | "reveal" | "lobby" | "ticket" | "match" | "victory" | "payout";
 
 const TIPS = [
   "The Arena is four towns wide: the storm waits longer and closes slower.",
@@ -59,6 +60,7 @@ export function CashCupApp() {
   const host = useRef<HTMLDivElement>(null);
   const mod = useRef<GameModule | null>(null);
   const loaded = useRef<Promise<typeof import("@/games/cash-cup/match")> | null>(null);
+  const won = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -111,6 +113,7 @@ export function CashCupApp() {
 
   const endMatch = useCallback(
     (entry: number, stats: MatchStats | null) => {
+      won.current = stats?.placement === 1;
       setPayout({ stats, prize: null });
       if (!stats) return setPayout({ stats, prize: 0, error: "No result to report." });
       finishCashCup(entry, { placement: stats.placement, kills: stats.kills, damage: stats.damage, chests: stats.chests, survivedS: stats.survivedS })
@@ -149,7 +152,7 @@ export function CashCupApp() {
       m.onScore((e) => {
         if (e.kind !== "final") return;
         teardown();
-        setPhase("payout");
+        setPhase(won.current ? "victory" : "payout");
       });
       mod.current = m;
       m.start();
@@ -165,7 +168,7 @@ export function CashCupApp() {
         if (!ticket) return;
         endMatch(ticket.id, stats);
         teardown();
-        setPhase("payout");
+        setPhase(won.current ? "victory" : "payout");
       },
     };
   }, [ticket, endMatch, teardown]);
@@ -232,6 +235,7 @@ export function CashCupApp() {
           )}
         </>
       )}
+      {phase === "victory" && payout && <Victory payout={payout} onCollect={() => setPhase("payout")} />}
       {phase === "payout" && payout && <Payout payout={payout} onDone={backToLobby} />}
     </div>
   );
@@ -453,6 +457,112 @@ function Ticket({ free }: { free: boolean }) {
         <p className="zx-cc-stamp absolute -right-3 -top-4 rotate-12 rounded-md border-2 border-[#f5c542] px-2 py-0.5 font-display text-sm font-black uppercase text-[#f5c542]">Good luck</p>
         <p className="mt-2 text-xs uppercase tracking-[0.4em] text-white/50">Dropping into the arena</p>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- victory
+
+const CONFETTI = ["#10b981", "#f5c542", "#ffffff", "#34d399", "#fde68a"];
+
+/** 1st place: gold beams, a trophy slamming down, CHAMPION letter by letter, confetti and falling coins. */
+function Victory({ payout, onCollect }: { payout: { stats: MatchStats | null; prize: number | null }; onCollect: () => void }) {
+  const s = payout.stats;
+  const still = reduced();
+  return (
+    <div className="absolute inset-0 grid place-items-center overflow-hidden bg-[#0a0700]" data-testid="cash-cup-victory">
+      <span className="zx-cc-beams zx-cc-gold-beams" aria-hidden />
+      <span className="zx-cc-beams zx-cc-gold-beams zx-cc-gold-beams-back" aria-hidden />
+      <span className="zx-cc-gold-glow absolute inset-0" aria-hidden />
+      {!still && (
+        <>
+          <span className="zx-cc-shock zx-cc-gold-shock" aria-hidden />
+          <span className="zx-cc-shock zx-cc-gold-shock" style={{ animationDelay: "0.95s" }} aria-hidden />
+          <Confetti />
+          <span className="zx-cc-flash zx-cc-gold-flash absolute inset-0" aria-hidden />
+        </>
+      )}
+      <div className="relative flex flex-col items-center gap-2 px-4 text-center">
+        <Trophy />
+        <p className="zx-cc-sub text-xs font-bold uppercase tracking-[0.5em] text-[#fde68a]" style={{ animationDelay: "0.5s" }}>
+          Cash Cup
+        </p>
+        <h2 className="flex font-display text-5xl font-black italic tracking-tight text-[#f5c542] drop-shadow-[0_0_30px_rgba(245,197,66,0.65)] sm:text-7xl" aria-label="Champion">
+          {"CHAMPION".split("").map((c, i) => (
+            <span key={i} className="zx-cc-word" style={{ animationDelay: `${0.75 + i * 0.07}s` }} aria-hidden>
+              {c}
+            </span>
+          ))}
+        </h2>
+        {s && (
+          <p className="zx-cc-sub text-sm font-semibold text-white/80" style={{ animationDelay: "1.5s" }}>
+            Last one standing of {s.players} · {s.kills} elimination{s.kills === 1 ? "" : "s"}
+          </p>
+        )}
+        <div className="zx-cc-sub mt-4" style={{ animationDelay: "2.1s" }}>
+          <button
+            type="button"
+            onClick={onCollect}
+            disabled={payout.prize === null}
+            className="zx-cc-cta flex items-center gap-2 rounded-full bg-[#f5c542] px-6 py-3 font-display text-sm font-black uppercase tracking-wider text-[#2a1d00] disabled:opacity-60"
+            data-testid="cash-cup-collect"
+          >
+            <CoinIcon className="h-5 w-5" />
+            {payout.prize === null ? "Counting your winnings…" : `Collect ${payout.prize} ZX Cash`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Trophy() {
+  return (
+    <div className="zx-cc-trophy relative" aria-hidden>
+      <svg viewBox="0 0 120 120" className="h-32 w-32 drop-shadow-[0_0_40px_rgba(245,197,66,0.7)] sm:h-44 sm:w-44">
+        <defs>
+          <linearGradient id="cc-gold" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stopColor="#fff3b0" />
+            <stop offset="0.45" stopColor="#f5c542" />
+            <stop offset="1" stopColor="#a16207" />
+          </linearGradient>
+        </defs>
+        <path d="M30 16h60v22a30 30 0 0 1-60 0z" fill="url(#cc-gold)" />
+        <path d="M30 24H16v8a18 18 0 0 0 18 18M90 24h14v8a18 18 0 0 1-18 18" fill="none" stroke="url(#cc-gold)" strokeWidth="7" strokeLinecap="round" />
+        <path d="M54 66h12v18H54z" fill="#ca8a04" />
+        <path d="M38 84h44l4 14H34z" fill="url(#cc-gold)" />
+        <rect x="30" y="98" width="60" height="10" rx="3" fill="#10b981" />
+        <text x="60" y="48" textAnchor="middle" fontSize="28" fontWeight="900" fill="#7c4a03" fontFamily="system-ui, sans-serif">1</text>
+      </svg>
+      <span className="zx-cc-glint absolute inset-0" />
+    </div>
+  );
+}
+
+function Confetti() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+      {Array.from({ length: 70 }, (_, i) => {
+        const coin = i % 9 === 0;
+        return (
+          <span
+            key={i}
+            className="zx-cc-confetti absolute top-0"
+            style={{
+              left: `${(i * 37) % 100}%`,
+              animationDelay: `${0.6 + ((i * 0.13) % 2.6)}s`,
+              animationDuration: `${2.6 + (i % 5) * 0.45}s`,
+              ["--sway" as string]: `${(i % 2 ? 1 : -1) * (4 + (i % 4) * 3)}vw`,
+            }}
+          >
+            {coin ? (
+              <CoinIcon className="h-5 w-5" />
+            ) : (
+              <span className="block h-3 w-1.5 rounded-sm" style={{ background: CONFETTI[i % CONFETTI.length], transform: `rotate(${i * 29}deg)` }} />
+            )}
+          </span>
+        );
+      })}
     </div>
   );
 }

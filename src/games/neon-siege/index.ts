@@ -57,6 +57,8 @@ export interface ShellConfig {
   }) => void | (() => void);
   /** Records a finished battle for this game's progression (season XP, medals). */
   onMatchEnd?: (mode: ModeController) => Promise<MatchReward | null> | null;
+  /** False: skip the results screen (the host app shows its own). */
+  results?: boolean;
 }
 
 /** Called when a match ends with stats (season XP / challenges / coins). */
@@ -376,7 +378,7 @@ export class NeonSiege implements GameModule {
             "16 fighters, one town, a closing storm. Loot, survive, win. Ranked + season XP.",
           ),
           cup,
-          Object.assign(el("a", "text-xs font-bold text-[#10b981] underline-offset-2 hover:underline", "Want a bigger purse? Cash Cup tournaments: 32 fighters, 250 ZX Cash for the win →"), { href: "/cash-cup" }),
+          Object.assign(el("a", "text-xs font-bold text-[#10b981] underline-offset-2 hover:underline", "Want a bigger purse? Cash Cup tournaments: 55 fighters, 250 ZX Cash for the win →"), { href: "/cash-cup" }),
           el("div", "flex gap-2", ...diffButtons),
           deploy,
           locker,
@@ -929,6 +931,10 @@ export class NeonSiege implements GameModule {
       : stats && mode.ranked && this.onMatchEnd
         ? this.onMatchEnd(stats, { won: mode.won(), ranked: true })
         : null;
+    if (this.config.results === false) {
+      this.emitter.emit({ kind: "final", score, durationMs, ranked: mode.ranked });
+      return;
+    }
     // Results screen first; the platform's game-over (score submit) follows on Continue.
     void showResults(this.opts.root, {
       stats,

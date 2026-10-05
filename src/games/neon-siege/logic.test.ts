@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createRng } from "../engine/rng";
 import { applySkill, chooseSlot, createBrain, SKILLS, updateBot, type Difficulty } from "./bots";
 import { damageAt, makeConsumable, makeWeapon, RARITY, rollChestLoot, rollRarity, weaponStats, WEAPONS, WW1_WEAPONS } from "./items";
-import { castRay, floorCells, generateTown, isWall, lineOfSight, moveWithCollision, parseMap, SOLID } from "./map";
+import { castRay, cupArena, floorCells, generateTown, isWall, lineOfSight, moveWithCollision, parseMap, SOLID } from "./map";
+import { CUP_FIELD } from "@/lib/cash-cup";
 import { findPath } from "./path";
 import { createRoyale, IDLE, matchStats, placementBonus, royaleScore, stepRoyale, type PlayerInput, type RoyaleState } from "./royale";
 import { createStorm, outside, STORM_PHASES, stepStorm } from "./storm";
@@ -333,6 +334,15 @@ describe("battle royale", () => {
       if (st.survivedS > 1) worstRate = Math.max(worstRate, royaleScore(s) / st.survivedS);
     }
     expect(worstRate).toBeLessThan(150);
+  });
+
+  it("a Cash Cup drops the whole field onto the arena, each with their own name and spawn", () => {
+    const s = createRoyale("hard", 3, { map: cupArena(), field: CUP_FIELD });
+    const all = [...s.world.entities.values()];
+    expect(all).toHaveLength(CUP_FIELD);
+    expect(new Set(all.map((e) => e.name)).size).toBe(CUP_FIELD);
+    expect(new Set(all.map((e) => `${Math.floor(e.x)},${Math.floor(e.y)}`)).size).toBe(CUP_FIELD);
+    expect(matchStats(s).players).toBe(CUP_FIELD);
   });
 
   it("bots fight each other and the storm, even with an idle player hiding", () => {

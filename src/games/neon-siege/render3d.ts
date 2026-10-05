@@ -221,10 +221,13 @@ export class ThreeView implements ViewRenderer {
       this.composer = new EffectComposer(this.renderer, target);
       this.composer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
       this.composer.addPass(new RenderPass(this.scene, this.camera));
-      const ao = new GTAOPass(this.scene, this.camera, w, h);
-      ao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.4, thickness: 1.2, scale: 1.1 });
-      ao.blendIntensity = 0.9;
-      this.composer.addPass(ao);
+      // Phone GPUs wash distant pixels and the sky out to white and pink with AO on.
+      if (!window.matchMedia("(pointer: coarse)").matches) {
+        const ao = new GTAOPass(this.scene, this.camera, w, h);
+        ao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.4, thickness: 1.2, scale: 1.1 });
+        ao.blendIntensity = 0.9;
+        this.composer.addPass(ao);
+      }
       this.composer.addPass(new OutputPass());
       this.composer.addPass(new ShaderPass(GRADE_SHADER));
       this.composer.addPass(new SMAAPass());

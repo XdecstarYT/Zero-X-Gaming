@@ -1,5 +1,5 @@
 /**
- * Cash Cup: Neon Siege tournaments for ZX Cash. 32 fighters on the Cash Cup
+ * Cash Cup: Neon Siege tournaments for ZX Cash. 55 fighters on the Cash Cup
  * Arena (four towns stitched together), on Hard, for a far bigger purse than
  * the free Cash Cup every third match. It costs 10 ZX Cash to enter; the
  * battle pass gives two free entries a season. The server checks entries and
@@ -8,7 +8,7 @@
 
 export const CUP_ENTRY = 10;
 export const CUP_FREE_WITH_PASS = 2;
-export const CUP_FIELD = 32;
+export const CUP_FIELD = 55;
 /** An entry left open longer than this is forfeited (closed tab, crash). */
 export const CUP_OPEN_MINUTES = 40;
 /** ZX Cash per elimination, on top of the placement prize. */

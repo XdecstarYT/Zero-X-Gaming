@@ -25,7 +25,7 @@ describe("Cash Cup rules", () => {
     expect(plausible(ok, 320)).toBeNull();
     expect(plausible({ ...ok, survivedS: 400 }, 320)).toBe("time");
     expect(plausible({ ...ok, placement: 1, survivedS: 90 }, 100)).toBe("time");
-    expect(plausible({ ...ok, placement: 31, kills: 5 }, 320)).toBe("kills");
+    expect(plausible({ ...ok, placement: 51, kills: 5 }, 320)).toBe("kills");
     expect(plausible({ ...ok, placement: 0 }, 320)).toBe("placement");
     expect(plausible({ ...ok, damage: 300 * 200 + 1 }, 320)).toBe("damage");
     expect(plausible({ placement: 28, kills: 0, damage: 0, chests: 0, survivedS: 12 }, 15)).toBeNull();

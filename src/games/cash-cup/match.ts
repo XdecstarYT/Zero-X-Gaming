@@ -8,7 +8,7 @@ import { CUP_FIELD, placePrize } from "@/lib/cash-cup";
 
 /**
  * One Cash Cup tournament match: the Neon Siege shell (renderer, HUD, input,
- * results) with a battle royale of 32 on the Cash Cup Arena, on Hard. It drops
+ * results) with a battle royale of 55 on the Cash Cup Arena, on Hard. It drops
  * straight in (no menu); when the match ends, `onEnd` gets the stats so the
  * Cash Cup app can report them and pay out.
  */
@@ -16,6 +16,7 @@ export function cupMatch(opts: { name: string; seed?: number; onEnd: (stats: Mat
   let started = false;
   return new NeonSiege(undefined, undefined, undefined, {
     slug: "cash-cup",
+    results: false,
     menu: ({ container, start }) => {
       container.append(Object.assign(document.createElement("p"), { className: "font-display text-xl uppercase tracking-[0.3em] text-[#10b981]", textContent: "Dropping in…" }));
       if (started) return;

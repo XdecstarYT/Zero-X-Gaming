@@ -1817,6 +1817,83 @@ html[data-reduce-motion="true"] .zx-intro {
     transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.2) rotate(540deg);
   }
 }
+.zx-cc-gold-beams {
+  background: conic-gradient(from 0deg, transparent 0 6%, rgb(245 197 66 / 0.32) 8%, transparent 11% 23%, rgb(255 243 176 / 0.22) 25%, transparent 28% 40%, rgb(245 197 66 / 0.3) 42%, transparent 45% 57%, rgb(16 185 129 / 0.22) 59%, transparent 62% 74%, rgb(245 197 66 / 0.3) 76%, transparent 79% 91%, rgb(255 243 176 / 0.2) 93%, transparent 96%);
+  animation-duration: 9s;
+}
+.zx-cc-gold-beams-back {
+  opacity: 0.5;
+  animation-direction: reverse;
+  animation-duration: 23s;
+}
+.zx-cc-gold-glow {
+  background: radial-gradient(circle at 50% 45%, rgb(245 197 66 / 0.35), transparent 55%);
+}
+.zx-cc-gold-shock {
+  border-color: #f5c542;
+  box-shadow: 0 0 30px rgb(245 197 66 / 0.6);
+  animation-delay: 0.7s;
+  animation-fill-mode: forwards;
+}
+.zx-cc-gold-flash {
+  background: radial-gradient(circle at center, rgb(255 255 255 / 0.95), rgb(245 197 66 / 0.6) 35%, transparent 70%);
+  opacity: 0;
+  animation-delay: 0.7s;
+  animation-fill-mode: forwards;
+  pointer-events: none;
+}
+.zx-cc-trophy {
+  animation: zx-cc-trophy 0.9s cubic-bezier(0.3, 1.5, 0.5, 1) 0.15s both;
+}
+.zx-cc-glint {
+  mask-image: radial-gradient(closest-side, #000 55%, transparent);
+  background: linear-gradient(105deg, transparent 40%, rgb(255 255 255 / 0.75) 50%, transparent 60%) no-repeat;
+  background-size: 250% 100%;
+  mix-blend-mode: overlay;
+  animation: zx-cc-glint 2.8s ease-in-out 1.2s infinite;
+}
+.zx-cc-confetti {
+  opacity: 0;
+  animation-name: zx-cc-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes zx-cc-trophy {
+  0% {
+    opacity: 0;
+    transform: translateY(-70vh) scale(0.6) rotate(-14deg);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(0) scale(1.12, 0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes zx-cc-glint {
+  0%,
+  55% {
+    background-position: 160% 0;
+  }
+  100% {
+    background-position: -60% 0;
+  }
+}
+@keyframes zx-cc-fall {
+  0% {
+    opacity: 1;
+    transform: translate(0, -10vh) rotate(0);
+  }
+  50% {
+    transform: translate(var(--sway), 50vh) rotate(360deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 110vh) rotate(720deg);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .zx-cc [class*="zx-cc-"] {
     animation: none !important;
