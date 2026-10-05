@@ -12,8 +12,8 @@ export function ZLinkDashboard() {
   const z = useZlink();
   if (!z.active) return null;
   // The flagship exclusive up front; the other one alongside.
-  const lw = getGame("zenith");
-  const also = getGame("linkwave");
+  const lw = getGame("zero-city");
+  const also = getGame("zenith");
   const lv = linkLevel(z.daysTotal);
   const ready = zlinkDropReady(z.lastDrop);
   const nextDrop = zlinkDropIn(z.lastDrop);

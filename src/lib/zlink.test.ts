@@ -9,7 +9,8 @@ describe("ZLink+", () => {
     expect(slugs).toContain("aussie-rules");
     expect(slugs).toContain("linkwave");
     expect(slugs).toContain("zenith");
-    expect(slugs.filter((s) => !["ubusiness", "linkwave", "zenith"].includes(s)).length).toBe(5);
+    expect(slugs).toContain("zero-city");
+    expect(slugs.filter((s) => !["ubusiness", "linkwave", "zenith", "zero-city"].includes(s)).length).toBe(5);
     expect(inZlink(ZLINK_EXCLUDED)).toBe(false);
     expect(inZlink("neon-siege")).toBe(false);
     expect(inZlink("trenches")).toBe(false);

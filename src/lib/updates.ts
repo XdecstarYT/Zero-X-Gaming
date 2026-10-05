@@ -7,6 +7,7 @@ export interface Update {
 }
 
 export const UPDATES: Update[] = [
+  { tag: "ZLink+", title: "Zero City", body: "A new members-only city builder: ten maps, roads in eight draw modes with bridges and roundabouts, four kinds of zone, and a living low-poly city of cars, buses and people. Eight languages.", href: "/games/zero-city" },
   { tag: "New app", title: "Cash Cup", body: "Neon Siege tournaments for ZX Cash: 55 fighters on a map four times the size, 250 for the win and 3 per elimination. 10 to enter; the battle pass gives two free entries.", href: "/cash-cup" },
   { tag: "Mega update", title: "Coins are now ZX Cash", body: "A fresh start for everyone: balances, ZLink+, the battle pass, unlocks, XP and game saves are back to zero. Earn ZX Cash from daily rewards, the free lane and Cash Cups.", href: "/shop" },
   { tag: "ZLink+", title: "Zenith: build a city", body: "The ZLink+ flagship: a photoreal city builder. Roads, zones, power, water and services; a skyline that lights up at night, from Hamlet to Metropolis.", href: "/games/zenith" },

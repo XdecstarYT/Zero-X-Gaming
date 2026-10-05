@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Nunito, Orbitron, Space_Grotesk } from "next/font/google";
+import { Montserrat, Nunito, Orbitron, Space_Grotesk } from "next/font/google";
 import { Navbar } from "@/components/layout/Navbar";
 import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
 import { FreshStartNotice } from "@/components/layout/FreshStartNotice";
@@ -24,6 +24,8 @@ const orbitron = Orbitron({ variable: "--font-orbitron", subsets: ["latin"], wei
 const grotesk = Space_Grotesk({ variable: "--font-grotesk", subsets: ["latin"] });
 // X-1+ theme: a rounded, friendly face for headings and text.
 const nunito = Nunito({ variable: "--font-nunito", subsets: ["latin"] });
+// Zero City's UI face (loaded on demand).
+const montserrat = Montserrat({ variable: "--font-montserrat", subsets: ["latin"], weight: ["600", "700", "800", "900"], preload: false });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -42,7 +44,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${orbitron.variable} ${grotesk.variable} ${nunito.variable} h-full antialiased`} suppressHydrationWarning>
+    <html lang="en" className={`${orbitron.variable} ${grotesk.variable} ${nunito.variable} ${montserrat.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
         {/* The ZX Cash fresh start: clears this device's old progress once, before anything reads it. */}
         <script dangerouslySetInnerHTML={{ __html: freshStartScript }} />

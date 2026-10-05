@@ -19,6 +19,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   ubusiness: () => import("./ubusiness/index"),
   linkwave: () => import("./linkwave/index"),
   zenith: () => import("./zenith/index"),
+  "zero-city": () => import("./zero-city/index"),
 };
 
 export function hasGame(slug: string) {

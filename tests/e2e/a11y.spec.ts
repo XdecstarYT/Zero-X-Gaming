@@ -15,6 +15,7 @@ const PAGES = [
   "/zlink",
   "/games/linkwave",
   "/games/zenith",
+  "/games/zero-city",
   "/cash-cup",
   "/profile",
   "/settings",

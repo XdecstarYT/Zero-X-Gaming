@@ -65,6 +65,8 @@ export function GameArt({
         <LinkArt />
       ) : game.slug === "zenith" ? (
         <CityArt id={id} />
+      ) : game.slug === "zero-city" ? (
+        <ZeroCityArt id={id} />
       ) : game.category === "sports" ? (
         <Oval id={id} a={a} b={b} />
       ) : (
@@ -630,6 +632,56 @@ function StoreArt({ a, b }: { a: string; b: string }) {
         <text x="17" y="14" textAnchor="middle" fontFamily="Arial" fontWeight="900" fontSize="10" fill="#0f172a">
           $
         </text>
+      </g>
+    </g>
+  );
+}
+
+function ZeroCityArt({ id }: { id: string }) {
+  // Golden hour over a low-poly grid town: brick blocks, a glass tower, a road with lane marks, and the four-tile mark.
+  const blocks = [
+    [18, 46, 34, "#a3412f"],
+    [58, 70, 28, "#e8dcc0"],
+    [92, 38, 30, "#8f3a2a"],
+    [130, 104, 32, "#6f93b0"],
+    [168, 62, 26, "#b04a35"],
+    [200, 84, 30, "#ddd2b6"],
+    [236, 52, 24, "#9aa1a8"],
+    [266, 74, 34, "#a3412f"],
+  ] as const;
+  return (
+    <g>
+      <defs>
+        <linearGradient id={`${id}-zcsky`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stopColor="#2a2c55" />
+          <stop offset=".55" stopColor="#d9705a" />
+          <stop offset="1" stopColor="#ffcf8a" />
+        </linearGradient>
+      </defs>
+      <rect width="320" height="200" fill={`url(#${id}-zcsky)`} />
+      <circle cx="244" cy="118" r="22" fill="#fff1c8" opacity=".9" />
+      <rect y="140" width="320" height="60" fill="#5fa83a" />
+      {blocks.map(([x, h, w, c], i) => (
+        <g key={i}>
+          <rect x={x} y={140 - h} width={w} height={h} fill={c} />
+          {Array.from({ length: Math.floor(h / 11) }, (_, r) =>
+            Array.from({ length: Math.floor(w / 9) }, (_, k) => (
+              <rect key={`${r}-${k}`} x={x + 3 + k * 9} y={140 - h + 5 + r * 11} width="5" height="6" fill={(i + r + k) % 3 ? "#1c2530" : "#ffd48a"} opacity=".85" />
+            )),
+          )}
+        </g>
+      ))}
+      <rect y="156" width="320" height="22" fill="#2b2d31" />
+      {Array.from({ length: 12 }, (_, k) => (
+        <rect key={k} x={8 + k * 28} y="166" width="14" height="2" fill="#f3f3ee" />
+      ))}
+      <rect y="154" width="320" height="2" fill="#b9b4aa" />
+      <rect y="178" width="320" height="2" fill="#b9b4aa" />
+      <g transform="translate(16 14) scale(.62)">
+        <rect x="4" y="4" width="26" height="26" rx="8" fill="#f4f7fb" />
+        <rect x="34" y="4" width="26" height="26" rx="8" fill="#22e5ff" />
+        <rect x="4" y="34" width="26" height="26" rx="8" fill="#9fb0c4" />
+        <rect x="34" y="34" width="26" height="26" rx="8" fill="#f4f7fb" />
       </g>
     </g>
   );
