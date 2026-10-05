@@ -15,6 +15,7 @@ import { Collections } from "@/components/home/Collections";
 import { GameTicker } from "@/components/home/GameTicker";
 import { WhyZeroX } from "@/components/home/WhyZeroX";
 import { ZLinkTeaser } from "@/components/home/ZLinkTeaser";
+import { CashCupTeaser } from "@/components/home/CashCupTeaser";
 
 export default function HomePage() {
   const featured = getGame(FEATURED_SLUG) ?? GAMES[0];
@@ -82,6 +83,8 @@ export default function HomePage() {
       </section>
 
       <GameTicker />
+
+      <CashCupTeaser />
 
       <ZLinkTeaser />
 

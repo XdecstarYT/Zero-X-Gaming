@@ -145,7 +145,7 @@ test("phones get a bottom tab bar; desktop gets the top nav", async ({ page, isM
   const tabs = page.getByRole("navigation", { name: "Primary" });
   if (isMobile) {
     await expect(tabs).toBeVisible();
-    for (const name of ["Home", "Games", "Pass", "Ranks", "Profile"])
+    for (const name of ["Home", "Games", "Cup", "Pass", "Ranks", "Profile"])
       await expect(tabs.getByRole("link", { name })).toBeVisible();
     await tabs.getByRole("link", { name: "Games" }).click();
     await expect(page).toHaveURL(/\/games$/);
