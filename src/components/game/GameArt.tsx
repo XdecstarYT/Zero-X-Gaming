@@ -67,6 +67,8 @@ export function GameArt({
         <CityArt id={id} />
       ) : game.slug === "zero-city" ? (
         <ZeroCityArt id={id} />
+      ) : game.slug === "lifeline" ? (
+        <LifelineArt id={id} />
       ) : game.category === "sports" ? (
         <Oval id={id} a={a} b={b} />
       ) : (
@@ -633,6 +635,46 @@ function StoreArt({ a, b }: { a: string; b: string }) {
           $
         </text>
       </g>
+    </g>
+  );
+}
+
+function LifelineArt({ id }: { id: string }) {
+  // A cutaway hospital floor seen from above at night: teal rooms, beds, an ambulance at the door, a heartbeat line.
+  return (
+    <g>
+      <defs>
+        <linearGradient id={`${id}-llbg`} x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stopColor="#06231f" />
+          <stop offset="1" stopColor="#0b1220" />
+        </linearGradient>
+      </defs>
+      <rect width="320" height="200" fill={`url(#${id}-llbg)`} />
+      <rect x="24" y="22" width="272" height="128" rx="4" fill="#bfe3dc" stroke="#f1efe9" strokeWidth="5" />
+      <path d="M118 22v70M206 22v70M24 92h272" stroke="#f1efe9" strokeWidth="5" />
+      <rect x="128" y="30" width="70" height="56" fill="#f9a8d4" opacity=".35" />
+      {[0, 1, 2].map((k) => (
+        <g key={k} transform={`translate(${136 + k * 21} 36)`}>
+          <rect width="14" height="28" rx="2" fill="#f4f6f8" />
+          <rect y="10" width="14" height="18" rx="2" fill="#2dd4bf" />
+        </g>
+      ))}
+      <rect x="36" y="34" width="70" height="50" fill="#4ade80" opacity=".3" />
+      <rect x="48" y="48" width="34" height="14" rx="2" fill="#93c5fd" />
+      <rect x="216" y="30" width="72" height="56" fill="#c4b5fd" opacity=".35" />
+      <rect x="232" y="42" width="30" height="30" rx="3" fill="#e5e7eb" />
+      <rect x="40" y="104" width="100" height="10" rx="3" fill="#3b82f6" />
+      <rect x="40" y="124" width="100" height="10" rx="3" fill="#3b82f6" />
+      <rect x="170" y="108" width="54" height="14" rx="3" fill="#f4f6f8" />
+      <rect x="0" y="162" width="320" height="38" fill="#3a3d42" />
+      <g transform="translate(206 166)">
+        <rect width="64" height="26" rx="4" fill="#f8fafc" />
+        <rect y="13" width="64" height="5" fill="#dc2626" />
+        <rect x="26" y="4" width="10" height="3" fill="#dc2626" />
+        <rect x="29" y="1" width="4" height="9" fill="#dc2626" />
+        <rect x="46" y="-4" width="10" height="4" rx="1" fill="#3b82f6" />
+      </g>
+      <path d="M20 182h40l8-16 10 30 8-14h40" fill="none" stroke="#2dd4bf" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
     </g>
   );
 }

@@ -10,7 +10,7 @@ describe("command palette search", () => {
 
   it("puts title matches ahead of tag matches", () => {
     const r = searchPalette(paletteItems(), "lif");
-    expect(r[0].label).toBe("Life");
+    expect(r.slice(0, 2).map((i) => i.label).sort()).toEqual(["Life", "Lifeline"]);
     expect(searchPalette(paletteItems(), "linkw")[0].label).toBe("Linkwave");
   });
 
