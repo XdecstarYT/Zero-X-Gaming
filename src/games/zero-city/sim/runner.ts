@@ -10,6 +10,7 @@ export type ToSim =
   | { t: "route"; id: number; car: number }
   | { t: "lv"; id: number }
   | { t: "demolish"; lots: number[] }
+  | { t: "ignite"; lot: number }
   | { t: "stop" };
 
 export type FromSim =
@@ -22,10 +23,12 @@ export type FromSim =
       removed: number[];
       cars: Float32Array;
       peds: Float32Array;
+      fires: [number, number, number][];
+      events: Sim["events"];
     }
   | { t: "saved"; id: number; save: SimSave }
   | { t: "route"; id: number; route: ReturnType<Sim["routeOf"]> }
-  | { t: "lv"; id: number; lv: [number, number][] };
+  | { t: "lv"; id: number; lv: [number, number][]; cover: [number, number][] };
 
 /** The simulation loop, shared by the Web Worker and the main-thread fallback. */
 export function createRunner(post: (m: FromSim, transfer?: Transferable[]) => void) {
@@ -42,7 +45,7 @@ export function createRunner(post: (m: FromSim, transfer?: Transferable[]) => vo
     const ch = sim.drainChanges();
     const cars = sim.carBuffer();
     const peds = sim.pedBuffer();
-    post({ t: "tick", minutes: sim.minutes, stats: sim.stats, notices: sim.notices, changed: ch.changed, removed: ch.removed, cars, peds }, [cars.buffer, peds.buffer]);
+    post({ t: "tick", minutes: sim.minutes, stats: sim.stats, notices: sim.notices, changed: ch.changed, removed: ch.removed, cars, peds, fires: sim.fireList(), events: sim.drainEvents() }, [cars.buffer, peds.buffer]);
   }, 1000 / TICK_HZ);
   return {
     handle(m: ToSim) {
@@ -70,10 +73,13 @@ export function createRunner(post: (m: FromSim, transfer?: Transferable[]) => vo
           post({ t: "route", id: m.id, route: sim.routeOf(m.car) });
           break;
         case "lv":
-          post({ t: "lv", id: m.id, lv: [...sim.landValues()] });
+          post({ t: "lv", id: m.id, lv: [...sim.landValues()], cover: [...sim.coverage()] });
           break;
         case "demolish":
           sim.demolish(m.lots);
+          break;
+        case "ignite":
+          sim.ignite(m.lot);
           break;
         case "stop":
           clearInterval(timer);

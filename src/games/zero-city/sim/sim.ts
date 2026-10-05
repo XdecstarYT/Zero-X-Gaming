@@ -86,6 +86,8 @@ export interface SimSettings {
   trafficDensity: number;
   pedDensity: number;
   policy?: SimPolicy;
+  /** Building fires (on unless switched off in Settings). */
+  fires?: boolean;
 }
 
 export interface Building {
@@ -129,6 +131,10 @@ export interface Stats {
   /** Jobs by kind. */
   cJobs: number;
   iJobs: number;
+  /** Visitors a day, drawn by landmarks and parks. */
+  tourists: number;
+  /** Buildings on fire right now. */
+  fires: number;
 }
 
 export interface Notice {
@@ -203,8 +209,18 @@ interface NodeInfo {
   controlled: boolean;
 }
 
-const SERVICE_STAFF: Record<string, number> = { police: 12, fire: 10, clinic: 14, school: 20, power: 15, water: 6, park: 2 };
-const SERVICE_RADIUS: Record<string, number> = { police: 340, fire: 360, clinic: 320, school: 420, park: 200 };
+const SERVICE_STAFF: Record<string, number> = { police: 12, fire: 10, clinic: 14, school: 20, power: 15, water: 6, park: 2, hospital: 60, museum: 20, university: 80, stadium: 40, tower: 30 };
+const SERVICE_RADIUS: Record<string, number> = { police: 340, fire: 360, clinic: 320, school: 420, park: 200, hospital: 700, museum: 500, university: 800, stadium: 450, tower: 700 };
+/** Landmarks that also count as an everyday service's coverage. */
+const COVER_AS: Record<string, string> = { hospital: "clinic", university: "school" };
+/** Land value each service adds within its radius. */
+const VALUE_ADD: Record<string, number> = { park: 0.12, hospital: 0.1, museum: 0.16, university: 0.12, stadium: 0.08, tower: 0.2 };
+/** Visitors a day each draws. */
+const TOURISM: Record<string, number> = { park: 12, museum: 260, university: 70, stadium: 520, tower: 420 };
+/** Fire: chance per building per game hour; minutes until firefighters put it out (covered) or it burns down. */
+const FIRE_RATE = 0.0003;
+const FIRE_OUT = 30;
+const FIRE_DOWN = 100;
 const COVER_KINDS = ["police", "fire", "clinic", "school", "park"] as const;
 const COVER_BIT: Record<string, number> = { police: 1, fire: 2, clinic: 4, school: 8, park: 16 };
 const POLLUTED = 32;
@@ -236,10 +252,16 @@ export class Sim {
   private noticeAcc = 0;
   private congestion = new Map<number, number>();
   private rand = rng(1);
+  /** Burning buildings: lot → minutes alight, and whether a fire station covers it. */
+  fires = new Map<number, { t: number; covered: boolean }>();
+  /** One-off messages for the player (drained with each tick). */
+  events: Notice[] = [];
   /** Lots whose building changed since the last drain. */
   private changed = new Set<number>();
   private removedLots = new Set<number>();
   private svcGrid = new Map<string, SimService[]>();
+  /** Services whose reach is longer than the grid search (the landmarks). */
+  private farServices: SimService[] = [];
   /** Lot id → which services reach it (COVER_BIT) and whether industry is next door. */
   private cover = new Map<number, number>();
   private indGrid = new Map<string, number>();
@@ -318,6 +340,8 @@ export class Sim {
     this.cars = this.cars.filter((c) => c.route.every((leg) => this.edges.has(leg.edge)) && (!c.crossing || this.nodes.has(c.crossing.node)));
     this.peds = this.peds.filter((p) => this.edges.has(p.edge));
     this.svcGrid.clear();
+    this.farServices = w.services.filter((s) => (SERVICE_RADIUS[s.kind] ?? 0) > 384);
+    for (const [lot] of this.fires) if (!this.buildings.has(lot)) this.fires.delete(lot);
     for (const s of w.services) {
       const k = `${Math.floor(s.cx / 128)},${Math.floor(s.cz / 128)}`;
       (this.svcGrid.get(k) ?? this.svcGrid.set(k, []).get(k)!).push(s);
@@ -328,6 +352,11 @@ export class Sim {
   /** Lot id → land value 0–1 (for the Land overlay). */
   landValues() {
     return this.lv;
+  }
+
+  /** Lot id → services reaching it (bits: police 1, fire 2, clinic 4, school 8, park 16) and 32 for pollution. */
+  coverage() {
+    return this.cover;
   }
 
   /** Buildings changed and lots cleared since the last call. */
@@ -408,7 +437,67 @@ export class Sim {
     }
   }
 
+  /** Fires start, spread no further than their building, and are put out or burn it down. */
+  private burn(dt: number) {
+    const minutes = dt * GAME_MINUTES_PER_SECOND;
+    for (const [lot, f] of this.fires) {
+      const b = this.buildings.get(lot);
+      if (!b) {
+        this.fires.delete(lot);
+        continue;
+      }
+      f.t += minutes;
+      // A fire station in reach sends a crew.
+      f.covered = ((this.cover.get(lot) ?? 0) & COVER_BIT.fire) !== 0;
+      if (f.covered && f.t >= FIRE_OUT) {
+        this.fires.delete(lot);
+        this.events.push({ key: "ev.fireOut", vars: { road: this.roadOf(lot) } });
+      } else if (!f.covered && f.t >= FIRE_DOWN) {
+        this.fires.delete(lot);
+        this.buildings.delete(lot);
+        this.removedLots.add(lot);
+        this.events.push({ key: "ev.burnt", vars: { road: this.roadOf(lot) } });
+      }
+    }
+    if (this.settings.fires === false) return;
+    const hours = minutes / 60;
+    for (const b of this.buildings.values()) {
+      if (b.progress < 1 || this.fires.has(b.lot)) continue;
+      const covered = ((this.cover.get(b.lot) ?? 0) & COVER_BIT.fire) !== 0;
+      if (this.rand.next() > FIRE_RATE * hours * (1 + b.tier * 0.3) * (covered ? 0.35 : 1)) continue;
+      this.fires.set(b.lot, { t: 0, covered });
+      this.events.push({ key: covered ? "ev.fire" : "ev.fireNoStation", vars: { road: this.roadOf(b.lot) } });
+    }
+  }
+
+  /** Start a fire now (tests and the debug hook). */
+  ignite(lot: number) {
+    if (!this.buildings.has(lot) || this.fires.has(lot)) return false;
+    const covered = ((this.cover.get(lot) ?? 0) & COVER_BIT.fire) !== 0;
+    this.fires.set(lot, { t: 0, covered });
+    this.events.push({ key: covered ? "ev.fire" : "ev.fireNoStation", vars: { road: this.roadOf(lot) } });
+    return true;
+  }
+
+  private roadOf(lot: number) {
+    const l = this.lots.get(lot);
+    return (l && this.edges.get(l.edge)?.e.name) || "";
+  }
+
+  /** Burning buildings for the renderer: [lot, minutes alight, covered 0/1]. */
+  fireList() {
+    return [...this.fires].map(([lot, f]) => [lot, f.t, f.covered ? 1 : 0] as [number, number, number]);
+  }
+
+  /** Messages since the last call. */
+  drainEvents() {
+    const e = this.events;
+    this.events = [];
+    return e;
+  }
+
   private grow(dt: number) {
+    this.burn(dt);
     const dem = this.demand();
     const lotsBy: Record<Zone, SimLot[]> = { R: [], C: [], I: [], M: [] };
     for (const l of this.lots.values()) {
@@ -496,8 +585,8 @@ export class Sim {
             if (!r || seen.has(s.kind)) continue;
             if (Math.hypot(s.cx - l.cx, s.cz - l.cz) <= r) {
               seen.add(s.kind);
-              mask |= COVER_BIT[s.kind] ?? 0;
-              v += s.kind === "park" ? 0.12 : 0.08;
+              mask |= COVER_BIT[COVER_AS[s.kind] ?? s.kind] ?? 0;
+              v += VALUE_ADD[s.kind] ?? 0.08;
             }
           }
           if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1 && l.zone !== "I") {
@@ -506,6 +595,13 @@ export class Sim {
             v -= Math.min(0.3, ind * 0.025);
           }
         }
+      // Landmarks reach further than the grid search.
+      for (const s of this.farServices) {
+        if (seen.has(s.kind) || Math.hypot(s.cx - l.cx, s.cz - l.cz) > SERVICE_RADIUS[s.kind]) continue;
+        seen.add(s.kind);
+        mask |= COVER_BIT[COVER_AS[s.kind] ?? s.kind] ?? 0;
+        v += VALUE_ADD[s.kind] ?? 0.08;
+      }
       this.cover.set(l.id, mask);
       if (l.wet) v += 0.12;
       v -= (this.congestion.get(l.edge) ?? 0) * 0.12;
@@ -546,7 +642,10 @@ export class Sim {
     const traffic = this.avgCongestion();
     const bias = this.settings.policy?.bias ?? NO_POLICY.bias;
     const R = clamp(bias.R + 0.5 + (0.75 * (jobs + svcJobs - labour)) / (labour * 0.5 + 60) - traffic * 0.25, -1, 1);
-    const C = clamp(bias.C + 0.12 + (pop * 0.16 - cJobs) / (pop * 0.08 + 24) - traffic * 0.15, -1, 1);
+    // Visitors come for the landmarks (more as the city gets known), and shop.
+    const draw = this.world.services.reduce((n, s) => n + (TOURISM[s.kind] ?? 0), 0);
+    const tourists = Math.round(draw * (0.4 + 0.6 * Math.min(1, pop / 6000)));
+    const C = clamp(bias.C + 0.12 + (pop * 0.16 - cJobs) / (pop * 0.08 + 24) + Math.min(0.35, tourists / (pop * 0.4 + 500)) - traffic * 0.15, -1, 1);
     const I = clamp(bias.I + 0.3 + (labour * 0.36 - iJobs) / (labour * 0.22 + 24) + 0.05 * (res[1] + res[2] + res[3]) - traffic * 0.15, -1, 1);
     this.stats = {
       population: pop,
@@ -565,6 +664,8 @@ export class Sim {
       pollution: pop ? polluted / pop : 0,
       cJobs,
       iJobs,
+      tourists,
+      fires: this.fires.size,
     };
   }
 
@@ -591,6 +692,7 @@ export class Sim {
     if (st.jobs - st.workers > 80) out.push({ key: "n.housing" });
     if (st.population > 150 && st.demand.C > 0.55) out.push({ key: "n.shops" });
     if (st.population >= 800 && !this.hasService("school")) out.push({ key: "n.school" });
+    if (this.fires.size) out.push({ key: "n.fires", vars: { n: this.fires.size } });
     let worst: { e: SimEdge; c: number } | null = null;
     for (const [id, c] of this.congestion) {
       const info = this.edges.get(id);
@@ -1293,7 +1395,7 @@ export class Sim {
 }
 
 function emptyStats(): Stats {
-  return { population: 0, jobs: 0, workers: 0, unemployed: 0, demand: { R: 0.5, C: 0.12, I: 0.3, M: 0.3 }, buildings: 0, cars: 0, peds: 0, congestion: 0, power: false, water: false, staff: 0, coverage: { police: 0, fire: 0, clinic: 0, school: 0, park: 0 }, pollution: 0, cJobs: 0, iJobs: 0 };
+  return { population: 0, jobs: 0, workers: 0, unemployed: 0, demand: { R: 0.5, C: 0.12, I: 0.3, M: 0.3 }, buildings: 0, cars: 0, peds: 0, congestion: 0, power: false, water: false, staff: 0, coverage: { police: 0, fire: 0, clinic: 0, school: 0, park: 0 }, pollution: 0, cJobs: 0, iJobs: 0, tourists: 0, fires: 0 };
 }
 
 /** Binary min-heap of node ids by priority. */

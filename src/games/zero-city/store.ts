@@ -5,6 +5,7 @@ import type { Settings } from "./settings";
 import type { Notice, Stats } from "./sim/sim";
 import type { BillResult, DilemmaId, ElectionResult, Faction, Ledger, PolicyId, PromiseId, Taxes } from "./politics/politics";
 import type { Zone, ServiceKind } from "./world/lots";
+import type { Landmark } from "./world/milestones";
 import type { RoadTypeId } from "./world/roads";
 
 export type Screen = "loading" | "menu" | "maps" | "game";
@@ -17,6 +18,8 @@ export type TransitMode = "stop" | "line" | "rail";
 export type TerrainMode = "raise" | "lower" | "smooth" | "water" | "trees" | "clear";
 export type MoveMode = "select" | "move" | "rotate" | "copy" | "delete";
 export type BulldozeMode = "all" | "roads" | "buildings" | "zones";
+/** What the Land tab colours lots by. */
+export type LandView = "value" | "services" | "pollution" | "fire";
 
 export interface Toast {
   id: number;
@@ -110,6 +113,10 @@ export interface UIState {
   service: ServiceKind;
   moveMode: MoveMode;
   bulldozeMode: BulldozeMode;
+  landView: LandView;
+  /** City milestone reached (index), progress to the next, and each landmark's state. */
+  milestone: { i: number; progress: number };
+  landmarks: Record<Landmark, "locked" | "built" | "ready">;
   canUndo: boolean;
   canRedo: boolean;
   statsOpen: boolean;
@@ -171,6 +178,9 @@ export function makeStore(settings: Settings) {
     service: "power",
     moveMode: "select",
     bulldozeMode: "all",
+    landView: "value",
+    milestone: { i: 0, progress: 0 },
+    landmarks: { hospital: "locked", museum: "locked", university: "locked", stadium: "locked", tower: "locked" },
     canUndo: false,
     canRedo: false,
     statsOpen: false,

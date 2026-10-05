@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { City } from "../world/city";
+import type { ServiceKind } from "../world/lots";
+import { LANDMARK_UNLOCK, landmarkState, MILESTONES, milestoneAt, milestoneProgress } from "../world/milestones";
 import { Sim } from "./sim";
 
 /** A town on Broad Plains: an avenue off the highway with a grid of streets, zoned and serviced. */
-function town(rows = 3, cols = 5, spacing = 96) {
+function town(rows = 3, cols = 5, spacing = 96, extra: ServiceKind[] = []) {
   const c = new City("broad-plains", "Test");
   const gate = [...c.roads.edges.values()][0];
   const end = { x: gate.pts[gate.pts.length - 2], z: gate.pts[gate.pts.length - 1] };
@@ -24,6 +26,11 @@ function town(rows = 3, cols = 5, spacing = 96) {
   expect(c.addService("water", streets[1].id, -1, 30)).toBeTruthy();
   expect(c.addService("school", streets[2].id, 1, 40)).toBeTruthy();
   expect(c.addService("park", streets[3].id, -1, 40)).toBeTruthy();
+  // Extra civic buildings go wherever they first fit, spread along the streets.
+  extra.forEach((kind, n) => {
+    const tries = streets.flatMap((e, i) => [1, -1].flatMap((side) => [30, 48, 60].map((at) => [(i + n * 4) % streets.length, side, at] as const)));
+    expect(tries.some(([i, side, at]) => !!c.addService(kind, streets[i].id, side, at)), kind).toBe(true);
+  });
   const zones = ["R", "R", "C", "R", "I", "M"] as const;
   let k = 0;
   for (const e of [...c.roads.edges.values()]) {
@@ -95,4 +102,67 @@ describe("simulation", () => {
     console.log("jam: pop", sim.stats.population, "cars", sim.stats.cars, "maxQueue", maxQueue);
     expect(maxQueue).toBeGreaterThan(5);
   }, 30_000);
+});
+
+/** Grow a town for a while (game minutes ≈ steps × 0.3). */
+function grown(c: City, steps = 1500) {
+  const sim = new Sim();
+  sim.settings = { ...sim.settings, fires: false };
+  sim.setWorld(c.toSim());
+  for (let i = 0; i < steps; i++) sim.step(0.1, 3);
+  return sim;
+}
+
+describe("the Metropolis update", () => {
+  it("milestones go by the best population, and unlock landmarks once each", () => {
+    expect(milestoneAt(0)).toBe(0);
+    expect(MILESTONES[milestoneAt(1_226)].id).toBe("town");
+    expect(MILESTONES[milestoneAt(60_000)].id).toBe("megalopolis");
+    expect(milestoneProgress(2_000)).toBeCloseTo(0.5, 2);
+    expect(landmarkState("hospital", 500, new Set())).toBe("locked");
+    expect(landmarkState("hospital", MILESTONES[LANDMARK_UNLOCK.hospital].pop, new Set())).toBe("ready");
+    expect(landmarkState("hospital", 100_000, new Set(["hospital"]))).toBe("built");
+  });
+
+  it("an uncovered building that catches fire burns down; a fire station puts fires out", () => {
+    const c = town();
+    const sim = grown(c);
+    const b = [...sim.buildings.values()].find((x) => x.progress >= 1)!;
+    expect(b).toBeTruthy();
+    expect(sim.ignite(b.lot)).toBe(true);
+    expect(sim.drainEvents().map((e) => e.key)).toEqual(["ev.fireNoStation"]);
+    expect(sim.fireList().length).toBe(1);
+    for (let i = 0; i < 400 && sim.fires.size; i++) sim.step(0.1, 3);
+    // Gone (the empty plot may already be growing something new).
+    expect(sim.buildings.get(b.lot)).not.toBe(b);
+    expect(sim.drainEvents().map((e) => e.key)).toContain("ev.burnt");
+
+    // Fire stations everywhere: the crew gets there in time.
+    const c2 = town(3, 5, 96, ["fire", "fire", "fire"]);
+    const sim2 = grown(c2);
+    const b2 = [...sim2.buildings.values()].find((x) => x.progress >= 1 && ((sim2.coverage().get(x.lot) ?? 0) & 2))!;
+    expect(b2).toBeTruthy();
+    sim2.drainEvents();
+    sim2.ignite(b2.lot);
+    for (let i = 0; i < 400 && sim2.fires.size; i++) sim2.step(0.1, 3);
+    expect(sim2.buildings.get(b2.lot)).toBe(b2);
+    expect(sim2.drainEvents().map((e) => e.key)).toEqual(["ev.fire", "ev.fireOut"]);
+  }, 60_000);
+
+  it("landmarks reach far, raise land value and bring tourists", () => {
+    const base = town();
+    const before = grown(base, 600);
+    const lvBefore = [...before.landValues().values()].reduce((a, b) => a + b, 0);
+    // Only the park draws visitors, and few while the town is small.
+    expect(before.stats.tourists).toBeLessThan(12);
+
+    const c = town(3, 5, 96, ["museum", "hospital"]);
+    const sim = grown(c, 600);
+    expect(sim.stats.tourists).toBeGreaterThan(100);
+    const lvAfter = [...sim.landValues().values()].reduce((a, b) => a + b, 0);
+    expect(lvAfter).toBeGreaterThan(lvBefore);
+    // The hospital counts as clinic cover far beyond a clinic's reach.
+    const clinicCovered = [...sim.coverage().values()].filter((m) => m & 4).length;
+    expect(clinicCovered).toBeGreaterThan(sim.coverage().size * 0.5);
+  }, 60_000);
 });

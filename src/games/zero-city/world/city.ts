@@ -55,6 +55,8 @@ export interface CityJSON {
   politics?: unknown;
   /** Money spent building, all time (undo refunds it). */
   spent?: number;
+  /** The most people the city has had (milestones go by it). */
+  bestPop?: number;
 }
 
 interface Snapshot {
@@ -82,6 +84,8 @@ export class City {
   name: string;
   created = Date.now();
   playSeconds = 0;
+  /** The most people the city has had (milestones go by it). */
+  bestPop = 0;
   /** Money spent on construction so far; part of each undo step, so undoing refunds it. */
   spent = 0;
   /** Edge id → road surface height at each polyline vertex. */
@@ -109,6 +113,7 @@ export class City {
       this.nextTransit = json.nextTransit;
       this.created = json.created;
       this.playSeconds = json.playSeconds;
+      this.bestPop = json.bestPop ?? 0;
       this.spent = json.spent ?? 0;
       for (const e of this.roads.edges.values()) {
         const ys = this.computeProfile(e);
@@ -306,6 +311,11 @@ export class City {
         const nh = h + (y - h) * Math.max(0, Math.min(1, w));
         if (Math.abs(nh - h) > 0.02) this.terrain.set(i, j, nh);
       }
+  }
+
+  /** Clear the trees standing on a lot (when something is built there). */
+  clearTreesOnLot(l: Lot) {
+    this.clearTreesNear(rectCells(l.cx, l.cz, l.w, l.d, l.ang));
   }
 
   private clearTreesNear(cells: ArrayLike<number>) {
@@ -654,6 +664,7 @@ export class City {
       name: this.name,
       created: this.created,
       playSeconds: this.playSeconds,
+      bestPop: this.bestPop,
       heights: encodeHeights(this.terrain.h),
       trees: encodeF32(this.trees),
       roads: this.roads.toJSON(),

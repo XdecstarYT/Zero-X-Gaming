@@ -8,6 +8,7 @@ import { theme } from "./theme";
 import type { Tab } from "./store";
 import { halfWidth, ROAD_TYPES, carriageway, defaultLanes, type REdge } from "./world/roads";
 import { SERVICE_SPEC, sideNormal, type Zone } from "./world/lots";
+import { isLandmark } from "./world/milestones";
 
 type V3 = THREE.Vector3;
 
@@ -1031,7 +1032,9 @@ export class Tools {
     v.overlays.clearGhosts();
     const spot = this.buildSpot(p);
     if (!spot) return;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(spot.w, 6, spot.d), new THREE.MeshBasicMaterial({ color: spot.ok ? theme.accent : theme.danger, transparent: true, opacity: 0.35, depthTest: false }));
+    const svc = this.st.service;
+    const allowed = !isLandmark(svc) || this.g.store.getState().landmarks[svc] === "ready";
+    const m = new THREE.Mesh(new THREE.BoxGeometry(spot.w, isLandmark(svc) ? 14 : 6, spot.d), new THREE.MeshBasicMaterial({ color: spot.ok && allowed ? theme.accent : theme.danger, transparent: true, opacity: 0.35, depthTest: false }));
     m.position.set(spot.cx, this.city.terrain.surfaceAt(spot.cx, spot.cz) + 3, spot.cz);
     m.rotation.y = -spot.ang;
     m.renderOrder = 8;
@@ -1044,6 +1047,7 @@ export class Tools {
       this.g.audio.error();
       return;
     }
+    if (!this.g.canBuildService(this.st.service)) return;
     const cost = this.g.serviceCost(this.st.service);
     if (!this.g.canAfford(cost)) return;
     this.city.record();

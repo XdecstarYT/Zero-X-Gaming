@@ -42,6 +42,8 @@ function stats(o: Partial<Stats> = {}): Stats {
     pollution: 0.04,
     cJobs: 600,
     iJobs: 400,
+    tourists: 0,
+    fires: 0,
     ...o,
   };
 }

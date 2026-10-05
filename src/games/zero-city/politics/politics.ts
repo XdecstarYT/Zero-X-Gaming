@@ -46,6 +46,11 @@ export const SERVICE_COST: Record<ServiceKind, { build: number; upkeep: number }
   power: { build: 20_000, upkeep: 900 },
   water: { build: 12_000, upkeep: 400 },
   park: { build: 3_000, upkeep: 80 },
+  hospital: { build: 60_000, upkeep: 2_400 },
+  museum: { build: 45_000, upkeep: 1_200 },
+  university: { build: 90_000, upkeep: 3_000 },
+  stadium: { build: 140_000, upkeep: 3_500 },
+  tower: { build: 220_000, upkeep: 2_000 },
 };
 /** Per day: each km of road, each bus line. */
 export const ROAD_UPKEEP_KM = 200;
@@ -187,6 +192,8 @@ export interface CityFacts {
   residents: number;
   cJobs: number;
   iJobs: number;
+  /** Visitors a day (landmarks): they spend in the shops, taxed at the commercial rate. */
+  tourists?: number;
 }
 
 const zeroMoods = (): Moods => ({ workers: 0, business: 0, families: 0, greens: 0, seniors: 0 });
@@ -256,7 +263,7 @@ export function ledger(s: PoliticsState, f: CityFacts): Ledger {
   const mul = s.policies.reduce((m, id) => m * (POLICIES[id].income ?? 1), 1);
   const income = {
     R: Math.round(f.residents * s.taxes.R * TAX_BASE.R * mul),
-    C: Math.round(f.cJobs * s.taxes.C * TAX_BASE.C * mul),
+    C: Math.round((f.cJobs + (f.tourists ?? 0) * 0.4) * s.taxes.C * TAX_BASE.C * mul),
     I: Math.round(f.iJobs * s.taxes.I * TAX_BASE.I * mul),
   };
   let services = 0;

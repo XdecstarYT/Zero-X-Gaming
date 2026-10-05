@@ -69,6 +69,19 @@ Pick **Mayor** instead of **Sandbox** on the map screen. The rules live in
 The sim side is `SimSettings.policy` (demand bias, a tier cap, a car-share multiplier) and
 the coverage/pollution numbers in `Stats`. Saves keep `mode`, `politics` and `spent`.
 
+## The Metropolis update (0.7)
+
+- **Milestones** (`world/milestones.ts`): eight ranks by the best population the city has reached, from Hamlet to Megalopolis (`City.bestPop`, saved). Each one shows on the HUD chip, pays a grant in Mayor mode and unlocks landmarks.
+- **Landmarks**: a hospital, a museum, a university, a stadium and a landmark tower. They're service kinds (`SERVICE_SPEC` in `lots.ts`, `SERVICE_COST` in `politics.ts`) built from the Build tab, one each, once unlocked.
+  - They reach much further than ordinary services (`farServices` in the sim). The hospital counts as clinic cover and the university as school cover.
+  - They add land value (`VALUE_ADD`) and draw tourists (`TOURISM`). Tourists push up commercial demand and pay commercial tax in Mayor mode.
+- **Fires**: any finished building can catch fire (`FIRE_RATE` per game hour, lower inside fire-station cover).
+  - With a fire station in reach, the crew puts it out in 30 game minutes. Without one, the building burns down after 100 minutes and the plot regrows.
+  - Flames and smoke come from `render/fireView.ts`.
+  - Settings → Building fires switches fires off.
+- **Info views**: the Land tab colours lots by land value, services in reach, pollution or fire cover. The sim sends the per-lot cover mask with land values.
+- **Zone plots**: empty zoned lots are drawn as outlines with a faint fill. They're strong while zoning, quiet otherwise, and dimmed at night, so they no longer glare as bright slabs. Trees on a plot are cleared when something is built there.
+
 ## Liquid glass
 
 Panels refract the city at their rims with an SVG displacement filter used as a

@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { formatClock, type StringKey } from "../i18n";
 import { ACHIEVEMENTS, ACH_LABEL } from "../game";
-import type { DrawMode, MoveMode, Tab, TerrainMode, ZoneMode, BulldozeMode } from "../store";
+import type { DrawMode, MoveMode, Tab, TerrainMode, ZoneMode, BulldozeMode, LandView } from "../store";
 import { TABS } from "../store";
 import { theme } from "../theme";
 import { SERVICE_KINDS, type ServiceKind, type Zone } from "../world/lots";
@@ -12,6 +12,7 @@ import { Icon } from "./Icons";
 import { CityHall, DilemmaCard, ElectionNight, HallButton, TreasuryChip } from "./politics";
 import { rampColor } from "../render/overlayView";
 import { VEHICLES } from "../sim/sim";
+import { LANDMARK_UNLOCK, LANDMARKS, MILESTONES } from "../world/milestones";
 
 const TAB_ICON: Record<Tab, string> = { roads: "roads", zoning: "zoning", transit: "transit", terrain: "terrain", build: "build", move: "move", land: "land", bulldoze: "bulldoze" };
 
@@ -113,11 +114,12 @@ function TopEnd() {
           <HallButton />
         </>
       ) : (
-        <span className="zc-glass-dark flex min-h-[44px] items-center gap-2 rounded-full px-4 font-black" aria-label={t("unlimited")}>
+        <span className="zc-glass-dark flex min-h-[44px] items-center gap-2 rounded-full px-3 font-black @5xl:px-4" aria-label={t("unlimited")} title={t("unlimited")}>
           <Icon name="money" size={18} style={{ color: theme.on }} />
-          <span className="zc-label">{t("unlimited")}</span>
+          <span className="zc-label hidden @5xl:inline">{t("unlimited")}</span>
         </span>
       )}
+      <MilestoneChip />
       <button type="button" className="zc-glass-dark zc-btn rounded-full px-4 font-black" onClick={() => g.store.setState((s) => ({ statsOpen: !s.statsOpen, noticesOpen: false, hall: null }))} aria-label={t("population")} data-testid="zc-pop">
         <Icon name="people" size={18} />
         <span className="tabular-nums" data-testid="zc-pop-value">
@@ -134,6 +136,36 @@ function TopEnd() {
         )}
       </button>
     </div>
+  );
+}
+
+/** The city's rank (Hamlet → Megalopolis) with a ring filling toward the next. */
+function MilestoneChip() {
+  const g = useGame();
+  const t = useT();
+  const ms = useUI((s) => s.milestone);
+  const name = t(`ms.${MILESTONES[ms.i].id}` as StringKey);
+  const next = MILESTONES[ms.i + 1];
+  const deg = Math.round(ms.progress * 360);
+  return (
+    <button
+      type="button"
+      className="zc-glass-dark zc-btn rounded-full px-2 font-black @5xl:px-3"
+      onClick={() => g.store.setState((s) => ({ statsOpen: !s.statsOpen, noticesOpen: false, hall: null }))}
+      aria-label={next ? t("ms.aria", { name, pct: Math.round(ms.progress * 100), next: t(`ms.${next.id}` as StringKey) }) : name}
+      title={next ? t("ms.next", { next: t(`ms.${next.id}` as StringKey), pop: next.pop.toLocaleString() }) : name}
+      data-testid="zc-milestone"
+    >
+      <span className="grid h-6 w-6 place-items-center rounded-full" style={{ background: `conic-gradient(var(--zc-accent) ${deg}deg, rgba(255,255,255,.15) 0)` }} aria-hidden>
+        <span className="grid h-[18px] w-[18px] place-items-center rounded-full bg-[#10141c]">
+          <Icon name="star" size={11} />
+        </span>
+      </span>
+      {/* The name shows when there's room; narrow stages keep the top row on one line. */}
+      <span className="hidden text-[0.85em] @5xl:inline" data-testid="zc-milestone-name">
+        {name}
+      </span>
+    </button>
   );
 }
 
@@ -387,12 +419,33 @@ function BuildBar() {
   const g = useGame();
   const t = useT();
   const svc = useUI((s) => s.service);
-  const icons: Record<ServiceKind, string> = { police: "police", fire: "fire", clinic: "clinic", school: "school", power: "power", water: "watertower", park: "park" };
+  const landmarks = useUI((s) => s.landmarks);
+  const icons: Record<ServiceKind, string> = { police: "police", fire: "fire", clinic: "clinic", school: "school", power: "power", water: "watertower", park: "park", hospital: "hospital", museum: "museum", university: "university", stadium: "stadium", tower: "landmark" };
   return (
-    <div className="flex flex-wrap justify-center gap-1">
-      {SERVICE_KINDS.map((k) => (
-        <Chip key={k} on={svc === k} icon={icons[k]} label={t(`svc.${k}` as StringKey)} onClick={() => g.store.setState({ service: k })} iconOnly testId={`zc-svc-${k}`} />
-      ))}
+    <div className="flex flex-col items-center gap-1">
+      <div className="flex flex-wrap justify-center gap-1">
+        {SERVICE_KINDS.map((k) => (
+          <Chip key={k} on={svc === k} icon={icons[k]} label={t(`svc.${k}` as StringKey)} onClick={() => g.store.setState({ service: k })} iconOnly testId={`zc-svc-${k}`} />
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-1" role="group" aria-label={t("landmarks")}>
+        <span className="zc-label px-1 text-[0.65em] opacity-70">{t("landmarks")}</span>
+        {LANDMARKS.map((k) => {
+          const st = landmarks[k];
+          const name = t(`svc.${k}` as StringKey);
+          const label = st === "locked" ? `${name} · ${t("lm.at", { ms: t(`ms.${MILESTONES[LANDMARK_UNLOCK[k]].id}` as StringKey) })}` : st === "built" ? `${name} · ${t("lm.done")}` : name;
+          return (
+            <span key={k} className="relative" style={{ opacity: st === "ready" ? 1 : 0.55 }}>
+              <Chip on={svc === k} icon={icons[k]} label={label} onClick={() => g.store.setState({ service: k })} iconOnly testId={`zc-svc-${k}`} />
+              {st !== "ready" && (
+                <span className="pointer-events-none absolute -end-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-black/70 px-0.5 text-[0.6em] font-black" aria-hidden>
+                  {st === "built" ? "✓" : "🔒"}
+                </span>
+              )}
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -418,13 +471,34 @@ function MoveBar() {
 }
 
 function LandBar() {
+  const g = useGame();
   const t = useT();
+  const view = useUI((s) => s.landView);
+  const views: [LandView, string][] = [
+    ["value", "land"],
+    ["services", "build"],
+    ["pollution", "factory"],
+    ["fire", "fire"],
+  ];
+  const legend: Record<LandView, [string, string, string]> = {
+    value: [t("lvLow"), `linear-gradient(90deg, ${theme.ramp.join(",")})`, t("lvHigh")],
+    services: [t("iv.none"), `linear-gradient(90deg, ${theme.ramp.join(",")})`, t("iv.all")],
+    pollution: [t("iv.clean"), "linear-gradient(90deg,#3fbf7f 50%,#e8553d 50%)", t("iv.polluted")],
+    fire: [t("iv.covered"), "linear-gradient(90deg,#3fbf7f 50%,#f5a524 50%)", t("iv.uncovered")],
+  };
+  const [lo, bg, hi] = legend[view];
   return (
-    <div className="flex items-center gap-3 px-2">
-      <span className="zc-label text-[0.7em]">{t("landValue")}</span>
-      <span className="text-[0.8em] opacity-75">{t("lvLow")}</span>
-      <span className="h-3 w-40 rounded-full" style={{ background: `linear-gradient(90deg, ${theme.ramp.join(",")})` }} aria-hidden />
-      <span className="text-[0.8em] opacity-75">{t("lvHigh")}</span>
+    <div className="flex flex-col items-center gap-1">
+      <div className="flex flex-wrap justify-center gap-1">
+        {views.map(([v, icon]) => (
+          <Chip key={v} on={view === v} icon={icon} label={t(`iv.${v}` as StringKey)} onClick={() => g.setLandView(v)} testId={`zc-iv-${v}`} />
+        ))}
+      </div>
+      <div className="flex items-center gap-3 px-2">
+        <span className="text-[0.8em] opacity-75">{lo}</span>
+        <span className="h-3 w-40 rounded-full" style={{ background: bg }} aria-hidden />
+        <span className="text-[0.8em] opacity-75">{hi}</span>
+      </div>
     </div>
   );
 }
@@ -475,6 +549,8 @@ function StatsPanel() {
     ["vehicles", num(stats.cars)],
     ["pedestriansCount", num(stats.peds)],
     ["congestion", `${Math.round(stats.congestion * 100)}%`],
+    ["tourists", num(stats.tourists ?? 0)],
+    ["firesNow", num(stats.fires ?? 0)],
   ];
   const h = Math.floor(play / 3600);
   const m = Math.floor((play % 3600) / 60);

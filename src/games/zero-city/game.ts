@@ -8,7 +8,8 @@ import { AgentView } from "./render/agentView";
 import { BuildingView } from "./render/buildingView";
 import { CameraRig } from "./render/camera";
 import { Engine } from "./render/engine";
-import { OverlayView } from "./render/overlayView";
+import { FireView } from "./render/fireView";
+import { OverlayView, rampColor } from "./render/overlayView";
 import { RoadView } from "./render/roadView";
 import { TerrainView, TreeView } from "./render/terrainView";
 import { decodeSave, encodeSave } from "./save";
@@ -22,7 +23,8 @@ import { Tools } from "./tools";
 import { ALL_MAP_IDS, City, type CityJSON } from "./world/city";
 import * as Pol from "./politics/politics";
 import type { GameMode, HallTab } from "./store";
-import type { ServiceKind } from "./world/lots";
+import type { Lot, ServiceKind } from "./world/lots";
+import { LANDMARK_UNLOCK, LANDMARKS, landmarkState, isLandmark, MILESTONES, milestoneAt, milestoneProgress, type Landmark } from "./world/milestones";
 import type { RoadTypeId } from "./world/roads";
 import { cumulative } from "./core/geom";
 import { formatNumber } from "./i18n";
@@ -49,6 +51,7 @@ class WorldViews {
   buildings: BuildingView;
   agents: AgentView;
   overlays: OverlayView;
+  fires = new FireView();
   group = new THREE.Group();
 
   constructor(
@@ -62,7 +65,7 @@ class WorldViews {
     this.buildings.res = city.map.res;
     this.agents = new AgentView(() => this.city);
     this.overlays = new OverlayView(() => this.city);
-    this.group.add(this.terrain.group, this.trees.group, this.roads.group, this.buildings.group, this.agents.group, this.overlays.group);
+    this.group.add(this.terrain.group, this.trees.group, this.roads.group, this.buildings.group, this.agents.group, this.overlays.group, this.fires.group);
   }
 
   dispose() {
@@ -72,6 +75,7 @@ class WorldViews {
     this.buildings.dispose();
     this.agents.dispose();
     this.overlays.dispose();
+    this.fires.dispose();
   }
 }
 
@@ -117,6 +121,8 @@ export class Game {
   private overlayDirty = true;
   private overlayAt = 0;
   private lv = new Map<number, number>();
+  /** Lot → services reaching it (bit mask from the sim), for the info views. */
+  private cover = new Map<number, number>();
   private thudAt = 0;
   private visited: string[] = [];
   private sessionStart = performance.now();
@@ -219,6 +225,10 @@ export class Game {
     this.views = new WorldViews(city, this.settings.shadows !== "off");
     this.views.buildings.setDensity(this.settings.buildingDensity / 100);
     this.views.terrain.buildAll();
+    for (const b of buildings) {
+      const lot = city.lots.lots.get(b.lot);
+      if (lot) city.clearTreesOnLot(lot);
+    }
     this.views.trees.rebuild(city.trees, city.treeAlive, (x, z) => city.terrain.surfaceAt(x, z), this.settings.shadows !== "off");
     this.views.roads.rebuildAll();
     for (const b of buildings) {
@@ -338,7 +348,7 @@ export class Game {
 
   private simSettings() {
     const s = this.settings;
-    return { traffic: s.traffic, peds: s.pedestrians, trafficDensity: s.trafficDensity, pedDensity: s.pedDensity, policy: this.mayor ? Pol.simPolicy(this.politics!) : undefined };
+    return { traffic: s.traffic, peds: s.pedestrians, trafficDensity: s.trafficDensity, pedDensity: s.pedDensity, fires: s.fires !== false, policy: this.mayor ? Pol.simPolicy(this.politics!) : undefined };
   }
 
   async quitToMenu() {
@@ -423,7 +433,11 @@ export class Game {
       if (!prev || prev.progress < 1 !== b.progress < 1 || prev.tier !== b.tier) this.overlayDirty = true;
       this.buildings.set(b.lot, b);
       const lot = city.lots.lots.get(b.lot);
-      if (lot) v.buildings.setBuilding(lot, b);
+      if (lot) {
+        v.buildings.setBuilding(lot, b);
+        // Trees on the plot make way for the building.
+        if (!prev) city.clearTreesOnLot(lot);
+      }
     }
     for (const id of m.removed) {
       this.buildings.delete(id);
@@ -436,7 +450,64 @@ export class Game {
       this.audio.thud();
     }
     v.agents.push(m.cars, m.peds, now);
+    v.fires.set(
+      m.fires,
+      (id) => city.lots.lots.get(id),
+      (id) => Math.min(42, 3 + (this.buildings.get(id)?.tier ?? 1) * 5),
+      (x, z) => city.terrain.surfaceAt(x, z),
+    );
+    for (const e of m.events) {
+      const bad = e.key !== "ev.fireOut";
+      this.toast(this.t(e.key as StringKey, e.vars), undefined);
+      if (bad) this.audio.error();
+      else this.audio.chime();
+    }
     this.checkAchievements(m.stats.population);
+    this.checkMilestones(m.stats.population);
+  }
+
+  /** The best population so far names the city, pays a grant (Mayor) and unlocks landmarks. */
+  private checkMilestones(pop: number) {
+    const city = this.city;
+    if (!city) return;
+    const before = milestoneAt(city.bestPop);
+    if (pop > city.bestPop) city.bestPop = pop;
+    const now = milestoneAt(city.bestPop);
+    if (now > before) {
+      for (let i = before + 1; i <= now; i++) {
+        const ms = MILESTONES[i];
+        const unlocks = LANDMARKS.filter((k) => LANDMARK_UNLOCK[k] === i).map((k) => this.t(`svc.${k}` as StringKey));
+        this.toast(this.t("ms.reached", { name: this.t(`ms.${ms.id}` as StringKey) }), [this.politics && ms.grant ? this.t("ms.grant", { money: this.money(ms.grant) }) : "", unlocks.length ? this.t("ms.unlocks", { list: unlocks.join(", ") }) : ""].filter(Boolean).join(" · ") || undefined, "achievement");
+        if (this.politics && ms.grant) {
+          this.politics.cash += ms.grant;
+          this.publishPolitics();
+        }
+      }
+      this.audio.chime();
+    }
+    this.publishCityProgress();
+  }
+
+  /** Milestone and landmark states for the HUD. */
+  publishCityProgress() {
+    const city = this.city;
+    if (!city) return;
+    const built = new Set<string>([...city.lots.services.values()].map((s) => s.kind));
+    const landmarks = Object.fromEntries(LANDMARKS.map((k) => [k, landmarkState(k, city.bestPop, built)])) as Record<Landmark, "locked" | "built" | "ready">;
+    const cur = this.store.getState();
+    const i = milestoneAt(city.bestPop);
+    const progress = Math.round(milestoneProgress(city.bestPop) * 100) / 100;
+    if (cur.milestone.i !== i || cur.milestone.progress !== progress || LANDMARKS.some((k) => cur.landmarks[k] !== landmarks[k])) this.store.setState({ milestone: { i, progress }, landmarks });
+  }
+
+  /** Can this civic building go up now? Landmarks are one each, once unlocked. */
+  canBuildService(kind: ServiceKind) {
+    if (!isLandmark(kind)) return true;
+    const st = this.store.getState().landmarks[kind];
+    if (st === "ready") return true;
+    this.audio.error();
+    this.toast(this.t(st === "built" ? "lm.built" : "lm.locked", { name: this.t(`svc.${kind}` as StringKey), ms: this.t(`ms.${MILESTONES[LANDMARK_UNLOCK[kind]].id}` as StringKey) }));
+    return false;
   }
 
   setSpeed(v: number) {
@@ -460,12 +531,35 @@ export class Game {
     for (const id of [...this.buildings.keys()]) if (!this.city.lots.lots.has(id)) this.buildings.delete(id);
     this.views?.buildings.prune(this.city.lots.lots);
     this.store.setState({ canUndo: this.city.canUndo(), canRedo: this.city.canRedo(), lines: this.city.lines.map((l) => ({ id: l.id, stops: l.stops.length, color: l.color })) });
+    this.publishCityProgress();
   }
 
   async refreshLandValues() {
     if (!this.sim) return;
-    this.lv = await this.sim.landValues();
+    const d = await this.sim.landData();
+    this.lv = d.lv;
+    this.cover = d.cover;
     this.overlayDirty = true;
+  }
+
+  /** The Land tab's colour for a lot, by the chosen view. */
+  private landColor(l: Lot) {
+    const view = this.store.getState().landView;
+    const m = this.cover.get(l.id) ?? 0;
+    if (view === "pollution") return m & 32 ? "#e8553d" : "#3fbf7f";
+    if (view === "fire") return m & 2 ? "#3fbf7f" : "#f5a524";
+    if (view === "services") {
+      let n = 0;
+      for (const bit of [1, 2, 4, 8, 16]) if (m & bit) n++;
+      return rampColor(n / 5);
+    }
+    return rampColor(this.lv.get(l.id) ?? 0.3);
+  }
+
+  setLandView(view: "value" | "services" | "pollution" | "fire") {
+    this.store.setState({ landView: view });
+    this.audio.tick();
+    void this.refreshLandValues();
   }
 
   landValue(lot: number) {
@@ -593,11 +687,13 @@ export class Game {
       if (this.overlayDirty && now > this.overlayAt) {
         this.overlayDirty = false;
         this.overlayAt = now + 400;
-        this.views.overlays.rebuildLots((l) => (this.buildings.get(l.id)?.progress ?? 0) >= 1, this.lv);
+        this.views.overlays.rebuildLots((l) => (this.buildings.get(l.id)?.progress ?? 0) >= 1, (l) => this.landColor(l));
       }
     }
     this.views.agents.update(now, s.traffic, s.pedestrians);
+    this.views.overlays.setLook(st.tab === "zoning" || (st.tab === "bulldoze" && st.bulldozeMode === "zones"), this.engine.night);
     this.views.overlays.update(now / 1000);
+    this.views.fires.update(now / 1000, this.engine.night);
     this.views.roads.update(this.rig.dist);
     this.tools.frame(now);
     this.audio.update(this.rig.height(), this.lastTick?.stats.cars ?? 0, this.mode === "game");
@@ -1001,7 +1097,26 @@ export class Game {
       spent: this.city?.spent ?? 0,
       policies: this.politics?.policies ?? [],
       term: this.politics?.term ?? 0,
+      bestPop: this.city?.bestPop ?? 0,
+      milestone: this.store.getState().milestone.i,
+      fires: this.lastTick?.fires.length ?? 0,
+      tourists: this.lastTick?.stats.tourists ?? 0,
+      services: [...(this.city?.lots.services.values() ?? [])].map((s) => s.kind),
     };
+  }
+
+  /** Test hook: set a burning building going (the first finished one, or a given lot). */
+  debugFire(lot?: number) {
+    const id = lot ?? [...this.buildings.values()].find((b) => b.progress >= 1)?.lot;
+    if (id === undefined) return false;
+    this.sim?.ignite(id);
+    return true;
+  }
+
+  /** Test hook: pretend the city has reached a population (milestones and landmarks). */
+  debugBestPop(pop: number) {
+    if (!this.city) return;
+    this.checkMilestones(pop);
   }
 
   /** Test hook: bring the next dilemma or the election forward to the next game hour. */

@@ -337,6 +337,87 @@ export function serviceParts(kind: ServiceKind, w: number, d: number, seed: numb
       box("glow", -w / 2 + 3.6, 6, front + 1.5, 1.2, 0.8, 0.05, "#22e5ff");
       break;
     }
+    case "hospital": {
+      // A white block with a glass atrium, a red cross on the roof edge and a helipad on top.
+      plinth(w - 4, d - 6, 1);
+      box("facade", -w / 6, 0, 3, w * 0.55, 7 * FLOOR, d - 12, "#eef1f4");
+      box("facade", w / 4, 0, 1, w * 0.4, 3 * FLOOR, d - 6, "#e6eaee");
+      box("glass", w / 4, 0, front + 3.2, w * 0.36, 2 * FLOOR, 0.3, "#bfe3f5");
+      box("glow", -w / 6, 7 * FLOOR - 2.6, front + 5.9, 3.2, 1, 0.25, "#ef4444");
+      box("glow", -w / 6, 7 * FLOOR - 3.7, front + 5.9, 1, 3.2, 0.25, "#ef4444");
+      box("dark", -w / 6, 7 * FLOOR, 3, 11, 0.2, 11, "#4b5563");
+      box("glow", -w / 6, 7 * FLOOR + 0.2, 3, 6, 0.05, 0.6, "#facc15");
+      box("glow", -w / 6, 7 * FLOOR + 0.2, 3, 0.6, 0.05, 6, "#facc15");
+      box("dark", w / 4, 0.01, front + 1.2, 12, 0.05, 4, "#55575a");
+      box("box", w / 4, 3.2, front + 1.4, 12, 0.3, 4.6, "#ef4444");
+      break;
+    }
+    case "museum": {
+      // A classical front: steps, a row of columns and a pediment, with a modern glass wing.
+      plinth(w - 4, d - 6, 1);
+      box("box", 0, 0, front + 5, w - 6, 1.2, 6, "#d9d2c3");
+      box("facade", 0, 1.2, 4, w - 8, 3 * FLOOR, d - 14, "#e9e1d0");
+      for (let i = 0; i < 8; i++) box("cyl", -w / 2 + 6 + i * ((w - 12) / 7), 1.2, front + 4.2, 1.1, 3 * FLOOR - 0.6, 1.1, "#f2ece0");
+      box("box", 0, 3 * FLOOR + 0.6, front + 4.6, w - 6, 1, 3.6, "#e2d9c6");
+      box("prism", 0, 3 * FLOOR + 1.6, front + 4.6, w - 6, 3.4, 3.6, "#e9e1d0");
+      box("glass", w / 2 - 7, 0, d / 2 - 8, 8, 2 * FLOOR, 10, "#a8d4ec");
+      box("glow", 0, 3 * FLOOR - 1.2, front + 2.3, 8, 0.7, 0.15, "#fde68a");
+      break;
+    }
+    case "university": {
+      // A quad: a clock tower, two halls and a lawn.
+      plinth(w - 4, d - 6, 1);
+      box("box", 0, 0.02, 2, w - 18, 0.06, d - 22, "#4f9a3c");
+      box("facade", -w / 2 + 6, 0, 2, 9, 3 * FLOOR, d - 10, "#b9805a");
+      box("facade", w / 2 - 6, 0, 2, 9, 3 * FLOOR, d - 10, "#b9805a");
+      box("facade", 0, 0, d / 2 - 6, w - 4, 3 * FLOOR, 8, "#c48a62");
+      box("box", 0, 3 * FLOOR, d / 2 - 6, 8, 6 * FLOOR, 7, "#c48a62");
+      box("cone", 0, 9 * FLOOR, d / 2 - 6, 8.6, 6, 7.6, "#4b5a6a");
+      box("glow", 0, 7 * FLOOR, d / 2 - 9.6, 3.4, 3.4, 0.2, "#fef3c7");
+      box("dark", 0, 0.03, 2, 2.4, 0.05, d - 22, "#d8c9a8");
+      for (let i = 0; i < 4; i++) box("crown", (i % 2 ? 1 : -1) * (w / 2 - 16), 1.6, (i < 2 ? -1 : 1) * 6, 4, 3.6, 4, W.trees[i % W.trees.length]);
+      break;
+    }
+    case "stadium": {
+      // An oval bowl of stands round a pitch, with floodlight masts.
+      box("box", 0, -0.05, 2, w - 2, 0.12, d - 4, "#6b6e72");
+      for (let i = 0; i < 4; i++) {
+        const sw = w - 4 - i * 6;
+        const sd = d - 6 - i * 6;
+        box("facade", 0, i * 2.4, 2, sw, 2.4, sd, i % 2 ? "#d4d7dc" : "#e3264a");
+      }
+      box("box", 0, 9.6, 2, w - 28, 0.2, d - 30, "#3d8f3a");
+      box("box", 0, 9.82, 2, 0.3, 0.05, d - 32, "#ffffff");
+      box("cyl", 0, 9.82, 2, 6, 0.05, 6, "#ffffff");
+      for (const [sx, sz] of [
+        [-1, -1],
+        [1, -1],
+        [-1, 1],
+        [1, 1],
+      ]) {
+        box("metal", sx * (w / 2 - 3), 0, 2 + sz * (d / 2 - 4), 0.8, 26, 0.8, "#9aa1a8");
+        box("glow", sx * (w / 2 - 3), 26, 2 + sz * (d / 2 - 4), 4, 2, 1, "#fffbe6");
+      }
+      break;
+    }
+    case "tower": {
+      // A tapering glass spire with a lit crown and an antenna.
+      plinth(w - 4, d - 4, 0);
+      box("box", 0, 0, 0, w - 4, 2 * FLOOR, d - 4, "#3a4350");
+      let y = 2 * FLOOR;
+      let s = w - 8;
+      for (let i = 0; i < 6; i++) {
+        const h = 14 - i;
+        box("glass", 0, y, 0, s, h, s, "#7aa6c9");
+        box("metal", 0, y + h - 0.4, 0, s + 0.4, 0.4, s + 0.4, "#c9d1d9");
+        y += h;
+        s *= 0.84;
+      }
+      box("glow", 0, y, 0, s * 0.9, 3, s * 0.9, "#22e5ff");
+      box("metal", 0, y + 3, 0, 0.5, 18, 0.5, "#c9d1d9");
+      box("glow", 0, y + 21, 0, 0.9, 0.9, 0.9, "#ff3b3b");
+      break;
+    }
     case "power": {
       box("dark", 0, -0.1, 0, w - 1, 0.15, d - 1, "#6b6e72");
       box("metal", -w / 4, 0, d / 6, w / 2 - 2, 9, d / 2, "#9aa1a8");

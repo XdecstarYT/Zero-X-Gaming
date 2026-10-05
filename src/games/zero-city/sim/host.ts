@@ -98,8 +98,15 @@ export class SimHost {
     return r?.route ?? null;
   }
   async landValues() {
+    return (await this.landData()).lv;
+  }
+  /** Land value and service coverage per lot (for the info views). */
+  async landData() {
     const r = await this.ask<Extract<FromSim, { t: "lv" }> | null>((id) => ({ t: "lv", id }));
-    return new Map(r?.lv ?? []);
+    return { lv: new Map(r?.lv ?? []), cover: new Map(r?.cover ?? []) };
+  }
+  ignite(lot: number) {
+    this.send({ t: "ignite", lot });
   }
   dispose() {
     this.send({ t: "stop" });

@@ -385,6 +385,7 @@ export function SettingsSheet() {
           <Toggle label={t("ao")} on={draft.ao} onChange={(v) => set("ao", v)} />
           <Toggle label={t("bloom")} on={draft.bloom} onChange={(v) => set("bloom", v)} />
           <Toggle label={t("pedestrians")} on={draft.pedestrians} onChange={(v) => set("pedestrians", v)} />
+          <Toggle label={t("firesSetting")} on={draft.fires !== false} onChange={(v) => set("fires", v)} />
           <Toggle label={t("traffic")} on={draft.traffic} onChange={(v) => set("traffic", v)} />
         </section>
         <section className="flex flex-col gap-2">

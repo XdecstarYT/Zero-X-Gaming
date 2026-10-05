@@ -19,6 +19,8 @@ export interface Settings {
   bloom: boolean;
   pedestrians: boolean;
   traffic: boolean;
+  /** Buildings can catch fire (fire stations put them out). */
+  fires: boolean;
   language: Lang;
   master: number;
   music: number;
@@ -48,6 +50,7 @@ export function defaultSettings(coarse: boolean, language: Lang = "en"): Setting
     ...PRESETS[preset],
     pedestrians: true,
     traffic: true,
+    fires: true,
     language,
     master: 80,
     music: 55,

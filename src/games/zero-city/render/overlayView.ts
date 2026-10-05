@@ -9,7 +9,7 @@ import { merge, paint } from "./terrainView";
 export class OverlayView {
   readonly group = new THREE.Group();
   readonly ghosts = new THREE.Group();
-  private zones: THREE.InstancedMesh | null = null;
+  private zones: THREE.Mesh | null = null;
   private route: THREE.Mesh | null = null;
   private routeTex = chevronTexture();
   private ring: THREE.Mesh;
@@ -34,11 +34,16 @@ export class OverlayView {
     this.group.add(this.ring, this.brush, this.ghosts);
   }
 
-  /** Rebuild the lot quads (zone tints or land value). */
-  rebuildLots(built: (lot: Lot) => boolean, lv: Map<number, number>) {
+  /**
+   * Rebuild the lot overlay. Empty zoned lots are plots: a faint wash with a crisp border
+   * in the zone colour (strong while zoning, quiet otherwise, dimmed at night so they never
+   * glare). "land" colours every lot by `colorOf` (land value, services, ...).
+   */
+  rebuildLots(built: (lot: Lot) => boolean, colorOf: (lot: Lot) => string) {
     if (this.zones) {
       this.group.remove(this.zones);
-      this.zones.dispose();
+      this.zones.geometry.dispose();
+      (this.zones.material as THREE.Material).dispose();
       this.zones = null;
     }
     this.lotIds = [];
@@ -46,30 +51,69 @@ export class OverlayView {
     const c = this.city();
     const lots = [...c.lots.lots.values()].filter((l) => this.mode === "land" || !built(l));
     if (!lots.length) return;
-    const m = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ transparent: true, opacity: this.mode === "land" ? 0.62 : 0.4, depthWrite: false }), lots.length);
-    const mtx = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const col = new THREE.Color();
-    lots.forEach((l, i) => {
-      const y = Math.max(c.terrain.surfaceAt(l.cx, l.cz), ...corners(l).map((p) => c.terrain.surfaceAt(p.x, p.z))) + (this.mode === "land" ? 0.35 : 0.25);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -l.ang);
-      mtx.compose(new THREE.Vector3(l.cx, y, l.cz), q, new THREE.Vector3(l.w - 0.4, 1, l.d - 0.4));
-      m.setMatrixAt(i, mtx);
-      if (this.mode === "land") col.set(rampColor(lv.get(l.id) ?? 0.3));
-      else col.set(theme.zone[l.zone]);
-      m.setColorAt(i, col);
+    const land = this.mode === "land";
+    const pos: number[] = [];
+    const col: number[] = [];
+    const idx: number[] = [];
+    const tint = new THREE.Color();
+    const quad = (pts: { x: number; z: number }[], y: number, a: number) => {
+      const b = pos.length / 3;
+      for (const p of pts) {
+        pos.push(p.x, y, p.z);
+        col.push(tint.r, tint.g, tint.b, a);
+      }
+      idx.push(b, b + 2, b + 1, b, b + 3, b + 2);
+    };
+    for (const l of lots) {
+      const k = corners(l);
+      const y = Math.max(c.terrain.surfaceAt(l.cx, l.cz), ...k.map((p) => c.terrain.surfaceAt(p.x, p.z))) + (land ? 0.35 : 0.25);
+      tint.set(land ? colorOf(l) : theme.zone[l.zone]);
+      const inset = Math.min(0.7, l.w / 6, l.d / 6);
+      const outer = corners(l, 0.3);
+      const inner = corners(l, 0.3 + inset);
+      // The fill, then the four border strips (LOT_TRIS triangles in all).
+      quad(land ? outer : inner, y, land ? 0.62 : 0.16);
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4;
+        quad([outer[i], outer[j], inner[j], inner[i]], y + 0.01, land ? 0.62 : 0.85);
+      }
       this.lotIds.push(l.id);
-    });
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 4));
+    g.setIndex(idx);
+    g.computeBoundingSphere();
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
     m.renderOrder = 4;
     this.zones = m;
     this.group.add(m);
+    this.applyLook();
+  }
+
+  /** Strong while a zoning tool is out; how dark it is outside. */
+  setLook(emphasis: boolean, night: number) {
+    if (emphasis === this.emphasis && Math.abs(night - this.night) < 0.02) return;
+    this.emphasis = emphasis;
+    this.night = night;
+    this.applyLook();
+  }
+  private emphasis = false;
+  private night = 0;
+  private applyLook() {
+    const m = this.zones?.material as THREE.MeshBasicMaterial | undefined;
+    if (!m) return;
+    const land = this.mode === "land";
+    // Unlit colours glow against a dark city: fade them with the light.
+    m.color.setScalar(land || this.emphasis ? 1 - this.night * 0.35 : 1 - this.night * 0.7);
+    m.opacity = land || this.emphasis ? 1 : 0.6;
   }
 
   /** The lot under a ray (for the inspector). */
   pickLot(ray: THREE.Raycaster) {
     if (!this.zones) return -1;
     const h = ray.intersectObject(this.zones, false)[0];
-    return h?.instanceId !== undefined ? this.lotIds[h.instanceId] : -1;
+    return h?.faceIndex != null ? (this.lotIds[Math.floor(h.faceIndex / LOT_TRIS)] ?? -1) : -1;
   }
 
   setRoute(pts: number[] | null, ys?: number[]) {
@@ -180,19 +224,25 @@ export class OverlayView {
 
   dispose() {
     this.clearGhosts();
-    this.zones?.dispose();
+    this.zones?.geometry.dispose();
     this.stops?.dispose();
   }
 }
 
-function corners(l: Lot) {
+/** Triangles per lot in the overlay: the fill and four border strips. */
+const LOT_TRIS = 10;
+
+/** A lot's corners, optionally pulled in by `inset` metres. */
+function corners(l: Lot, inset = 0) {
   const c = Math.cos(l.ang);
   const s = Math.sin(l.ang);
+  const hw = Math.max(0.1, l.w / 2 - inset);
+  const hd = Math.max(0.1, l.d / 2 - inset);
   return [
-    [-l.w / 2, -l.d / 2],
-    [l.w / 2, -l.d / 2],
-    [l.w / 2, l.d / 2],
-    [-l.w / 2, l.d / 2],
+    [-hw, -hd],
+    [hw, -hd],
+    [hw, hd],
+    [-hw, hd],
   ].map(([u, v]) => ({ x: l.cx + u * c - v * s, z: l.cz + u * s + v * c }));
 }
 

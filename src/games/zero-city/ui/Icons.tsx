@@ -67,6 +67,11 @@ const paths: Record<string, string> = {
   hall: "M3 21h18M4 10h16M12 3l9 5H3zM6 10v8M10 10v8M14 10v8M18 10v8",
   vote: "M4 13h16v8H4zM8 13V4h8v9M10 8l1.5 1.5L14 7",
   mega: "M3 10v4h3l7 4V6l-7 4zM17 9a4 4 0 0 1 0 6",
+  hospital: "M4 21V6h16v15M10 10h4M12 8v4M9 21v-5h6v5M2 21h20",
+  museum: "M3 21h18M5 18h14M12 3l9 5H3zM6 9v9M10 9v9M14 9v9M18 9v9",
+  university: "M2 9l10-5 10 5-10 5zM6 11v5c0 2 3 3 6 3s6-1 6-3v-5M21 9v6",
+  stadium: "M2 12c0-4 4.5-7 10-7s10 3 10 7-4.5 7-10 7S2 16 2 12zM7 12c0-2 2.2-3.5 5-3.5s5 1.5 5 3.5-2.2 3.5-5 3.5S7 14 7 12z",
+  landmark: "M10 21l1-14h2l1 14M12 3v4M8 21h8M9 13h6",
 };
 
 export function Icon({ name, size = 22, className, style }: { name: string; size?: number; className?: string; style?: React.CSSProperties }) {

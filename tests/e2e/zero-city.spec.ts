@@ -227,3 +227,92 @@ test("Zero City Mayor mode: a real treasury, refunds on undo, taxes, the council
 
   expect(errors).toEqual([]);
 });
+
+test("Zero City Metropolis update: milestones, landmarks, fires, info views and quiet zone plots at night", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "covered on desktop");
+  test.setTimeout(420_000);
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/ERR_TUNNEL|Failed to load resource|supabase/i.test(m.text())) errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("zx-season-s1"))
+      localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+  });
+  await page.goto("/games/zero-city?zc=test");
+  await page.getByTestId("zlink-lock-join").click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByTestId("zc-menu")).toBeVisible({ timeout: 90_000 });
+  await hook(page, (zc) => zc.quality("low"));
+  await page.getByTestId("zc-new").click();
+  await page.getByTestId("zc-start").click();
+  await expect(page.getByTestId("zc-hud")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByTestId("zc-milestone")).toHaveAttribute("aria-label", /Hamlet/);
+
+  const end = await hook(page, (zc) => zc.gateEnd());
+  await page.evaluate(([x, z]) => (window as unknown as { __zc: ZC }).__zc.look(x + 110, z + 45, 300, 1.0, 0), [end.x, end.z]);
+  await page.waitForTimeout(800);
+  const pt = async (dx: number, dz: number) => (await page.evaluate(([x, z]) => (window as unknown as { __zc: ZC }).__zc.screenOf(x, z), [end.x + dx, end.z + dz]))!;
+  const click = async (dx: number, dz: number) => {
+    const p = await pt(dx, dz);
+    await page.mouse.move(p.x, p.y, { steps: 3 });
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+  };
+  const drag = async (ax: number, az: number, bx: number, bz: number) => {
+    const a = await pt(ax, az);
+    const b = await pt(bx, bz);
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    await page.mouse.move(b.x, b.y, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+  };
+  await page.getByTestId("zc-tab-roads").click();
+  await page.getByTestId("zc-rt-avenue").click();
+  await click(0, 0);
+  await click(220, 0);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("zc-tab-zoning").click();
+  // Homes on both sides (MIRROR is on).
+  await drag(5, 14, 215, 14);
+  await page.getByTestId("zc-tab-zoning").click();
+  await page.getByTestId("zc-speed-3").click();
+  await expect.poll(async () => (await state(page)).population, { timeout: 120_000, intervals: [2000] }).toBeGreaterThan(20);
+
+  // Landmarks are locked until the city grows; reaching a milestone unlocks them.
+  await page.getByTestId("zc-tab-build").click();
+  await expect(page.getByTestId("zc-svc-hospital")).toHaveAttribute("aria-label", /Town/);
+  await hook(page, (zc) => (zc as unknown as { debugBestPop: (n: number) => void }).debugBestPop(30_000));
+  await expect(page.getByTestId("zc-milestone")).toHaveAttribute("aria-label", /^Metropolis/);
+  await expect(page.getByTestId("zc-svc-hospital")).toHaveAttribute("aria-label", "Hospital");
+  await expect(page.getByTestId("zc-svc-tower")).toHaveAttribute("aria-label", "Landmark tower");
+
+  // A fire: a toast, flames, and the notice.
+  await page.getByTestId("zc-speed-1").click();
+  expect(await hook(page, (zc) => (zc as unknown as { debugFire: () => boolean }).debugFire())).toBe(true);
+  await expect(page.locator("text=/Fire on/").first()).toBeVisible({ timeout: 15_000 });
+  await expect.poll(async () => ((await state(page)) as unknown as { fires: number }).fires, { timeout: 15_000 }).toBeGreaterThan(0);
+  if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/31-fire.png` });
+
+  // Info views in the Land tab.
+  await page.getByTestId("zc-tab-land").click();
+  for (const v of ["services", "pollution", "fire", "value"]) {
+    await page.getByTestId(`zc-iv-${v}`).click();
+    await expect(page.getByTestId(`zc-iv-${v}`)).toHaveAttribute("aria-pressed", "true");
+  }
+  if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/32-land.png` });
+  await page.getByTestId("zc-tab-land").click();
+
+  // Night: empty plots are quiet outlines, not glowing slabs.
+  await hook(page, (zc) => {
+    const e = (zc as unknown as { engine: { setTime: (m: number) => void } }).engine;
+    const set = e.setTime.bind(e);
+    e.setTime = () => set(4 * 60 + 59);
+  });
+  await page.waitForTimeout(1500);
+  if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/33-night.png` });
+  expect(errors).toEqual([]);
+});
