@@ -151,7 +151,9 @@ export class TerrainView {
         pos[k * 3] = x;
         pos[k * 3 + 1] = h;
         pos[k * 3 + 2] = z;
-        const slope = Math.hypot(t.at(gi + 1, gj) - t.at(gi - 1, gj), t.at(gi, gj + 1) - t.at(gi, gj - 1)) / (2 * CELL);
+        let slope = Math.hypot(t.at(gi + 1, gj) - t.at(gi - 1, gj), t.at(gi, gj + 1) - t.at(gi, gj - 1)) / (2 * CELL);
+        // Road cuttings and embankments are grassed over, not bare rock.
+        if (gi >= 0 && gj >= 0 && gi <= CELLS && gj <= CELLS && t.graded[gj * t.n + gi]) slope = Math.min(slope, 0.5);
         groundColor(h, slope, hash(gi, gj), c);
         col[k * 3] = c.r;
         col[k * 3 + 1] = c.g;

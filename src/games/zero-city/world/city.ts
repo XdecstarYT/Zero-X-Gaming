@@ -110,7 +110,11 @@ export class City {
       this.created = json.created;
       this.playSeconds = json.playSeconds;
       this.spent = json.spent ?? 0;
-      for (const e of this.roads.edges.values()) this.profiles.set(e.id, this.computeProfile(e));
+      for (const e of this.roads.edges.values()) {
+        const ys = this.computeProfile(e);
+        this.profiles.set(e.id, ys);
+        this.groundRoad(e, ys, true);
+      }
     } else {
       this.trees = generateTrees(this.map, this.terrain);
       this.treeAlive = new Uint8Array(this.trees.length / 4).fill(1);
@@ -267,9 +271,16 @@ export class City {
   }
 
   /** Cut and fill the ground under a road so it sits flush (bridges leave water alone). */
-  private groundRoad(e: REdge, ys: Float32Array) {
+  /**
+   * Shape the ground to a road: flat right across the road (wide enough that no terrain
+   * triangle under the road can rise through it, since the grid is 8 m), then blended
+   * smoothly back into the hillside. With `markOnly` it just records which vertices are
+   * graded (after loading a save).
+   */
+  private groundRoad(e: REdge, ys: Float32Array, markOnly = false) {
     const hw = halfWidth(e);
-    const reach = hw + 7;
+    const flat = hw + CELL * 1.2;
+    const reach = flat + 14;
     const cum = cumulative(e.pts);
     const L = cum[cum.length - 1];
     const i0 = Math.max(0, Math.floor(Math.min(...xsOf(e.pts)) / CELL) - 2);
@@ -288,7 +299,10 @@ export class City {
         const t = pr.t;
         const y = ys[seg] + (ys[Math.min(seg + 1, ys.length - 1)] - ys[seg]) * t - 0.15;
         if (y > BRIDGE_DECK - 0.5 && h < y - 3) continue;
-        const w = pr.d <= hw + 1 ? 1 : 1 - (pr.d - hw - 1) / (reach - hw - 1);
+        const u = pr.d <= flat ? 1 : 1 - (pr.d - flat) / (reach - flat);
+        const w = u * u * (3 - 2 * u);
+        this.terrain.graded[j * this.terrain.n + i] = 1;
+        if (markOnly) continue;
         const nh = h + (y - h) * Math.max(0, Math.min(1, w));
         if (Math.abs(nh - h) > 0.02) this.terrain.set(i, j, nh);
       }

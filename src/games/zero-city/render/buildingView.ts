@@ -223,8 +223,26 @@ export class BuildingView {
     }
   }
 
-  private place(parts: Part[], cx: number, cz: number, ang: number, side: number, progress: number, key: string): Placed {
+  private place(parts: Part[], cx: number, cz: number, ang: number, side: number, progress: number, key: string, w = 0, d = 0): Placed {
     const f = this.frame(cx, cz, ang, side);
+    if (w > 0 && d > 0) {
+      // On a slope, stand on the highest corner so the hill never swallows the building,
+      // and fill in underneath with a stone plinth down to the lowest.
+      const tx = Math.cos(ang);
+      const tz = Math.sin(ang);
+      const [nx, nz] = sideNormal(tx, tz, side);
+      let hi = f.oy;
+      let lo = f.oy;
+      for (const a of [-0.5, 0.5])
+        for (const b of [-0.5, 0.5]) {
+          const y = this.groundAt(cx + tx * w * a + nx * d * b, cz + tz * w * a + nz * d * b);
+          hi = Math.max(hi, y);
+          lo = Math.min(lo, y);
+        }
+      f.oy = hi;
+      const drop = hi - lo;
+      if (drop > 0.08) parts = [...parts, { k: "box", x: 0, y: -drop / 2 + 0.04, z: 0, sx: w * 0.94, sy: drop + 0.08, sz: d * 0.94, ry: 0, c: "#8a847a" }];
+    }
     const p: Placed = { parts, slots: parts.map((part) => [part.k, this.pools[part.k].alloc()]), ox: cx, oy: f.oy, oz: cz, basis: f.basis, progress, key };
     this.write(p);
     return p;
@@ -254,7 +272,7 @@ export class BuildingView {
     }
     if (old) this.release(old);
     const { parts } = buildingParts(lot.zone, b.tier, lot.w, lot.d, b.seed, this.density, this.res);
-    this.placed.set(lot.id, this.place(parts, lot.cx, lot.cz, lot.ang, lot.side, b.progress, key));
+    this.placed.set(lot.id, this.place(parts, lot.cx, lot.cz, lot.ang, lot.side, b.progress, key, lot.w, lot.d));
   }
 
   /** Drop buildings whose lots no longer exist. */

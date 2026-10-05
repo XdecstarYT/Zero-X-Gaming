@@ -216,3 +216,48 @@ describe("liquid glass", () => {
     expect(defaultSettings(true).glass).toBe("frosted");
   });
 });
+
+describe("terrain under roads", () => {
+  it("on a steep hillside no ground pokes up through a new road, and the cutting is marked as verge", () => {
+    const c = new City("stonecrest", "Hills");
+    // The steepest dry 240 m line on the map.
+    let best: number[] | null = null;
+    let range = 0;
+    for (let z = 200; z < 1850; z += 60)
+      for (let x = 200; x < 1700; x += 60) {
+        const ys = [0, 1, 2, 3, 4].map((k) => c.terrain.heightAt(x + k * 60, z));
+        if (ys.some((y) => y < 2)) continue;
+        const r = Math.max(...ys) - Math.min(...ys);
+        if (r > range) {
+          range = r;
+          best = [x, z, x + 240, z];
+        }
+      }
+    expect(range).toBeGreaterThan(10);
+    const e = c.addRoad(best!, "avenue").created[0];
+    const edge = c.roads.edges.get(e.id)!;
+    let worst = -Infinity;
+    for (let s = 6; s < 234; s += 2) {
+      const x = best![0] + s;
+      const z = best![1];
+      const road = c.roadY(edge.id, s);
+      // Every terrain vertex of the cells under the road (either triangle split) stays below it.
+      for (const dz of [-6, -3, 0, 3, 6]) {
+        const i = Math.floor(x / 8);
+        const j = Math.floor((z + dz) / 8);
+        for (const [a, b] of [[0, 0], [1, 0], [0, 1], [1, 1]]) worst = Math.max(worst, c.terrain.at(i + a, j + b) - road);
+      }
+    }
+    // Allow for the road's own grade across one 8 m cell.
+    expect(worst).toBeLessThan(0.9);
+    const marked = (city: City) => {
+      let k = 0;
+      for (let i = 0; i < city.terrain.graded.length; i++) k += city.terrain.graded[i];
+      return k;
+    };
+    expect(marked(c)).toBeGreaterThan(40);
+    // Marks come back after a save round trip.
+    const d = new City("stonecrest", "Hills", JSON.parse(JSON.stringify(c.toJSON(null))));
+    expect(Math.abs(marked(d) - marked(c))).toBeLessThanOrEqual(Math.ceil(marked(c) * 0.02));
+  });
+});

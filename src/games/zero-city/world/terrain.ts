@@ -9,11 +9,14 @@ export class Terrain {
   readonly n = CELLS + 1;
   readonly h: Float32Array;
   readonly dirty = new Set<number>();
+  /** Vertices shaped by road grading (drawn as verge grass, not bare rock). */
+  readonly graded: Uint8Array;
   /** Bumped on every edit (renderers compare it). */
   version = 0;
 
   constructor(h?: Float32Array) {
     this.h = h ?? new Float32Array(this.n * this.n);
+    this.graded = new Uint8Array(this.n * this.n);
   }
 
   at(i: number, j: number) {

@@ -124,7 +124,21 @@ export class CameraRig {
       this.target.y + Math.sin(this.pitch) * this.dist,
       this.target.z + Math.cos(this.yaw) * cp * this.dist,
     );
-    if (t) pos.y = Math.max(pos.y, t.surfaceAt(pos.x, pos.z) + 2.5);
+    if (t) {
+      // Keep the whole line of sight above the ground: if a hill stands between the camera
+      // and what it's looking at, lift the camera over it (instead of seeing the inside of the hill).
+      const from = new THREE.Vector3(this.target.x, this.target.y + Math.min(6, this.dist * 0.02), this.target.z);
+      let lift = Math.max(0, t.surfaceAt(pos.x, pos.z) + 2.5 - pos.y);
+      for (let k = 1; k <= 16; k++) {
+        const f = k / 16;
+        const x = from.x + (pos.x - from.x) * f;
+        const z = from.z + (pos.z - from.z) * f;
+        const y = from.y + (pos.y - from.y) * f;
+        const need = t.surfaceAt(x, z) + 1.5 - y;
+        if (need > 0) lift = Math.max(lift, need / f);
+      }
+      pos.y += lift;
+    }
     this.cam.position.copy(pos);
     this.cam.lookAt(this.target.x, this.target.y + Math.min(6, this.dist * 0.02), this.target.z);
   }
