@@ -39,7 +39,9 @@ without workers.
 | `game.ts` | The controller: screens, loading, saves, autosave, achievements, scores, audio |
 | `audio.ts` | Generative ambient music, city hum, effects (all synthesised) |
 | `politics/politics.ts` | Mayor mode: treasury, taxes, voter groups, approval, laws and ministries, dilemmas, promises, elections (pure, unit-tested) |
+| `politics/mandate.ts` | Mandate (0.9): electoral districts, the ideology compass, your party's funds, members, headquarters and politicians, named members who can rebel, the whip, polls, the newspaper, no confidence, district-by-district elections (pure, unit-tested) |
 | `politics/parliament.ts` | The parliament: parties and seats, coalitions, political capital, bills, lobbying, referendums, the cabinet and scandals, the campaign (pure, unit-tested) |
+| `ui/mandate/*` | The Mandate side app: shell and briefing (`MandateApp.tsx`), the other pages (`pages.tsx`), portraits, the chamber, charts, the compass and the district map (`parts.tsx`) |
 | `ui/*` | React screens (loading, menu, map select, settings, load, update log, credits, pause), HUD, City Hall (`politics.tsx`) and the liquid glass (`glass.tsx`) |
 
 ## Mayor mode
@@ -152,6 +154,52 @@ style of Lawgivers:
   risks a scandal you either sack them over or ride out.
 - **Campaign**: once a challenger appears (the last day of a term), rallies for each voter group, up to three ad
   blitzes and one TV debate.
+
+## Mandate, the politics app (0.9)
+
+Mayor mode's deep politics live in a full-screen side app (`ui/mandate/`), opened from
+the MANDATE button in the top bar or from City Hall. It has its own sidebar (a rail of
+icons on smaller stages, a tab bar on phones), a header with the clock and speed, and
+nine pages. Esc goes back to the city; the city keeps running underneath. The rules are in
+`politics/mandate.ts`:
+
+- **Districts.** Once the city has a handful of plots it's cut into 2–7 districts by
+  k-means over the plots (weighted by people and jobs, seeded, so the same city always gets
+  the same map), named round the compass from the Old Town, and redrawn each time the city
+  doubles. The fifteen seats are shared out by population (largest remainder, at least one
+  each). A district's voters by group come from what's built there: industry means
+  workers, shops mean business, homes mean families and seniors.
+- **How a district votes.** Each group backs you by how it feels (a logistic curve on
+  approval) plus your ground game there; the rest of its vote goes to the parties that speak
+  for it (`supportIn`). `projection` turns that into seats per district, and on election
+  night `electDistricts` does the same with the night's feelings: the chamber is the sum of
+  the districts. With no districts yet the whole city is one.
+- **Your party.** Its own funds (members' dues and business donors in; salaries,
+  headquarters and offices out, `fundsPerDay`), separate from the city treasury, and a
+  membership that follows approval. Headquarters has four buildings with three levels each:
+  a pollster (district polls for every party), a press office (softens scandals you ride
+  out), a campaign office (more members, a faster ground game) and a think tank (capital).
+  A fundraising gala once a day; the party conference once a term sets your platform on the
+  compass and lifts loyalty.
+- **Politicians.** A roster of up to 16, each with a portrait drawn from a seed, charisma,
+  competence, loyalty, ambition, popularity and a trait (orator, policy wonk, fixer,
+  firebrand, loyalist, schemer, local hero, media darling). Recruit, train, expel, send
+  them to work a district, or make them ministers (`appointOwn`). Loyalty follows how the
+  party's doing; an ambitious, disloyal member may cross the floor and take their seat.
+- **The chamber.** Every seat is a named member from a district. Your members whose district
+  hates a law (and who don't owe you enough) rebel (`rebels`); a three-line whip (10
+  capital) holds them, at a cost in their loyalty. The hemicycle shows how every member
+  will vote. A minority government with low approval can face a motion of no confidence;
+  lose it and there's a snap election in twelve hours.
+- **Ideology.** Parties, voter groups and laws sit on two axes (economy, society). Voters
+  near your platform warm to you every hour; the compass also shows where your laws have
+  actually put your government (`governmentPosition`).
+- **Polls and the papers.** A poll of every party each morning, with the seat projection;
+  a newspaper that reports laws, referendums, coalitions, scandals, defections, polls,
+  no-confidence motions and elections.
+
+Saves keep it all on `politics.m`; older saves get a party and a seated chamber on load
+(`normaliseMandate`).
 
 ## The Riviera DLC (0.8)
 

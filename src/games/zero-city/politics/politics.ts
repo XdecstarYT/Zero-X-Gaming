@@ -11,6 +11,7 @@ import { rng } from "../core/rng";
 import type { SimPolicy, Stats } from "../sim/sim";
 import type { ServiceKind } from "../world/lots";
 import type { RoadTypeId } from "../world/roads";
+import { newMandate, normaliseMandate, type MandateState } from "./mandate";
 
 export const FACTIONS = ["workers", "business", "families", "greens", "seniors"] as const;
 export type Faction = (typeof FACTIONS)[number];
@@ -292,6 +293,8 @@ export interface PoliticsState {
   rolls: number;
   /** The chamber, your coalition, your cabinet and your political capital. */
   parl: ParlState;
+  /** Districts, your party organisation, the members, polls and the papers (the Mandate app). */
+  m: MandateState;
 }
 
 /** Facts about the city the main thread knows (the sim doesn't). */
@@ -351,6 +354,7 @@ export function ministerSkill(s: PoliticsState, m: Ministry) {
 }
 
 export function newPolitics(seed: number, minutes: number): PoliticsState {
+  const parl = { ...newParl(seed), hour: Math.floor(minutes / 60) };
   return {
     seed,
     cash: START_CASH,
@@ -375,7 +379,8 @@ export function newPolitics(seed: number, minutes: number): PoliticsState {
     status: "office",
     townHallAt: -1e9,
     rolls: 0,
-    parl: { ...newParl(seed), hour: Math.floor(minutes / 60) },
+    parl,
+    m: { ...newMandate(seed, parl.seats), hour: Math.floor(minutes / 60) },
   };
 }
 
@@ -384,7 +389,9 @@ export function normalisePolitics(p: Partial<PoliticsState> | null | undefined, 
   const base = newPolitics(p?.seed ?? 1, minutes);
   if (!p) return base;
   const parl = p.parl ? { ...base.parl, ...p.parl, seats: { ...base.parl.seats, ...p.parl.seats }, relations: { ...base.parl.relations, ...p.parl.relations }, ministers: { ...base.parl.ministers, ...p.parl.ministers }, campaign: { ...base.parl.campaign, ...p.parl.campaign } } : base.parl;
-  return { ...base, ...p, approval: { ...base.approval, ...p.approval }, mood: { ...base.mood, ...p.mood }, taxes: { ...base.taxes, ...p.taxes }, parl };
+  const out: PoliticsState = { ...base, ...p, approval: { ...base.approval, ...p.approval }, mood: { ...base.mood, ...p.mood }, taxes: { ...base.taxes, ...p.taxes }, parl, m: base.m };
+  out.m = normaliseMandate(out, p.m);
+  return out;
 }
 
 /** A fresh random stream for each roll, so results don't depend on how often the UI asks. */

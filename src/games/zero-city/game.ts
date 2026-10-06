@@ -23,7 +23,8 @@ import { Tools } from "./tools";
 import { ALL_MAP_IDS, City, type CityJSON } from "./world/city";
 import * as Pol from "./politics/politics";
 import * as Parl from "./politics/parliament";
-import type { GameMode, HallTab } from "./store";
+import * as Mandate from "./politics/mandate";
+import type { AppPage, DistrictView, GameMode, HallTab } from "./store";
 import type { Lot, ServiceKind } from "./world/lots";
 import { DLC_LANDMARKS, LANDMARK_UNLOCK, LANDMARKS, landmarkState, isLandmark, MILESTONES, milestoneAt, milestoneProgress, type Landmark } from "./world/milestones";
 import type { RoadTypeId } from "./world/roads";
@@ -317,7 +318,7 @@ export class Game {
     this.politics = mode === "mayor" ? (politics ? Pol.normalisePolitics(politics as Partial<Pol.PoliticsState>, minutes) : Pol.newPolitics((city.created % 1_000_003) + 1, minutes)) : null;
     // An ousted mayor's city carries on as a sandbox.
     const live = mode === "mayor" && this.politics?.status !== "ousted" ? "mayor" : mode;
-    this.store.setState({ mode: live, hall: null, bill: null, election: null, politics: null });
+    this.store.setState({ mode: live, hall: null, app: null, bill: null, election: null, politics: null });
     this.buildings.clear();
     for (const b of simSave?.buildings ?? []) this.buildings.set(b.lot, b);
     this.setViews(city, [...this.buildings.values()]);
@@ -368,7 +369,7 @@ export class Game {
     this.sim = null;
     this.politics = null;
     this.tools.reset();
-    this.store.setState({ tab: null, overlay: null, inspect: null, vehicle: null, mode: "sandbox", politics: null, hall: null, bill: null, election: null, saves: await this.platform.listSaves() });
+    this.store.setState({ tab: null, overlay: null, inspect: null, vehicle: null, mode: "sandbox", politics: null, hall: null, app: null, bill: null, election: null, saves: await this.platform.listSaves() });
     this.showMenuBackdrop();
     this.store.setState({ screen: "menu" });
   }
@@ -925,16 +926,35 @@ export class Game {
         this.audio.chime();
       } else if (e.t === "campaign") this.toast(this.t("n.campaign"), this.t("campaignOn", { name: e.challenger }));
       else if (e.t === "broke") this.toast(this.t("treasury"), this.t("broke", { n: this.money(Pol.CREDIT) }));
-      else if (e.t === "election") this.electionNight(Parl.afterElection(p, e.result, stats));
+      else if (e.t === "election") {
+        // The chamber is chosen district by district.
+        const d = Mandate.electDistricts(p, e.result, stats);
+        const r = Parl.afterElection(p, e.result, stats, d.seats);
+        Mandate.afterVote(p, d.results, minutes);
+        this.electionNight(r);
+      }
     }
     for (const e of Parl.parlHour(p, minutes, stats)) {
       if (e.t === "partnerLeft") {
         this.toast(this.t("pa.left", { party: this.t(`party.${e.party}` as StringKey) }));
         this.audio.error();
+        Mandate.report(p, { m: minutes, k: "nw.left", v: { party: e.party }, tone: -1 });
       } else if (e.t === "scandal") {
         this.toast(this.t("pa.scandal", { name: e.name, ministry: this.t(`min.${e.ministry}` as StringKey) }));
         this.audio.chime();
+        Mandate.report(p, { m: minutes, k: "nw.scandal", v: { name: e.name, ministry: e.ministry }, tone: -1 });
       }
+    }
+    for (const e of Mandate.mandateHour(p, minutes, stats, () => this.lotPoints())) {
+      if (e.t === "defected") {
+        this.toast(this.t("md.defected", { name: e.name, party: this.t(`party.${e.party}` as StringKey) }), e.seat ? this.t("md.seatLost") : undefined);
+        this.audio.error();
+      } else if (e.t === "noConfidence") {
+        this.toast(this.t(e.passed ? "md.ncLost" : "md.ncWon", { n: e.against }));
+        if (e.passed) this.audio.error();
+        else this.audio.chime();
+      } else if (e.t === "pollLead") this.toast(this.t("md.pollLead", { party: this.t(`party.${e.party}` as StringKey) }));
+      else if (e.t === "redistricted") this.toast(this.t("md.mapDrawn", { n: e.n }));
     }
     if (JSON.stringify(Pol.simPolicy(p)) !== policyBefore) this.sim?.setSettings(this.simSettings());
     this.publishPolitics(stats);
@@ -984,8 +1004,147 @@ export class Game {
           campaign: { ...p.parl.campaign, rallies: [...p.parl.campaign.rallies], open: Parl.campaignOpen(p) },
           scandal: p.parl.scandal,
         },
+        m: this.mandateView(st),
       },
     });
+  }
+
+  /** The Mandate app's snapshot. */
+  private mandateView(st: NonNullable<typeof this.lastTick>["stats"] | null): import("./store").MandateView {
+    const p = this.politics!;
+    const m = p.m;
+    const proj = Mandate.projection(p);
+    const projected: Record<Pol.PartyId, number> = { civic: 0, labour: 0, enterprise: 0, green: 0, heritage: 0 };
+    for (const r of proj) for (const x of Pol.PARTIES) projected[x] += r.seats[x];
+    const districts: DistrictView[] = m.districts.map((d) => {
+      const ds = m.dstats.find((x) => x.id === d.id);
+      const r = proj.find((x) => x.id === d.id)!;
+      return {
+        ...d,
+        pop: ds?.pop ?? 0,
+        lots: ds?.lots ?? 0,
+        mix: ds ? { ...ds.mix } : { workers: 0.2, business: 0.2, families: 0.2, greens: 0.2, seniors: 0.2 },
+        share: r.share,
+        projected: r.seats,
+        winner: r.winner,
+        effort: m.effort[d.id] ?? 0,
+        office: m.offices.includes(d.id),
+        ads: m.ads[d.id] ?? 0,
+        workers: m.roster.filter((x) => x.district === d.id).map((x) => x.id),
+      };
+    });
+    const bill = p.parl.bill;
+    const fc = bill ? Parl.forecast(p, bill.law, bill.enable, bill.lobbied) : null;
+    const yes = fc ? (Object.fromEntries(fc.votes.map((v) => [v.party, v.yes])) as Record<Pol.PartyId, number>) : null;
+    const minutes = this.lastTick?.minutes ?? this.store.getState().minutes;
+    return {
+      platform: [...m.platform] as Mandate.Position,
+      position: Mandate.governmentPosition(p),
+      funds: m.funds,
+      fundsNet: Mandate.fundsPerDay(p),
+      members: Math.round(m.members),
+      hq: { ...m.hq },
+      roster: m.roster.map((x) => ({ ...x, minister: Pol.MINISTRIES.find((k) => p.parl.ministers[k]?.id === x.id + Mandate.ROSTER_ID) ?? null })),
+      mps: m.mps.map((x) => ({ ...x })),
+      districts,
+      projected: m.districts.length ? projected : { ...p.parl.seats },
+      poll: st ? Mandate.cityPoll(p, st) : { civic: 0.4, labour: 0.2, enterprise: 0.2, green: 0.1, heritage: 0.1 },
+      polls: m.partyPolls,
+      news: m.news,
+      whip: m.whip,
+      rebels: bill ? Mandate.rebels(p, bill.law, bill.enable).map((x) => x.id) : [],
+      votes: bill && yes ? Mandate.memberVotes(p, bill.law, bill.enable, yes) : null,
+      confidence: m.confidence,
+      lastResults: m.lastResults,
+      conferenceReady: m.conference !== p.term,
+      galaReady: minutes - m.galaAt >= 24 * 60,
+    };
+  }
+
+  /** Every plot as the electoral map sees it: where it is, how many live or work there, its zone. */
+  private lotPoints(): Mandate.LotPoint[] {
+    const out: Mandate.LotPoint[] = [];
+    for (const l of this.city!.lots.lots.values()) {
+      const b = this.buildings.get(l.id);
+      out.push({ x: l.cx, z: l.cz, pop: b && b.progress >= 1 ? b.residents + b.workers : 0, zone: l.zone, tier: b?.tier ?? 1 });
+    }
+    return out;
+  }
+
+  /** The city for the Mandate map: roads as polylines, plots with their district. */
+  mandateMap() {
+    const city = this.city;
+    const p = this.politics;
+    if (!city || !p) return null;
+    const roads: number[][] = [];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const e of city.roads.edges.values()) {
+      roads.push(e.pts);
+      for (let i = 0; i < e.pts.length; i += 2) {
+        minX = Math.min(minX, e.pts[i]);
+        maxX = Math.max(maxX, e.pts[i]);
+        minZ = Math.min(minZ, e.pts[i + 1]);
+        maxZ = Math.max(maxZ, e.pts[i + 1]);
+      }
+    }
+    const lots: number[] = [];
+    for (const l of city.lots.lots.values()) {
+      const b = this.buildings.get(l.id);
+      lots.push(l.cx, l.cz, p.m.districts.length ? Mandate.districtOf(p.m.districts, l.cx, l.cz) : -1, b && b.progress >= 1 ? 1 : 0);
+    }
+    return { roads, lots, bounds: { minX, maxX, minZ, maxZ } };
+  }
+
+  // ------------------------------------------------------------ the Mandate app
+
+  openApp(page: AppPage | null) {
+    if (page && !this.mayor) return;
+    this.store.setState({ app: page, hall: null, statsOpen: false, noticesOpen: false, inspect: null });
+    this.audio.tick();
+  }
+  recruit() {
+    const r = this.parl((p) => Mandate.recruit(p));
+    if (r) this.toast(this.t("md.recruited", { name: r.name }));
+  }
+  train(id: number, skill: "charisma" | "competence") {
+    this.parl((p) => Mandate.train(p, id, skill));
+  }
+  expel(id: number) {
+    this.parl((p) => Mandate.expel(p, id));
+  }
+  assignPolitician(id: number, district: number) {
+    this.parl((p) => Mandate.assign(p, id, district));
+  }
+  upgradeHq(h: Mandate.Hq) {
+    this.parl((p) => Mandate.upgrade(p, h));
+  }
+  canvass(district: number) {
+    this.parl((p) => Mandate.canvass(p, district));
+  }
+  openOffice(district: number) {
+    this.parl((p) => Mandate.openOffice(p, district));
+  }
+  districtAd(district: number) {
+    this.parl((p) => Mandate.districtAd(p, district));
+  }
+  gala() {
+    const minutes = this.lastTick?.minutes ?? this.store.getState().minutes;
+    const n = this.parl((p) => Mandate.gala(p, minutes), (x) => x > 0);
+    if (n) this.toast(this.t("md.galaRaised", { money: this.money(n) }));
+  }
+  conference(platform: Mandate.Position) {
+    const minutes = this.lastTick?.minutes ?? this.store.getState().minutes;
+    if (this.parl((p) => Mandate.conference(p, platform))) Mandate.report(this.politics!, { m: minutes, k: "nw.conference", tone: 1 });
+    this.publishPolitics();
+  }
+  whip() {
+    this.parl((p) => Mandate.whip(p));
+  }
+  appointOwn(ministry: Pol.Ministry, id: number) {
+    this.parl((p) => Mandate.appointOwn(p, ministry, id, p.parl.ministers[ministry] ? Parl.COST.reshuffle : Parl.COST.appoint));
   }
 
   // ------------------------------------------------------------ parliament
@@ -1015,6 +1174,8 @@ export class Game {
   callVote() {
     const v = this.parl((p) => Parl.callVote(p), (r) => !!r?.passed);
     if (!v) return;
+    Mandate.report(this.politics!, { m: this.store.getState().minutes, k: v.passed ? "nw.passed" : "nw.failed", v: { law: v.law, yes: v.yes, no: v.no }, tone: v.passed ? 1 : -1 });
+    this.publishPolitics();
     this.store.setState({ bill: v });
     if (v.passed) this.audio.chime();
     this.platform.track("bill", { policy: v.law, enable: v.enable, passed: v.passed });
@@ -1024,12 +1185,18 @@ export class Game {
     if (!st) return;
     const r = this.parl((p) => Parl.referendum(p, st), (x) => !!x?.passed);
     if (!r) return;
+    Mandate.report(this.politics!, { m: this.store.getState().minutes, k: r.passed ? "nw.refWon" : "nw.refLost", v: { law: r.law, n: Math.round(r.support * 100) }, tone: r.passed ? 1 : -1 });
+    this.publishPolitics();
     this.store.setState({ bill: { law: r.law, enable: r.enable, passed: r.passed, yes: Math.round(r.support * 100), no: 100 - Math.round(r.support * 100), votes: [], referendum: true, support: r.support } });
     if (r.passed) this.audio.chime();
   }
   invite(party: Pol.PartyId) {
     const r = this.parl((p) => Parl.invite(p, party), (x) => !!x?.yes);
     if (r) this.toast(this.t(r.yes ? "pa.joined" : "pa.refused", { party: this.t(`party.${party}` as StringKey) }));
+    if (r?.yes) {
+      Mandate.report(this.politics!, { m: this.store.getState().minutes, k: "nw.joined", v: { party }, tone: 1 });
+      this.publishPolitics();
+    }
   }
   dropPartner(party: Pol.PartyId) {
     this.parl((p) => Parl.dropPartner(p, party));
@@ -1055,7 +1222,7 @@ export class Game {
   }
 
   openHall(tab: HallTab | null) {
-    this.store.setState({ hall: tab, bill: null, statsOpen: false, noticesOpen: false });
+    this.store.setState({ hall: tab, app: null, bill: null, statsOpen: false, noticesOpen: false });
     this.audio.tick();
   }
 
@@ -1115,7 +1282,7 @@ export class Game {
   afterElection() {
     const won = this.store.getState().election?.won;
     this.store.setState({ election: null });
-    if (!won) this.store.setState({ mode: "sandbox" });
+    if (!won) this.store.setState({ mode: "sandbox", app: null });
     this.sim?.setSettings(this.simSettings());
     this.setSpeed(this.speedBeforeElection);
     this.publishPolitics();
@@ -1308,6 +1475,7 @@ export class Game {
       dlc: this.store.getState().dlc.owned,
       look: this.city?.map.look ?? "base",
       parl: this.politics ? { seats: this.politics.parl.seats, coalition: this.politics.parl.coalition, capital: this.politics.parl.capital } : null,
+      mandate: this.politics ? { districts: this.politics.m.districts.length, funds: Math.round(this.politics.m.funds), roster: this.politics.m.roster.length, news: this.politics.m.news.length, hq: { ...this.politics.m.hq } } : null,
     };
   }
 

@@ -5,6 +5,7 @@ import type { Settings } from "./settings";
 import type { Notice, Stats } from "./sim/sim";
 import type { DilemmaId, ElectionResult, Faction, Ledger, Minister, Ministry, PartyId, PolicyId, PromiseId, Taxes } from "./politics/politics";
 import type { ParlVote } from "./politics/parliament";
+import type { District, DistrictResult, Hq, Mp, News, Politician, Position } from "./politics/mandate";
 import type { Zone, ServiceKind } from "./world/lots";
 import type { Landmark } from "./world/milestones";
 import type { RoadTypeId } from "./world/roads";
@@ -51,6 +52,52 @@ export interface VehicleInfo {
 
 export type GameMode = "sandbox" | "mayor";
 export type HallTab = "overview" | "budget" | "policies" | "council" | "cabinet";
+/** The Mandate app's pages. */
+export type AppPage = "home" | "map" | "party" | "chamber" | "laws" | "cabinet" | "polls" | "campaign" | "news";
+export const APP_PAGES: AppPage[] = ["home", "map", "party", "chamber", "laws", "cabinet", "polls", "campaign", "news"];
+
+/** A district as the app shows it: its make-up, how it would vote today, and your work there. */
+export interface DistrictView extends District {
+  pop: number;
+  lots: number;
+  mix: Record<Faction, number>;
+  share: Record<PartyId, number>;
+  projected: Record<PartyId, number>;
+  winner: PartyId;
+  effort: number;
+  office: boolean;
+  ads: number;
+  workers: number[];
+}
+
+/** The Mandate app's snapshot. */
+export interface MandateView {
+  platform: Position;
+  /** Where your government really stands (platform pulled by the laws in force). */
+  position: Position;
+  funds: number;
+  /** Party funds per day. */
+  fundsNet: number;
+  members: number;
+  hq: Record<Hq, number>;
+  roster: (Politician & { minister: Ministry | null })[];
+  mps: Mp[];
+  districts: DistrictView[];
+  /** Seats the chamber would return today. */
+  projected: Record<PartyId, number>;
+  poll: Record<PartyId, number>;
+  polls: { m: number; v: Record<PartyId, number> }[];
+  news: News[];
+  whip: boolean;
+  /** Your members who'd rebel on the bill on the floor. */
+  rebels: number[];
+  /** How each member would vote on the bill on the floor. */
+  votes: Record<number, boolean> | null;
+  confidence: { m: number; against: number; passed: boolean } | null;
+  lastResults: DistrictResult[] | null;
+  conferenceReady: boolean;
+  galaReady: boolean;
+}
 
 /** A vote's result: in the chamber (by party) or a referendum (by the public). */
 export type BillView = ParlVote & { referendum?: boolean; support?: number };
@@ -92,6 +139,7 @@ export interface PoliticsView {
     campaign: { rallies: Faction[]; ads: number; debated: boolean; open: boolean };
     scandal: Ministry | null;
   };
+  m: MandateView;
 }
 
 export interface UIState {
@@ -156,6 +204,8 @@ export interface UIState {
   newMode: GameMode;
   politics: PoliticsView | null;
   hall: HallTab | null;
+  /** The Mandate app, open on a page (Mayor mode). */
+  app: AppPage | null;
   bill: BillView | null;
   election: ElectionResult | null;
 }
@@ -219,6 +269,7 @@ export function makeStore(settings: Settings) {
     newMode: "sandbox",
     politics: null,
     hall: null,
+    app: null,
     bill: null,
     election: null,
   }));

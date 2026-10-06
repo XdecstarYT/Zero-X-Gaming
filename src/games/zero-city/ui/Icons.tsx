@@ -78,6 +78,13 @@ const paths: Record<string, string> = {
   lighthouse: "M9 21l1.5-13h3L15 21M8 8h8M10 8V5l2-2 2 2v3M4 5l4 2M20 5l-4 2M6 21h12",
   casino: "M4 4h16v16H4zM8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01",
   resort: "M3 21h18M5 21V9l7-5 7 5v12M9 13h2M13 13h2M9 17h2M13 17h2",
+  ballot: "M4 10h16v11H4zM9 10V4h6v6M8 14h8M12 6.5l1.2 1.2L15.5 5",
+  flag: "M5 21V4M5 4h11l-2 4 2 4H5",
+  scroll: "M7 3h11a2 2 0 0 1 2 2v2h-4M7 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7M9 9h6M9 13h6M9 17h4",
+  briefcase: "M3 8h18v12H3zM9 8V5h6v3M3 13h18",
+  news: "M4 5h13v14H6a2 2 0 0 1-2-2zM17 9h3v8a2 2 0 0 1-2 2M7 8h7M7 11h7M7 14h4",
+  columns: "M3 21h18M4 18h16M12 3l9 4H3zM6 9v9M10 9v9M14 9v9M18 9v9",
+  pin: "M12 21s-6-5.6-6-10a6 6 0 0 1 12 0c0 4.4-6 10-6 10zM12 8.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z",
   sun: "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4",
 };
 

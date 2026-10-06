@@ -133,6 +133,15 @@ export class Tools {
       return;
     }
     if (this.st.overlay) return;
+    // The Mandate app has the keyboard: Esc takes you back to the city, nothing else reaches the tools.
+    if (this.st.app) {
+      if (e.code === "Escape") {
+        this.g.openApp(null);
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
+      return;
+    }
     if (e.code === "Escape") {
       // Esc steps out of a tool first; the platform only pauses when there's nothing to cancel.
       if (this.cancel()) {

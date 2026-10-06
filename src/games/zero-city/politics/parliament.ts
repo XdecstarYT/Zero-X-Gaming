@@ -26,6 +26,7 @@ import {
   type PoliticsState,
   type PolicyId,
 } from "./politics";
+import { rebels, ROSTER_ID } from "./mandate";
 
 /** Political capital costs. */
 export const COST = { lobby: 12, invite: 20, appoint: 5, reshuffle: 8, dismiss: 3, referendum: 30 } as const;
@@ -100,7 +101,12 @@ function partyScore(s: PoliticsState, party: PartyId, law: PolicyId, enable: boo
 
 /** How the chamber would vote right now (no surprises): the bill panel's forecast. */
 export function forecast(s: PoliticsState, law: PolicyId, enable: boolean, lobbied: PartyId[] = []): ParlVote {
-  return tally(law, enable, PARTIES.map((party) => ({ party, seats: s.parl.seats[party], yes: Math.round(s.parl.seats[party] * sigmoid(partyScore(s, party, law, enable, lobbied.includes(party)) / 10)) })));
+  const out = rebels(s, law, enable).length;
+  return tally(
+    law,
+    enable,
+    PARTIES.map((party) => ({ party, seats: s.parl.seats[party], yes: party === "civic" ? Math.max(0, s.parl.seats.civic - out) : Math.round(s.parl.seats[party] * sigmoid(partyScore(s, party, law, enable, lobbied.includes(party)) / 10)) })),
+  );
 }
 
 function tally(law: PolicyId, enable: boolean, votes: PartyVote[]): ParlVote {
@@ -112,6 +118,7 @@ function tally(law: PolicyId, enable: boolean, votes: PartyVote[]): ParlVote {
 /** Put a law (or its repeal) on the floor. */
 export function draftBill(s: PoliticsState, law: PolicyId, enable: boolean) {
   s.parl.bill = { law, enable, lobbied: [] };
+  s.m.whip = false;
 }
 
 /** Work a party's members before the vote. */
@@ -128,12 +135,21 @@ export function callVote(s: PoliticsState): ParlVote | null {
   const b = s.parl.bill;
   if (!b) return null;
   const r = roll(s);
+  // Your own members vote with you, bar any rebels the whip doesn't hold.
+  const out = rebels(s, b.law, b.enable);
   const votes = PARTIES.map((party) => {
-    const score = partyScore(s, party, b.law, b.enable, b.lobbied.includes(party)) + (party === "civic" ? 0 : (r.next() - 0.5) * 16);
+    if (party === "civic") return { party, seats: s.parl.seats.civic, yes: Math.max(0, s.parl.seats.civic - out.length) };
+    const score = partyScore(s, party, b.law, b.enable, b.lobbied.includes(party)) + (r.next() - 0.5) * 16;
     return { party, seats: s.parl.seats[party], yes: Math.round(s.parl.seats[party] * sigmoid(score / 10)) };
   });
   const v = tally(b.law, b.enable, votes);
   applyOutcome(s, b.law, b.enable, v.passed);
+  // Rebels who got away with it grow bolder; the whip's done its job.
+  for (const mp of out) {
+    const pol = s.m.roster.find((x) => x.id === mp.pol);
+    if (pol) pol.loyalty = Math.max(0, pol.loyalty - 4);
+  }
+  s.m.whip = false;
   s.parl.bill = null;
   return v;
 }
@@ -238,7 +254,7 @@ export function appoint(s: PoliticsState, ministry: Ministry, id: number) {
   if (p.capital < cost) return false;
   p.capital -= cost;
   const old = p.ministers[ministry];
-  if (old) p.pool = [...p.pool, old];
+  if (old && old.id < ROSTER_ID) p.pool = [...p.pool, old];
   p.pool = p.pool.filter((m) => m.id !== id);
   p.ministers[ministry] = who;
   if (who.party !== "civic") p.relations[who.party] = clamp(p.relations[who.party] + 8, -100, 100);
@@ -251,7 +267,7 @@ export function dismiss(s: PoliticsState, ministry: Ministry) {
   if (!m || p.capital < COST.dismiss) return false;
   p.capital -= COST.dismiss;
   p.ministers[ministry] = null;
-  p.pool = [...p.pool, m];
+  if (m.id < ROSTER_ID) p.pool = [...p.pool, m];
   if (m.party !== "civic") p.relations[m.party] = clamp(p.relations[m.party] - 8, -100, 100);
   if (p.scandal === ministry) p.scandal = null;
   return true;
@@ -269,8 +285,11 @@ export function resolveScandal(s: PoliticsState, sack: boolean) {
     p.ministers[p.scandal] = null;
     if (m.party !== "civic") p.relations[m.party] = clamp(p.relations[m.party] - 10, -100, 100);
   } else {
-    for (const g of FACTIONS) s.mood[g] -= 3;
+    // A good press office takes the sting out of it.
+    for (const g of FACTIONS) s.mood[g] -= 3 * (1 - 0.25 * (s.m?.hq.press ?? 0));
     m.loyalty = Math.min(100, m.loyalty + 15);
+    const own = s.m?.roster.find((x) => x.id + ROSTER_ID === m.id);
+    if (own) own.loyalty = Math.min(100, own.loyalty + 15);
   }
   p.scandal = null;
   return true;
@@ -362,7 +381,7 @@ export function parlHour(s: PoliticsState, minutes: number, st: Stats): ParlEven
  * on, and if you lost the popular vote but lead the biggest party and can still put a
  * majority together, you keep office at the head of a coalition.
  */
-export function afterElection(s: PoliticsState, result: ElectionResult, st: Stats) {
+export function afterElection(s: PoliticsState, result: ElectionResult, st: Stats, districtSeats?: Record<PartyId, number>) {
   const p = s.parl;
   const sh = shares(st);
   const votes: Record<PartyId, number> = { civic: 0, labour: 0, enterprise: 0, green: 0, heritage: 0 };
@@ -382,18 +401,20 @@ export function afterElection(s: PoliticsState, result: ElectionResult, st: Stat
     seats[party]++;
     left--;
   }
-  p.seats = seats;
-  result.seats = { ...seats };
+  // Districts return the seats when the city has them; the citywide count is the fallback.
+  p.seats = districtSeats ? { ...districtSeats } : seats;
+  result.seats = { ...p.seats };
+  const final = p.seats;
   // Partners who've gone cold leave; the rest carry on.
   for (const party of [...p.coalition]) if (p.relations[party] < 0) dropPartner(s, party);
   if (!result.won) {
-    const biggest = PARTIES.every((x) => x === "civic" || seats.civic >= seats[x]);
-    const willing = PARTIES.filter((x) => x !== "civic" && p.relations[x] >= 20).sort((a, b) => seats[b] - seats[a]);
-    let n = seats.civic;
+    const biggest = PARTIES.every((x) => x === "civic" || final.civic >= final[x]);
+    const willing = PARTIES.filter((x) => x !== "civic" && p.relations[x] >= 20).sort((a, b) => final[b] - final[a]);
+    let n = final.civic;
     const take: PartyId[] = [];
     for (const x of willing) {
       if (n >= MAJORITY) break;
-      n += seats[x];
+      n += final[x];
       take.push(x);
     }
     if (biggest && n >= MAJORITY) {

@@ -10,6 +10,7 @@ import { Segmented, Stepper } from "./common";
 import { useGame, useNum, useT, useUI } from "./hooks";
 import { Icon } from "./Icons";
 import { CityHall, DilemmaCard, ElectionNight, HallButton, TreasuryChip } from "./politics";
+import { MandateApp, MandateButton } from "./mandate/MandateApp";
 import { rampColor } from "../render/overlayView";
 import { VEHICLES } from "../sim/sim";
 import { DLC_LANDMARKS, LANDMARK_UNLOCK, LANDMARKS, MILESTONES } from "../world/milestones";
@@ -49,6 +50,7 @@ export function Hud() {
         {tab && <ContextBar tab={tab} />}
         <Toolbar />
       </div>
+      <MandateApp />
       <ElectionNight />
     </div>
   );
@@ -112,6 +114,7 @@ function TopEnd() {
         <>
           <TreasuryChip />
           <HallButton />
+          <MandateButton />
         </>
       ) : (
         <span className="zc-glass-dark flex min-h-[44px] items-center gap-2 rounded-full px-3 font-black @5xl:px-4" aria-label={t("unlimited")} title={t("unlimited")}>
@@ -718,8 +721,9 @@ function CursorLabel() {
 
 function Toasts() {
   const toasts = useUI((s) => s.toasts);
+  const app = useUI((s) => s.app);
   return (
-    <div className="pointer-events-none absolute end-2 top-[calc(var(--zc-top,3rem)+1rem)] flex flex-col items-end gap-2 sm:end-3" aria-live="polite">
+    <div className={`pointer-events-none absolute end-2 z-[26] flex flex-col items-end gap-2 sm:end-3 ${app ? "bottom-20" : "top-[calc(var(--zc-top,3rem)+1rem)]"}`} aria-live="polite">
       {toasts.map((t) => (
         <div key={t.id} className="zc-glass zc-toast px-4 py-2" style={t.kind === "achievement" ? { borderColor: theme.accent } : undefined}>
           <p className="font-black" style={t.kind === "achievement" ? { color: theme.accent } : undefined}>

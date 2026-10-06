@@ -419,3 +419,111 @@ test("Zero City 0.8: the Riviera DLC for ZX Cash, roadworks and the parliament",
   await page.getByTestId("zc-hall-close").click();
   expect(errors).toEqual([]);
 });
+
+test("Zero City 0.9: Mandate, the politics app: districts, party, chamber, laws, cabinet, polls, campaign and the papers", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "covered on desktop");
+  test.setTimeout(420_000);
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/ERR_TUNNEL|Failed to load resource|supabase/i.test(m.text())) errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("zx-season-s1"))
+      localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+  });
+  await page.goto("/games/zero-city?zc=test");
+  await page.getByTestId("zlink-lock-join").click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByTestId("zc-menu")).toBeVisible({ timeout: 90_000 });
+  await hook(page, (zc) => zc.quality("low"));
+  await page.getByTestId("zc-new").click();
+  await page.getByTestId("zc-mode-mayor").click();
+  await page.getByTestId("zc-start").click();
+  await expect(page.getByTestId("zc-treasury")).toBeVisible({ timeout: 90_000 });
+  type S = { population: number; mandate: { districts: number; funds: number; roster: number; news: number; hq: Record<string, number> } };
+  const st = () => page.evaluate(() => (window as unknown as { __zc: { debugState: () => S } }).__zc.debugState());
+
+  // A small town: an avenue with streets across it, zoned on both sides.
+  await page.evaluate(() => {
+    const g = (window as unknown as { __zc: { city: { addRoad: (p: number[], t: string) => void; roads: { edges: Map<number, { id: number; type: string; pts: number[] }> }; paint: (e: number, side: number, s0: number, s1: number, o: object, m: boolean) => void }; worldChanged: () => void; gateEnd: () => { x: number; z: number } } }).__zc;
+    const e = g.gateEnd();
+    g.city.addRoad([e.x, e.z, e.x + 420, e.z], "avenue");
+    for (const dx of [100, 210, 320]) g.city.addRoad([e.x + dx, e.z - 140, e.x + dx, e.z + 140], "street");
+    const zones = ["R", "C", "R", "I"];
+    let k = 0;
+    for (const ed of [...g.city.roads.edges.values()]) if (ed.type !== "highway") for (const side of [1, -1]) g.city.paint(ed.id, side, 0, 1e6, { zone: zones[k++ % 4], width: 2, depth: 3, mixed: true }, false);
+    g.worldChanged();
+  });
+  await page.getByTestId("zc-speed-3").click();
+  await expect.poll(async () => (await st()).mandate.districts, { timeout: 120_000, intervals: [2000] }).toBeGreaterThan(1);
+
+  // Open the app from the top bar: the briefing.
+  await page.getByTestId("md-open").click();
+  await expect(page.getByTestId("md-app")).toBeVisible();
+  await expect(page.getByTestId("md-page-home")).toBeVisible();
+  await expect(page.getByTestId("md-hemicycle")).toBeVisible();
+  await expect(page.getByTestId("md-todo")).toBeVisible();
+  const shot = async (name: string) => {
+    if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/${name}.png` });
+  };
+  await shot("50-home");
+
+  // The map: pick a district, canvass it, send someone to work it.
+  await page.getByTestId("md-nav-map").click();
+  await expect(page.getByTestId("md-map")).toBeVisible();
+  await expect(page.getByTestId("md-district")).toBeVisible();
+  await shot("51a-map-top");
+  const funds0 = (await st()).mandate.funds;
+  await page.getByTestId("md-canvass").click();
+  expect((await st()).mandate.funds).toBeLessThan(funds0);
+  await page.getByTestId("md-send").selectOption({ index: 1 });
+  await shot("51-map");
+
+  // The party: recruit, upgrade headquarters, the compass.
+  await page.getByTestId("md-nav-party").click();
+  const roster0 = (await st()).mandate.roster;
+  await page.getByTestId("md-recruit").click();
+  expect((await st()).mandate.roster).toBe(roster0 + 1);
+  await page.getByTestId("md-hq-pollster-up").click();
+  expect((await st()).mandate.hq.pollster).toBe(1);
+  await expect(page.getByTestId("md-compass")).toBeVisible();
+  await shot("52-party");
+
+  // Laws → the chamber: put a law on the floor, whip, vote.
+  await page.getByTestId("md-nav-laws").click();
+  await page.getByTestId("md-law-roadFund-go").click();
+  await expect(page.getByTestId("md-page-chamber")).toBeVisible();
+  await expect(page.getByTestId("md-bill")).toBeVisible();
+  await expect(page.getByTestId("md-forecast")).toContainText(/Forecast/);
+  await shot("53a-chamber-top");
+  await page.getByTestId("md-whip").click();
+  await shot("53-chamber");
+  await page.getByTestId("md-vote").click();
+  await expect(page.getByTestId("zc-bill-result")).toBeVisible();
+
+  // The cabinet: appoint one of your own.
+  await page.getByTestId("md-nav-cabinet").click();
+  await page.getByTestId("md-appoint-finance").selectOption({ index: 1 });
+  await expect(page.getByTestId("md-min-finance")).toContainText(/Skill/);
+  await shot("54-cabinet");
+
+  // Polls, the campaign and the papers.
+  await page.getByTestId("md-nav-polls").click();
+  await expect(page.getByTestId("md-polls")).toBeVisible();
+  await shot("55-polls");
+  await page.getByTestId("md-compass").scrollIntoViewIfNeeded();
+  await shot("55b-compass");
+  await page.getByTestId("md-nav-campaign").click();
+  await expect(page.getByTestId("md-ground")).toBeVisible();
+  await shot("56-campaign");
+  await page.getByTestId("md-nav-news").click();
+  await expect(page.getByTestId("md-news")).toContainText(/Herald/);
+  expect((await st()).mandate.news).toBeGreaterThan(2);
+  await shot("57-news");
+
+  // Esc takes you back to the city.
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("md-app")).toBeHidden();
+  expect(errors).toEqual([]);
+});

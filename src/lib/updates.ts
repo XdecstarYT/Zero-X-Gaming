@@ -7,6 +7,7 @@ export interface Update {
 }
 
 export const UPDATES: Update[] = [
+  { tag: "Mega update", title: "Zero City: Mandate, the politics app", body: "Mayor mode gets a full politics side app: electoral districts, a party with its own funds, headquarters and politicians, members who rebel unless whipped, votes of no confidence, daily party polls, a political compass and the city's own newspaper.", href: "/games/zero-city" },
   { tag: "DLC", title: "Zero City: the Riviera expansion", body: "Three coastal maps with a sunny new building style, plus a marina, a lighthouse, a casino and a beach resort. 50 ZX Cash, once.", href: "/games/zero-city" },
   { tag: "Mega update", title: "Zero City: Roadworks and Parliament", body: "Roads wear out under traffic until depot crews close a lane and resurface them. Mayor mode gets a 15-seat parliament with five parties, coalitions, political capital, 24 laws across six ministries, referendums, a cabinet with scandals and a campaign trail.", href: "/games/zero-city" },
   { tag: "Mega update", title: "Zero City: the Metropolis update", body: "Grow from a hamlet to a megalopolis through eight milestones, unlock five landmarks (a hospital, a museum, a university, a stadium and a landmark tower) that bring tourists, fight building fires with fire stations, and read your city with new info views. Empty zones no longer glare at night.", href: "/games/zero-city" },

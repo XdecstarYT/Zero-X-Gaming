@@ -173,7 +173,7 @@ function Overview() {
   );
 }
 
-function Budget() {
+export function Budget() {
   const g = useGame();
   const t = useT();
   const money = useMoney();
@@ -237,7 +237,7 @@ function PartyDot({ party }: { party: PartyId }) {
 }
 
 /** A vote's result: the tally, and how each party split. */
-function VoteResult() {
+export function VoteResult() {
   const t = useT();
   const bill = useUI((s) => s.bill);
   if (!bill) return null;
@@ -506,7 +506,7 @@ function Cabinet() {
 }
 
 /** Campaign actions, in the last day of the term. */
-function Campaign() {
+export function Campaign() {
   const g = useGame();
   const t = useT();
   const money = useMoney();
@@ -536,7 +536,7 @@ function Campaign() {
 }
 
 /** A minister in the papers. */
-function Scandal() {
+export function Scandal() {
   const g = useGame();
   const t = useT();
   const p = useUI((s) => s.politics)!;
@@ -572,6 +572,10 @@ export function CityHall() {
       <div className="flex items-center gap-2 p-3 pb-2">
         <Icon name="hall" size={20} />
         <h2 className="zc-h flex-1 text-[1.15em]">{t("cityHall")}</h2>
+        <button type="button" className="zc-btn min-h-[36px] px-3 text-[0.85em]" onClick={() => g.openApp("home")} data-testid="zc-open-mandate">
+          <Icon name="ballot" size={16} />
+          {t("md.openShort")}
+        </button>
         <button type="button" className="zc-btn px-0" onClick={() => g.openHall(null)} aria-label={t("close")} data-testid="zc-hall-close">
           <Icon name="close" size={16} />
         </button>
@@ -637,7 +641,7 @@ export function ElectionNight() {
   if (!r) return null;
   const pct = Math.round(r.share * 100);
   return (
-    <div className="pointer-events-auto absolute inset-0 z-20 grid place-items-center bg-black/45 p-3 zc-in" role="dialog" aria-modal="true" aria-label={t("electionNight")} data-testid="zc-election">
+    <div className="pointer-events-auto absolute inset-0 z-30 grid place-items-center bg-black/45 p-3 zc-in" role="dialog" aria-modal="true" aria-label={t("electionNight")} data-testid="zc-election">
       <div className="zc-glass zc-sheet zc-slide zc-scroll flex max-h-full w-full max-w-md flex-col gap-4 p-5">
         <p className="zc-label opacity-70">
           {t("electionNight")} · {t("termN", { n: r.term })}
