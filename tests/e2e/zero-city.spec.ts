@@ -723,3 +723,58 @@ test("Zero City 1.1: traffic lights where avenues cross, the Junctions tool, and
   await expect.poll(async () => (await st()).junctions.controls.map((c) => c.control)).toEqual(["signal"]);
   expect(errors).toEqual([]);
 });
+
+test("Zero City 1.2: the Grid tool lays a block of streets in two clicks and undoes in one", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "covered on desktop");
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/ERR_TUNNEL|Failed to load resource|supabase/i.test(m.text())) errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("zx-season-s1"))
+      localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+  });
+  await page.goto("/games/zero-city?zc=test");
+  await page.getByTestId("zlink-lock-join").click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByTestId("zc-menu")).toBeVisible({ timeout: 90_000 });
+  await hook(page, (zc) => zc.quality("low"));
+  await page.getByTestId("zc-new").click();
+  await page.getByTestId("zc-start").click();
+  await expect(page.getByTestId("zc-hud")).toBeVisible({ timeout: 90_000 });
+
+  const end = await hook(page, (zc) => zc.gateEnd());
+  const at = async (dx: number, dz: number) => (await page.evaluate(([x, z]) => (window as unknown as { __zc: ZC }).__zc.screenOf(x, z), [end.x + dx, end.z + dz]))!;
+  const before = (await state(page)).roads;
+  // Bring the whole grid into the open ground between the top bar and the tool panel.
+  const box = (await page.getByTestId("zero-city").boundingBox())!;
+  for (let dz = 140; dz < 900; dz += 20) {
+    await page.evaluate(([x, z, dz]) => (window as unknown as { __zc: ZC }).__zc.look(x + 180, z + dz, 900, 1.3, 0), [end.x, end.z, dz]);
+    await page.waitForTimeout(400);
+    const ya = (await at(60, 60)).y;
+    const yb = (await at(300, 220)).y;
+    if (Math.max(ya, yb) < box.y + box.height * 0.42 && Math.min(ya, yb) > box.y + 80) break;
+  }
+
+  await page.getByTestId("zc-tab-roads").click();
+  await page.getByTestId("zc-dm-grid").click();
+  await page.getByTestId("zc-grid-block-80").click();
+  const a = await at(60, 60);
+  await page.mouse.click(a.x, a.y);
+  // Three blocks by two: four streets one way and three the other.
+  const b = await at(60 + 240, 60 + 160);
+  await page.mouse.move(b.x, b.y, { steps: 4 });
+  await page.waitForTimeout(300);
+  if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/80-grid-ghost.png` });
+  await expect(page.getByTestId("zc-cursor-label")).toContainText("7 streets");
+  await page.mouse.click(b.x, b.y);
+  await expect.poll(async () => (await state(page)).roads).toBeGreaterThanOrEqual(before + 7);
+  if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/81-grid.png` });
+
+  // The whole grid is one undo step.
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await state(page)).roads).toBe(before);
+  expect(errors).toEqual([]);
+});

@@ -80,6 +80,19 @@ export default async function GamePage(props: PageProps<"/games/[slug]">) {
 
       <div className="mx-auto mt-8 grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[1fr_22rem]">
         <div className="min-w-0">
+          {game.retiring && (
+            <div role="note" data-testid="game-retiring" className="mb-4 rounded-2xl border border-amber-400/60 bg-amber-400/10 p-4 text-sm">
+              <p className="font-display text-base font-black uppercase tracking-wide text-amber-300">
+                Retiring {new Date(game.retiring.on + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}
+              </p>
+              <p className="mt-1 text-muted">{game.retiring.note}</p>
+              {game.retiring.successor && (
+                <Link href={`/games/${game.retiring.successor}`} className="mt-2 inline-block font-bold text-violet hover:underline">
+                  Play {getGame(game.retiring.successor)?.title ?? "its successor"} instead →
+                </Link>
+              )}
+            </div>
+          )}
           <GameStage game={game} />
           {game.pass === "ubusiness" && <UBusinessEdition />}
 

@@ -67,6 +67,8 @@ export function GameArt({
         <CityArt id={id} />
       ) : game.slug === "zero-city" ? (
         <ZeroCityArt id={id} />
+      ) : game.slug === "yourgov" ? (
+        <YourGovArt />
       ) : game.slug === "lifeline" ? (
         <LifelineArt id={id} />
       ) : game.category === "sports" ? (
@@ -635,6 +637,52 @@ function StoreArt({ a, b }: { a: string; b: string }) {
           $
         </text>
       </g>
+    </g>
+  );
+}
+
+function YourGovArt() {
+  // A grey government desk: a county map coloured by party, and the chamber's seat chart.
+  const cols = ["#e0453a", "#3d6fd8", "#f2f2f2", "#f0b429", "#9b4fd6", "#34b25a"];
+  const cells: { x: number; y: number; c: string }[] = [];
+  for (let y = 0; y < 7; y++)
+    for (let x = 0; x < 11; x++) {
+      const dx = (x - 5) / 6;
+      const dy = (y - 3) / 4;
+      if (dx * dx + dy * dy > 1) continue;
+      const k = (x * 7 + y * 13 + ((x * y) % 5)) % 9;
+      cells.push({ x, y, c: k < 3 ? cols[0] : k < 6 ? cols[1] : k < 7 ? cols[4] : k < 8 ? cols[3] : cols[5] });
+    }
+  const seats: { x: number; y: number; c: string }[] = [];
+  const order = [0, 0, 0, 5, 5, 1, 1, 1, 1, 2, 3, 3, 4, 4, 4, 4];
+  [0, 1, 2].forEach((row) => {
+    const n = 8 + row * 4;
+    for (let j = 0; j < n; j++) {
+      const a = Math.PI * (1 - (j + 0.5) / n);
+      seats.push({ x: 248 + Math.cos(a) * (26 + row * 12), y: 128 - Math.sin(a) * (26 + row * 12), c: cols[order[Math.floor((j / n) * order.length)]] });
+    }
+  });
+  return (
+    <g>
+      <rect width="320" height="200" fill="#c9c9c9" />
+      <rect width="320" height="22" fill="#4a4a4a" />
+      {[0, 1, 2, 3].map((i) => (
+        <rect key={i} x={8 + i * 34} y="6" width="28" height="10" rx="3" fill="#5f5f5f" />
+      ))}
+      <rect x="10" y="30" width="182" height="134" rx="6" fill="#3b8fe0" />
+      {cells.map((c, i) => (
+        <rect key={i} x={22 + c.x * 15} y={44 + c.y * 15} width="14" height="14" fill={c.c} stroke="#fafafa" strokeWidth="1.2" />
+      ))}
+      <rect x="200" y="30" width="110" height="134" rx="6" fill="#ececec" />
+      {seats.map((s, i) => (
+        <circle key={i} cx={s.x.toFixed(2)} cy={s.y.toFixed(2)} r="4" fill={s.c} stroke="#0003" />
+      ))}
+      <rect x="210" y="142" width="90" height="12" rx="4" fill="#3f8f46" />
+      <rect y="172" width="320" height="28" fill="#8d8d8d" />
+      <circle cx="298" cy="186" r="11" fill="#555" />
+      <text x="16" y="192" fill="#fff" fontSize="14" fontWeight="900" fontFamily="system-ui, sans-serif">
+        YourGov
+      </text>
     </g>
   );
 }

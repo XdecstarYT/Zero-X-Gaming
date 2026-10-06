@@ -333,6 +333,29 @@ export const GAMES: Game[] = [
     touchControls: "Pick a tool and drag with one finger to build; with no tool, one finger pans. Two fingers pinch to zoom, twist to rotate and slide up or down together to tilt. Tap a car to see its route.",
   },
   {
+    slug: "yourgov",
+    title: "YourGov",
+    tagline: "Lead a party. Write the laws. Win the country, county by county.",
+    description:
+      "The ZLink+ exclusive politics sim. Lead one of six parties in the Federation of Avalon, sixteen states and hundreds of counties with a House, a Senate, a President and governors. Every turn is a week: hold rallies, town halls, TV interviews, adverts and fundraisers, dig up scandals on your rivals and commission polls; write bills on thirty laws, from income tax to healthcare, gun policy and the voting age, and steer them through committee, the House, the Senate and the President's desk, lobbying the other parties for votes. Vote on every bill where you sit, pass the budget each year, keep your promises to voters, and watch the elections come in county by county on the map every two years. A twenty-year career: your score is every law passed, seat won and promise kept. Members only.",
+    category: "strategy",
+    tags: ["zlink+ exclusive", "politics", "turn-based", "elections", "strategy"],
+    status: "live",
+    palette: ["#8d8d8d", "#3d6fd8"],
+    rating: 0,
+    ratingCount: 0,
+    plays: 0,
+    releasedAt: "2026-10-30",
+    pass: "zlink",
+    controls: [
+      { keys: ["Click"], action: "Open panels, pick a state on the map, vote" },
+      { keys: ["Drag", "Wheel"], action: "Pan and zoom the map" },
+      { keys: ["Enter", "Space"], action: "End the week" },
+    ],
+    orientation: "landscape",
+    touchControls: "Tap the icons down the left to open panels, tap a state to choose where to campaign, drag and pinch the map, and tap the hourglass to end the week.",
+  },
+  {
     slug: "zenith",
     title: "Zenith",
     tagline: "Build a city. Watch it come alive.",
@@ -347,6 +370,11 @@ export const GAMES: Game[] = [
     plays: 0,
     releasedAt: "2026-10-21",
     pass: "zlink",
+    retiring: {
+      on: "2026-11-30",
+      successor: "zero-city",
+      note: "Zenith is retiring. It stays playable for ZLink+ members until 30 November 2026, then closes for good. Its city builder lives on in Zero City, with Mayor mode, politics, roadworks and a far bigger toolset, and ZLink+ members now also get YourGov.",
+    },
     controls: [
       { keys: ["Mouse drag"], action: "Lay roads, zone and bulldoze with a tool; pan without one" },
       { keys: ["Right drag"], action: "Rotate the camera" },

@@ -1243,6 +1243,12 @@ export const en = {
   "cr.show": "Show me",
   "log.11.title": "1.1: Traffic, streets and spectacle",
   "log.11.body": "Traffic flows again. Junctions now take turns fairly, so no car waits forever behind a stream of others; big crossings get traffic lights that change with demand, and cars pick their lane for the next turn and change lanes smoothly on the way. A new Junctions tool sets any junction to lights, an all-way stop or give way. Roads that join at a sliver of an angle bend in to meet properly, roads that end on top of another road join it, and stop lines, lights and zebras all line up. The city looks new too: light and reflections from the sky, drifting clouds, natural grass, rounder swaying trees, shaped cars with glossy paint, glass windows that catch the sun, colour grading and an optional depth of field, and empty plots only show while zoning. And politics comes out into the streets: protest crowds with placards, strikers at the factory gates, floodwater, festival bunting and fireworks, campaign billboards in every district and fireworks on election night. Click a crowd, or Show me on a crisis, to go there.",
+  "dm.grid": "Grid",
+  "hint.grid": "Click one corner, then the opposite corner, to lay a grid of streets.",
+  "grid.block": "Block",
+  "grid.streets": "{n} streets",
+  "log.12.title": "1.2: The grid",
+  "log.12.body": "A new Grid tool in Roads lays out a whole neighbourhood at once. Click one corner and then the opposite one, pick a block size from 48 to 120 metres, and every street goes down together, joined at proper crossings and lined up with the road you start from. Streets that would run along a road you already have are left out, and the whole grid undoes in one step.",
 };
 
 export type StringKey = keyof typeof en;

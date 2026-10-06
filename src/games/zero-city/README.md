@@ -285,6 +285,16 @@ and fireworks for the festival decree, billboards in every district in the leadi
 colours and rally crowds during the campaign, and fireworks on a winning election night.
 Clicking a crowd opens the briefing; Show me on the crisis card flies the camera there.
 
+## The grid (1.2)
+
+The **Grid** draw mode (`DrawMode` `"grid"`, `Tools.gridLines`) lays a block of streets in two
+clicks. The first click snaps like any road and, if it lands on a road, squares the grid to that
+road's direction (otherwise to the world). The cursor sets the far corner, rounded to whole
+blocks of the chosen size (48–120 m, `gridBlock` in the store; at most 10 blocks a side). Every
+street is checked with `roadOk`, so one that would run along an existing road is shown red and
+left out; the rest go down through `City.addRoad`, which splits them at their crossings into
+proper junctions. The whole grid is charged once and is a single undo step.
+
 ## The Riviera DLC (0.8)
 
 A paid expansion: 50 ZX Cash, once (`ZERO_CITY_DLC_PRICE` in `src/lib/economy.ts`).

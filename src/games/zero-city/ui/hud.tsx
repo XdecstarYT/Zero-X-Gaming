@@ -259,14 +259,18 @@ function Row({ children }: { children: ReactNode }) {
   return <div className="zc-scroll flex max-w-full flex-nowrap items-center gap-1 overflow-x-auto">{children}</div>;
 }
 
+/** Block sizes offered by the grid road tool (metres). */
+const GRID_BLOCKS = [48, 64, 80, 96, 120];
+
 function RoadsBar() {
   const g = useGame();
   const t = useT();
   const type = useUI((s) => s.roadType);
   const mode = useUI((s) => s.drawMode);
+  const block = useUI((s) => s.gridBlock);
   const group = GROUPS.find((gr) => gr.types.includes(type))!;
-  const modes: DrawMode[] = ["straight", "curve", "scurve", "freeform", "roundabout", "lanes", "oneway", "upgrade", "repair", "junction"];
-  const set = (p: Partial<{ roadType: RoadTypeId; drawMode: DrawMode }>) => {
+  const modes: DrawMode[] = ["straight", "curve", "scurve", "freeform", "roundabout", "lanes", "oneway", "upgrade", "repair", "junction", "grid"];
+  const set = (p: Partial<{ roadType: RoadTypeId; drawMode: DrawMode; gridBlock: number }>) => {
     g.tools.reset();
     g.store.setState(p);
     g.audio.tick();
@@ -287,6 +291,15 @@ function RoadsBar() {
           <Chip key={m} on={m === mode} icon={m} iconOnly label={t(`dm.${m}` as StringKey)} onClick={() => set({ drawMode: m })} testId={`zc-dm-${m}`} />
         ))}
       </Row>
+      {mode === "grid" && (
+        <Segmented
+          label={t("grid.block")}
+          value={String(block)}
+          onChange={(v) => set({ gridBlock: Number(v) })}
+          options={GRID_BLOCKS.map((b) => ({ id: String(b), label: t("metres", { n: b }).replace(" ", "\u00a0") }))}
+          testId="zc-grid-block"
+        />
+      )}
     </div>
   );
 }

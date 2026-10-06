@@ -1244,4 +1244,10 @@ export const es: Record<StringKey, string> = {
   "cr.show": "Muéstramelo",
   "log.11.title": "1.1: Tráfico, calles y espectáculo",
   "log.11.body": "El tráfico vuelve a fluir. Los cruces ahora se turnan con justicia, así que ningún coche espera para siempre tras un río de otros; los grandes cruces tienen semáforos que cambian según la demanda, y los coches eligen carril para el siguiente giro y cambian de carril con suavidad. Una nueva herramienta de Cruces pone cualquier cruce con semáforos, stop en todas las direcciones o ceda el paso. Las calles que se unen con un ángulo mínimo se curvan para encajar bien, las que terminan sobre otra se conectan a ella, y líneas de detención, semáforos y pasos de cebra quedan alineados. La ciudad también luce nueva: luz y reflejos del cielo, nubes a la deriva, césped natural, árboles más redondos que se mecen, coches con forma y pintura brillante, ventanas que reflejan el sol, gradación de color y profundidad de campo opcional, y las parcelas vacías solo se ven al zonificar. Y la política sale a la calle: manifestantes con pancartas, huelguistas a las puertas de la fábrica, inundaciones, banderines y fuegos artificiales de fiesta, vallas de campaña en cada distrito y fuegos artificiales la noche electoral. Haz clic en una multitud, o en Muéstramelo en una crisis, para ir allí.",
+  "dm.grid": "Cuadrícula",
+  "hint.grid": "Haz clic en una esquina y luego en la opuesta para trazar una cuadrícula de calles.",
+  "grid.block": "Manzana",
+  "grid.streets": "{n} calles",
+  "log.12.title": "1.2: La cuadrícula",
+  "log.12.body": "Una nueva herramienta Cuadrícula en Carreteras traza un barrio entero de una vez. Haz clic en una esquina y luego en la opuesta, elige un tamaño de manzana de 48 a 120 metros y todas las calles se construyen juntas, unidas en cruces correctos y alineadas con la carretera desde la que empiezas. Las calles que irían a lo largo de una carretera existente se omiten, y toda la cuadrícula se deshace en un paso.",
 };

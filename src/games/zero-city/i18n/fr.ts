@@ -1244,4 +1244,10 @@ export const fr: Record<StringKey, string> = {
   "cr.show": "Montrez-moi",
   "log.11.title": "1.1 : Trafic, rues et spectacle",
   "log.11.body": "La circulation reprend. Les carrefours alternent désormais équitablement, plus aucune voiture n'attend indéfiniment derrière un flot d'autres ; les grands croisements ont des feux qui s'adaptent à la demande, et les voitures choisissent leur voie pour le prochain virage et en changent en douceur. Un nouvel outil Carrefours règle n'importe quel carrefour sur feux, stop dans tous les sens ou priorité. Les routes qui se rejoignent sous un angle infime s'incurvent pour bien se raccorder, celles qui finissent sur une autre route s'y relient, et lignes d'arrêt, feux et passages piétons s'alignent. La ville change aussi de visage : lumière et reflets du ciel, nuages qui dérivent, herbe naturelle, arbres plus ronds qui ondulent, voitures galbées à la peinture brillante, vitres qui captent le soleil, étalonnage des couleurs et profondeur de champ en option, et les parcelles vides n'apparaissent qu'au zonage. Et la politique descend dans la rue : manifestants avec pancartes, grévistes aux portes de l'usine, inondations, guirlandes et feux d'artifice de fête, panneaux de campagne dans chaque quartier et feux d'artifice le soir de l'élection. Cliquez sur une foule, ou sur Montrez-moi dans une crise, pour vous y rendre.",
+  "dm.grid": "Quadrillage",
+  "hint.grid": "Cliquez sur un coin, puis sur le coin opposé, pour tracer un quadrillage de rues.",
+  "grid.block": "Îlot",
+  "grid.streets": "{n} rues",
+  "log.12.title": "1.2 : Le quadrillage",
+  "log.12.body": "Un nouvel outil Quadrillage dans Routes trace tout un quartier d'un coup. Cliquez sur un coin puis sur le coin opposé, choisissez une taille d'îlot de 48 à 120 mètres, et toutes les rues sont posées ensemble, reliées par de vrais carrefours et alignées sur la route d'où vous partez. Les rues qui longeraient une route existante sont omises, et tout le quadrillage s'annule en une seule étape.",
 };

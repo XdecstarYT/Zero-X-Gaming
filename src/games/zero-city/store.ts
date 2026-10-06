@@ -21,7 +21,7 @@ export type Screen = "loading" | "menu" | "maps" | "game";
 export type Overlay = null | "settings" | "load" | "log" | "credits" | "pause" | "dlc";
 export type Tab = "roads" | "zoning" | "transit" | "terrain" | "build" | "move" | "land" | "bulldoze";
 export const TABS: Tab[] = ["roads", "zoning", "transit", "terrain", "build", "move", "land", "bulldoze"];
-export type DrawMode = "straight" | "curve" | "scurve" | "freeform" | "roundabout" | "lanes" | "oneway" | "upgrade" | "repair" | "junction";
+export type DrawMode = "straight" | "curve" | "scurve" | "freeform" | "roundabout" | "lanes" | "oneway" | "upgrade" | "repair" | "junction" | "grid";
 export type ZoneMode = "line" | "area" | "single";
 export type TransitMode = "stop" | "line" | "rail";
 export type TerrainMode = "raise" | "lower" | "smooth" | "water" | "trees" | "clear";
@@ -224,6 +224,8 @@ export interface UIState {
   tab: Tab | null;
   roadType: RoadTypeId;
   drawMode: DrawMode;
+  /** Block size (metres) for the grid road tool. */
+  gridBlock: number;
   zoneMode: ZoneMode;
   zone: Zone;
   depth: number;
@@ -295,6 +297,7 @@ export function makeStore(settings: Settings) {
     tab: null,
     roadType: "street",
     drawMode: "straight",
+    gridBlock: 80,
     zoneMode: "line",
     zone: "R",
     depth: 3,

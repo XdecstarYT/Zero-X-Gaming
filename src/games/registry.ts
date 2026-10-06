@@ -20,6 +20,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   linkwave: () => import("./linkwave/index"),
   zenith: () => import("./zenith/index"),
   "zero-city": () => import("./zero-city/index"),
+  yourgov: () => import("./yourgov/index"),
   lifeline: () => import("./lifeline/index"),
 };
 

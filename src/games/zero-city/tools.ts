@@ -13,6 +13,8 @@ import { autoControl } from "./sim/sim";
 import type { StringKey } from "./i18n";
 
 type V3 = THREE.Vector3;
+/** The most blocks the grid tool lays along each side. */
+const GRID_MAX = 10;
 
 /**
  * Pointer and keyboard input in the city: the active tool gets the left
@@ -559,6 +561,7 @@ export class Tools {
     if (mode === "repair" && this.dragging) return this.repairAt(p);
     if (mode === "repair") return this.repairHover(p);
     if (mode === "junction") return void this.junctionHover(p);
+    if (mode === "grid") return this.pts.length ? void this.showGridGhost(p) : this.showSnapDot(p);
     if (mode === "lanes" || mode === "oneway" || mode === "upgrade") return this.hoverEdge(p);
     if (mode === "roundabout") {
       if (this.pts.length === 1) this.showRoadGhost(this.roundaboutPts(this.pts[0], p).flat(), true);
@@ -599,6 +602,27 @@ export class Tools {
         this.g.worldChanged();
         this.junctionHover(p);
       }
+      return;
+    }
+    if (mode === "grid") {
+      if (!this.pts.length) {
+        const s = this.snap(p);
+        this.pts = [new THREE.Vector3(s.p.x, p.y, s.p.z)];
+        this.startSnap = s;
+        return;
+      }
+      const lines = this.gridLines(p).filter((l) => this.roadOk(l));
+      this.pts = [];
+      this.startSnap = null;
+      this.g.views?.overlays.clearGhosts();
+      this.g.store.setState({ cursorLabel: null });
+      if (!lines.length) return void this.g.audio.error();
+      const cost = lines.reduce((n, l) => n + this.g.roadCost(l, st.roadType), 0);
+      if (!this.g.canAfford(cost)) return;
+      this.city!.record();
+      for (const l of lines) this.city!.addRoad(l, st.roadType, { record: false });
+      this.g.charge(cost);
+      this.afterRoad();
       return;
     }
     if (mode === "lanes" || mode === "oneway") {
@@ -693,6 +717,55 @@ export class Tools {
       return cubic(a.p, { x: a.p.x + h.x * L * 0.5, z: a.p.z + h.z * L * 0.5 }, { x: b.x - h.x * L * 0.5, z: b.z - h.z * L * 0.5 }, b);
     }
     return null;
+  }
+
+  /**
+   * The streets of a grid from the first corner to the cursor, in whole blocks, squared to the
+   * road the grid starts on (or to the world).
+   */
+  private gridLines(p: V3): number[][] {
+    const a = this.startSnap ?? this.snap(this.pts[0]);
+    const t = a.tangent ?? { x: 1, z: 0 };
+    const tl = Math.hypot(t.x, t.z) || 1;
+    const ux = t.x / tl;
+    const uz = t.z / tl;
+    const dx = p.x - a.p.x;
+    const dz = p.z - a.p.z;
+    const B = this.st.gridBlock;
+    const nu = Math.max(-GRID_MAX, Math.min(GRID_MAX, Math.round((dx * ux + dz * uz) / B)));
+    const nv = Math.max(-GRID_MAX, Math.min(GRID_MAX, Math.round((dx * -uz + dz * ux) / B)));
+    if (!nu || !nv) return [];
+    const at = (i: number, j: number) => [a.p.x + (ux * i - uz * j) * B, a.p.z + (uz * i + ux * j) * B];
+    const lines: number[][] = [];
+    for (let j = 0; j <= Math.abs(nv); j++) lines.push([...at(0, j * Math.sign(nv)), ...at(nu, j * Math.sign(nv))]);
+    for (let i = 0; i <= Math.abs(nu); i++) lines.push([...at(i * Math.sign(nu), 0), ...at(i * Math.sign(nu), nv)]);
+    return lines;
+  }
+
+  private showGridGhost(p: V3) {
+    const v = this.g.views;
+    const city = this.city;
+    if (!v || !city) return;
+    v.overlays.clearGhosts();
+    const lines = this.gridLines(p);
+    if (!lines.length) return void this.g.store.setState({ cursorLabel: null });
+    const width = carriageway({ type: this.st.roadType, ...lanesOf(this.st.roadType) }) + 2 * ROAD_TYPES[this.st.roadType].sidewalk;
+    let cost = 0;
+    let n = 0;
+    for (const l of lines) {
+      // Streets that would run along a road already there are left out.
+      const ok = this.roadOk(l);
+      if (ok) {
+        n++;
+        cost += this.g.roadCost(l, this.st.roadType);
+      }
+      const ys = [city.terrain.surfaceAt(l[0], l[1]), city.terrain.surfaceAt(l[2], l[3])];
+      v.overlays.ghosts.add(RoadView.ghost(l, ys, width, ok ? theme.accent : theme.danger));
+    }
+    const scr = this.g.toScreen(new THREE.Vector3(p.x, city.terrain.surfaceAt(p.x, p.z), p.z));
+    if (!this.g.mayor) cost = 0;
+    const text = `${this.g.t("grid.streets", { n })}${cost ? ` · ${this.g.money(cost)}` : ""}`;
+    if (scr) this.g.store.setState({ cursorLabel: { x: scr.x, y: scr.y, text, bad: !n || (cost > 0 && !this.g.canAfford(cost, true)) } });
   }
 
   private roundaboutPts(c: V3, p: V3): number[][] {

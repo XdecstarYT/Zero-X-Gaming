@@ -1244,4 +1244,10 @@ export const de: Record<StringKey, string> = {
   "cr.show": "Zeig es mir",
   "log.11.title": "1.1: Verkehr, Straßen und Spektakel",
   "log.11.body": "Der Verkehr fließt wieder. Kreuzungen wechseln sich jetzt fair ab, sodass kein Auto ewig hinter einem Strom anderer wartet; große Kreuzungen bekommen Ampeln, die sich nach dem Bedarf richten, und Autos wählen ihre Spur für die nächste Abbiegung und wechseln unterwegs sanft die Spur. Ein neues Kreuzungs-Werkzeug stellt jede Kreuzung auf Ampel, allseitigen Stopp oder Vorfahrt. Straßen, die in einem hauchdünnen Winkel einmünden, biegen sich, um sauber anzuschließen, Straßen, die auf einer anderen enden, werden mit ihr verbunden, und Haltelinien, Ampeln und Zebrastreifen liegen in einer Flucht. Auch die Stadt sieht neu aus: Licht und Spiegelungen vom Himmel, ziehende Wolken, natürliches Gras, rundere, wiegende Bäume, geformte Autos mit glänzendem Lack, Glasfenster, die die Sonne einfangen, Farbkorrektur und optionale Tiefenschärfe, und leere Grundstücke zeigen sich nur beim Zonen. Und die Politik geht auf die Straße: Demonstrierende mit Schildern, Streikende vor den Fabriktoren, Hochwasser, Festwimpel und Feuerwerk, Wahlplakate in jedem Bezirk und Feuerwerk in der Wahlnacht. Klicken Sie auf eine Menge oder bei einer Krise auf Zeig es mir, um hinzukommen.",
+  "dm.grid": "Raster",
+  "hint.grid": "Klicke eine Ecke und dann die gegenüberliegende, um ein Straßenraster zu legen.",
+  "grid.block": "Block",
+  "grid.streets": "{n} Straßen",
+  "log.12.title": "1.2: Das Raster",
+  "log.12.body": "Ein neues Raster-Werkzeug unter Straßen legt ein ganzes Viertel auf einmal an. Klicke eine Ecke und dann die gegenüberliegende, wähle eine Blockgröße von 48 bis 120 Metern, und alle Straßen entstehen zusammen, mit richtigen Kreuzungen verbunden und an der Straße ausgerichtet, an der du beginnst. Straßen, die entlang einer bestehenden Straße verlaufen würden, werden ausgelassen, und das ganze Raster lässt sich in einem Schritt rückgängig machen.",
 };

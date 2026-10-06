@@ -28,6 +28,8 @@ export interface Game {
   orientation?: "landscape" | "any";
   /** A one-time unlock needed to play (Sports+ games need the Sports+ pass; UBusiness needs an edition). */
   pass?: "sports-plus" | "ubusiness" | "zlink";
+  /** A game on its way out: the date it closes, and where to go instead. */
+  retiring?: { on: string; successor?: string; note: string };
 }
 
 export interface LeaderboardEntry {

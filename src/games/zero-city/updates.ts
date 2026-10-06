@@ -2,6 +2,7 @@ import type { StringKey } from "./i18n";
 
 /** The in-game update log, newest first. Add an entry (and its strings) for each release. */
 export const UPDATE_LOG: { v: string; date: string; title: StringKey; body: StringKey }[] = [
+  { v: "1.2", date: "2026-10-30", title: "log.12.title", body: "log.12.body" },
   { v: "1.1", date: "2026-10-29", title: "log.11.title", body: "log.11.body" },
   { v: "1.0", date: "2026-10-28", title: "log.10.title", body: "log.10.body" },
   { v: "0.9", date: "2026-10-27", title: "log.09.title", body: "log.09.body" },
