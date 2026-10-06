@@ -10,6 +10,7 @@ import { Segmented } from "../common";
 import { useGame, useNum, useT, useUI } from "../hooks";
 import { Icon } from "../Icons";
 import { Budget, Campaign, FACTION_COLOR, Scandal, VoteResult } from "../politics";
+import { DebatePanel } from "./statecraft";
 import { Bar, Card, Compass, DistrictMap, Hemicycle, PartyDot, partyOrder, PollLines, Portrait, pct, Stacked, Stat, useDistrictName, useMoney } from "./parts";
 
 const usePol = () => useUI((s) => s.politics)!;
@@ -703,9 +704,12 @@ export function CampaignPage() {
         <Stat label={t("md.projectedSeats")} value={`${m.projected.civic}/${CHAMBER}`} tone={m.projected.civic + p.parl.coalition.reduce((n, x) => n + m.projected[x], 0) >= MAJORITY ? "good" : "bad"} />
       </div>
       {p.challenger ? (
-        <Card title={t("md.cityCampaign")} icon="mega">
-          <Campaign />
-        </Card>
+        <>
+          <Card title={t("md.cityCampaign")} icon="mega">
+            <Campaign noDebate />
+          </Card>
+          <DebatePanel />
+        </>
       ) : (
         <Card title={t("md.cityCampaign")} icon="mega">
           <p className="text-[0.9em] text-[var(--md-muted)]">{t("md.campaignLater")}</p>

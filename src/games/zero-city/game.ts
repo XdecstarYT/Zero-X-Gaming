@@ -24,7 +24,16 @@ import { ALL_MAP_IDS, City, type CityJSON } from "./world/city";
 import * as Pol from "./politics/politics";
 import * as Parl from "./politics/parliament";
 import * as Mandate from "./politics/mandate";
-import type { AppPage, DistrictView, GameMode, HallTab } from "./store";
+import * as SC from "./politics/statecraft";
+import * as Bud from "./politics/budget";
+import * as Dec from "./politics/decrees";
+import * as Lob from "./politics/lobbies";
+import * as Med from "./politics/media";
+import * as Opp from "./politics/opposition";
+import * as Fac from "./politics/factions";
+import * as Cri from "./politics/crises";
+import * as Leg from "./politics/legacy";
+import type { AppPage, DistrictView, GameMode, HallTab, StatecraftView } from "./store";
 import type { Lot, ServiceKind } from "./world/lots";
 import { DLC_LANDMARKS, LANDMARK_UNLOCK, LANDMARKS, landmarkState, isLandmark, MILESTONES, milestoneAt, milestoneProgress, type Landmark } from "./world/milestones";
 import type { RoadTypeId } from "./world/roads";
@@ -931,6 +940,7 @@ export class Game {
         const d = Mandate.electDistricts(p, e.result, stats);
         const r = Parl.afterElection(p, e.result, stats, d.seats);
         Mandate.afterVote(p, d.results, minutes);
+        if (r.won) Leg.bump(p, "electionsWon");
         this.electionNight(r);
       }
     }
@@ -950,12 +960,14 @@ export class Game {
         this.toast(this.t("md.defected", { name: e.name, party: this.t(`party.${e.party}` as StringKey) }), e.seat ? this.t("md.seatLost") : undefined);
         this.audio.error();
       } else if (e.t === "noConfidence") {
+        if (!e.passed) Leg.bump(p, "ncSurvived");
         this.toast(this.t(e.passed ? "md.ncLost" : "md.ncWon", { n: e.against }));
         if (e.passed) this.audio.error();
         else this.audio.chime();
       } else if (e.t === "pollLead") this.toast(this.t("md.pollLead", { party: this.t(`party.${e.party}` as StringKey) }));
       else if (e.t === "redistricted") this.toast(this.t("md.mapDrawn", { n: e.n }));
     }
+    for (const e of SC.statecraftHour(p, minutes, stats)) this.statecraftEvent(e, minutes);
     if (JSON.stringify(Pol.simPolicy(p)) !== policyBefore) this.sim?.setSettings(this.simSettings());
     this.publishPolitics(stats);
   }
@@ -1005,8 +1017,240 @@ export class Game {
           scandal: p.parl.scandal,
         },
         m: this.mandateView(st),
+        x: this.statecraftView(st, f.residents),
       },
     });
+  }
+
+  /** A Statecraft event: a headline in the papers, a toast, and the record book. */
+  private statecraftEvent(e: SC.StatecraftEvent, minutes: number) {
+    const p = this.politics!;
+    const say = (k: string, v?: Record<string, string | number>, tone: 1 | -1 | 0 = 0, toast = true) => {
+      Mandate.report(p, { m: minutes, k, v, tone });
+      if (toast) this.toast(this.headline(k, v));
+    };
+    switch (e.t) {
+      case "budgetDay":
+        say("nw.budgetDay", undefined, 0);
+        this.audio.chime();
+        break;
+      case "budgetLapsed":
+        say("nw.budgetLapsed", undefined, -1);
+        break;
+      case "decreeEnded":
+        say("nw.decreeEnded", { decree: e.id }, 0, false);
+        break;
+      case "lobbyAsk":
+        if (e.ask.kind === "demand") say("nw.lobbyDemand", { lobby: e.id, law: e.ask.law }, 0);
+        else say("nw.lobbyOffer", { lobby: e.id, money: this.money(e.ask.amount) }, 0);
+        break;
+      case "lobbyMet":
+        say("nw.lobbyMet", { lobby: e.id, law: e.law }, 1);
+        break;
+      case "lobbySnubbed":
+        say("nw.lobbySnubbed", { lobby: e.id, law: e.law }, -1);
+        break;
+      case "leak":
+        say("nw.leak", { money: this.money(e.amount) }, -1);
+        this.audio.error();
+        break;
+      case "endorse":
+        say("nw.endorse", { n: e.for.length, m: e.against.length }, e.for.length >= e.against.length ? 1 : -1);
+        break;
+      case "oppBill":
+        say("nw.oppBill", { party: e.bill.party, law: e.bill.law }, 0);
+        break;
+      case "oppVote":
+        if (!e.passed) Leg.bump(p, "oppDefeated");
+        say(e.passed ? "nw.oppPassed" : "nw.oppDefeated", { party: e.bill.party, law: e.bill.law, yes: e.yes, no: e.no }, e.passed ? -1 : 1);
+        break;
+      case "attack":
+        say("nw.attack", { party: e.party }, -1);
+        break;
+      case "challenge":
+        say("nw.challenge", { name: e.name, faction: e.faction }, -1);
+        this.audio.error();
+        break;
+      case "challengeLapsed":
+        break;
+      case "crisis":
+        say("nw.crisis", { crisis: e.c.id }, -1);
+        this.audio.error();
+        break;
+      case "crisisStage":
+        say(`nw.cs.${e.c.id}.${e.c.stage}`, undefined, -1);
+        break;
+      case "crisisOver":
+        Leg.bump(p, "crisesResolved");
+        say(`nw.cr.${e.outcome}`, undefined, ["deal", "settled", "relief", "aid", "cleared", "blownOver", "heard", "loan"].includes(e.outcome) ? 1 : -1);
+        break;
+      case "achievement":
+        this.toast(this.t("lg.unlocked"), this.t(`lg.a.${e.id}` as StringKey), "achievement");
+        this.audio.chime();
+        break;
+    }
+  }
+
+  /** A headline with its law, party, lobby, outlet, faction, crisis and decree names translated. */
+  headline(k: string, v?: Record<string, string | number>) {
+    const out: Record<string, string | number> = {};
+    for (const [key, x] of Object.entries(v ?? {})) {
+      if (key === "law") out[key] = this.t(`pol.${x}` as StringKey);
+      else if (key === "party") out[key] = this.t(`party.${x}` as StringKey);
+      else if (key === "ministry") out[key] = this.t(`min.${x}` as StringKey);
+      else if (key === "lobby") out[key] = this.t(`lb.${x}` as StringKey);
+      else if (key === "outlet") out[key] = this.t(`out.${x}` as StringKey);
+      else if (key === "faction") out[key] = this.t(`fc.${x}` as StringKey);
+      else if (key === "crisis") out[key] = this.t(`cr.${x}.t` as StringKey);
+      else if (key === "decree") out[key] = this.t(`dc.${x}` as StringKey);
+      else out[key] = x;
+    }
+    return this.t(k as StringKey, out);
+  }
+
+  /** Statecraft's snapshot for the app. */
+  private statecraftView(st: NonNullable<typeof this.lastTick>["stats"] | null, population: number): StatecraftView {
+    const p = this.politics!;
+    const x = p.x;
+    const minutes = this.lastTick?.minutes ?? this.store.getState().minutes;
+    const b = x.budget;
+    const sh = st ? Pol.shares(st) : null;
+    return {
+      budget: {
+        levels: { ...b.levels },
+        draft: b.draft ? { ...b.draft } : null,
+        due: b.due,
+        dueAt: b.dueAt,
+        nextDay: b.nextDay,
+        cost: Bud.deptCost(b.levels, population),
+        draftCost: Bud.deptCost(b.draft ?? b.levels, population),
+        forecast: b.due ? Bud.budgetForecast(p, b.draft ?? b.levels, population) : null,
+        last: b.last,
+        passed: b.passed,
+      },
+      decrees: Dec.DECREE_IDS.map((id) => ({ id, active: x.decrees.active.find((a) => a.id === id)?.until ?? null, readyAt: x.decrees.readyAt[id] ?? 0, can: Dec.canIssue(p, id, minutes) })),
+      lobbies: Lob.LOBBY_IDS.map((id) => ({ id, relation: x.lobbies.rec[id].relation, power: x.lobbies.rec[id].power, target: Lob.lobbyTarget(p, id), ask: x.lobbies.rec[id].ask, canMeet: p.parl.capital >= Lob.MEET_CAPITAL && minutes - x.lobbies.rec[id].metAt >= 24 * 60 })),
+      exposure: x.lobbies.exposure,
+      media: {
+        rel: { ...x.media.rel },
+        press: x.media.press ? { q: x.media.press.qs[x.media.press.i], i: x.media.press.i, n: x.media.press.qs.length } : null,
+        pressReady: !x.media.press && minutes - x.media.pressAt >= 24 * 60,
+        interviewReady: minutes - x.media.interviewAt >= 24 * 60,
+        debate: x.media.debate ? { ...x.media.debate, log: [...x.media.debate.log] } : null,
+        debateReady: !!p.challenger && !p.parl.campaign.debated && !x.media.debate,
+        pressHeld: x.media.pressHeld,
+        debatesWon: x.media.debatesWon,
+      },
+      opp: {
+        leaders: x.opp.leaders,
+        bills: x.opp.bills.map((bb) => ({ ...bb, forecast: Opp.oppForecast(p, bb) })),
+        effort: Object.fromEntries(Opp.OPP.map((q) => [q, Math.max(0, ...Object.values(x.opp.effort[q]))])) as Record<Opp.Opp, number>,
+        defeated: x.opp.defeated,
+        lost: x.opp.lost,
+      },
+      factions: {
+        sat: { ...x.factions.sat },
+        strength: Fac.strength(p),
+        of: Object.fromEntries(p.m.roster.map((r) => [r.id, Fac.factionOf(p, r.id)])),
+        wish: Object.fromEntries(Fac.FACTION_IDS.map((f) => [f, Fac.factionWish(p, f)])) as Record<Fac.FactionId, Pol.PolicyId | null>,
+        challenge: x.factions.challenge ? { faction: x.factions.challenge.faction, name: p.m.roster.find((r) => r.id === x.factions.challenge!.by)?.name ?? "", ballot: Fac.ballotForecast(p), at: x.factions.challenge.at } : null,
+        deputy: x.factions.deputy !== null ? (p.m.roster.find((r) => r.id === x.factions.deputy)?.name ?? null) : null,
+      },
+      crisis: x.crises.active ? { ...x.crises.active, can: [0, 1, 2].map((i) => Cri.canRespond(p, i)) } : null,
+      crisesResolved: x.crises.resolved,
+      legacy: { rec: { ...x.legacy.rec }, unlocked: [...x.legacy.unlocked], points: Leg.points(x.legacy), title: Leg.title(x.legacy), next: Leg.nextTitle(x.legacy), peak: x.legacy.peak },
+    };
+    void sh;
+  }
+
+  // ------------------------------------------------------------ Statecraft actions
+
+  private now() {
+    return this.lastTick?.minutes ?? this.store.getState().minutes;
+  }
+  private population() {
+    return this.lastTick?.stats.population ?? 0;
+  }
+  setBudget(m: Pol.Ministry, level: number) {
+    this.parl((p) => Bud.setDraft(p, m, level), () => true);
+  }
+  presentBudget() {
+    const r = this.parl((p) => Bud.presentBudget(p, this.now(), this.facts().residents), (x) => x?.t === "budgetPassed");
+    if (!r) return;
+    if (r.t === "budgetPassed") Leg.bump(this.politics!, "budgetsPassed");
+    this.statecraftNews(r.t === "budgetPassed" ? "nw.budgetPassed" : r.t === "budgetFailed" && r.twice ? "nw.budgetFailedTwice" : "nw.budgetFailed", r.t === "budgetPassed" || r.t === "budgetFailed" ? { yes: r.yes, no: r.no } : undefined, r.t === "budgetPassed" ? 1 : -1);
+  }
+  issueDecree(id: Dec.DecreeId) {
+    const l = this.politics ? Pol.ledger(this.politics, this.facts()) : null;
+    const ok = this.parl((p) => Dec.issue(p, id, this.now(), l ? l.income.R + l.income.C + l.income.I : 0));
+    if (ok) {
+      Leg.bump(this.politics!, "decreesIssued");
+      this.statecraftNews("nw.decree", { decree: id }, 0);
+    }
+  }
+  meetLobby(id: Lob.LobbyId) {
+    this.parl((p) => Lob.meet(p, id, this.now()));
+  }
+  acceptOffer(id: Lob.LobbyId) {
+    const n = this.parl((p) => Lob.acceptOffer(p, id), (x) => x > 0);
+    if (n) this.toast(this.t("lb.thanks", { money: this.money(n), lobby: this.t(`lb.${id}` as StringKey) }));
+  }
+  declineAsk(id: Lob.LobbyId) {
+    this.parl((p) => Lob.declineAsk(p, id));
+  }
+  startPress() {
+    const st = this.lastTick?.stats;
+    if (st) this.parl((p) => Med.startPress(p, st, this.now()));
+  }
+  answerPress(a: number) {
+    const r = this.parl((p) => Med.answerPress(p, a), () => true);
+    if (r?.done) {
+      Leg.bump(this.politics!, "pressHeld");
+      this.statecraftNews(r.tone >= 0 ? "nw.pressGood" : "nw.pressBad", undefined, r.tone >= 0 ? 1 : -1);
+    }
+  }
+  interview(id: Med.OutletId) {
+    if (this.parl((p) => Med.interview(p, id, this.now()))) this.statecraftNews("nw.interview", { outlet: id }, 1);
+  }
+  startDebate() {
+    const st = this.lastTick?.stats;
+    if (st) this.parl((p) => Med.startDebate(p, st));
+  }
+  debateAnswer(a: number) {
+    const st = this.lastTick?.stats;
+    if (!st) return;
+    const r = this.parl((p) => Med.debateAnswer(p, st, a), () => true);
+    if (r?.done) {
+      if (r.won) Leg.bump(this.politics!, "debatesWon");
+      this.statecraftNews(r.won ? "nw.debateWon" : "nw.debateLost", { party: r.rival }, r.won ? 1 : -1);
+      this.store.setState({ debateResult: { won: r.won, you: r.you, them: r.them, rival: r.rival } });
+    }
+  }
+  oppStance(id: number, stance: Opp.Stance) {
+    this.parl((p) => Opp.setStance(p, id, stance), () => true);
+  }
+  negotiate(id: number) {
+    const ok = this.parl((p) => Opp.negotiate(p, id), (x) => x === true);
+    if (ok !== null && ok !== undefined) this.toast(this.t(ok ? "op.withdrawn" : "op.refused"));
+  }
+  concede() {
+    if (this.parl((p) => Fac.concede(p))) this.statecraftNews("nw.conceded", undefined, 0);
+  }
+  fightChallenge() {
+    const r = this.parl((p) => Fac.fight(p, this.now()), (x) => !!x?.won);
+    if (!r) return;
+    if (r.won) Leg.bump(this.politics!, "challengesSurvived");
+    this.statecraftNews(r.won ? "nw.challengeWon" : "nw.challengeLost", { name: r.name, n: Math.round(r.share * 100) }, r.won ? 1 : -1);
+  }
+  respondCrisis(pick: number) {
+    const r = this.parl((p) => Cri.respond(p, pick, this.now()));
+    if (r) this.statecraftEvent(r, this.now());
+  }
+  /** A headline from a Statecraft action, with a toast. */
+  private statecraftNews(k: string, v?: Record<string, string | number>, tone: 1 | -1 | 0 = 0) {
+    Mandate.report(this.politics!, { m: this.now(), k, v, tone });
+    this.toast(this.headline(k, v));
+    this.publishPolitics();
   }
 
   /** The Mandate app's snapshot. */
@@ -1174,6 +1418,7 @@ export class Game {
   callVote() {
     const v = this.parl((p) => Parl.callVote(p), (r) => !!r?.passed);
     if (!v) return;
+    if (v.passed) Leg.bump(this.politics!, v.enable ? "lawsPassed" : "lawsRepealed");
     Mandate.report(this.politics!, { m: this.store.getState().minutes, k: v.passed ? "nw.passed" : "nw.failed", v: { law: v.law, yes: v.yes, no: v.no }, tone: v.passed ? 1 : -1 });
     this.publishPolitics();
     this.store.setState({ bill: v });
@@ -1185,6 +1430,7 @@ export class Game {
     if (!st) return;
     const r = this.parl((p) => Parl.referendum(p, st), (x) => !!x?.passed);
     if (!r) return;
+    if (r.passed) Leg.bump(this.politics!, "referendaWon");
     Mandate.report(this.politics!, { m: this.store.getState().minutes, k: r.passed ? "nw.refWon" : "nw.refLost", v: { law: r.law, n: Math.round(r.support * 100) }, tone: r.passed ? 1 : -1 });
     this.publishPolitics();
     this.store.setState({ bill: { law: r.law, enable: r.enable, passed: r.passed, yes: Math.round(r.support * 100), no: 100 - Math.round(r.support * 100), votes: [], referendum: true, support: r.support } });
@@ -1476,6 +1722,12 @@ export class Game {
       look: this.city?.map.look ?? "base",
       parl: this.politics ? { seats: this.politics.parl.seats, coalition: this.politics.parl.coalition, capital: this.politics.parl.capital } : null,
       mandate: this.politics ? { districts: this.politics.m.districts.length, funds: Math.round(this.politics.m.funds), roster: this.politics.m.roster.length, news: this.politics.m.news.length, hq: { ...this.politics.m.hq } } : null,
+      statecraft: this.politics
+        ? (() => {
+            const x = this.politics.x;
+            return { budgetDue: x.budget.due, budgetsPassed: x.budget.passed, levels: { ...x.budget.levels }, decrees: x.decrees.active.map((d) => d.id), unions: Math.round(x.lobbies.rec.unions.relation), pressHeld: x.media.pressHeld, press: !!x.media.press, debate: !!x.media.debate, bills: x.opp.bills.length, crisis: x.crises.active?.id ?? null, record: { ...x.legacy.rec }, unlocked: [...x.legacy.unlocked] };
+          })()
+        : null,
     };
   }
 

@@ -12,6 +12,10 @@ import type { SimPolicy, Stats } from "../sim/sim";
 import type { ServiceKind } from "../world/lots";
 import type { RoadTypeId } from "../world/roads";
 import { newMandate, normaliseMandate, type MandateState } from "./mandate";
+import { newStatecraft, normaliseStatecraft, type StatecraftState } from "./statecraft";
+import { deptCost, deptIncomeMul, deptScore, deptSim } from "./budget";
+import { decreeMul, decreeSim } from "./decrees";
+import { crisisIncomeI } from "./crises";
 
 export const FACTIONS = ["workers", "business", "families", "greens", "seniors"] as const;
 export type Faction = (typeof FACTIONS)[number];
@@ -245,7 +249,7 @@ export interface Taxes {
 }
 export interface Ledger {
   income: { R: number; C: number; I: number };
-  upkeep: { roads: number; services: number; policies: number; transit: number };
+  upkeep: { roads: number; services: number; policies: number; transit: number; departments?: number };
 }
 export interface ElectionResult {
   term: number;
@@ -295,6 +299,8 @@ export interface PoliticsState {
   parl: ParlState;
   /** Districts, your party organisation, the members, polls and the papers (the Mandate app). */
   m: MandateState;
+  /** The budget, decrees, lobbies, press, opposition, factions, crises and your legacy (Statecraft). */
+  x: StatecraftState;
 }
 
 /** Facts about the city the main thread knows (the sim doesn't). */
@@ -381,6 +387,7 @@ export function newPolitics(seed: number, minutes: number): PoliticsState {
     rolls: 0,
     parl,
     m: { ...newMandate(seed, parl.seats), hour: Math.floor(minutes / 60) },
+    x: newStatecraft(seed, minutes),
   };
 }
 
@@ -389,8 +396,9 @@ export function normalisePolitics(p: Partial<PoliticsState> | null | undefined, 
   const base = newPolitics(p?.seed ?? 1, minutes);
   if (!p) return base;
   const parl = p.parl ? { ...base.parl, ...p.parl, seats: { ...base.parl.seats, ...p.parl.seats }, relations: { ...base.parl.relations, ...p.parl.relations }, ministers: { ...base.parl.ministers, ...p.parl.ministers }, campaign: { ...base.parl.campaign, ...p.parl.campaign } } : base.parl;
-  const out: PoliticsState = { ...base, ...p, approval: { ...base.approval, ...p.approval }, mood: { ...base.mood, ...p.mood }, taxes: { ...base.taxes, ...p.taxes }, parl, m: base.m };
+  const out: PoliticsState = { ...base, ...p, approval: { ...base.approval, ...p.approval }, mood: { ...base.mood, ...p.mood }, taxes: { ...base.taxes, ...p.taxes }, parl, m: base.m, x: base.x };
   out.m = normaliseMandate(out, p.m);
+  out.x = normaliseStatecraft(out.seed, minutes, p.x);
   return out;
 }
 
@@ -422,17 +430,24 @@ export function simPolicy(s: PoliticsState): SimPolicy {
   out.fireMul! *= 1 - 0.07 * ministerSkill(s, "safety");
   out.tourismMul! *= 1 + 0.05 * ministerSkill(s, "culture");
   out.bias.R += 0.02 * ministerSkill(s, "housing");
+  // The budget and any decrees in force.
+  if (s.x) {
+    deptSim(s.x.budget.levels, out);
+    decreeSim(s, out);
+  }
   return out;
 }
 
 /** Money in and out per game day at today's rates. */
 export function ledger(s: PoliticsState, f: CityFacts): Ledger {
-  const mul = s.policies.reduce((m, id) => m * (POLICIES[id].income ?? 1), 1) * (1 + 0.012 * ministerSkill(s, "finance"));
-  const upMul = s.policies.reduce((m, id) => m * (POLICIES[id].upkeepMul ?? 1), 1);
+  const dm = decreeMul(s);
+  const mul = s.policies.reduce((m, id) => m * (POLICIES[id].income ?? 1), 1) * (1 + 0.012 * ministerSkill(s, "finance")) * (s.x ? deptIncomeMul(s.x.budget.levels) : 1) * dm.income;
+  const upMul = s.policies.reduce((m, id) => m * (POLICIES[id].upkeepMul ?? 1), 1) * dm.upkeep;
   const income = {
     R: Math.round(f.residents * s.taxes.R * TAX_BASE.R * mul),
     C: Math.round((f.cJobs + (f.tourists ?? 0) * 0.4) * s.taxes.C * TAX_BASE.C * mul),
-    I: Math.round(f.iJobs * s.taxes.I * TAX_BASE.I * mul),
+    // A general strike stops the factories paying.
+    I: Math.round(f.iJobs * s.taxes.I * TAX_BASE.I * mul * crisisIncomeI(s)),
   };
   let services = 0;
   for (const [k, n] of Object.entries(f.services)) services += (SERVICE_COST[k as ServiceKind]?.upkeep ?? 0) * (n ?? 0);
@@ -441,11 +456,13 @@ export function ledger(s: PoliticsState, f: CityFacts): Ledger {
     services: Math.round(services * upMul),
     policies: s.policies.reduce((n, id) => n + POLICIES[id].cost, 0),
     transit: Math.round(f.lines * LINE_UPKEEP * upMul),
+    // Departments above or below standard spending.
+    departments: s.x ? deptCost(s.x.budget.levels, f.residents) : 0,
   };
   return { income, upkeep };
 }
 
-export const net = (l: Ledger) => l.income.R + l.income.C + l.income.I - (l.upkeep.roads + l.upkeep.services + l.upkeep.policies + l.upkeep.transit);
+export const net = (l: Ledger) => l.income.R + l.income.C + l.income.I - (l.upkeep.roads + l.upkeep.services + l.upkeep.policies + l.upkeep.transit + (l.upkeep.departments ?? 0));
 
 /** Voter groups' shares of the electorate, shaped by the kind of city it is. */
 export function shares(st: Pick<Stats, "jobs" | "cJobs" | "iJobs" | "coverage">): Moods {
@@ -492,6 +509,11 @@ export function targets(s: PoliticsState, st: Stats, l: Ledger, lines: number): 
   for (const id of s.policies) for (const [f, v] of Object.entries(POLICIES[id].stance)) score[f as Faction] += (v ?? 0) * 0.25;
   // An environment minister who knows their stuff keeps the greens on side.
   score.greens += 0.03 * ministerSkill(s, "environment");
+  // What the budget spends where.
+  if (s.x) {
+    const d = deptScore(s.x.budget.levels);
+    for (const g of FACTIONS) score[g] += d[g];
+  }
   const out = zeroMoods();
   for (const f of FACTIONS) out[f] = clamp(52 + score[f] * 40 + s.mood[f], 0, 100);
   return out;

@@ -506,7 +506,7 @@ function Cabinet() {
 }
 
 /** Campaign actions, in the last day of the term. */
-export function Campaign() {
+export function Campaign({ noDebate = false }: { noDebate?: boolean } = {}) {
   const g = useGame();
   const t = useT();
   const money = useMoney();
@@ -527,9 +527,12 @@ export function Campaign() {
         <button type="button" className="zc-btn flex-1 text-[0.85em]" disabled={c.ads >= MAX_ADS} onClick={() => g.adBlitz()} data-testid="zc-ads">
           {t("adsN", { n: money(AD_CASH), left: MAX_ADS - c.ads })}
         </button>
-        <button type="button" className="zc-btn flex-1 text-[0.85em]" disabled={c.debated} onClick={() => g.debate()} data-testid="zc-debate">
-          {c.debated ? t("debated") : t("debate")}
-        </button>
+        {!noDebate && (
+          // The debate is live in the Mandate app.
+          <button type="button" className="zc-btn flex-1 text-[0.85em]" disabled={c.debated} onClick={() => g.openApp("media")} data-testid="zc-debate">
+            {c.debated ? t("debated") : t("debate")}
+          </button>
+        )}
       </div>
     </section>
   );
@@ -633,6 +636,33 @@ function DilemmaCost({ id, pick, money }: { id: DilemmaId; pick: "a" | "b"; mone
   return <span className="text-[0.85em] tabular-nums opacity-80">{c > 0 ? `+${money(c)}` : money(c)}</span>;
 }
 
+/** Election night's district results, revealed one by one. */
+function DistrictResults() {
+  const t = useT();
+  const m = useUI((s) => s.politics?.m);
+  const res = m?.lastResults;
+  if (!m || !res || res.length < 2) return null;
+  return (
+    <section data-testid="zc-district-results">
+      <p className="zc-label mb-1 opacity-70">{t("en.byDistrict")}</p>
+      <ul className="flex flex-col gap-1">
+        {res.map((r, i) => {
+          const d = m.districts.find((x) => x.id === r.id);
+          return (
+            <li key={r.id} className="flex items-center gap-2 rounded-[10px] bg-white/5 px-2 py-1.5 text-[0.88em]" style={{ animation: `zc-in .5s ease-out ${0.4 + i * 0.45}s both` }}>
+              <PartyDot party={r.winner} />
+              <span className="flex-1 font-semibold">{d ? t(`dn.${d.name}` as StringKey) : ""}</span>
+              <span className="flex gap-0.5" aria-label={PARTIES.filter((p) => r.seats[p]).map((p) => `${t(`party.${p}` as StringKey)} ${r.seats[p]}`).join(", ")}>
+                {PARTIES.flatMap((p) => Array.from({ length: r.seats[p] }, (_, k) => <span key={`${p}${k}`} className="h-3 w-3 rounded-full" style={{ background: PARTY_COLOR[p] }} />))}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 /** Election night: the result, how each group voted, the new council. */
 export function ElectionNight() {
   const g = useGame();
@@ -666,6 +696,7 @@ export function ElectionNight() {
           ))}
         </ul>
         {r.rescued && <p className="font-bold" data-testid="zc-rescued">{t("rescued")}</p>}
+        <DistrictResults />
         <div>
           <p className="zc-label mb-1 opacity-70">{t("newCouncil")}</p>
           <div className="flex gap-1">

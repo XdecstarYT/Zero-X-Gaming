@@ -13,6 +13,7 @@
 import { rng } from "../core/rng";
 import type { Stats } from "../sim/sim";
 import type { Zone } from "../world/lots";
+import { oppPressure } from "./opposition";
 import { CHAMBER, FACTIONS, MAJORITY, MINISTRIES, PARTIES, PARTY_BASE, POLICIES, TERM_MINUTES, overall, shares, type ElectionResult, type Faction, type Minister, type Ministry, type Moods, type PartyId, type PoliticsState, type PolicyId } from "./politics";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -516,7 +517,8 @@ export function projection(s: PoliticsState, feel: Moods = s.approval): District
   if (!m.districts.length) return [];
   return m.districts.map((d) => {
     const st = m.dstats.find((x) => x.id === d.id);
-    const share = supportIn(feel, st?.mix ?? { workers: 0.2, business: 0.2, families: 0.2, greens: 0.2, seniors: 0.2 }, boostIn(m, d.id));
+    // Your ground game there, less the strongest rival's.
+    const share = supportIn(feel, st?.mix ?? { workers: 0.2, business: 0.2, families: 0.2, greens: 0.2, seniors: 0.2 }, boostIn(m, d.id) - oppPressure(s, d.id));
     const seats = zeroParties();
     const n = apportion(
       PARTIES.map((p) => share[p]),

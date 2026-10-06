@@ -40,8 +40,10 @@ without workers.
 | `audio.ts` | Generative ambient music, city hum, effects (all synthesised) |
 | `politics/politics.ts` | Mayor mode: treasury, taxes, voter groups, approval, laws and ministries, dilemmas, promises, elections (pure, unit-tested) |
 | `politics/mandate.ts` | Mandate (0.9): electoral districts, the ideology compass, your party's funds, members, headquarters and politicians, named members who can rebel, the whip, polls, the newspaper, no confidence, district-by-district elections (pure, unit-tested) |
+| `politics/statecraft.ts` + `budget.ts`, `decrees.ts`, `lobbies.ts`, `media.ts`, `opposition.ts`, `factions.ts`, `crises.ts`, `legacy.ts` | Statecraft (1.0): the department budget, decrees, lobbies, the press, the opposition, party factions, crises and your legacy, run hour by hour (pure, unit-tested) |
 | `politics/parliament.ts` | The parliament: parties and seats, coalitions, political capital, bills, lobbying, referendums, the cabinet and scandals, the campaign (pure, unit-tested) |
 | `ui/mandate/*` | The Mandate side app: shell and briefing (`MandateApp.tsx`), the other pages (`pages.tsx`), portraits, the chamber, charts, the compass and the district map (`parts.tsx`) |
+| `ui/mandate/statecraft.tsx` | The Statecraft pages: Budget, Decrees, Lobbies, Media (press conference, interviews, the TV debate), Opposition, Factions, Legacy, and the crisis card |
 | `ui/*` | React screens (loading, menu, map select, settings, load, update log, credits, pause), HUD, City Hall (`politics.tsx`) and the liquid glass (`glass.tsx`) |
 
 ## Mayor mode
@@ -200,6 +202,48 @@ nine pages. Esc goes back to the city; the city keeps running underneath. The ru
 
 Saves keep it all on `politics.m`; older saves get a party and a seated chamber on load
 (`normaliseMandate`).
+
+## Statecraft (1.0)
+
+The biggest update so far takes the Mandate app from 9 pages to 16. Every system is a pure
+module under `politics/`, kept in `PoliticsState.x` and advanced one game hour at a time by
+`statecraftHour` (at most a day's worth after a long pause). Events come back as a list, and
+`game.ts` turns each one into a newspaper story, a toast and, where it counts, a line in the
+record book.
+
+- **Budget** (`budget.ts`). Six departments run from deep cuts (0) to generous (4); standard
+  (2) costs nothing extra. Every two days Budget Day opens a 12-hour window to draft the levels
+  and put them to the chamber. Each party weighs what its voters get against the cost
+  (Enterprise most, and twice as hard while the city is in the red). A defeat costs capital;
+  two in a cycle, or missing the window, rolls the old budget over at a bigger price. Levels
+  feed approval targets, upkeep, tax collection, road wear, fires, tourism and housing demand.
+- **Decrees** (`decrees.ts`). Seven orders that skip the vote: curfew, festival, hiring freeze,
+  car-free day, public works, tax amnesty and emergency housing. Each costs capital (some cash
+  too), lasts a set time, has a cooldown, and annoys every party outside the government.
+- **Lobbies** (`lobbies.ts`). Unions, Chamber of Commerce, parents, the green network,
+  pensioners and builders. Each has laws it likes and hates and a rival. Meet them, answer
+  their demands (met or snubbed when the deadline passes) and take their donations, but
+  donations build exposure that can leak at 9 pm. In the campaign they endorse or oppose you.
+- **Media** (`media.ts`). Four outlets with their own readers and lean drift towards or away
+  from you each hour, and their readers' moods follow. A daily press conference asks three
+  questions picked from what's going wrong in the city; an interview a day wins over one outlet
+  at a cost to its opposite. The TV debate is interactive: the rival leader answers each
+  question for their own base and the city's mix of voters scores both.
+- **Opposition** (`opposition.ts`). Each opposition party has a named leader (charisma and a
+  fierce, pragmatic or populist style). They work the districts (which eats into your
+  projected vote), table their own bills every day or so, and run attack ads in the campaign.
+  Set your members' stance on each bill or spend capital to negotiate its withdrawal.
+- **Factions** (`factions.ts`). Your party's moderates, progressives and traditionalists judge
+  you on how close the platform sits to them, their share of ministers and their wish-list law.
+  An unhappy faction with enough members mounts a leadership challenge: concede (the platform
+  shifts towards them) or fight a party ballot.
+- **Crises** (`crises.ts`). A strike (threat, then a walkout that cuts industrial tax to 40%), a
+  flood in one district, corruption allegations that can become an inquiry, a protest by one
+  group, and a cash crunch. Each stage has a deadline and three responses, some of them gambles.
+- **Legacy** (`legacy.ts`). A record book of 14 counts, 23 achievements worth legacy points,
+  and six titles from Rookie Mayor to Living Legend.
+
+Election night now reveals the results district by district before the totals.
 
 ## The Riviera DLC (0.8)
 

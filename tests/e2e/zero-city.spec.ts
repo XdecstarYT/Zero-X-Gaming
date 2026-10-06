@@ -527,3 +527,128 @@ test("Zero City 0.9: Mandate, the politics app: districts, party, chamber, laws,
   await expect(page.getByTestId("md-app")).toBeHidden();
   expect(errors).toEqual([]);
 });
+
+test("Zero City 1.0: Statecraft: budget, decrees, lobbies, press, opposition, factions, crises and legacy", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "covered on desktop");
+  test.setTimeout(420_000);
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/ERR_TUNNEL|Failed to load resource|supabase/i.test(m.text())) errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("zx-season-s1"))
+      localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+  });
+  await page.goto("/games/zero-city?zc=test");
+  await page.getByTestId("zlink-lock-join").click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByTestId("zc-menu")).toBeVisible({ timeout: 90_000 });
+  await hook(page, (zc) => zc.quality("low"));
+  await page.getByTestId("zc-new").click();
+  await page.getByTestId("zc-mode-mayor").click();
+  await page.getByTestId("zc-start").click();
+  await expect(page.getByTestId("zc-treasury")).toBeVisible({ timeout: 90_000 });
+  type S = { population: number; mandate: { districts: number; news: number }; parl: { capital: number }; statecraft: { budgetDue: boolean; budgetsPassed: number; levels: Record<string, number>; decrees: string[]; unions: number; pressHeld: number; press: boolean; bills: number; crisis: string | null; record: Record<string, number>; unlocked: string[] } };
+  const st = () => page.evaluate(() => (window as unknown as { __zc: { debugState: () => S } }).__zc.debugState());
+
+  // A small town: an avenue with streets across it, zoned on both sides.
+  await page.evaluate(() => {
+    const g = (window as unknown as { __zc: { city: { addRoad: (p: number[], t: string) => void; roads: { edges: Map<number, { id: number; type: string; pts: number[] }> }; paint: (e: number, side: number, s0: number, s1: number, o: object, m: boolean) => void }; worldChanged: () => void; gateEnd: () => { x: number; z: number } } }).__zc;
+    const e = g.gateEnd();
+    g.city.addRoad([e.x, e.z, e.x + 420, e.z], "avenue");
+    for (const dx of [100, 210, 320]) g.city.addRoad([e.x + dx, e.z - 140, e.x + dx, e.z + 140], "street");
+    const zones = ["R", "C", "R", "I"];
+    let k = 0;
+    for (const ed of [...g.city.roads.edges.values()]) if (ed.type !== "highway") for (const side of [1, -1]) g.city.paint(ed.id, side, 0, 1e6, { zone: zones[k++ % 4], width: 2, depth: 3, mixed: true }, false);
+    g.worldChanged();
+  });
+  await page.getByTestId("zc-speed-3").click();
+  await expect.poll(async () => (await st()).mandate.districts, { timeout: 120_000, intervals: [2000] }).toBeGreaterThan(1);
+  type G = { politics: { cash: number; parl: { capital: number }; x: { hour: number; budget: { due: boolean; dueAt: number; draft: object | null; levels: object }; opp: { nextBill: number }; crises: { active: object | null } } }; publishPolitics: () => void };
+  const poke = (what: "budget" | "crisis" | "bill" | "capital") =>
+    page.evaluate((w) => {
+      const g = (window as unknown as { __zc: G }).__zc;
+      const x = g.politics.x;
+      const now = x.hour * 60;
+      if (w === "budget") Object.assign(x.budget, { due: true, dueAt: now + 12 * 60, draft: { ...x.budget.levels } });
+      if (w === "crisis") x.crises.active = { id: "strike", stage: "threat", until: now + 24 * 60 };
+      if (w === "bill") x.opp.nextBill = 0;
+      if (w === "capital") {
+        g.politics.parl.capital = 100;
+        g.politics.cash = Math.max(g.politics.cash, 100_000);
+      }
+      g.publishPolitics();
+    }, what);
+  const shot = async (name: string) => {
+    if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/${name}.png` });
+  };
+  await poke("capital");
+  await poke("bill");
+  await page.getByTestId("md-open").click();
+  await expect(page.getByTestId("md-app")).toBeVisible();
+
+  // Budget Day: cut finance, boost safety, put it to the vote.
+  await poke("budget");
+  await page.getByTestId("md-nav-budget").click();
+  await expect(page.getByTestId("bg-depts")).toBeVisible();
+  await page.getByTestId("bg-safety-3").click();
+  await page.getByTestId("bg-culture-1").click();
+  await expect(page.getByTestId("bg-vote")).toBeVisible();
+  await shot("60-budget");
+  await page.getByTestId("bg-present").click();
+  await expect.poll(async () => (await st()).statecraft.budgetDue || (await st()).statecraft.budgetsPassed > 0).toBe(true);
+
+  // A decree.
+  await page.getByTestId("md-nav-decrees").click();
+  await page.getByTestId("dc-festival-go").click();
+  await expect.poll(async () => (await st()).statecraft.decrees).toContain("festival");
+  await shot("61-decrees");
+
+  // Lobbies: meet the unions.
+  await page.getByTestId("md-nav-lobbies").click();
+  const unions0 = (await st()).statecraft.unions;
+  await page.getByTestId("lb-unions-meet").click();
+  await expect.poll(async () => (await st()).statecraft.unions).toBeGreaterThan(unions0);
+  await shot("62-lobbies");
+
+  // The press conference: three questions.
+  await page.getByTestId("md-nav-media").click();
+  await page.getByTestId("me-press-start").click();
+  for (let i = 0; i < 3; i++) {
+    await expect(page.getByTestId("me-answer-0")).toBeVisible();
+    if (i === 0) await shot("63-press");
+    await page.getByTestId(`me-answer-${i % 3}`).click();
+  }
+  await expect.poll(async () => (await st()).statecraft.pressHeld).toBe(1);
+  await expect(page.getByTestId("me-debate")).toBeVisible();
+
+  // The opposition: a bill of theirs to take a stance on.
+  await page.getByTestId("md-nav-opposition").click();
+  await expect.poll(async () => (await st()).statecraft.bills, { timeout: 60_000 }).toBeGreaterThan(0);
+  await expect(page.getByTestId("op-bills").locator("[data-testid^=op-bill-]").first()).toBeVisible();
+  await shot("64-opposition");
+
+  // Factions and the legacy page.
+  await page.getByTestId("md-nav-caucus").click();
+  await expect(page.getByTestId("fc-unity")).toBeVisible();
+  await shot("65-caucus");
+  await page.getByTestId("md-nav-legacy").click();
+  await expect(page.getByTestId("lg-title")).toContainText(/Mayor|Boss|Leader/);
+  await expect(page.getByTestId("lg-achievements")).toBeVisible();
+  await shot("66-legacy");
+
+  // A crisis lands on the briefing: settle it.
+  await poke("crisis");
+  await page.getByTestId("md-nav-home").click();
+  await expect(page.getByTestId("cr-card")).toBeVisible();
+  await shot("67-crisis");
+  await page.getByTestId("cr-opt-0").click();
+  await expect.poll(async () => (await st()).statecraft.crisis).toBeNull();
+  expect((await st()).statecraft.record.crisesResolved).toBe(1);
+  expect((await st()).statecraft.record.decreesIssued).toBe(1);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("md-app")).toBeHidden();
+  expect(errors).toEqual([]);
+});

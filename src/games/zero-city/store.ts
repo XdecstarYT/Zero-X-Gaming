@@ -6,6 +6,13 @@ import type { Notice, Stats } from "./sim/sim";
 import type { DilemmaId, ElectionResult, Faction, Ledger, Minister, Ministry, PartyId, PolicyId, PromiseId, Taxes } from "./politics/politics";
 import type { ParlVote } from "./politics/parliament";
 import type { District, DistrictResult, Hq, Mp, News, Politician, Position } from "./politics/mandate";
+import type { ActiveCrisis } from "./politics/crises";
+import type { DecreeId } from "./politics/decrees";
+import type { FactionId } from "./politics/factions";
+import type { Ask, LobbyId } from "./politics/lobbies";
+import type { DebateState, OutletId, QuestionId } from "./politics/media";
+import type { Leader, Opp, OppBill } from "./politics/opposition";
+import type { RecordKey } from "./politics/legacy";
 import type { Zone, ServiceKind } from "./world/lots";
 import type { Landmark } from "./world/milestones";
 import type { RoadTypeId } from "./world/roads";
@@ -53,8 +60,58 @@ export interface VehicleInfo {
 export type GameMode = "sandbox" | "mayor";
 export type HallTab = "overview" | "budget" | "policies" | "council" | "cabinet";
 /** The Mandate app's pages. */
-export type AppPage = "home" | "map" | "party" | "chamber" | "laws" | "cabinet" | "polls" | "campaign" | "news";
-export const APP_PAGES: AppPage[] = ["home", "map", "party", "chamber", "laws", "cabinet", "polls", "campaign", "news"];
+export type AppPage = "home" | "map" | "party" | "caucus" | "chamber" | "opposition" | "laws" | "decrees" | "budget" | "cabinet" | "lobbies" | "media" | "polls" | "campaign" | "news" | "legacy";
+export const APP_PAGES: AppPage[] = ["home", "map", "party", "caucus", "chamber", "opposition", "laws", "decrees", "budget", "cabinet", "lobbies", "media", "polls", "campaign", "news", "legacy"];
+
+type Votes = { votes: { party: PartyId; seats: number; yes: number }[]; yes: number; no: number; passed: boolean };
+/** Statecraft, as the app shows it. */
+export interface StatecraftView {
+  budget: {
+    levels: Record<Ministry, number>;
+    draft: Record<Ministry, number> | null;
+    due: boolean;
+    dueAt: number;
+    nextDay: number;
+    /** Extra daily spending of the budget in force and of the draft. */
+    cost: number;
+    draftCost: number;
+    forecast: Votes | null;
+    last: { m: number; passed: boolean; yes: number; no: number } | null;
+    passed: number;
+  };
+  decrees: { id: DecreeId; active: number | null; readyAt: number; can: boolean }[];
+  lobbies: { id: LobbyId; relation: number; power: number; target: number; ask: Ask | null; canMeet: boolean }[];
+  exposure: number;
+  media: {
+    rel: Record<OutletId, number>;
+    press: { q: QuestionId; i: number; n: number } | null;
+    pressReady: boolean;
+    interviewReady: boolean;
+    debate: DebateState | null;
+    debateReady: boolean;
+    pressHeld: number;
+    debatesWon: number;
+  };
+  opp: {
+    leaders: Record<Opp, Leader>;
+    bills: (OppBill & { forecast: Votes })[];
+    /** Each party's ground game: its strongest district effort. */
+    effort: Record<Opp, number>;
+    defeated: number;
+    lost: number;
+  };
+  factions: {
+    sat: Record<FactionId, number>;
+    strength: Record<FactionId, number>;
+    of: Record<number, FactionId>;
+    wish: Record<FactionId, PolicyId | null>;
+    challenge: { faction: FactionId; name: string; ballot: number; at: number } | null;
+    deputy: string | null;
+  };
+  crisis: (ActiveCrisis & { can: boolean[] }) | null;
+  crisesResolved: number;
+  legacy: { rec: Record<RecordKey, number>; unlocked: string[]; points: number; title: string; next: { id: string; at: number } | null; peak: number };
+}
 
 /** A district as the app shows it: its make-up, how it would vote today, and your work there. */
 export interface DistrictView extends District {
@@ -140,6 +197,7 @@ export interface PoliticsView {
     scandal: Ministry | null;
   };
   m: MandateView;
+  x: StatecraftView;
 }
 
 export interface UIState {
@@ -206,6 +264,8 @@ export interface UIState {
   hall: HallTab | null;
   /** The Mandate app, open on a page (Mayor mode). */
   app: AppPage | null;
+  /** The last TV debate's result (shown until dismissed). */
+  debateResult: { won: boolean; you: number; them: number; rival: PartyId } | null;
   bill: BillView | null;
   election: ElectionResult | null;
 }
@@ -270,6 +330,7 @@ export function makeStore(settings: Settings) {
     politics: null,
     hall: null,
     app: null,
+    debateResult: null,
     bill: null,
     election: null,
   }));

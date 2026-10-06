@@ -4,6 +4,7 @@
  * cabinet, the polls, the campaign and the papers. The city keeps running underneath.
  */
 import { formatClock, formatPlaytime, type StringKey } from "../../i18n";
+import { en } from "../../i18n/en";
 import type { News } from "../../politics/mandate";
 import { CHAMBER, DILEMMAS, MAJORITY, MINISTRIES, PARTY_COLOR, type PartyId } from "../../politics/politics";
 import { APP_PAGES, type AppPage } from "../../store";
@@ -11,9 +12,10 @@ import { useGame, useT, useUI } from "../hooks";
 import { Icon } from "../Icons";
 import { Scandal } from "../politics";
 import { CabinetPage, CampaignPage, ChamberPage, LawsPage, MapPage, PartyPage, PollsPage } from "./pages";
-import { Card, Hemicycle, MandateDefs, PartyDot, PollLines, pct, Stat, useDistrictName, useMoney } from "./parts";
+import { BudgetPage, CaucusPage, CrisisCard, DecreesPage, LegacyPage, LobbiesPage, MediaPage, OppositionPage } from "./statecraft";
+import { Card, Hemicycle, MandateDefs, PartyDot, PollLines, pct, Stat, useMoney } from "./parts";
 
-const ICON: Record<AppPage, string> = { home: "ballot", map: "land", party: "flag", chamber: "columns", laws: "scroll", cabinet: "briefcase", polls: "chart", campaign: "mega", news: "news" };
+const ICON: Record<AppPage, string> = { home: "ballot", map: "land", party: "flag", caucus: "people", chamber: "columns", opposition: "vote", laws: "scroll", decrees: "seal", budget: "money", cabinet: "briefcase", lobbies: "handshake", media: "mic", polls: "chart", campaign: "mega", news: "news", legacy: "star" };
 
 /** The app's own look: a dark statehouse with paper for the press. */
 const STYLE = `
@@ -41,7 +43,7 @@ export function MandateApp() {
     <div className="md pointer-events-auto absolute inset-0 z-[25] flex flex-col overflow-hidden zc-in @3xl:flex-row" role="dialog" aria-modal="true" aria-label={t("md.app")} data-testid="md-app">
       <style>{STYLE}</style>
       <MandateDefs />
-      <nav className="flex shrink-0 gap-1 overflow-x-auto border-[var(--md-line)] bg-[var(--md-nav)] p-2 @max-3xl:order-last @max-3xl:border-t @3xl:w-[68px] @3xl:flex-col @3xl:items-center @3xl:border-e @3xl:p-2.5 @5xl:w-[212px] @5xl:items-stretch @5xl:p-3" aria-label={t("md.app")}>
+      <nav className="flex shrink-0 gap-1 overflow-x-auto border-[var(--md-line)] @3xl:overflow-x-hidden @3xl:overflow-y-auto bg-[var(--md-nav)] p-2 @max-3xl:order-last @max-3xl:border-t @3xl:w-[68px] @3xl:flex-col @3xl:items-center @3xl:border-e @3xl:p-2.5 @5xl:w-[212px] @5xl:items-stretch @5xl:p-3" aria-label={t("md.app")}>
         <div className="mb-3 hidden items-center gap-2 px-1 @3xl:flex" title="MANDATE">
           <span className="grid h-9 w-9 place-items-center rounded-[10px]" style={{ background: PARTY_COLOR.civic, color: "#062a30" }}>
             <Icon name="ballot" size={20} />
@@ -52,7 +54,7 @@ export function MandateApp() {
           <button key={id} type="button" title={t(`md.p.${id}` as StringKey)} className="md-nav-btn relative shrink-0 @3xl:w-11 @3xl:justify-center @3xl:px-0 @5xl:w-full @5xl:justify-start @5xl:px-[0.8em] @max-3xl:w-auto @max-3xl:flex-col @max-3xl:gap-0.5 @max-3xl:px-2 @max-3xl:py-1 @max-3xl:text-[0.68em]" aria-current={page === id ? "page" : undefined} onClick={() => g.openApp(id)} data-testid={`md-nav-${id}`}>
             <Icon name={ICON[id]} size={18} />
             <span className="@3xl:@max-5xl:sr-only">{t(`md.p.${id}` as StringKey)}</span>
-            {id === "home" && p.dilemma && <span className="absolute end-1.5 top-1.5 h-2 w-2 rounded-full bg-[#f5b942]" aria-hidden />}
+            {((id === "home" && (p.dilemma || p.x.crisis)) || (id === "budget" && p.x.budget.due) || (id === "opposition" && p.x.opp.bills.length > 0) || (id === "caucus" && !!p.x.factions.challenge) || (id === "lobbies" && p.x.lobbies.some((l) => l.ask))) && <span className="absolute end-1.5 top-1.5 h-2 w-2 rounded-full bg-[#f5b942]" aria-hidden />}
           </button>
         ))}
         <div className="mt-auto hidden px-1 pt-3 text-[0.75em] text-[var(--md-muted)] @5xl:block">{t("md.tagline")}</div>
@@ -69,6 +71,13 @@ export function MandateApp() {
           {page === "polls" && <PollsPage />}
           {page === "campaign" && <CampaignPage />}
           {page === "news" && <NewsPage />}
+          {page === "caucus" && <CaucusPage />}
+          {page === "opposition" && <OppositionPage />}
+          {page === "decrees" && <DecreesPage />}
+          {page === "budget" && <BudgetPage />}
+          {page === "lobbies" && <LobbiesPage />}
+          {page === "media" && <MediaPage />}
+          {page === "legacy" && <LegacyPage />}
         </main>
       </div>
     </div>
@@ -139,6 +148,13 @@ function HomePage() {
   const vacant = MINISTRIES.filter((k) => !pa.ministers[k]);
   const idle = m.roster.filter((x) => x.district < 0 && !x.minister && !x.mp);
   const todo: { key: string; text: string; page: AppPage; icon: string }[] = [];
+  const x = p.x;
+  if (x.budget.due) todo.push({ key: "budget", text: t("md.todoBudget"), page: "budget", icon: "money" });
+  if (x.factions.challenge) todo.push({ key: "challenge", text: t("md.todoChallenge", { name: x.factions.challenge.name }), page: "caucus", icon: "flag" });
+  if (x.opp.bills.length) todo.push({ key: "opp", text: t("md.todoOpp", { n: x.opp.bills.length }), page: "opposition", icon: "vote" });
+  const asks = x.lobbies.filter((l) => l.ask).length;
+  if (asks) todo.push({ key: "lobby", text: t("md.todoLobby", { n: asks }), page: "lobbies", icon: "handshake" });
+  if (x.media.debateReady) todo.push({ key: "debate", text: t("md.todoDebate"), page: "media", icon: "mic" });
   if (pa.draft) todo.push({ key: "bill", text: t("md.todoBill", { law: t(`pol.${pa.draft.law}` as StringKey) }), page: "chamber", icon: "vote" });
   if (pa.campaign.open) todo.push({ key: "camp", text: t("md.todoCampaign"), page: "campaign", icon: "mega" });
   if (vacant.length) todo.push({ key: "min", text: t("md.todoVacant", { n: vacant.length }), page: "cabinet", icon: "briefcase" });
@@ -158,6 +174,7 @@ function HomePage() {
       </div>
       <div className="grid gap-4 @5xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="flex min-w-0 flex-col gap-4">
+          <CrisisCard />
           <Desk />
           <Scandal />
           <Card title={t("md.onYourDesk")} icon="ballot" testId="md-todo">
@@ -226,19 +243,12 @@ function Desk() {
 
 // ------------------------------------------------------------------- news
 
-/** A headline (or, with `body`, its story), with the law, party and department names translated. */
+/** A headline (or, with `body`, its story, when it has one), with names translated. */
 function Headline({ n, body = false }: { n: News; body?: boolean }) {
-  const t = useT();
-  const dname = useDistrictName();
-  const v: Record<string, string | number> = {};
-  for (const [k, x] of Object.entries(n.v ?? {})) {
-    if (k === "law") v[k] = t(`pol.${x}` as StringKey);
-    else if (k === "party") v[k] = t(`party.${x}` as StringKey);
-    else if (k === "ministry") v[k] = t(`min.${x}` as StringKey);
-    else if (k === "district") v[k] = dname(Number(x));
-    else v[k] = x;
-  }
-  return <span>{t((body ? `${n.k}.b` : n.k) as StringKey, v)}</span>;
+  const g = useGame();
+  useUI((s) => s.lang);
+  if (body && !(`${n.k}.b` in en)) return null;
+  return <span>{g.headline(body ? `${n.k}.b` : n.k, n.v)}</span>;
 }
 
 function NewsPage() {
