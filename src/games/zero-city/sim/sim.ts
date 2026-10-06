@@ -1215,7 +1215,9 @@ export class Sim {
       }
       let mayCross = false;
       if (last) {
-        gap = Math.min(gap, c.stopAt - c.d);
+        // Aim past the spot by the standstill distance the car keeps, so it pulls right in
+        // (and leaves the road) instead of halting 2 m short and blocking the lane.
+        gap = Math.min(gap, c.stopAt + 2.2 - c.d);
         lv = 0;
       } else if (c.d > stopLine - 40) {
         const next = c.route[c.ri + 1];
@@ -1231,8 +1233,9 @@ export class Sim {
         const free = room && this.junctionFree(node, c, info, geo);
         if (free && (!node.controlled || this.priority(node, info, c, buckets))) mayCross = true;
         if (!mayCross) {
-          if (stopLine - c.d < gap) {
-            gap = stopLine - c.d;
+          // Pull right up to the line (the car keeps 2.2 m to what it stops for), ready to go.
+          if (stopLine + 2.2 - c.d < gap) {
+            gap = stopLine + 2.2 - c.d;
             lv = 0;
           }
         } else if (c.d >= stopLine - 0.6) {
@@ -1454,7 +1457,9 @@ export class Sim {
             continue;
           }
         }
-        if (node.pedUntil < this.t) node.carPhaseUntil = this.t + Math.max(4, len / p.v) + 6;
+        // Cars get a fair turn after each crossing (at least as long as the walk), so a busy
+        // pavement can't hold a junction shut and back traffic up down the street.
+        if (node.pedUntil < this.t) node.carPhaseUntil = this.t + Math.max(4, len / p.v) + Math.max(18, (len / p.v) * 1.5);
         node.pedUntil = Math.max(node.pedUntil, this.t + len / p.v);
       }
       p.waiting = 0;

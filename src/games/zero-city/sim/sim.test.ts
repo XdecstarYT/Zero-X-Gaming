@@ -221,3 +221,32 @@ describe("the Roadworks update", () => {
     expect(slow.stats.roadCondition).toBeGreaterThan(a.stats.roadCondition);
   }, 60_000);
 });
+
+describe("traffic flow", () => {
+  it("cars pull right into their spot and up to the stop line, so streets don't jam", () => {
+    const c = town();
+    const sim = new Sim();
+    sim.settings = { ...sim.settings, fires: false };
+    sim.setWorld(c.toSim());
+    type C = { stopped: number; crossing: unknown; d: number; ri: number; route: unknown[]; stopAt: number };
+    const cars = () => (sim as unknown as { cars: C[] }).cars;
+    let samples = 0;
+    let stuck = 0;
+    let parkedShort = 0;
+    for (let i = 0; i < 6000; i++) {
+      sim.step(0.1, 3);
+      if (i > 1500 && i % 100 === 0) {
+        for (const car of cars()) {
+          samples++;
+          if (!car.crossing && car.stopped > 15) stuck++;
+          // A car that has reached its last road must never sit short of its spot.
+          if (car.ri === car.route.length - 1 && car.stopped > 3 && car.stopAt - car.d < 3 && car.stopAt - car.d > 0) parkedShort++;
+        }
+      }
+    }
+    expect(samples).toBeGreaterThan(500);
+    // Before the fix: ~640 cars sat 2 m short of their spot and over a third of samples were stuck.
+    expect(parkedShort).toBeLessThan(10);
+    expect(stuck / samples).toBeLessThan(0.18);
+  }, 120_000);
+});
