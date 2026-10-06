@@ -170,6 +170,27 @@ describe("zoning and lots", () => {
     expect(d.spent).toBe(before + 3_520);
   });
 
+  it("loading an older save folds junctions crammed together into one, keeping the city whole", () => {
+    const { c, e, x, z } = street();
+    c.paint(e.id, 1, 0, 1e6, { zone: "R", width: 2, depth: 3, mixed: true }, false);
+    c.addRoad([x + 60, z - 60, x + 60, z + 60], "street");
+    // A second crossing 9 m along, laid the old way.
+    const near = c.roads.nearestEdge({ x: x + 69, z }, 2)!;
+    const { node, parts } = c.roads.splitEdge(near.edge.id, near.s);
+    c.lots.reattach(near.edge.id, parts.map((p) => p.id));
+    const top = c.roads.addNode(node.x, node.z - 60);
+    c.roads.addEdge(top.id, node.id, [top.x, top.z, node.x, node.z], "street", "Old Street");
+    const json = JSON.parse(JSON.stringify(c.toJSON(null)));
+    const d = new City(json.mapId, json.name, json);
+    expect(d.roads.edges.size).toBe(c.roads.edges.size - 1);
+    for (const ed of d.roads.edges.values()) {
+      expect(d.roads.nodes.has(ed.a) && d.roads.nodes.has(ed.b)).toBe(true);
+      expect(d.profiles.get(ed.id)?.length).toBe(ed.pts.length / 2);
+    }
+    for (const l of d.lots.lots.values()) expect(d.roads.edges.has(l.edge)).toBe(true);
+    expect(d.lots.lots.size).toBeGreaterThan(0);
+  });
+
   it("a city survives a save round trip", () => {
     const { c, e } = street();
     c.paint(e.id, 1, 0, 1e6, { zone: "I", width: 2, depth: 3, mixed: true }, true);

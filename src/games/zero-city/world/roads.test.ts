@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RoadGraph, halfWidth } from "./roads";
+import { RoadGraph, edgeLength, halfWidth } from "./roads";
 
 const line = (ax: number, az: number, bx: number, bz: number) => [ax, az, bx, bz];
 
@@ -25,6 +25,67 @@ describe("road graph", () => {
     expect(g.edges.size).toBe(3);
     const t = g.nearestNode({ x: 81, z: 0 }, 3)!;
     expect(g.degree(t.id)).toBe(3);
+  });
+
+  it("a road crossing or joining right beside a junction uses that junction instead of making a second one", () => {
+    const g = new RoadGraph();
+    g.addPath(line(0, 100, 300, 100), "avenue");
+    g.addPath(line(100, 0, 100, 200), "street");
+    const x = g.nearestNode({ x: 100, z: 100 }, 1)!;
+    // A street across the avenue 9 m from the junction, one at a slant, and a T dropped 7 m away.
+    g.addPath(line(109, 0, 109, 200), "street");
+    g.addPath(line(60, 30, 125, 170), "street");
+    g.addPath(line(93, 180, 93, 102), "street");
+    expect(g.nearestNode({ x: 109, z: 100 }, 4)).toBeNull();
+    expect(g.degree(x.id)).toBeGreaterThan(4);
+    // No two junctions are joined by a stub too short for both mouths.
+    for (const e of g.edges.values()) {
+      if (g.degree(e.a) < 3 || g.degree(e.b) < 3) continue;
+      expect(edgeLength(e), `${e.name}`).toBeGreaterThan(halfWidth(e) * 2 + 8);
+    }
+    // Far enough away, it's a junction of its own.
+    g.addPath(line(200, 0, 200, 200), "street");
+    expect(g.degree(g.nearestNode({ x: 200, z: 100 }, 1)!.id)).toBe(4);
+  });
+
+  it("junctions crammed together in older saves fold into one; roundabout rings are left alone", () => {
+    const g = new RoadGraph();
+    g.addPath(line(0, 100, 300, 100), "avenue");
+    g.addPath(line(100, 0, 100, 200), "street");
+    // A second crossing 10 m along, laid the old way (no snapping).
+    const av = g.nearestEdge({ x: 110, z: 100 }, 1)!;
+    const { node } = g.splitEdge(av.edge.id, av.s);
+    const top = g.addNode(110, 0);
+    const bot = g.addNode(110, 200);
+    g.addEdge(top.id, node.id, [110, 0, 110, 50, 110, 96, 110, 100], "street", "Old Street");
+    g.addEdge(node.id, bot.id, [110, 100, 110, 150, 110, 200], "street", "Old Street");
+    const before = g.edges.size;
+    const r = g.collapseStubs();
+    expect(r.removed).toHaveLength(1);
+    expect(g.edges.size).toBe(before - 1);
+    const hub = [...g.nodes.values()].find((n) => g.degree(n.id) === 6)!;
+    expect(hub).toBeTruthy();
+    // Every edge still starts and ends exactly on its nodes, and the moved ends lost their kinks.
+    for (const e of g.edges.values()) {
+      const a = g.nodes.get(e.a)!;
+      const b = g.nodes.get(e.b)!;
+      expect([e.pts[0], e.pts[1]]).toEqual([a.x, a.z]);
+      expect([e.pts[e.pts.length - 2], e.pts[e.pts.length - 1]]).toEqual([b.x, b.z]);
+      if (r.moved.includes(e.id)) for (let i = 2; i < e.pts.length - 2; i += 2) expect(Math.hypot(e.pts[i] - hub.x, e.pts[i + 1] - hub.z)).toBeGreaterThanOrEqual(12);
+    }
+    expect(g.collapseStubs().removed).toEqual([]);
+
+    // A small one-way ring with roads at every node keeps its short pieces.
+    const ring = new RoadGraph();
+    const ns = [0, 1, 2, 3].map((k) => ring.addNode(Math.cos((k * Math.PI) / 2) * 14, Math.sin((k * Math.PI) / 2) * 14));
+    for (let k = 0; k < 4; k++) {
+      const a = ns[k];
+      const b = ns[(k + 1) % 4];
+      ring.addEdge(a.id, b.id, [a.x, a.z, b.x, b.z], "street", "Ring Circle", [1, 0]);
+      const out = ring.addNode(a.x * 6, a.z * 6);
+      ring.addEdge(a.id, out.id, [a.x, a.z, out.x, out.z], "street", "Arm");
+    }
+    expect(ring.collapseStubs().removed).toEqual([]);
   });
 
   it("removing a branch merges the road back into one edge", () => {

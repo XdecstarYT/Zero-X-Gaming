@@ -85,6 +85,11 @@ the coverage/pollution numbers in `Stats`. Saves keep `mode`, `politics` and `sp
   - Older saves read heights off the ground, which `groundFor` raises back by `GAP`.
 - **Grades.** Where a road's two ends differ by more than the 10% limit allows, it takes the
   grade it needs instead of riding an embankment and dropping off a cliff at the far junction.
+- **Junctions have room** (`RoadGraph.junctionOn`): a road that crosses or ends on another
+  too close to an existing junction for two (both mouths and their zebras) joins that
+  junction instead of making a second one, and the new road bends into it. Older saves with
+  junctions crammed together are folded into one on load (`RoadGraph.collapseStubs`); lots
+  and stops on the removed stub go with it. One-way roundabout rings are left alone.
 - **Junctions are level** (`levelAtJunctions`): each arm eases to the junction's height near
   it, so crossing roads on a slope meet flush.
 - **Rendering** (`render/roadView.ts`):

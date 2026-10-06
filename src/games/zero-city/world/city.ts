@@ -116,11 +116,20 @@ export class City {
       this.treeAlive = new Uint8Array(this.trees.length / 4);
       for (let i = 0; i < this.treeAlive.length; i++) this.treeAlive[i] = this.trees[i * 4 + 2] > 0 ? 1 : 0;
       this.roads = RoadGraph.from(json.roads);
+      // Older saves can have two junctions crammed together; fold them into one.
+      const tidy = this.roads.collapseStubs();
+      const reshaped = new Set(tidy.moved);
       this.lots = new LotStore(this.occ, this.roads, this.terrain);
       for (const e of this.roads.edges.values()) this.occ.addRoad(e);
       this.lots.load(json.lots);
       this.stops = json.stops;
       this.lines = json.lines;
+      if (tidy.removed.length) {
+        const gone = new Set(tidy.removed);
+        for (const l of [...this.lots.lots.values()]) if (gone.has(l.edge)) this.lots.remove(l.id);
+        this.stops = this.stops.filter((st) => !gone.has(st.edge));
+        this.lines = this.lines.map((l) => ({ ...l, stops: l.stops.filter((id) => this.stops.some((st) => st.id === id)) })).filter((l) => l.stops.length >= 2);
+      }
       this.nextTransit = json.nextTransit;
       this.created = json.created;
       this.playSeconds = json.playSeconds;
@@ -130,6 +139,7 @@ export class City {
       let exact = !!json.profiles;
       if (json.profiles)
         for (const e of this.roads.edges.values()) {
+          if (reshaped.has(e.id)) continue;
           const enc = json.profiles[String(e.id)];
           const ys = enc ? decodeF32(enc) : null;
           if (ys && ys.length === e.pts.length / 2) this.profiles.set(e.id, ys);
@@ -137,6 +147,17 @@ export class City {
         }
       if (exact) this.markGraded();
       else this.rebuildProfiles();
+      if (reshaped.size) {
+        for (const id of reshaped) {
+          const e = this.roads.edges.get(id)!;
+          if (exact || !this.profiles.has(id)) this.profiles.set(id, this.computeProfile(e));
+        }
+        for (const id of reshaped) {
+          const e = this.roads.edges.get(id)!;
+          this.profiles.set(id, this.levelAtJunctions(e, this.profiles.get(id)!));
+        }
+        this.dropClashes();
+      }
       // Ground under every road sits GAP below it (repairs saves from before roads were settled).
       this.settle(this.roads.edges.keys(), false);
     } else {

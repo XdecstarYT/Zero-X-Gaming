@@ -242,6 +242,28 @@ export class RoadGraph {
   }
 
   /**
+   * Where a new road of half-width `hw` should meet edge `e` at arc length `s` (crossing it at
+   * an angle whose sine is `sin`): at a new junction, or at the edge's end node when that
+   * node is too close for two junctions (their pads, curbs and zebras would overlap).
+   */
+  junctionOn(e: REdge, s: number, hw: number, sin = 1): RNode | null {
+    const L = edgeLength(e);
+    const pick = (nid: number, d: number) => {
+      const n = this.nodes.get(nid);
+      if (!n) return null;
+      const arms = this.nodeEdges(nid);
+      // Room for the old junction's mouth, the new one's (wider when it meets at a slant) and both zebras.
+      const old = arms.length >= 2 ? Math.max(...arms.filter((o) => o !== e).map((o) => halfWidth(o))) : 0;
+      const room = old + hw / Math.max(0.5, sin) + (arms.length >= 2 ? 8 : 3);
+      return d < room ? { n, d } : null;
+    };
+    const a = pick(e.a, s);
+    const b = pick(e.b, L - s);
+    if (a && b) return a.d <= b.d ? a.n : b.n;
+    return a?.n ?? b?.n ?? null;
+  }
+
+  /**
    * Lay a road along a polyline: snap the ends to nodes or roads, split every
    * road it crosses into a junction, and add the pieces. Returns the new edges
    * and every edge that was split (replaced) on the way.
@@ -255,12 +277,28 @@ export class RoadGraph {
     const pts = resample(raw, 4);
     const name = opts.name ?? this.newName(type);
     const before = new Set(this.edges.keys());
+    const [lf, lb] = opts.lanes ?? defaultLanes(type);
+    const hw = halfWidth({ type, lanesF: lf, lanesB: lb });
+    /** Sine of the angle between the new road at path index i and edge e near (x, z). */
+    const slant = (i: number, e: REdge, x: number, z: number) => {
+      const j = Math.max(0, Math.min(pts.length / 2 - 2, i));
+      const dx = pts[j * 2 + 2] - pts[j * 2];
+      const dz = pts[j * 2 + 3] - pts[j * 2 + 1];
+      const pr = project(e.pts, cumulative(e.pts), { x, z });
+      const k = Math.max(0, Math.min(e.pts.length / 2 - 2, pr.seg));
+      const ex = e.pts[k * 2 + 2] - e.pts[k * 2];
+      const ez = e.pts[k * 2 + 3] - e.pts[k * 2 + 1];
+      const den = Math.hypot(dx, dz) * Math.hypot(ex, ez);
+      return den > 0 ? Math.abs(dx * ez - dz * ex) / den : 1;
+    };
 
-    const endNode = (x: number, z: number) => {
+    const endNode = (x: number, z: number, i: number) => {
       const n = this.nearestNode({ x, z }, snap);
       if (n) return n;
       const near = this.nearestEdge({ x, z }, snap);
       if (near) {
+        const join = this.junctionOn(near.edge, near.s, hw, slant(i, near.edge, x, z));
+        if (join) return join;
         const { node, parts } = this.splitEdge(near.edge.id, near.s);
         if (parts.length === 2) {
           removed.push(near.edge.id);
@@ -270,8 +308,11 @@ export class RoadGraph {
       }
       return this.addNode(x, z);
     };
-    const n0 = endNode(pts[0], pts[1]);
-    const n1 = endNode(pts[pts.length - 2], pts[pts.length - 1]);
+    const n0 = endNode(pts[0], pts[1], 0);
+    const n1 = endNode(pts[pts.length - 2], pts[pts.length - 1], pts.length / 2 - 2);
+    // How far each end moved to its node: the path's own points that close get dropped, so it bends in cleanly.
+    const cut0 = Math.hypot(n0.x - pts[0], n0.z - pts[1]);
+    const cut1 = Math.hypot(n1.x - pts[pts.length - 2], n1.z - pts[pts.length - 1]);
     pts[0] = n0.x;
     pts[1] = n0.z;
     pts[pts.length - 2] = n1.x;
@@ -280,12 +321,12 @@ export class RoadGraph {
     // Crossings with existing roads become junctions.
     const cum = cumulative(pts);
     const L = cum[cum.length - 1];
-    const stops: { s: number; node: RNode }[] = [
-      { s: 0, node: n0 },
-      { s: L, node: n1 },
+    const stops: { s: number; node: RNode; cut: number }[] = [
+      { s: 0, node: n0, cut: cut0 },
+      { s: L, node: n1, cut: cut1 },
     ];
     for (let guard = 0; guard < 400; guard++) {
-      let hit: { s: number; edge: REdge; es: number; x: number; z: number } | null = null;
+      let hit: { s: number; edge: REdge; es: number; x: number; z: number; i: number } | null = null;
       for (const e of this.edges.values()) {
         if (!before.has(e.id) && !replacedChild(replaced, e.id)) continue;
         const ec = cumulative(e.pts);
@@ -295,13 +336,13 @@ export class RoadGraph {
             if (!x) continue;
             const s = cum[i] + (cum[i + 1] - cum[i]) * x.t;
             if (stops.some((st) => Math.abs(st.s - s) < 6 || Math.hypot(st.node.x - x.x, st.node.z - x.z) < 2)) continue;
-            if (!hit || s < hit.s) hit = { s, edge: e, es: ec[j] + (ec[j + 1] - ec[j]) * x.u, x: x.x, z: x.z };
+            if (!hit || s < hit.s) hit = { s, edge: e, es: ec[j] + (ec[j + 1] - ec[j]) * x.u, x: x.x, z: x.z, i };
           }
       }
       if (!hit) break;
-      const near = this.nearestNode({ x: hit.x, z: hit.z }, 5);
+      const near = this.junctionOn(hit.edge, hit.es, hw, slant(hit.i, hit.edge, hit.x, hit.z));
       let node: RNode;
-      if (near && (near.id === hit.edge.a || near.id === hit.edge.b)) node = near;
+      if (near) node = near;
       else {
         const split = this.splitEdge(hit.edge.id, hit.es);
         node = split.node;
@@ -315,7 +356,7 @@ export class RoadGraph {
           }
         }
       }
-      stops.push({ s: hit.s, node });
+      stops.push({ s: hit.s, node, cut: Math.hypot(node.x - hit.x, node.z - hit.z) });
     }
 
     stops.sort((a, b) => a.s - b.s);
@@ -325,11 +366,62 @@ export class RoadGraph {
       if (a.node.id === b.node.id || b.s - a.s < 1) continue;
       if ([...this.edges.values()].some((e) => (e.a === a.node.id && e.b === b.node.id) || (e.a === b.node.id && e.b === a.node.id))) continue;
       const piece: number[] = [a.node.x, a.node.z];
-      for (let i = 0; i < cum.length; i++) if (cum[i] > a.s + 0.5 && cum[i] < b.s - 0.5) piece.push(pts[i * 2], pts[i * 2 + 1]);
+      for (let i = 0; i < cum.length; i++) if (cum[i] > a.s + 0.5 + a.cut * 1.2 && cum[i] < b.s - 0.5 - b.cut * 1.2) piece.push(pts[i * 2], pts[i * 2 + 1]);
       piece.push(b.node.x, b.node.z);
       created.push(this.addEdge(a.node.id, b.node.id, piece, type, name, opts.lanes));
     }
     return { created, removed, replaced };
+  }
+
+  /**
+   * Junctions joined by a two-way stub too short for both of their mouths (laid before
+   * crossings snapped to nearby junctions) become one junction. Roundabout rings are one-way
+   * and left alone. Returns the stubs removed and the edges whose ends moved.
+   */
+  collapseStubs() {
+    const removed: number[] = [];
+    const moved = new Set<number>();
+    for (let guard = 0; guard < 500; guard++) {
+      let hit: REdge | null = null;
+      for (const e of this.edges.values()) {
+        if (e.lanesF === 0 || e.lanesB === 0 || e.a === e.b) continue;
+        if (this.nodes.get(e.a)?.gate || this.nodes.get(e.b)?.gate) continue;
+        const A = this.nodeEdges(e.a).filter((o) => o !== e);
+        const B = this.nodeEdges(e.b).filter((o) => o !== e);
+        if (A.length < 2 || B.length < 2) continue;
+        if (edgeLength(e) < Math.max(...A.map((o) => halfWidth(o))) + Math.max(...B.map((o) => halfWidth(o))) + 8) {
+          hit = e;
+          break;
+        }
+      }
+      if (!hit) break;
+      // The busier junction stays where it is; the other folds into it.
+      const keep = this.degree(hit.a) >= this.degree(hit.b) ? hit.a : hit.b;
+      const drop = keep === hit.a ? hit.b : hit.a;
+      const k = this.nodes.get(keep)!;
+      this.edges.delete(hit.id);
+      removed.push(hit.id);
+      for (const o of this.nodeEdges(drop)) {
+        if (o.a === keep || o.b === keep) {
+          // A second stub between the same two junctions would become a loop.
+          this.edges.delete(o.id);
+          removed.push(o.id);
+          continue;
+        }
+        if (o.a === drop) {
+          o.a = keep;
+          o.pts = [k.x, k.z, ...trimNear(o.pts.slice(2), k, 1)];
+        }
+        if (o.b === drop) {
+          o.b = keep;
+          o.pts = [...trimNear(o.pts.slice(0, -2), k, -1), k.x, k.z];
+        }
+        moved.add(o.id);
+      }
+      this.nodes.delete(drop);
+      this.version++;
+    }
+    return { removed, moved: [...moved].filter((id) => this.edges.has(id)) };
   }
 
   /** Remove an edge; tidy up nodes left with nothing, and merge straight-through joints of one road. */
@@ -429,6 +521,16 @@ export class RoadGraph {
 function replacedChild(replaced: Map<number, number[]>, id: number) {
   for (const kids of replaced.values()) if (kids.includes(id)) return true;
   return false;
+}
+
+/**
+ * Drop the points at one end of a polyline (dir 1: the start, -1: the end) that sit within
+ * the junction's mouth around k, so a road whose end moved bends in cleanly. Keeps one point.
+ */
+function trimNear(pts: number[], k: { x: number; z: number }, dir: 1 | -1) {
+  const out = dir === 1 ? pts.slice() : reverse(pts);
+  while (out.length > 2 && Math.hypot(out[0] - k.x, out[1] - k.z) < 12) out.splice(0, 2);
+  return dir === 1 ? out : reverse(out);
 }
 
 export function reverse(pts: number[]) {
