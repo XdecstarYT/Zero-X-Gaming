@@ -643,6 +643,13 @@ test("Zero City 1.0: Statecraft: budget, decrees, lobbies, press, opposition, fa
   await page.getByTestId("md-nav-home").click();
   await expect(page.getByTestId("cr-card")).toBeVisible();
   await shot("67-crisis");
+  // Show me: the app closes and the camera flies to the strikers; back to the briefing to settle it.
+  await page.getByTestId("cr-show").click();
+  await expect(page.getByTestId("md-app")).toBeHidden();
+  await page.waitForTimeout(1500);
+  await shot("68-strikers");
+  await page.getByTestId("md-open").click();
+  await page.getByTestId("md-nav-home").click();
   await page.getByTestId("cr-opt-0").click();
   await expect.poll(async () => (await st()).statecraft.crisis).toBeNull();
   expect((await st()).statecraft.record.crisesResolved).toBe(1);
@@ -650,5 +657,69 @@ test("Zero City 1.0: Statecraft: budget, decrees, lobbies, press, opposition, fa
 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("md-app")).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test("Zero City 1.1: traffic lights where avenues cross, the Junctions tool, and traffic that keeps moving", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "covered on desktop");
+  test.setTimeout(420_000);
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/ERR_TUNNEL|Failed to load resource|supabase/i.test(m.text())) errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("zx-season-s1"))
+      localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+  });
+  await page.goto("/games/zero-city?zc=test");
+  await page.getByTestId("zlink-lock-join").click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByTestId("zc-menu")).toBeVisible({ timeout: 90_000 });
+  await hook(page, (zc) => zc.quality("low"));
+  await page.getByTestId("zc-new").click();
+  await page.getByTestId("zc-start").click();
+  await expect(page.getByTestId("zc-hud")).toBeVisible({ timeout: 90_000 });
+  type J = { cars: number; junctions: { signals: number; controls: { id: number; control: string }[] } };
+  const st = () => page.evaluate(() => (window as unknown as { __zc: { debugState: () => J } }).__zc.debugState());
+  // Two avenues crossing (lights by default) and a street grid, zoned.
+  const end = await page.evaluate(() => {
+    type G = { city: { addRoad: (p: number[], t: string) => void; roads: { edges: Map<number, { id: number; type: string }> }; paint: (e: number, side: number, s0: number, s1: number, o: object, m: boolean) => void; addService: (k: string, e: number, side: number, s: number) => unknown }; worldChanged: () => void; gateEnd: () => { x: number; z: number } };
+    const g = (window as unknown as { __zc: G }).__zc;
+    const e = g.gateEnd();
+    g.city.addRoad([e.x, e.z, e.x + 360, e.z], "avenue");
+    g.city.addRoad([e.x + 180, e.z - 160, e.x + 180, e.z + 160], "avenue");
+    for (const dx of [90, 270]) g.city.addRoad([e.x + dx, e.z - 160, e.x + dx, e.z + 160], "street");
+    const streets = [...g.city.roads.edges.values()].filter((x) => x.type === "street");
+    g.city.addService("power", streets[0].id, 1, 30);
+    g.city.addService("water", streets[1].id, -1, 30);
+    const zones = ["R", "C", "R", "I"];
+    let k = 0;
+    for (const ed of [...g.city.roads.edges.values()]) if (ed.type !== "highway") for (const side of [1, -1]) g.city.paint(ed.id, side, 0, 1e6, { zone: zones[k++ % 4], width: 2, depth: 3, mixed: true }, false);
+    g.worldChanged();
+    return e;
+  });
+  await page.getByTestId("zc-speed-3").click();
+  await expect.poll(async () => (await st()).junctions.signals, { timeout: 60_000 }).toBeGreaterThan(3);
+  await expect.poll(async () => (await st()).cars, { timeout: 120_000, intervals: [2000] }).toBeGreaterThan(10);
+
+  // The Junctions tool: click the avenue crossing to cycle automatic -> lights -> all-way stop.
+  await hook(page, (zc) => zc.look((zc.gateEnd().x + 180), zc.gateEnd().z, 160, 1.1, 0));
+  await page.waitForTimeout(800);
+  await page.getByTestId("zc-tab-roads").click();
+  await page.getByTestId("zc-dm-junction").click();
+  const p = (await page.evaluate(([x, z]) => (window as unknown as { __zc: ZC }).__zc.screenOf(x, z), [end.x + 180, end.z]))!;
+  await page.mouse.move(p.x, p.y, { steps: 3 });
+  await expect(page.getByTestId("zc-cursor-label")).toContainText(/Automatic \(Traffic lights\)/);
+  await page.mouse.click(p.x, p.y);
+  await expect(page.getByTestId("zc-cursor-label")).toContainText(/Junction: Traffic lights/);
+  await expect.poll(async () => (await st()).junctions.controls.map((c) => c.control)).toEqual(["signal"]);
+  await page.mouse.click(p.x, p.y);
+  await expect(page.getByTestId("zc-cursor-label")).toContainText(/All-way stop/);
+  await expect.poll(async () => (await st()).junctions.controls.map((c) => c.control)).toEqual(["stop"]);
+  if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/70-junction.png` });
+  // Undo puts it back.
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await st()).junctions.controls.map((c) => c.control)).toEqual(["signal"]);
   expect(errors).toEqual([]);
 });

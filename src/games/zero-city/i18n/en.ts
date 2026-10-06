@@ -1233,6 +1233,16 @@ export const en = {
   "lg.ad.beloved": "Reach 75% approval.",
   "log.10.title": "1.0: Statecraft",
   "log.10.body": "The biggest update yet, and Mayor mode's politics app grows from 9 pages to 16. Every two days it's Budget Day: set each of the six departments from deep cuts to generous and get the budget through the chamber, or face the consequences. Issue seven mayoral decrees without a vote. Court six lobbies, meet their demands, take their money and hope it doesn't leak. Win over four newspapers and a TV channel with daily press conferences, interviews and an interactive TV debate. Face four opposition leaders who table their own bills, work the districts and run attack ads. Keep your party's three factions happy or fight off a leadership challenge. Handle multi-stage crises, from strikes and floods to corruption probes, protests and cash crunches. Build a legacy with 23 achievements, six titles and a record book. And on election night, watch the results come in district by district.",
+  "dm.junction": "Junctions",
+  "jc.auto": "Automatic ({mode})",
+  "jc.signal": "Traffic lights",
+  "jc.stop": "All-way stop",
+  "jc.yield": "Give way to the main road",
+  "jc.hover": "Junction: {mode} · click to change",
+  "dof": "Depth of field",
+  "cr.show": "Show me",
+  "log.11.title": "1.1: Traffic, streets and spectacle",
+  "log.11.body": "Traffic flows again. Junctions now take turns fairly, so no car waits forever behind a stream of others; big crossings get traffic lights that change with demand, and cars pick their lane for the next turn and change lanes smoothly on the way. A new Junctions tool sets any junction to lights, an all-way stop or give way. Roads that join at a sliver of an angle bend in to meet properly, roads that end on top of another road join it, and stop lines, lights and zebras all line up. The city looks new too: light and reflections from the sky, drifting clouds, natural grass, rounder swaying trees, shaped cars with glossy paint, glass windows that catch the sun, colour grading and an optional depth of field, and empty plots only show while zoning. And politics comes out into the streets: protest crowds with placards, strikers at the factory gates, floodwater, festival bunting and fireworks, campaign billboards in every district and fireworks on election night. Click a crowd, or Show me on a crisis, to go there.",
 };
 
 export type StringKey = keyof typeof en;

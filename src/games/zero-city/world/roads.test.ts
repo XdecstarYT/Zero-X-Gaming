@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RoadGraph, edgeLength, halfWidth } from "./roads";
+import { RoadGraph, edgeLength, endDir, halfWidth, MIN_JOIN_ANGLE } from "./roads";
 
 const line = (ax: number, az: number, bx: number, bz: number) => [ax, az, bx, bz];
 
@@ -16,6 +16,26 @@ describe("road graph", () => {
     // The split halves keep the first road's name.
     const names = new Set([...g.edges.values()].filter((e) => e.type === "street").map((e) => e.name));
     expect(names.size).toBe(1);
+  });
+
+  it("a road joining at a sliver of an angle is bent so it meets the junction at a proper angle", () => {
+    const g = new RoadGraph();
+    g.addPath(line(0, 0, 300, 0), "avenue");
+    // About 12 degrees off the avenue.
+    // It ends 6 m off the centre line: still on the avenue's surface, so it joins it.
+    const r = g.addPath(line(40, -40, 200, -6), "street");
+    const street = r.created.find((e) => e.type === "street")!;
+    const node = g.nearestNode({ x: 200, z: 0 }, 8)!;
+    expect(g.degree(node.id)).toBe(3);
+    const d = endDir(street, node.id);
+    for (const o of g.nodeEdges(node.id)) {
+      if (o === street) continue;
+      const q = endDir(o, node.id);
+      expect(Math.acos(d.x * q.x + d.z * q.z)).toBeGreaterThan(MIN_JOIN_ANGLE - 0.05);
+    }
+    // The far end is untouched.
+    expect(street.pts[0]).toBeCloseTo(40);
+    expect(street.pts[1]).toBeCloseTo(-40);
   });
 
   it("an end dropped on a road makes a T-junction", () => {

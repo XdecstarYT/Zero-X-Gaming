@@ -4,10 +4,13 @@ import { WATER_LEVEL } from "../config";
 import { cumulative, sampleAt } from "../core/geom";
 import { world as W } from "../theme";
 import type { City } from "../world/city";
-import { carriageway, halfWidth, LANE, laneOffset, PARKING, ROAD_TYPES, type REdge } from "../world/roads";
+import { carriageway, endDir, junctionSetback, LANE, laneOffset, PARKING, ROAD_TYPES, type REdge } from "../world/roads";
 import { shared } from "./engine";
 import { asphaltTexture, labelTexture, sidewalkTexture, SPEEDS, speedAtlas } from "./textures";
-import { merge, paint } from "./terrainView";
+import { foliageMaterial, merge, paint, TreeView } from "./terrainView";
+
+let streetTreeGeo: THREE.BufferGeometry | null = null;
+let streetTreeMat: THREE.MeshStandardMaterial | null = null;
 
 /** Growable geometry buffer. */
 class Buf {
@@ -124,19 +127,7 @@ export class RoadView {
    * whatever the angle between them, so crossing surfaces don't fight or poke through.
    */
   private setback(nodeId: number, e: REdge) {
-    const c = this.city();
-    const es = c.roads.nodeEdges(nodeId);
-    if (es.length <= 1) return 0;
-    const d = endDir(e, nodeId);
-    if (es.length === 2) {
-      const o = es[0] === e ? es[1] : es[0];
-      const dq = endDir(o, nodeId);
-      // A straight continuation of the same width needs no pad at all.
-      if (d.x * dq.x + d.z * dq.z < -0.97 && Math.abs(halfWidth(e) - halfWidth(o)) < 0.5) return 0;
-    }
-    let need = es.length >= 3 ? carriageway(e) / 2 + 1.2 : 0;
-    for (const o of es) if (o !== e) need = Math.max(need, clearance(d, halfWidth(e), endDir(o, nodeId), halfWidth(o)));
-    return need + (e.type === "highway" && es.length >= 3 ? 2 : 0);
+    return junctionSetback(this.city().roads.nodeEdges(nodeId), nodeId, e);
   }
 
   private frames(e: REdge, ys: Float32Array, s0: number, s1: number, step = 3): Frame[] {
@@ -739,10 +730,15 @@ export class RoadView {
     const one = new THREE.Vector3(1, 1, 1);
     const Y = new THREE.Vector3(0, 1, 0);
     if (treePos.length) {
-      const g = merge([paint(new THREE.CylinderGeometry(0.15, 0.2, 2.2, 6).translate(0, 1.1, 0), W.trunk), paint(new THREE.IcosahedronGeometry(1.7, 1).translate(0, 3.4, 0), W.trees[1])]);
-      const m = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }), treePos.length / 3);
+      // The same organic broadleaf as the woods, a little smaller, each turned its own way.
+      streetTreeGeo ??= TreeView.broadGeometry().scale(0.62, 0.62, 0.62);
+      streetTreeMat ??= foliageMaterial();
+      const m = new THREE.InstancedMesh(streetTreeGeo, streetTreeMat, treePos.length / 3);
       for (let i = 0; i < treePos.length / 3; i++) {
-        mtx.compose(new THREE.Vector3(treePos[i * 3], treePos[i * 3 + 1], treePos[i * 3 + 2]), q.identity(), one);
+        const x = treePos[i * 3];
+        const z = treePos[i * 3 + 2];
+        const k = 0.9 + rng(Math.floor(x * 7 + z * 13)).next() * 0.25;
+        mtx.compose(new THREE.Vector3(x, treePos[i * 3 + 1], z), q.setFromAxisAngle(Y, (x * 0.37 + z * 0.61) % (Math.PI * 2)), new THREE.Vector3(k, k, k));
         m.setMatrixAt(i, mtx);
       }
       m.castShadow = this.shadows;
@@ -886,31 +882,6 @@ export class RoadView {
  * How far along arm A (direction da, half-width ha) its cross-section must start so no part
  * of it lies inside arm B (direction db, half-width hb), both leaving the same node.
  */
-function clearance(da: { x: number; z: number }, ha: number, db: { x: number; z: number }, hb: number) {
-  const na = { x: -da.z, z: da.x };
-  const clear = (s: number) => {
-    for (let k = 0; k <= 8; k++) {
-      const l = -ha + (2 * ha * k) / 8;
-      const px = da.x * s + na.x * l;
-      const pz = da.z * s + na.z * l;
-      const along = px * db.x + pz * db.z;
-      const off = Math.abs(px * -db.z + pz * db.x);
-      if (along > 0 && off < hb + 0.3) return false;
-    }
-    return true;
-  };
-  let s = 0;
-  while (s < 80 && !clear(s)) s += 0.5;
-  return s;
-}
-
-function endDir(e: REdge, nodeId: number) {
-  const n = e.pts.length / 2;
-  const [ax, az, bx, bz] = e.a === nodeId ? [e.pts[0], e.pts[1], e.pts[2], e.pts[3]] : [e.pts[(n - 1) * 2], e.pts[(n - 1) * 2 + 1], e.pts[(n - 2) * 2], e.pts[(n - 2) * 2 + 1]];
-  const l = Math.hypot(bx - ax, bz - az) || 1;
-  return { x: (bx - ax) / l, z: (bz - az) / l };
-}
-
 /** Where two curb lines (each running back toward the node) meet. */
 function intersect(p: V, dp: { x: number; z: number }, q: V, dq: { x: number; z: number }): V | null {
   const den = dp.x * dq.z - dp.z * dq.x;

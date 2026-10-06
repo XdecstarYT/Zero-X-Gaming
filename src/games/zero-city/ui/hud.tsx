@@ -265,7 +265,7 @@ function RoadsBar() {
   const type = useUI((s) => s.roadType);
   const mode = useUI((s) => s.drawMode);
   const group = GROUPS.find((gr) => gr.types.includes(type))!;
-  const modes: DrawMode[] = ["straight", "curve", "scurve", "freeform", "roundabout", "lanes", "oneway", "upgrade", "repair"];
+  const modes: DrawMode[] = ["straight", "curve", "scurve", "freeform", "roundabout", "lanes", "oneway", "upgrade", "repair", "junction"];
   const set = (p: Partial<{ roadType: RoadTypeId; drawMode: DrawMode }>) => {
     g.tools.reset();
     g.store.setState(p);

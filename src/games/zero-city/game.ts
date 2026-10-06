@@ -5,6 +5,8 @@ import { demoCity } from "./demo";
 import { translate, type StringKey } from "./i18n";
 import type { CitySave, Player, Signals, ZeroXPlatform } from "./platform/zeroxAdapter";
 import { AgentView } from "./render/agentView";
+import { SignalView } from "./render/signalView";
+import { EMPTY_SCENE, PoliticsView, type PoliticsScene } from "./render/politicsView";
 import { BuildingView } from "./render/buildingView";
 import { CameraRig } from "./render/camera";
 import { Engine } from "./render/engine";
@@ -61,6 +63,8 @@ class WorldViews {
   roads: RoadView;
   buildings: BuildingView;
   agents: AgentView;
+  signals: SignalView;
+  politics: PoliticsView;
   overlays: OverlayView;
   fires = new FireView();
   group = new THREE.Group();
@@ -76,8 +80,10 @@ class WorldViews {
     this.buildings.res = city.map.res;
     this.buildings.look = city.map.look ?? "base";
     this.agents = new AgentView(() => this.city);
+    this.signals = new SignalView(() => this.city);
+    this.politics = new PoliticsView((x, z) => this.city.terrain.surfaceAt(x, z));
     this.overlays = new OverlayView(() => this.city);
-    this.group.add(this.terrain.group, this.trees.group, this.roads.group, this.buildings.group, this.agents.group, this.overlays.group, this.fires.group);
+    this.group.add(this.terrain.group, this.trees.group, this.roads.group, this.buildings.group, this.agents.group, this.signals.group, this.politics.group, this.overlays.group, this.fires.group);
   }
 
   dispose() {
@@ -86,6 +92,8 @@ class WorldViews {
     this.roads.dispose();
     this.buildings.dispose();
     this.agents.dispose();
+    this.signals.dispose();
+    this.politics.dispose();
     this.overlays.dispose();
     this.fires.dispose();
   }
@@ -471,6 +479,7 @@ export class Game {
       this.audio.thud();
     }
     v.agents.push(m.cars, m.peds, now);
+    v.signals.update(m.signals, true);
     if (m.roads) this.takeRoads(m.roads);
     v.fires.set(
       m.fires,
@@ -731,6 +740,7 @@ export class Game {
       this.views.trees.setShadows(shadows);
       this.views.buildings.setShadows(shadows);
       this.views.agents.setShadows(shadows);
+      this.views.signals.setShadows(shadows);
       this.views.overlays.reduceMotion = s.reducedMotion;
       if (prev.buildingDensity !== s.buildingDensity) {
         this.views.buildings.setDensity(s.buildingDensity / 100);
@@ -789,7 +799,7 @@ export class Game {
       const ahead = Math.min(0.2, (now - this.lastTickAt) / 1000) * st.speed * GAME_MINUTES_PER_SECOND;
       minutes = this.lastTick.minutes + ahead;
     }
-    this.engine.setTime(this.mode === "menu" ? 17.75 * 60 : minutes);
+    this.engine.setTime(this.mode === "menu" ? 17.75 * 60 : (this.fixedHour ?? minutes / 60) * 60);
     const s = st.settings;
     const range = 700 + 2100 * (s.viewDistance / 100);
     this.views.terrain.update(this.rig.target.x, this.rig.target.z, range * 0.9, now / 1000);
@@ -821,6 +831,11 @@ export class Game {
     this.views.overlays.setLook(st.tab === "zoning" || (st.tab === "bulldoze" && st.bulldozeMode === "zones"), this.engine.night);
     this.views.overlays.update(now / 1000);
     this.views.fires.update(now / 1000, this.engine.night);
+    if (now > this.sceneAt) {
+      this.sceneAt = now + 1000;
+      this.views.politics.set(this.politicsScene());
+    }
+    this.views.politics.update(now, dt, this.engine.night);
     this.views.roads.update(this.rig.dist);
     this.tools.frame(now);
     this.audio.update(this.rig.height(), this.lastTick?.stats.cars ?? 0, this.mode === "game");
@@ -841,6 +856,84 @@ export class Game {
   };
 
   // ------------------------------------------------------------ Mayor mode
+
+  private sceneAt = 0;
+
+  /** Close the app and fly the camera to where the current crisis is happening. */
+  showCrisis() {
+    const sc = this.politicsScene();
+    const at = sc.floods[0] ?? sc.crowds[0];
+    if (!at || !this.rig) return false;
+    this.openApp(null);
+    this.rig.set({ x: at.x, z: at.z, dist: sc.floods.length ? 220 : 90, yaw: this.rig.state.yaw, pitch: 0.62 });
+    return true;
+  }
+
+  /** Politics in the streets: protests and strikes, floods, the festival, the campaign, election night. */
+  private politicsScene(): PoliticsScene {
+    const p = this.politics;
+    const city = this.city;
+    if (!p || !city || !this.mayor) return EMPTY_SCENE;
+    const out: PoliticsScene = { crowds: [], floods: [], fireworks: [], billboards: [], bunting: [] };
+    const ds = p.m.districts;
+    if (!ds.length) return out;
+    // Gatherings happen at a junction near the middle of a district (not inside a building).
+    const spot = (x: number, z: number) => {
+      const n = city.roads.nearestNode({ x, z }, 260);
+      return n ? { x: n.x, z: n.z } : { x, z };
+    };
+    const pops = new Map(p.m.dstats.map((d) => [d.id, d.pop]));
+    const heart = [...ds].sort((a, b) => (pops.get(b.id) ?? 0) - (pops.get(a.id) ?? 0))[0];
+    const centre = spot(heart.cx, heart.cz);
+    const crisis = p.x.crises.active;
+    if (crisis) {
+      const d = ds.find((x) => x.id === crisis.district) ?? heart;
+      const at = spot(d.cx, d.cz);
+      if (crisis.id === "protest") out.crowds.push({ ...at, n: 80, radius: 11, colors: ["#e74c3c", "#3498db", "#f1c40f", "#2ecc71", "#ecf0f1", "#9b59b6"], placards: ["#ffffff", "#fde047", "#fca5a5"] });
+      if (crisis.id === "strike") {
+        // At the factory gates: the nearest industry to the middle of town.
+        let best: { x: number; z: number } | null = null;
+        let bd = Infinity;
+        for (const b of this.buildings.values()) {
+          if (b.zone !== "I") continue;
+          const l = city.lots.lots.get(b.lot);
+          if (!l) continue;
+          const dd = (l.cx - centre.x) ** 2 + (l.cz - centre.z) ** 2;
+          if (dd < bd) {
+            bd = dd;
+            best = spot(l.cx, l.cz);
+          }
+        }
+        out.crowds.push({ ...(best ?? centre), n: crisis.stage === "strike" ? 70 : 30, radius: 9, colors: ["#f97316", "#facc15", "#f97316", "#334155"], placards: ["#ef4444", "#ffffff"] });
+      }
+      if (crisis.id === "flood") out.floods.push({ x: d.cx, z: d.cz, r: 70 });
+      if (crisis.id === "probe") out.crowds.push({ ...centre, n: 16, radius: 5, colors: ["#1f2937", "#374151", "#111827"], placards: [] });
+    }
+    if (p.x.decrees.active.some((d) => d.id === "festival")) {
+      out.bunting.push({ ...centre, r: 40 });
+      out.crowds.push({ ...centre, n: 120, radius: 22, colors: ["#ef4444", "#facc15", "#22c55e", "#3b82f6", "#ec4899", "#ffffff"], placards: [] });
+      out.fireworks.push({ ...centre, colors: ["#ff4d4d", "#ffd84d", "#4dff88", "#4dc3ff", "#ff6bd6"], rate: 1 });
+    }
+    if (Parl.campaignOpen(p)) {
+      // Billboards in every district, in the colours of whoever leads there.
+      for (const r of Mandate.projection(p)) {
+        const d = ds.find((x) => x.id === r.id);
+        if (!d) continue;
+        const lead = (Object.entries(r.share) as [Pol.PartyId, number][]).sort((a, b) => b[1] - a[1])[0][0];
+        const at = spot(d.cx, d.cz);
+        out.billboards.push({ x: at.x + 14, z: at.z + 14, color: Pol.PARTY_COLOR[lead], ang: Math.atan2(at.x - d.cx, at.z - d.cz) });
+      }
+      // Rallies: a crowd in your colours where that group lives.
+      for (const g of p.parl.campaign.rallies) {
+        const mix = [...p.m.dstats].sort((a, b) => b.mix[g] - a.mix[g])[0];
+        const d = ds.find((x) => x.id === mix?.id) ?? heart;
+        out.crowds.push({ ...spot(d.cx, d.cz), n: 60, radius: 12, colors: ["#22e5ff", "#ffffff", "#0ea5b7"], placards: ["#22e5ff", "#ffffff"] });
+      }
+    }
+    const el = this.store.getState().election;
+    if (el?.won) out.fireworks.push({ ...centre, colors: ["#22e5ff", "#ffffff", "#ffd84d"], rate: 2 });
+    return out;
+  }
 
   get mayor() {
     return !!this.politics && this.politics.status === "office" && this.store.getState().mode === "mayor";
@@ -1667,6 +1760,12 @@ export class Game {
     return s ? { x: s.x + r.left, y: s.y + r.top } : null;
   }
 
+  /** Test hook (and photo mode): hold the lighting at an hour of the day, or null to follow the clock. */
+  fixedHour: number | null = null;
+  fixTime(hour: number | null) {
+    this.fixedHour = hour;
+  }
+
   /** Test hook: switch graphics preset. */
   quality(p: "low" | "medium" | "high" | "ultra") {
     const s = applyPreset(this.settings, p);
@@ -1722,6 +1821,12 @@ export class Game {
       look: this.city?.map.look ?? "base",
       parl: this.politics ? { seats: this.politics.parl.seats, coalition: this.politics.parl.coalition, capital: this.politics.parl.capital } : null,
       mandate: this.politics ? { districts: this.politics.m.districts.length, funds: Math.round(this.politics.m.funds), roster: this.politics.m.roster.length, news: this.politics.m.news.length, hq: { ...this.politics.m.hq } } : null,
+      junctions: this.city
+        ? {
+            signals: this.lastTick ? this.lastTick.signals.length / 3 : 0,
+            controls: [...this.city.roads.nodes.values()].filter((n) => n.control).map((n) => ({ id: n.id, x: n.x, z: n.z, control: n.control })),
+          }
+        : null,
       statecraft: this.politics
         ? (() => {
             const x = this.politics.x;

@@ -33,6 +33,8 @@ export interface RoadType {
 }
 
 export const LANE = 3.5;
+/** The narrowest angle a road may join a junction at (radians); shallower joins are bent to this. */
+export const MIN_JOIN_ANGLE = (32 * Math.PI) / 180;
 export const PARKING = 2.4;
 
 export const ROAD_TYPES: Record<RoadTypeId, RoadType> = {
@@ -61,6 +63,8 @@ export interface RNode {
   z: number;
   /** The highway's way in from the edge of the map. */
   gate?: boolean;
+  /** How the junction is run, if the player chose (unset: automatic). */
+  control?: "signal" | "stop" | "yield";
 }
 
 export interface REdge {
@@ -293,10 +297,15 @@ export class RoadGraph {
     };
 
     const endNode = (x: number, z: number, i: number) => {
-      const n = this.nearestNode({ x, z }, snap);
-      if (n) return n;
-      const near = this.nearestEdge({ x, z }, snap);
-      if (near) {
+      // An end anywhere on another road's surface joins it (not just near its centre line),
+      // so roads never end lying on top of each other.
+      const n = this.nearestNode({ x, z }, 30);
+      if (n) {
+        const pad = Math.max(0, ...this.nodeEdges(n.id).map((o) => halfWidth(o) - 1));
+        if (Math.hypot(n.x - x, n.z - z) <= Math.max(snap, pad)) return n;
+      }
+      const near = this.nearestEdge({ x, z }, 30);
+      if (near && near.d <= Math.max(snap, halfWidth(near.edge) - 0.5)) {
         const join = this.junctionOn(near.edge, near.s, hw, slant(i, near.edge, x, z));
         if (join) return join;
         const { node, parts } = this.splitEdge(near.edge.id, near.s);
@@ -370,7 +379,54 @@ export class RoadGraph {
       piece.push(b.node.x, b.node.z);
       created.push(this.addEdge(a.node.id, b.node.id, piece, type, name, opts.lanes));
     }
+    for (const e of created) this.easeShallowEnds(e);
     return { created, removed, replaced };
+  }
+
+  /**
+   * A new road that meets a junction at a very shallow angle leaves a sliver of grass and a
+   * wedge of paving between it and the road beside it. Bend its last stretch so it arrives at
+   * least MIN_JOIN_ANGLE away from every other arm, curving smoothly back onto its own line.
+   */
+  private easeShallowEnds(e: REdge) {
+    const MIN = MIN_JOIN_ANGLE;
+    for (const end of ["a", "b"] as const) {
+      const nid = end === "a" ? e.a : e.b;
+      const others = this.nodeEdges(nid).filter((o) => o !== e);
+      if (others.length < 2) continue;
+      const d = endDir(e, nid);
+      let worst: { q: { x: number; z: number }; ang: number; hw: number } | null = null;
+      for (const o of others) {
+        const q = endDir(o, nid);
+        const ang = Math.acos(Math.max(-1, Math.min(1, d.x * q.x + d.z * q.z)));
+        if (ang < MIN && (!worst || ang < worst.ang)) worst = { q, ang, hw: halfWidth(o) };
+      }
+      if (!worst) continue;
+      // Turn away from the close arm, to the side the road is already on.
+      const side = Math.sign(worst.q.x * d.z - worst.q.z * d.x) || 1;
+      const c = Math.cos(MIN * side);
+      const sn = Math.sin(MIN * side);
+      const nd = { x: worst.q.x * c - worst.q.z * sn, z: worst.q.x * sn + worst.q.z * c };
+      const pts = end === "a" ? e.pts : reversePts(e.pts);
+      const cum = cumulative(pts);
+      const L = cum[cum.length - 1];
+      const R = Math.min(L * 0.25, (halfWidth(e) + worst.hw) / Math.sin(MIN) * 0.6 + 4);
+      const reach = Math.min(L * 0.6, R * 3);
+      if (R < 3 || reach < 8) continue;
+      const n = this.nodes.get(nid)!;
+      const p1 = { x: n.x + nd.x * R, z: n.z + nd.z * R };
+      const p2 = sampleAt(pts, cum, reach);
+      const curve: number[] = [];
+      for (let k = 0; k <= 8; k++) {
+        const t = k / 8;
+        const u = 1 - t;
+        curve.push(u * u * n.x + 2 * u * t * p1.x + t * t * p2.x, u * u * n.z + 2 * u * t * p1.z + t * t * p2.z);
+      }
+      const rest: number[] = [];
+      for (let i = 0; i < cum.length; i++) if (cum[i] > reach + 0.5) rest.push(pts[i * 2], pts[i * 2 + 1]);
+      const out = [...curve, ...rest];
+      e.pts = end === "a" ? out : reversePts(out);
+    }
   }
 
   /**
@@ -540,3 +596,61 @@ export function reverse(pts: number[]) {
 }
 
 export const edgeLength = (e: REdge) => polyLength(e.pts);
+
+/**
+ * How far an edge's own surface stops short of a node, leaving the rest to the junction pad.
+ * Far enough that its full width (sidewalks included) never overlaps another arm's, whatever
+ * the angle between them. The renderer draws the pad and zebras from this, and the sim puts
+ * its stop lines just behind it, so cars, lights and paint all line up.
+ */
+export function junctionSetback(es: REdge[], nodeId: number, e: REdge) {
+  if (es.length <= 1) return 0;
+  const d = endDir(e, nodeId);
+  if (es.length === 2) {
+    const o = es[0] === e ? es[1] : es[0];
+    const dq = endDir(o, nodeId);
+    // A straight continuation of the same width needs no pad at all.
+    if (d.x * dq.x + d.z * dq.z < -0.97 && Math.abs(halfWidth(e) - halfWidth(o)) < 0.5) return 0;
+  }
+  let need = es.length >= 3 ? carriageway(e) / 2 + 1.2 : 0;
+  for (const o of es) if (o !== e) need = Math.max(need, clearance(d, halfWidth(e), endDir(o, nodeId), halfWidth(o)));
+  return need + (e.type === "highway" && es.length >= 3 ? 2 : 0);
+}
+
+/** Where a sim stop line sits: behind the zebra at a junction, at the pad edge on a bend. */
+export function stopSetback(es: REdge[], nodeId: number, e: REdge) {
+  const s = junctionSetback(es, nodeId, e);
+  if (es.length < 3) return s;
+  return s + (ROAD_TYPES[e.type].sidewalk > 0 ? 4 : 1);
+}
+
+function clearance(da: { x: number; z: number }, ha: number, db: { x: number; z: number }, hb: number) {
+  const na = { x: -da.z, z: da.x };
+  const clear = (s: number) => {
+    for (let k = 0; k <= 8; k++) {
+      const l = -ha + (2 * ha * k) / 8;
+      const px = da.x * s + na.x * l;
+      const pz = da.z * s + na.z * l;
+      const along = px * db.x + pz * db.z;
+      const off = Math.abs(px * -db.z + pz * db.x);
+      if (along > 0 && off < hb + 0.3) return false;
+    }
+    return true;
+  };
+  let s = 0;
+  while (s < 80 && !clear(s)) s += 0.5;
+  return s;
+}
+
+export function endDir(e: REdge, nodeId: number) {
+  const n = e.pts.length / 2;
+  const [ax, az, bx, bz] = e.a === nodeId ? [e.pts[0], e.pts[1], e.pts[2], e.pts[3]] : [e.pts[(n - 1) * 2], e.pts[(n - 1) * 2 + 1], e.pts[(n - 2) * 2], e.pts[(n - 2) * 2 + 1]];
+  const l = Math.hypot(bx - ax, bz - az) || 1;
+  return { x: (bx - ax) / l, z: (bz - az) / l };
+}
+
+function reversePts(pts: number[]) {
+  const out: number[] = [];
+  for (let i = pts.length - 2; i >= 0; i -= 2) out.push(pts[i], pts[i + 1]);
+  return out;
+}

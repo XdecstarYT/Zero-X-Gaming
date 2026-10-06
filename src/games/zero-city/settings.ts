@@ -17,6 +17,8 @@ export interface Settings {
   aa: boolean;
   ao: boolean;
   bloom: boolean;
+  /** Depth of field: a soft tilt-shift blur away from what the camera looks at. */
+  dof: boolean;
   pedestrians: boolean;
   traffic: boolean;
   /** Buildings can catch fire (fire stations put them out). */
@@ -31,14 +33,14 @@ export interface Settings {
   glass: Glass;
 }
 
-type Quality = Pick<Settings, "renderScale" | "viewDistance" | "buildingDensity" | "pedDensity" | "trafficDensity" | "shadows" | "aa" | "ao" | "bloom">;
+type Quality = Pick<Settings, "renderScale" | "viewDistance" | "buildingDensity" | "pedDensity" | "trafficDensity" | "shadows" | "aa" | "ao" | "bloom" | "dof">;
 
 /** What each preset sets. Low has to run on a phone; Ultra may use every effect. */
 export const PRESETS: Record<Exclude<Preset, "custom">, Quality> = {
-  low: { renderScale: 70, viewDistance: 45, buildingDensity: 45, pedDensity: 35, trafficDensity: 45, shadows: "off", aa: false, ao: false, bloom: false },
-  medium: { renderScale: 85, viewDistance: 65, buildingDensity: 70, pedDensity: 60, trafficDensity: 70, shadows: "soft", aa: true, ao: false, bloom: false },
-  high: { renderScale: 100, viewDistance: 85, buildingDensity: 90, pedDensity: 85, trafficDensity: 90, shadows: "soft", aa: true, ao: false, bloom: true },
-  ultra: { renderScale: 100, viewDistance: 100, buildingDensity: 100, pedDensity: 100, trafficDensity: 100, shadows: "sharp", aa: true, ao: true, bloom: true },
+  low: { renderScale: 70, viewDistance: 45, buildingDensity: 45, pedDensity: 35, trafficDensity: 45, shadows: "off", aa: false, ao: false, bloom: false, dof: false },
+  medium: { renderScale: 85, viewDistance: 65, buildingDensity: 70, pedDensity: 60, trafficDensity: 70, shadows: "soft", aa: true, ao: false, bloom: false, dof: false },
+  high: { renderScale: 100, viewDistance: 85, buildingDensity: 90, pedDensity: 85, trafficDensity: 90, shadows: "soft", aa: true, ao: true, bloom: true, dof: false },
+  ultra: { renderScale: 100, viewDistance: 100, buildingDensity: 100, pedDensity: 100, trafficDensity: 100, shadows: "sharp", aa: true, ao: true, bloom: true, dof: true },
 };
 
 export const QUALITY_KEYS = Object.keys(PRESETS.low) as (keyof Quality)[];

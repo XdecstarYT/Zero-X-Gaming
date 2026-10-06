@@ -106,7 +106,10 @@ export class OverlayView {
     const land = this.mode === "land";
     // Unlit colours glow against a dark city: fade them with the light.
     m.color.setScalar(land || this.emphasis ? 1 - this.night * 0.35 : 1 - this.night * 0.7);
-    m.opacity = land || this.emphasis ? 1 : 0.6;
+    // Outside the zoning tools empty plots aren't drawn at all, so the city reads as a city
+    // (not a grid of slabs). The mesh stays for picking lots.
+    m.opacity = 1;
+    this.zones!.visible = land || this.emphasis;
   }
 
   /** The lot under a ray (for the inspector). */

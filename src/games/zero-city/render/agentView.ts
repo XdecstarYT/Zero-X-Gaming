@@ -6,32 +6,71 @@ const CAR_COLOURS = ["#e8e8e2", "#1f1f22", "#8d949b", "#b8231f", "#1f4f9a", "#2f
 const LINE_COLOURS = ["#22e5ff", "#ff5a5f", "#ffd166", "#8b5cff", "#4ade80", "#ff8fab"];
 const SHIRTS = ["#e74c3c", "#3498db", "#f1c40f", "#2ecc71", "#9b59b6", "#ecf0f1", "#34495e", "#e67e22", "#1abc9c", "#ff8fab"];
 
+/** A side profile (x along the car, y up) extruded across its width, with softened edges. */
+function slab(profile: [number, number][], width: number, color: string, bevel = 0.05) {
+  const sh = new THREE.Shape(profile.map(([x, y]) => new THREE.Vector2(x, y)));
+  const g = new THREE.ExtrudeGeometry(sh, { depth: Math.max(0.01, width - bevel * 2), bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 4 });
+  g.translate(0, 0, -(width - bevel * 2) / 2);
+  paint(g, color);
+  return g;
+}
+
+const GLASS = "#1b232c";
+const TRIM = "#2a2c30";
+
+function wheels(len: number, wid: number, r: number, axles: number[]) {
+  const out: THREE.BufferGeometry[] = [];
+  for (const ax of axles)
+    for (const sz of [-1, 1]) {
+      out.push(paint(new THREE.CylinderGeometry(r, r, 0.24, 12).rotateX(Math.PI / 2).translate(ax * len, r, sz * (wid / 2 - 0.1)), "#141414"));
+      out.push(paint(new THREE.CylinderGeometry(r * 0.55, r * 0.55, 0.26, 10).rotateX(Math.PI / 2).translate(ax * len, r, sz * (wid / 2 - 0.09)), "#9a9ea3"));
+    }
+  return out;
+}
+
+function lights(len: number, wid: number, y: number) {
+  return [
+    paint(new THREE.BoxGeometry(0.05, 0.16, wid * 0.22).translate(len / 2 + 0.01, y, wid * 0.3), "#fff6d8"),
+    paint(new THREE.BoxGeometry(0.05, 0.16, wid * 0.22).translate(len / 2 + 0.01, y, -wid * 0.3), "#fff6d8"),
+    paint(new THREE.BoxGeometry(0.05, 0.14, wid * 0.24).translate(-len / 2 - 0.01, y + 0.04, wid * 0.3), "#b3201a"),
+    paint(new THREE.BoxGeometry(0.05, 0.14, wid * 0.24).translate(-len / 2 - 0.01, y + 0.04, -wid * 0.3), "#b3201a"),
+  ];
+}
+
+/** Low-poly but properly shaped vehicles: bodies, glasshouses, wheels and lights (white parts take the paint colour). */
 function vehicle(len: number, wid: number, h: number, kind: "car" | "van" | "pickup" | "bus" | "truck") {
+  const L = len / 2;
   const parts: THREE.BufferGeometry[] = [];
-  const body = new THREE.BoxGeometry(len, h * 0.55, wid).translate(0, 0.35 + h * 0.275, 0);
-  paint(body, "#ffffff");
-  parts.push(body);
   if (kind === "car") {
-    parts.push(paint(new THREE.BoxGeometry(len * 0.55, h * 0.42, wid * 0.88).translate(-len * 0.05, 0.35 + h * 0.55 + h * 0.21, 0), "#ffffff"));
-    parts.push(paint(new THREE.BoxGeometry(len * 0.5, h * 0.3, wid * 0.9).translate(-len * 0.05, 0.35 + h * 0.6 + h * 0.15, 0), "#1c2530"));
+    parts.push(slab([[-L, 0.32], [L, 0.32], [L, 0.72], [L - 0.25, 0.86], [L * 0.28, 0.93], [-L * 0.62, 0.96], [-L, 0.9]], wid, "#ffffff", 0.08));
+    parts.push(slab([[L * 0.3, 0.9], [L * 0.04, h], [-L * 0.46, h], [-L * 0.7, 0.93]], wid * 0.86, GLASS, 0.04));
+    parts.push(slab([[L * 0.05, h - 0.06], [L * 0.05, h + 0.02], [-L * 0.45, h + 0.02], [-L * 0.45, h - 0.06]], wid * 0.88, "#ffffff", 0.03));
+    parts.push(...wheels(len, wid, 0.34, [0.31, -0.31]), ...lights(len, wid, 0.68));
   } else if (kind === "pickup") {
-    parts.push(paint(new THREE.BoxGeometry(len * 0.4, h * 0.45, wid * 0.92).translate(len * 0.12, 0.35 + h * 0.55 + h * 0.22, 0), "#ffffff"));
-    parts.push(paint(new THREE.BoxGeometry(len * 0.36, h * 0.3, wid * 0.94).translate(len * 0.12, 0.35 + h * 0.6 + h * 0.15, 0), "#1c2530"));
+    parts.push(slab([[-L, 0.38], [L, 0.38], [L, 0.8], [L - 0.25, 0.95], [L * 0.38, 1.0], [-L, 1.0]], wid, "#ffffff", 0.07));
+    parts.push(slab([[L * 0.38, 0.97], [L * 0.2, h], [-L * 0.2, h], [-L * 0.2, 0.97]], wid * 0.9, GLASS, 0.04));
+    parts.push(slab([[L * 0.2, h - 0.05], [L * 0.2, h + 0.03], [-L * 0.2, h + 0.03], [-L * 0.2, h - 0.05]], wid * 0.92, "#ffffff", 0.03));
+    parts.push(paint(new THREE.BoxGeometry(L * 0.78, 0.08, wid * 0.86).translate(-L * 0.6, 0.98, 0), TRIM));
+    parts.push(...wheels(len, wid, 0.4, [0.32, -0.3]), ...lights(len, wid, 0.75));
   } else if (kind === "van") {
-    parts.push(paint(new THREE.BoxGeometry(len * 0.92, h * 0.42, wid).translate(-len * 0.03, 0.35 + h * 0.55 + h * 0.21, 0), "#ffffff"));
-    parts.push(paint(new THREE.BoxGeometry(len * 0.2, h * 0.3, wid * 1.01).translate(len * 0.33, 0.35 + h * 0.62 + h * 0.15, 0), "#1c2530"));
+    parts.push(slab([[-L, 0.38], [L, 0.38], [L, 0.95], [L - 0.5, h * 0.62], [L - 0.85, h], [-L, h]], wid, "#ffffff", 0.1));
+    parts.push(slab([[L - 0.05, 1.0], [L - 0.5, h * 0.6], [L - 0.86, h * 0.95], [L - 0.86, 1.0]], wid * 1.01, GLASS, 0.02));
+    parts.push(paint(new THREE.BoxGeometry(len * 0.45, 0.45, wid * 1.01).translate(L * 0.05, h * 0.72, 0), GLASS));
+    parts.push(...wheels(len, wid, 0.38, [0.33, -0.32]), ...lights(len, wid, 0.8));
   } else if (kind === "bus") {
-    parts.push(paint(new THREE.BoxGeometry(len, h * 0.45, wid).translate(0, 0.35 + h * 0.55 + h * 0.225, 0), "#ffffff"));
-    parts.push(paint(new THREE.BoxGeometry(len * 0.96, h * 0.3, wid * 1.01).translate(0, 0.35 + h * 0.68, 0), "#1c2530"));
+    parts.push(slab([[-L, 0.35], [L, 0.35], [L, h - 0.15], [L - 0.15, h], [-L, h]], wid, "#ffffff", 0.12));
+    parts.push(paint(new THREE.BoxGeometry(len * 0.92, h * 0.34, wid * 1.01).translate(-0.1, h * 0.62, 0), GLASS));
+    parts.push(paint(new THREE.BoxGeometry(0.05, h * 0.5, wid * 0.86).translate(L + 0.03, h * 0.6, 0), GLASS));
+    parts.push(paint(new THREE.BoxGeometry(len * 0.3, 0.3, wid * 0.6).translate(-L * 0.3, h + 0.12, 0), "#d8d8d2"));
+    parts.push(...wheels(len, wid, 0.48, [0.36, -0.3]), ...lights(len, wid, 0.75));
   } else {
-    parts.push(paint(new THREE.BoxGeometry(len * 0.26, h * 0.5, wid).translate(len * 0.37, 0.35 + h * 0.55 + h * 0.25, 0), "#ffffff"));
-    parts.push(paint(new THREE.BoxGeometry(len * 0.7, h * 0.85, wid * 1.02).translate(-len * 0.14, 0.35 + h * 0.5, 0), "#d8d8d2"));
+    // Truck: a cab and a box body.
+    parts.push(slab([[L * 0.42, 0.45], [L, 0.45], [L, h * 0.78], [L - 0.2, h * 0.85], [L * 0.42, h * 0.85]], wid, "#ffffff", 0.1));
+    parts.push(slab([[L - 0.04, h * 0.5], [L - 0.2, h * 0.8], [L * 0.6, h * 0.8], [L * 0.6, h * 0.5]], wid * 1.01, GLASS, 0.02));
+    parts.push(paint(new THREE.BoxGeometry(len * 0.68, h * 0.86, wid * 1.02).translate(-L * 0.3, 0.45 + h * 0.43, 0), "#d8d8d2"));
+    parts.push(paint(new THREE.BoxGeometry(len, 0.18, wid * 0.7).translate(0, 0.5, 0), TRIM));
+    parts.push(...wheels(len, wid, 0.48, [0.33, -0.2, -0.35]), ...lights(len, wid, 0.85));
   }
-  for (const sx of [-1, 1])
-    for (const sz of [-1, 1]) parts.push(paint(new THREE.CylinderGeometry(0.36, 0.36, 0.26, 8).rotateX(Math.PI / 2).translate(sx * len * 0.32, 0.36, sz * wid * 0.45), "#151515"));
-  // Head and tail lights.
-  parts.push(paint(new THREE.BoxGeometry(0.06, 0.18, wid * 0.8).translate(len / 2, 0.35 + h * 0.4, 0), "#fff6d8"));
-  parts.push(paint(new THREE.BoxGeometry(0.06, 0.16, wid * 0.8).translate(-len / 2, 0.35 + h * 0.4, 0), "#b3201a"));
   return merge(parts);
 }
 
@@ -64,7 +103,8 @@ export class AgentView {
   private Y = new THREE.Vector3(0, 1, 0);
 
   constructor(private city: () => City) {
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.25 });
+    // Glossy paint with a clear coat: it picks up the sky and the sun like real cars do.
+    const mat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.35, clearcoat: 0.8, clearcoatRoughness: 0.12, envMapIntensity: 1.1 });
     const geos = [vehicle(4.5, 1.85, 1.45, "car"), vehicle(5.1, 2.0, 2.1, "van"), vehicle(5.3, 1.95, 1.7, "pickup"), vehicle(11.5, 2.6, 2.9, "bus"), vehicle(8.4, 2.5, 3.1, "truck")];
     this.vehicles = geos.map((g, i) => {
       const m = new THREE.InstancedMesh(g, mat, i === 3 ? 256 : 2048);

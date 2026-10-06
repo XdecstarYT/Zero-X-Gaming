@@ -25,6 +25,8 @@ export type FromSim =
       removed: number[];
       cars: Float32Array;
       peds: Float32Array;
+      /** Traffic lights: [node, approach edge, 0 green / 1 amber / 2 red] per approach. */
+      signals: Float32Array;
       fires: [number, number, number][];
       events: Sim["events"];
       /** Road states [edge, condition, works minutes left], about once a second. */
@@ -49,7 +51,8 @@ export function createRunner(post: (m: FromSim, transfer?: Transferable[]) => vo
     const ch = sim.drainChanges();
     const cars = sim.carBuffer();
     const peds = sim.pedBuffer();
-    post({ t: "tick", minutes: sim.minutes, stats: sim.stats, notices: sim.notices, changed: ch.changed, removed: ch.removed, cars, peds, fires: sim.fireList(), events: sim.drainEvents(), roads: sim.takeRoads() }, [cars.buffer, peds.buffer]);
+    const signals = sim.signalBuffer();
+    post({ t: "tick", minutes: sim.minutes, stats: sim.stats, notices: sim.notices, changed: ch.changed, removed: ch.removed, cars, peds, signals, fires: sim.fireList(), events: sim.drainEvents(), roads: sim.takeRoads() }, [cars.buffer, peds.buffer, signals.buffer]);
   }, 1000 / TICK_HZ);
   return {
     handle(m: ToSim) {

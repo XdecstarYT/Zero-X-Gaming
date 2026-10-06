@@ -26,8 +26,8 @@ export const theme = {
 
 /** World palette. */
 export const world = {
-  grass: "#5fa83a",
-  grassDry: "#8fae4a",
+  grass: "#5d8c36",
+  grassDry: "#9c9a58",
   sand: "#d8c48d",
   rock: "#8c8173",
   snow: "#eef2f5",
@@ -40,7 +40,7 @@ export const world = {
   lineWhite: "#f3f3ee",
   lineYellow: "#f2c230",
   busLane: "#a8392c",
-  brick: ["#a3412f", "#8f3a2a", "#b04a35", "#7f3326"],
+  brick: ["#9a4b3a", "#874436", "#a65a45", "#7b4033", "#b07a5e"],
   cream: ["#e8dcc0", "#ddd2b6", "#efe6d0"],
   grey: ["#9aa1a8", "#b4b8bb", "#7e858c"],
   glass: "#6f93b0",

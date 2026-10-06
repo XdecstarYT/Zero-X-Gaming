@@ -3,7 +3,7 @@ import { cumulative, project, sampleAt, type P } from "../core/geom";
 import type { SimSave, SimWorld } from "../sim/sim";
 import { LotStore, Occupancy, rectCells, sideNormal, type Lot, type PaintOpts, type ServiceKind } from "./lots";
 import { BASE_MAPS, gatewayPath, generateTerrain, generateTrees, mapById, type MapDef } from "./maps";
-import { halfWidth, ROAD_TYPES, RoadGraph, type REdge, type RoadTypeId } from "./roads";
+import { halfWidth, ROAD_TYPES, RoadGraph, stopSetback, type REdge, type RoadTypeId } from "./roads";
 import { Terrain } from "./terrain";
 
 export interface BusStop {
@@ -199,6 +199,18 @@ export class City {
   }
 
   /** Call before a road or zone action so it can be undone. */
+  /** Set how a junction is run (undefined: back to automatic). */
+  setJunctionControl(id: number, control: "signal" | "stop" | "yield" | undefined) {
+    const n = this.roads.nodes.get(id);
+    if (!n) return false;
+    this.record();
+    if (control) n.control = control;
+    else delete n.control;
+    this.roads.version++;
+    this.changes.nodes.add(id);
+    return true;
+  }
+
   record() {
     this.undoStack.push(this.snapshot());
     if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift();
@@ -835,9 +847,14 @@ export class City {
   // -------------------------------------------------------------- the sim
 
   toSim(): SimWorld {
+    const at = new Map<number, REdge[]>();
+    for (const e of this.roads.edges.values())
+      for (const id of e.a === e.b ? [e.a] : [e.a, e.b]) (at.get(id) ?? at.set(id, []).get(id)!).push(e);
     const edges = [...this.roads.edges.values()].map((e) => {
       const t = ROAD_TYPES[e.type];
       return {
+        stopA: stopSetback(at.get(e.a)!, e.a, e),
+        stopB: stopSetback(at.get(e.b)!, e.b, e),
         id: e.id,
         a: e.a,
         b: e.b,
@@ -865,7 +882,7 @@ export class City {
       wet: this.nearWater(l),
     }));
     return {
-      nodes: [...this.roads.nodes.values()].map((n) => ({ id: n.id, x: n.x, z: n.z, gate: n.gate })),
+      nodes: [...this.roads.nodes.values()].map((n) => ({ id: n.id, x: n.x, z: n.z, gate: n.gate, control: n.control })),
       edges,
       lots,
       services: [...this.lots.services.values()].map((s) => ({ id: s.id, kind: s.kind, cx: s.cx, cz: s.cz })),

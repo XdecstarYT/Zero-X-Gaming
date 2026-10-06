@@ -44,6 +44,7 @@ without workers.
 | `politics/parliament.ts` | The parliament: parties and seats, coalitions, political capital, bills, lobbying, referendums, the cabinet and scandals, the campaign (pure, unit-tested) |
 | `ui/mandate/*` | The Mandate side app: shell and briefing (`MandateApp.tsx`), the other pages (`pages.tsx`), portraits, the chamber, charts, the compass and the district map (`parts.tsx`) |
 | `ui/mandate/statecraft.tsx` | The Statecraft pages: Budget, Decrees, Lobbies, Media (press conference, interviews, the TV debate), Opposition, Factions, Legacy, and the crisis card |
+| `render/signalView.ts`, `render/politicsView.ts` | Traffic-light masts lit from the sim's signal states; protests, strikes, floods, festivals, billboards and fireworks in the streets |
 | `ui/*` | React screens (loading, menu, map select, settings, load, update log, credits, pause), HUD, City Hall (`politics.tsx`) and the liquid glass (`glass.tsx`) |
 
 ## Mayor mode
@@ -244,6 +245,45 @@ record book.
   and six titles from Rookie Mayor to Living Legend.
 
 Election night now reveals the results district by district before the totals.
+
+## Traffic, streets and spectacle (1.1)
+
+**Junctions.** Every junction with three or more roads is run one of three ways (`sim/sim.ts`):
+traffic lights, an all-way stop, or give way to the bigger road. By default (`autoControl`)
+crossings of two avenues or bigger get lights, equal roads get an all-way stop, and mixed
+junctions give way; highways always give way. The player can override any junction with the
+Junctions road tool (`RNode.control`, saved with the roads). Lights are actuated: each phase
+(roads facing each other) gets 7–20 s of green (a little longer for a long queue), ending
+early when nobody comes and others wait, then amber and an all-red. Whatever the control, cars
+take turns fairly: a car that has waited at the line goes before newer arrivals whose paths
+cross its own, and a car held up only by a full exit still keeps first claim on that exit.
+Cars choose their lane by their next turn: they come out of a junction in the lane that suits
+the turn they just made, then change lanes smoothly on the road (`changeLane`) when there's a
+gap. Waiting at a red light or in a queue isn't counted as stuck, so the gridlock breaker only
+ever removes the car at the front of a real jam. Cars and pedestrians draw from their own random
+stream, so traffic never changes how the city grows. `sim.trips` counts completed and abandoned
+trips; the unit test keeps abandoned trips under 1%.
+
+**Road geometry.** Junction setbacks are worked out in one place (`junctionSetback` and
+`stopSetback` in `world/roads.ts`), so the renderer's pads and zebras, the sim's stop lines and
+the traffic lights (`render/signalView.ts`) line up. A road that joins at less than 32 degrees
+to another arm is bent so it meets at that angle (`easeShallowEnds`), and a road ending anywhere
+on another road's surface joins it rather than lying on top.
+
+**Look.** The sky shader has haze and drifting clouds, and is rendered into a PMREM environment
+map whenever the time of day moves on, which lights and reflects in every standard material
+(cars have clear-coat paint, windows are mirror-like glass). A grading pass after tone mapping
+adds contrast, warmth and a vignette, plus an optional tilt-shift depth of field (the DoF setting,
+on with Ultra). Grass is varied in world space, trees are welded organic crowns with leaf dappling
+and wind sway (`foliageMaterial`), vehicles are extruded profiles with glasshouses and wheels, and
+empty plots are only drawn while zoning.
+
+**Politics in the streets** (`render/politicsView.ts`, fed by `Game.politicsScene` once a
+second): protest crowds with placards at the district's junction, strikers at the nearest
+factory gates, floodwater over the district, reporters for a corruption probe, bunting, a crowd
+and fireworks for the festival decree, billboards in every district in the leading party's
+colours and rally crowds during the campaign, and fireworks on a winning election night.
+Clicking a crowd opens the briefing; Show me on the crisis card flies the camera there.
 
 ## The Riviera DLC (0.8)
 

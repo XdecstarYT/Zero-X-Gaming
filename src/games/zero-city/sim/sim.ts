@@ -12,11 +12,15 @@ import { laneOffset } from "../world/roads";
 
 export type Zone = "R" | "C" | "I" | "M";
 
+/** How a junction is run: traffic lights, an all-way stop, or give way to the bigger road. Unset: decided by the roads that meet. */
+export type JunctionControl = "signal" | "stop" | "yield";
+
 export interface SimNode {
   id: number;
   x: number;
   z: number;
   gate?: boolean;
+  control?: JunctionControl;
 }
 export interface SimEdge {
   id: number;
@@ -29,6 +33,9 @@ export interface SimEdge {
   pts: number[];
   /** Half the carriageway, the sidewalk width and the median, metres. */
   half: number;
+  /** Stop lines: how far back from node a and node b cars wait (where the zebra is drawn). */
+  stopA?: number;
+  stopB?: number;
   sidewalk: number;
   median: number;
   name: string;
@@ -175,6 +182,11 @@ interface Car {
   /** Distance along the current edge in the direction of travel. */
   d: number;
   lane: number;
+  /** A lane change under way: the lane it came from and how far across it is (1 = done). */
+  lcFrom: number;
+  lc: number;
+  /** Waiting for a red light (or behind someone who is): normal, not congestion. */
+  red: boolean;
   v: number;
   v0: number;
   len: number;
@@ -216,6 +228,27 @@ interface EdgeInfo {
   slow: [number, number];
 }
 
+/** A car at the stop line, waiting its turn. */
+interface Waiter {
+  car: number;
+  since: number;
+  /** Only blocked by the junction (not by a full road beyond it), so it really is next. */
+  ready: boolean;
+  ax: number;
+  az: number;
+  bx: number;
+  bz: number;
+}
+
+interface Signal {
+  /** Approach edges in each phase (roads facing each other share a phase). */
+  phases: number[][];
+  phase: number;
+  state: "green" | "amber" | "red";
+  /** Seconds in the current state. */
+  t: number;
+}
+
 interface NodeInfo {
   n: SimNode;
   edges: number[];
@@ -226,7 +259,21 @@ interface NodeInfo {
   pedUntil: number;
   carPhaseUntil: number;
   controlled: boolean;
+  /** How the junction is run (when controlled). */
+  mode: "signal" | "stop" | "yield";
+  sig: Signal | null;
+  /** Cars at the stop line last step and this step. */
+  waitPrev: Map<number, Waiter>;
+  waitNow: Map<number, Waiter>;
 }
+
+/** Signal timings, seconds. */
+const GREEN_MIN = 7;
+const GREEN_MAX = 20;
+const AMBER = 2.5;
+const ALL_RED = 1.2;
+/** At a give-way junction, a side-road car that has waited this long gets let out. */
+const YIELD_PATIENCE = 6;
 
 const SERVICE_STAFF: Record<string, number> = { police: 12, fire: 10, clinic: 14, school: 20, power: 15, water: 6, park: 2, depot: 14, marina: 25, lighthouse: 3, casino: 70, resort: 60, hospital: 60, museum: 20, university: 80, stadium: 40, tower: 30 };
 /** Road wear: per car per game minute on a road (trucks wear it four times as fast), and by age alone per game day. */
@@ -259,6 +306,14 @@ const POLLUTED = 32;
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
+/** The default for a junction, from the classes of the roads that meet: lights where big roads cross, an all-way stop where equal roads meet, give way otherwise. */
+export function autoControl(cls: number[]): JunctionControl {
+  if (Math.max(...cls) >= 4) return "yield";
+  const big = cls.filter((c) => c >= 2).length;
+  if (big >= 2 || (big >= 1 && cls.length >= 4)) return "signal";
+  return cls.every((c) => c === cls[0]) ? "stop" : "yield";
+}
+
 export class Sim {
   minutes = 8 * 60;
   seed = 1;
@@ -286,7 +341,12 @@ export class Sim {
   private spawnAcc = 0;
   private noticeAcc = 0;
   private congestion = new Map<number, number>();
+  /** Trips that got where they were going, and ones abandoned in gridlock (running totals). */
+  trips = { done: 0, stuck: 0 };
+  private lastBuckets = new Map<string, Car[]>();
   private rand = rng(1);
+  /** Cars and pedestrians draw from their own stream, so traffic never changes how the city grows. */
+  private agentRand = rng(7);
   /** Burning buildings: lot → minutes alight, and whether a fire station covers it. */
   fires = new Map<number, { t: number; covered: boolean }>();
   /** One-off messages for the player (drained with each tick). */
@@ -308,6 +368,7 @@ export class Sim {
     this.minutes = save.minutes;
     this.seed = save.seed;
     this.rand = rng(save.seed + Math.floor(save.minutes));
+    this.agentRand = rng(save.seed * 7 + 3 + Math.floor(save.minutes));
     this.buildings.clear();
     for (const b of save.buildings) this.buildings.set(b.lot, { ...b });
     this.roads.clear();
@@ -327,8 +388,9 @@ export class Sim {
   setWorld(w: SimWorld) {
     this.world = w;
     this.edges.clear();
+    const oldSig = new Map([...this.nodes].map(([id, ni]) => [id, ni.sig]));
     this.nodes.clear();
-    for (const n of w.nodes) this.nodes.set(n.id, { n, edges: [], major: 0, active: [], pedUntil: 0, carPhaseUntil: 0, controlled: false });
+    for (const n of w.nodes) this.nodes.set(n.id, { n, edges: [], major: 0, active: [], pedUntil: 0, carPhaseUntil: 0, controlled: false, mode: "yield", sig: null, waitPrev: new Map(), waitNow: new Map() });
     for (const e of w.edges) {
       const cum = cumulative(e.pts);
       this.edges.set(e.id, { e, cum, L: cum[cum.length - 1], setA: 0, setB: 0, count: [0, 0], slow: [0, 0] });
@@ -339,10 +401,20 @@ export class Sim {
       const es = ni.edges.map((id) => this.edges.get(id)!.e);
       ni.major = Math.max(0, ...es.map((e) => e.cls));
       ni.controlled = es.length >= 3;
+      if (ni.controlled) {
+        ni.mode = this.junctionMode(ni, es);
+        if (ni.mode === "signal") {
+          ni.sig = this.makeSignal(ni);
+          const old = oldSig.get(ni.n.id);
+          if (ni.sig && old && old.phases.length === ni.sig.phases.length) Object.assign(ni.sig, { phase: old.phase, state: old.state, t: old.t });
+          if (!ni.sig) ni.mode = "stop";
+        }
+      }
       const set = es.length >= 2 ? Math.max(...es.map((e) => e.half + e.sidewalk * 0.5)) + 0.8 : 0;
       for (const id of ni.edges) {
         const info = this.edges.get(id)!;
-        const s = Math.min(set, info.L * 0.3);
+        const own = info.e.a === ni.n.id ? info.e.stopA : info.e.stopB;
+        const s = own !== undefined ? Math.min(own, info.L * 0.45) : Math.min(set, info.L * 0.3);
         if (info.e.a === ni.n.id) info.setA = s;
         if (info.e.b === ni.n.id) info.setB = s;
       }
@@ -946,8 +1018,9 @@ export class Sim {
     if (!this.settings.traffic) return 0;
     const st = this.stats;
     const hour = (this.minutes / 60) % 24;
-    const day = hour < 5 ? 0.25 : hour < 7 ? 0.7 : hour < 10 ? 1.25 : hour < 16 ? 0.9 : hour < 19 ? 1.3 : hour < 22 ? 0.8 : 0.45;
-    const want = (st.population * 0.07 + st.jobs * 0.03) * day + (this.buildings.size > 0 ? 4 : 0);
+    // Rush hours are busy but not a wall of cars: peaks are spread a little wider and lower.
+    const day = hour < 5 ? 0.25 : hour < 6.5 ? 0.6 : hour < 10 ? 1.1 : hour < 16 ? 0.9 : hour < 19.5 ? 1.12 : hour < 22 ? 0.8 : 0.45;
+    const want = (st.population * 0.065 + st.jobs * 0.03) * day + (this.buildings.size > 0 ? 4 : 0);
     const cap = 80 + 1700 * (this.settings.trafficDensity / 100);
     return Math.min(cap, Math.round(want * (this.settings.policy?.carShare ?? 1) * (0.4 + 0.6 * (this.settings.trafficDensity / 100))));
   }
@@ -972,7 +1045,7 @@ export class Sim {
       pool.push([b, w]);
     }
     if (!pool.length) return null;
-    let r = this.rand.next() * total;
+    let r = this.agentRand.next() * total;
     for (const [b, w] of pool) {
       r -= w;
       if (r <= 0) return this.lots.get(b.lot) ?? null;
@@ -997,7 +1070,7 @@ export class Sim {
 
   private spawnCar() {
     const hour = (this.minutes / 60) % 24;
-    const r = this.rand.next();
+    const r = this.agentRand.next();
     let from: { edge: number; s: number } | null = null;
     let to: { edge: number; s: number } | null = null;
     let kind: Car["kind"] = "visit";
@@ -1018,7 +1091,7 @@ export class Sim {
     if (r < 0.18) {
       // Commuters and visitors from out of town.
       from = gateAt();
-      to = at(this.rand.next() < 0.5 ? work() : shop());
+      to = at(this.agentRand.next() < 0.5 ? work() : shop());
       kind = "work";
     } else if (r < 0.3) {
       from = at(work() ?? shop());
@@ -1028,7 +1101,7 @@ export class Sim {
       from = at(ind());
       to = at(shop());
       kind = "deliver";
-      type = this.rand.next() < 0.55 ? 1 : this.rand.next() < 0.6 ? 2 : 4;
+      type = this.agentRand.next() < 0.55 ? 1 : this.agentRand.next() < 0.6 ? 2 : 4;
     } else if (morning || (!evening && r < 0.7)) {
       from = at(home());
       to = at(morning ? work() : shop());
@@ -1039,7 +1112,7 @@ export class Sim {
       kind = "home";
     }
     if (!from || !to) return;
-    if (kind !== "deliver") type = this.rand.next() < 0.68 ? 0 : this.rand.next() < 0.5 ? 2 : 1;
+    if (kind !== "deliver") type = this.agentRand.next() < 0.68 ? 0 : this.agentRand.next() < 0.5 ? 2 : 1;
     const rt = this.route(from.edge, from.s, to.edge, to.s);
     if (!rt) return;
     const info = this.edges.get(rt.legs[0].edge)!;
@@ -1047,13 +1120,16 @@ export class Sim {
     const car: Car = {
       id: this.nextAgent++,
       type,
-      color: Math.floor(this.rand.next() * 12),
+      color: Math.floor(this.agentRand.next() * 12),
       route: rt.legs,
       ri: 0,
       d: rt.d,
-      lane: lanes > 1 ? Math.floor(this.rand.next() * lanes) : 0,
+      lane: lanes > 1 ? Math.floor(this.agentRand.next() * lanes) : 0,
+      lcFrom: 0,
+      lc: 1,
+      red: false,
       v: 0,
-      v0: 0.85 + this.rand.next() * 0.25,
+      v0: 0.85 + this.agentRand.next() * 0.25,
       len: VEH_LEN[type],
       crossing: null,
       stopAt: rt.stopAt,
@@ -1064,6 +1140,7 @@ export class Sim {
       z: 0,
       ang: 0,
     };
+    if (lanes > 1) car.lane = this.pickLane(car, 0, this.lastBuckets);
     // Don't drop a car on top of another one.
     if (this.cars.some((c) => !c.crossing && c.route[c.ri].edge === car.route[0].edge && c.route[c.ri].dir === car.route[0].dir && c.lane === car.lane && Math.abs(c.d - car.d) < 8)) return;
     this.place(car);
@@ -1101,6 +1178,9 @@ export class Sim {
       ri: 0,
       d: rt.d,
       lane: 0,
+      lcFrom: 0,
+      lc: 1,
+      red: false,
       v: 0,
       v0: 0.85,
       len: VEH_LEN[3],
@@ -1116,6 +1196,189 @@ export class Sim {
     };
     this.place(car);
     this.cars.push(car);
+  }
+
+  private junctionMode(ni: NodeInfo, es: SimEdge[]): NodeInfo["mode"] {
+    return ni.n.control ?? autoControl(es.map((e) => e.cls));
+  }
+
+  /** Which way an edge leaves a node (unit vector). */
+  private outward(e: SimEdge, node: number) {
+    const p = e.pts;
+    const n = p.length;
+    const [x0, z0, x1, z1] = e.a === node ? [p[0], p[1], p[2], p[3]] : [p[n - 2], p[n - 1], p[n - 4], p[n - 3]];
+    const L = Math.hypot(x1 - x0, z1 - z0) || 1;
+    return { x: (x1 - x0) / L, z: (z1 - z0) / L };
+  }
+
+  /** Group the roads coming into a junction into phases: roads facing each other go together. */
+  private makeSignal(ni: NodeInfo): Signal | null {
+    const id = ni.n.id;
+    const incoming = ni.edges.filter((eid) => {
+      const e = this.edges.get(eid)!.e;
+      return e.b === id ? e.lanesF > 0 : e.lanesB > 0;
+    });
+    const phases: { axis: { x: number; z: number }; edges: number[] }[] = [];
+    for (const eid of incoming) {
+      const v = this.outward(this.edges.get(eid)!.e, id);
+      const ph = phases.find((q) => Math.abs(q.axis.x * v.x + q.axis.z * v.z) > 0.82);
+      if (ph) ph.edges.push(eid);
+      else phases.push({ axis: v, edges: [eid] });
+    }
+    if (phases.length < 2) return null;
+    return { phases: phases.map((q) => q.edges), phase: 0, state: "green", t: 0 };
+  }
+
+  /** Run the lights: actuated, so a green with nobody coming ends early when others wait. */
+  private runSignals(dt: number, buckets: Map<string, Car[]>) {
+    const demand = (ni: NodeInfo, edges: number[]) => {
+      let n = 0;
+      for (const eid of edges) {
+        const info = this.edges.get(eid)!;
+        const dir = info.e.b === ni.n.id ? 1 : -1;
+        const lanes = dir === 1 ? info.e.lanesF : info.e.lanesB;
+        const stop = info.L - (dir === 1 ? info.setB : info.setA);
+        for (let lane = 0; lane < lanes; lane++) {
+          const b = buckets.get(`${eid}:${dir}:${lane}`);
+          if (!b) continue;
+          for (let i = b.length - 1; i >= 0 && stop - b[i].d < 60; i--) n++;
+        }
+      }
+      return n;
+    };
+    for (const ni of this.nodes.values()) {
+      const sg = ni.sig;
+      if (!sg) continue;
+      sg.t += dt;
+      if (sg.state === "green") {
+        if (sg.t < GREEN_MIN) continue;
+        const here = demand(ni, sg.phases[sg.phase]);
+        let others = 0;
+        for (let k = 0; k < sg.phases.length; k++) if (k !== sg.phase) others += demand(ni, sg.phases[k]);
+        if (others > 0 && (here === 0 || sg.t >= GREEN_MAX + Math.min(6, here))) {
+          sg.state = "amber";
+          sg.t = 0;
+        }
+      } else if (sg.state === "amber" && sg.t >= AMBER) {
+        sg.state = "red";
+        sg.t = 0;
+      } else if (sg.state === "red" && sg.t >= ALL_RED) {
+        // Next phase that has anyone waiting (or simply the next one).
+        let next = (sg.phase + 1) % sg.phases.length;
+        for (let k = 1; k <= sg.phases.length; k++) {
+          const q = (sg.phase + k) % sg.phases.length;
+          if (demand(ni, sg.phases[q]) > 0) {
+            next = q;
+            break;
+          }
+        }
+        sg.phase = next;
+        sg.state = "green";
+        sg.t = 0;
+      }
+    }
+  }
+
+  /** What the light shows an approach: 0 green, 1 amber, 2 red; -1 when the junction has no lights. */
+  private lightFor(ni: NodeInfo, edge: number) {
+    const sg = ni.sig;
+    if (!sg) return -1;
+    if (!sg.phases[sg.phase].includes(edge)) return 2;
+    return sg.state === "green" ? 0 : sg.state === "amber" ? 1 : 2;
+  }
+
+  /** Every signal head: [node, edge, state (0 green, 1 amber, 2 red)] per approach. */
+  signalBuffer() {
+    const out: number[] = [];
+    for (const ni of this.nodes.values()) {
+      if (!ni.sig) continue;
+      for (const ph of ni.sig.phases) for (const e of ph) out.push(ni.n.id, e, this.lightFor(ni, e));
+    }
+    return new Float32Array(out);
+  }
+
+  /** Which way a car turns going from one leg onto the next: + a near-side turn, - a far-side one, ~0 straight on. */
+  private turnBetween(leg: Leg, next: Leg) {
+    const info = this.edges.get(leg.edge);
+    const ninfo = this.edges.get(next.edge);
+    if (!info || !ninfo) return 0;
+    const h1 = this.lanePoint(info, leg.dir, 0, info.L);
+    const h2 = this.lanePoint(ninfo, next.dir, 0, 0);
+    return h1.tx * h2.tz - h1.tz * h2.tx;
+  }
+
+  /**
+   * The lane a car comes out of a junction in: a far turn into the inside lane, a near turn into
+   * the kerb lane, straight on into the same lane. Paths through a junction never swap lanes
+   * across each other; cars change lanes on the road afterwards.
+   */
+  private exitLane(c: Car, leg: Leg, next: Leg) {
+    const ninfo = this.edges.get(next.edge)!;
+    const n = next.dir === 1 ? ninfo.e.lanesF : ninfo.e.lanesB;
+    if (n <= 1) return 0;
+    const turn = this.turnBetween(leg, next);
+    if (turn > 0.35) return n - 1;
+    if (turn < -0.35) return 0;
+    return Math.min(c.lane, n - 1);
+  }
+
+  /** The lane a car wants on its current road, for the turn at its end (straight on: wherever it is). */
+  private wantLane(c: Car) {
+    const leg = c.route[c.ri];
+    const next = c.route[c.ri + 1];
+    const info = this.edges.get(leg.edge)!;
+    const n = leg.dir === 1 ? info.e.lanesF : info.e.lanesB;
+    if (n <= 1 || !next) return c.lane;
+    const turn = this.turnBetween(leg, next);
+    if (turn > 0.35) return n - 1;
+    if (turn < -0.35) return 0;
+    return c.lane;
+  }
+
+  /** Pick the lane for the next road by where the car turns after it: kerb lane for a near turn, inside lane for a far one, otherwise the emptier one. */
+  private pickLane(c: Car, ri: number, buckets: Map<string, Car[]>) {
+    const leg = c.route[ri];
+    const info = this.edges.get(leg.edge)!;
+    const lanes = leg.dir === 1 ? info.e.lanesF : info.e.lanesB;
+    if (lanes <= 1) return 0;
+    const after = c.route[ri + 1];
+    if (after) {
+      const h1 = this.lanePoint(info, leg.dir, 0, info.L);
+      const ainfo = this.edges.get(after.edge);
+      if (ainfo) {
+        const h2 = this.lanePoint(ainfo, after.dir, 0, 0);
+        const turn = h1.tx * h2.tz - h1.tz * h2.tx;
+        if (turn > 0.35) return lanes - 1;
+        if (turn < -0.35) return 0;
+      }
+    }
+    let best = 0;
+    let bestN = Infinity;
+    for (let lane = 0; lane < lanes; lane++) {
+      const b = buckets.get(`${leg.edge}:${leg.dir}:${lane}`);
+      const n = (b?.length ?? 0) + (b && b[0] && b[0].d < 12 ? 3 : 0);
+      if (n < bestN) {
+        bestN = n;
+        best = lane;
+      }
+    }
+    return best;
+  }
+
+  /** Has another car waited longer for a path that crosses this one? Then it goes first. */
+  private elderWaiting(node: NodeInfo, c: Car, since: number, g: { ax: number; az: number; bx: number; bz: number }, patience: number) {
+    for (const w of node.waitPrev.values()) {
+      if (w.car === c.id) continue;
+      if (this.t - w.since < patience) continue;
+      if (w.since > since || (w.since === since && w.car > c.id)) continue;
+      if (Math.hypot(w.ax - g.ax, w.az - g.az) < 2) continue;
+      const sameEnd = Math.hypot(g.bx - w.bx, g.bz - w.bz) < 3;
+      // A car held up only by a full road out still has first claim on that road (or the traffic
+      // pouring into it would starve it), but it mustn't hold up cars crossing its path meanwhile.
+      if (sameEnd) return true;
+      if (w.ready && segX(g.ax, g.az, g.bx, g.bz, w.ax, w.az, w.bx, w.bz)) return true;
+    }
+    return false;
   }
 
   private laneOffset(info: EdgeInfo, dir: 1 | -1, lane: number) {
@@ -1150,6 +1413,35 @@ export class Sim {
     c.x = p.x;
     c.z = p.z;
     c.ang = Math.atan2(p.tz, p.tx);
+    if (c.lc < 1) {
+      // Drift across from the old lane, nosing over a little as it goes.
+      const k = c.lc * c.lc * (3 - 2 * c.lc);
+      const off = (this.laneOffset(info, leg.dir, c.lcFrom) - this.laneOffset(info, leg.dir, c.lane)) * (1 - k);
+      c.x += -p.tz * off;
+      c.z += p.tx * off;
+      c.ang += Math.sign(c.lane - c.lcFrom) * Math.sin(Math.PI * c.lc) * 0.12 * (this.laneOffset(info, leg.dir, 1) > this.laneOffset(info, leg.dir, 0) ? 1 : -1);
+    }
+  }
+
+  /** Move over a lane toward the one it wants, when there's a safe gap. */
+  private changeLane(c: Car, info: EdgeInfo, leg: Leg, stopLine: number, buckets: Map<string, Car[]>) {
+    if (c.lc < 1 || c.d > stopLine - 12 || c.d < 4) return;
+    const want = this.wantLane(c);
+    if (want === c.lane) return;
+    const to = c.lane + Math.sign(want - c.lane);
+    const b = buckets.get(`${leg.edge}:${leg.dir}:${to}`) ?? [];
+    for (const k of b) {
+      // Room beside it: nobody alongside, and nobody close behind coming up faster.
+      const ahead = k.d - c.d;
+      if (ahead > -c.len - 3 && ahead < k.len + 3) return;
+      if (ahead < 0 && ahead > -14 && k.v > c.v + 1) return;
+    }
+    c.lcFrom = c.lane;
+    c.lane = to;
+    c.lc = 0;
+    b.push(c);
+    b.sort((p, q) => p.d - q.d);
+    void info;
   }
 
   private moveCars(dt: number) {
@@ -1166,13 +1458,24 @@ export class Sim {
       (buckets.get(key) ?? buckets.set(key, []).get(key)!).push(c);
       const info = this.edges.get(leg.edge)!;
       info.count[leg.dir === 1 ? 0 : 1]++;
-      if (c.v < 1.5) info.slow[leg.dir === 1 ? 0 : 1]++;
+      if (c.v < 1.5 && !c.red) info.slow[leg.dir === 1 ? 0 : 1]++;
     }
     for (const b of buckets.values()) b.sort((p, q) => p.d - q.d);
+    this.lastBuckets = buckets;
     const firstOn = (edge: number, dir: number, lane: number) => buckets.get(`${edge}:${dir}:${lane}`)?.[0];
+    const byId = new Map<number, Car>();
+    for (const c of this.cars) byId.set(c.id, c);
+    this.runSignals(dt, buckets);
+    for (const ni of this.nodes.values()) {
+      if (!ni.controlled) continue;
+      const prev = ni.waitPrev;
+      ni.waitPrev = ni.waitNow;
+      ni.waitNow = prev;
+      ni.waitNow.clear();
+    }
 
     // Release finished crossings.
-    for (const ni of this.nodes.values()) ni.active = ni.active.filter((a) => this.cars.some((c) => c.id === a.car && c.crossing?.node === ni.n.id));
+    for (const ni of this.nodes.values()) if (ni.active.length) ni.active = ni.active.filter((a) => byId.get(a.car)?.crossing?.node === ni.n.id);
 
     const gone = new Set<number>();
     for (const c of this.cars) {
@@ -1214,6 +1517,7 @@ export class Sim {
         lv = leader.v;
       }
       let mayCross = false;
+      let atRed = false;
       if (last) {
         // Aim past the spot by the standstill distance the car keeps, so it pulls right in
         // (and leaves the road) instead of halting 2 m short and blocking the lane.
@@ -1224,14 +1528,27 @@ export class Sim {
         const endNode = leg.dir === 1 ? info.e.b : info.e.a;
         const node = this.nodes.get(endNode)!;
         const ninfo = this.edges.get(next.edge)!;
-        const nLanes = next.dir === 1 ? ninfo.e.lanesF : ninfo.e.lanesB;
-        const nLane = Math.min(c.lane, Math.max(0, nLanes - 1));
+        const nLane = this.exitLane(c, leg, next);
         const ahead = firstOn(next.edge, next.dir, nLane);
         const entry = next.dir === 1 ? ninfo.setA : ninfo.setB;
         const room = !ahead || ahead.d - ahead.len > entry + 2;
         const geo = this.crossGeom(c, info, leg, ninfo, next, nLane, node);
-        const free = room && this.junctionFree(node, c, info, geo);
-        if (free && (!node.controlled || this.priority(node, info, c, buckets))) mayCross = true;
+        const free = room && this.junctionFree(node, c, info, geo, byId);
+        let go = free;
+        const atLine = c.d > stopLine - 3;
+        const since = node.waitPrev.get(c.id)?.since ?? this.t;
+        const light = node.controlled ? this.lightFor(node, leg.edge) : -1;
+        if (light >= 1) atRed = true;
+        if (go && node.controlled) {
+          if (light === 2) go = false;
+          else if (light === 1) go = c.v > 3 && c.d > stopLine - 2 - c.v * 0.6;
+          else if (light === 0) go = !this.elderWaiting(node, c, since, geo, 1.5);
+          else if (node.mode === "stop") go = atLine && c.stopped > 0.4 && !this.elderWaiting(node, c, since, geo, 0);
+          else go = (this.priority(node, info, c, buckets) || this.t - since > YIELD_PATIENCE) && !this.elderWaiting(node, c, since, geo, info.e.cls >= node.major ? YIELD_PATIENCE : 0);
+        }
+        const ready = room;
+        if (node.controlled && atLine && this.lightFor(node, leg.edge) <= 0) node.waitNow.set(c.id, { car: c.id, since, ready, ax: geo.ax, az: geo.az, bx: geo.bx, bz: geo.bz });
+        if (go) mayCross = true;
         if (!mayCross) {
           // Pull right up to the line (the car keeps 2.2 m to what it stops for), ready to go.
           if (stopLine + 2.2 - c.d < gap) {
@@ -1243,11 +1560,14 @@ export class Sim {
           c.crossing = { node: node.n.id, ...geo, t: 0 };
           node.active.push({ car: c.id, ax: geo.ax, az: geo.az, bx: geo.bx, bz: geo.bz });
           c.lane = nLane;
+          c.lc = 1;
           c.stopped = 0;
           this.place(c);
           continue;
         }
       }
+      if (c.lc < 1) c.lc = Math.min(1, c.lc + dt / 2.2);
+      if (!last) this.changeLane(c, info, leg, stopLine, buckets);
       // IDM.
       const sStar = 2.2 + Math.max(0, c.v * 1.2 + (c.v * (c.v - lv)) / (2 * Math.sqrt(2.2 * 3)));
       const free = 1 - (c.v / Math.max(0.1, v0)) ** 4;
@@ -1257,17 +1577,27 @@ export class Sim {
       let step = c.v * dt;
       if (gap !== Infinity) step = Math.min(step, Math.max(0, gap - 0.5));
       c.d += step;
-      if (c.v < 0.3) c.stopped += dt;
+      // Waiting at a red light isn't being stuck, and nor is waiting in a queue behind someone:
+      // only the car at the front can be stuck (the gridlock breaker below goes by this).
+      const queued = !!leader && gap < 8;
+      c.red = atRed || (queued && leader!.red);
+      if (c.v < 0.3) c.stopped += atRed || queued ? 0 : dt;
       else c.stopped = 0;
       if (last && c.d >= c.stopAt - 1) {
         if (c.kind === "bus") this.busArrive(c, dt);
-        else gone.add(c.id);
+        else {
+          gone.add(c.id);
+          this.trips.done++;
+        }
         continue;
       }
       if (!last && c.d > stopLine && !mayCross) c.d = stopLine;
       if (c.d > L) c.d = L;
       // Gridlock breaker: a car stuck for long enough gives up and parks.
-      if (c.stopped > 45 && c.kind !== "bus") gone.add(c.id);
+      if (c.stopped > 45 && c.kind !== "bus" && !gone.has(c.id)) {
+        gone.add(c.id);
+        this.trips.stuck++;
+      }
       this.place(c);
     }
     if (gone.size) this.cars = this.cars.filter((c) => !gone.has(c.id));
@@ -1326,13 +1656,21 @@ export class Sim {
   }
 
   /** No conflicting car or pedestrian in the junction. */
-  private junctionFree(node: NodeInfo, c: Car, _info: EdgeInfo, g: { ax: number; az: number; cx: number; cz: number; bx: number; bz: number }) {
-    if (node.pedUntil > this.t) return false;
+  private junctionFree(node: NodeInfo, c: Car, _info: EdgeInfo, g: { ax: number; az: number; cx: number; cz: number; bx: number; bz: number }, byId: Map<number, Car>) {
+    if (node.pedUntil > this.t && !node.sig) return false;
     for (const a of node.active) {
       if (a.car === c.id) continue;
+      const sameStart = Math.hypot(g.ax - a.ax, g.az - a.az) < 3;
+      const sameEnd = Math.hypot(g.bx - a.bx, g.bz - a.bz) < 3;
+      if (sameStart) {
+        // Following a car out of the same lane: go once it has pulled a car length ahead.
+        const k = byId.get(a.car)?.crossing;
+        if (k && k.t * k.len > c.len + 3) continue;
+        return false;
+      }
       // Two paths conflict if their chords cross, or they merge into the same spot.
+      if (sameEnd) return false;
       if (segX(g.ax, g.az, g.bx, g.bz, a.ax, a.az, a.bx, a.bz)) return false;
-      if (Math.hypot(g.bx - a.bx, g.bz - a.bz) < 3 || Math.hypot(g.ax - a.ax, g.az - a.az) < 3) return false;
     }
     return true;
   }
@@ -1361,16 +1699,16 @@ export class Sim {
     if (!l) return;
     const info = this.edges.get(l.edge);
     if (!info || info.e.sidewalk === 0) return;
-    const dir: 1 | -1 = this.rand.next() < 0.5 ? 1 : -1;
+    const dir: 1 | -1 = this.agentRand.next() < 0.5 ? 1 : -1;
     const p: Ped = {
       id: this.nextAgent++,
       edge: l.edge,
       dir,
       d: dir === 1 ? l.s : info.L - l.s,
       side: l.side,
-      v: 1.2 + this.rand.next() * 0.5,
-      legs: 2 + Math.floor(this.rand.next() * 6),
-      color: Math.floor(this.rand.next() * 10),
+      v: 1.2 + this.agentRand.next() * 0.5,
+      legs: 2 + Math.floor(this.agentRand.next() * 6),
+      color: Math.floor(this.agentRand.next() * 10),
       crossing: null,
       waiting: 0,
       x: 0,
@@ -1436,7 +1774,7 @@ export class Sim {
       const nodeId = p.dir === 1 ? info.e.b : info.e.a;
       const node = this.nodes.get(nodeId)!;
       const options = node.edges.filter((id) => id !== p.edge && this.edges.get(id)!.e.sidewalk > 0);
-      const nextId = options.length ? options[Math.floor(this.rand.next() * options.length)] : p.edge;
+      const nextId = options.length ? options[Math.floor(this.agentRand.next() * options.length)] : p.edge;
       const ninfo = this.edges.get(nextId)!;
       const ndir: 1 | -1 = ninfo.e.a === nodeId ? 1 : -1;
       const startS = ndir === 1 ? Math.max(0, ninfo.setA - ninfo.e.sidewalk) : ninfo.L - Math.max(0, ninfo.setB - ninfo.e.sidewalk);
@@ -1445,10 +1783,18 @@ export class Sim {
       const candidates = [1, -1].map((side) => ({ side, ...this.walkPoint(ninfo, side, startS) }));
       candidates.sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z));
       let target = candidates[0];
-      if (nextId === p.edge || this.rand.next() < 0.3) target = candidates[1];
+      if (nextId === p.edge || this.agentRand.next() < 0.3) target = candidates[1];
       const len = Math.hypot(target.x - here.x, target.z - here.z);
       const crossesRoad = len > info.e.sidewalk * 2 + 2;
-      if (crossesRoad && node.controlled) {
+      if (crossesRoad && node.sig) {
+        // Lights: cross while the road being crossed has a red.
+        const crossing = nextId === p.edge || target === candidates[1] ? nextId : p.edge;
+        if (this.lightFor(node, crossing) !== 2 && p.waiting < 40) {
+          p.waiting += dt;
+          this.placePed(p);
+          continue;
+        }
+      } else if (crossesRoad && node.controlled) {
         // Zebra crossing: wait for the junction to clear, then the cars wait for us.
         if (node.active.length > 0 || node.carPhaseUntil > this.t) {
           p.waiting += dt;

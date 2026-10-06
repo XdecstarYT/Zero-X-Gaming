@@ -9,6 +9,8 @@ import type { Tab } from "./store";
 import { halfWidth, ROAD_TYPES, carriageway, defaultLanes, type REdge } from "./world/roads";
 import { SERVICE_SPEC, sideNormal, type Zone } from "./world/lots";
 import { isLandmark } from "./world/milestones";
+import { autoControl } from "./sim/sim";
+import type { StringKey } from "./i18n";
 
 type V3 = THREE.Vector3;
 
@@ -300,6 +302,11 @@ export class Tools {
     const city = this.city;
     if (!v || !city) return;
     const ray = this.g.raycaster(x, y);
+    // A crowd in the street (a protest, a strike, a rally): open the briefing on it.
+    if (v.politics.pick(ray) && this.g.mayor) {
+      this.g.openApp("home");
+      return;
+    }
     const car = v.agents.pick(ray);
     if (car >= 0) {
       void this.g.selectVehicle(car);
@@ -551,6 +558,7 @@ export class Tools {
     if (mode === "upgrade" && this.dragging) return this.upgradeAt(p);
     if (mode === "repair" && this.dragging) return this.repairAt(p);
     if (mode === "repair") return this.repairHover(p);
+    if (mode === "junction") return void this.junctionHover(p);
     if (mode === "lanes" || mode === "oneway" || mode === "upgrade") return this.hoverEdge(p);
     if (mode === "roundabout") {
       if (this.pts.length === 1) this.showRoadGhost(this.roundaboutPts(this.pts[0], p).flat(), true);
@@ -581,6 +589,18 @@ export class Tools {
       return;
     }
     if (!tap) return;
+    if (mode === "junction") {
+      const j = this.junctionHover(p);
+      if (j) {
+        const order = [undefined, "signal", "stop", "yield"] as const;
+        const next = order[(order.indexOf(j.control) + 1) % order.length];
+        this.city!.setJunctionControl(j.id, next);
+        this.g.audio.click();
+        this.g.worldChanged();
+        this.junctionHover(p);
+      }
+      return;
+    }
     if (mode === "lanes" || mode === "oneway") {
       const near = this.city?.roads.nearestEdge(p, 12);
       if (near) {
@@ -778,6 +798,33 @@ export class Tools {
     const scr = this.g.toScreen(new THREE.Vector3(near.x, p.y, near.z));
     if (scr) this.g.store.setState({ cursorLabel: { x: scr.x, y: scr.y, text: `${e.name} · ${this.g.t(ROAD_TYPES[e.type].label)} · ${e.lanesF}+${e.lanesB}` } });
     return near;
+  }
+
+  /** Hovering with the Junction tool: the junction under the pointer and how it's run. */
+  private junctionHover(p: V3) {
+    const v = this.g.views;
+    const city = this.city;
+    if (!v || !city) return null;
+    v.overlays.clearGhosts();
+    let best: { id: number; d: number } | null = null;
+    for (const n of city.roads.nodes.values()) {
+      const d = Math.hypot(n.x - p.x, n.z - p.z);
+      if (d < 22 && (!best || d < best.d) && city.roads.nodeEdges(n.id).length >= 3) best = { id: n.id, d };
+    }
+    if (!best) {
+      this.g.store.setState({ cursorLabel: null });
+      return null;
+    }
+    const n = city.roads.nodes.get(best.id)!;
+    const auto = autoControl(city.roads.nodeEdges(n.id).map((e) => ROAD_TYPES[e.type].cls));
+    const m = new THREE.Mesh(new THREE.RingGeometry(9, 11, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: theme.accent, transparent: true, opacity: 0.9, depthTest: false }));
+    m.position.set(n.x, city.nodeY(n.id) + 0.6, n.z);
+    m.renderOrder = 9;
+    v.overlays.ghosts.add(m);
+    const now = n.control ? this.g.t(`jc.${n.control}` as StringKey) : this.g.t("jc.auto", { mode: this.g.t(`jc.${auto}` as StringKey) });
+    const scr = this.g.toScreen(new THREE.Vector3(n.x, p.y, n.z));
+    if (scr) this.g.store.setState({ cursorLabel: { x: scr.x, y: scr.y, text: this.g.t("jc.hover", { mode: now }), bad: false } });
+    return { id: n.id, control: n.control };
   }
 
   /** Hovering with Repair: the road's condition and what resurfacing it costs. */

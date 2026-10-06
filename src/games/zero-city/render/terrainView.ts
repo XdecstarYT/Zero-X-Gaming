@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { CELL, CELLS, CHUNK, WATER_LEVEL, WORLD } from "../config";
 import { hash } from "../core/rng";
 import { world as W } from "../theme";
@@ -73,7 +74,40 @@ export class TerrainView {
 
   constructor(private terrain: Terrain) {
     const detail = detailTexture();
-    this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0, map: detail });
+    this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0, map: detail, envMapIntensity: 0.55 });
+    // Natural ground: broad patches of lusher and drier grass, and finer mottling, in world space
+    // so the land never shows a repeating tile.
+    this.mat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace("#include <common>", "#include <common>\nvarying vec3 vZcW;")
+        .replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvZcW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+      sh.fragmentShader = sh.fragmentShader
+        .replace(
+          "#include <common>",
+          `#include <common>
+varying vec3 vZcW;
+float zcH(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float zcN(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(zcH(i), zcH(i + vec2(1.0, 0.0)), f.x), mix(zcH(i + vec2(0.0, 1.0)), zcH(i + vec2(1.0, 1.0)), f.x), f.y); }`,
+        )
+        .replace(
+          "#include <color_fragment>",
+          `#include <color_fragment>
+  {
+    vec2 w = vZcW.xz;
+    float big = zcN(w / 190.0) * 0.6 + zcN(w / 70.0) * 0.4;
+    float mid = zcN(w / 17.0);
+    float fine = zcN(w / 3.1);
+    // Only green-ish ground gets the grass treatment (sand, rock and snow stay as they are).
+    float green = smoothstep(0.02, 0.08, diffuseColor.g - max(diffuseColor.r, diffuseColor.b));
+    vec3 lush = diffuseColor.rgb * vec3(0.82, 0.95, 0.78);
+    vec3 dry = mix(diffuseColor.rgb, vec3(0.55, 0.52, 0.32), 0.45);
+    vec3 g = mix(lush, dry, smoothstep(0.35, 0.8, big));
+    g *= 0.9 + mid * 0.14 + fine * 0.06;
+    diffuseColor.rgb = mix(diffuseColor.rgb, g, green);
+  }`,
+        );
+    };
     this.waterTex = waterNormals();
     this.waterTex.repeat.set(220, 220);
     const water = new THREE.Mesh(
@@ -249,6 +283,55 @@ export class TerrainView {
   }
 }
 
+/**
+ * The material all trees share: a gentle sway in the wind (the top moves, the base stays put,
+ * each tree on its own beat) and a leafy dappling so crowns read as foliage, not facets.
+ */
+export function foliageMaterial() {
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, envMapIntensity: 0.4 });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = shared.uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nuniform float uTime;\nvarying vec3 vZcLeaf;")
+      .replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+  vZcLeaf = position * 2.3;
+#ifdef USE_INSTANCING
+  float zcPh = instanceMatrix[3].x * 0.13 + instanceMatrix[3].z * 0.11;
+  float zcSw = max(0.0, transformed.y - 1.5) * 0.018;
+  transformed.x += sin(uTime * 1.3 + zcPh) * zcSw;
+  transformed.z += cos(uTime * 1.1 + zcPh * 1.3) * zcSw * 0.7;
+  vZcLeaf += instanceMatrix[3].xyz * 0.7;
+#endif`,
+      );
+    sh.fragmentShader = sh.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+varying vec3 vZcLeaf;
+float zcL(vec3 p){ vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  float n = dot(i, vec3(1.0, 57.0, 113.0));
+  vec4 a = fract(sin(vec4(n, n + 1.0, n + 57.0, n + 58.0)) * 43758.5453);
+  vec4 b = fract(sin(vec4(n + 113.0, n + 114.0, n + 170.0, n + 171.0)) * 43758.5453);
+  vec4 m = mix(a, b, f.z);
+  vec2 q = mix(m.xy, m.zw, f.y);
+  return mix(q.x, q.y, f.x); }`,
+      )
+      .replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+  {
+    // Leaves only (green-dominant colours), not trunks.
+    float leaf = smoothstep(0.0, 0.06, diffuseColor.g - diffuseColor.r);
+    float d = zcL(vZcLeaf) * 0.6 + zcL(vZcLeaf * 2.7) * 0.4;
+    diffuseColor.rgb *= mix(1.0, 0.72 + d * 0.5, leaf);
+  }`,
+      );
+  };
+  return mat;
+}
+
 /** Instanced trees: pines and broadleaf, with a little colour variety. */
 export class TreeView {
   readonly group = new THREE.Group();
@@ -256,31 +339,93 @@ export class TreeView {
 
   constructor() {}
 
+  /** Bend a sphere-ish crown into an organic clump, darker underneath and inside. */
+  private static crown(r: number, cx: number, cy: number, cz: number, color: string, seed: number, squash = 1) {
+    // Welded, so the displaced crown shades smoothly instead of in facets.
+    const raw = new THREE.IcosahedronGeometry(r, 2);
+    raw.deleteAttribute("normal");
+    raw.deleteAttribute("uv");
+    const g = mergeVertices(raw);
+    const pos = g.attributes.position;
+    const base = new THREE.Color(color);
+    const col = new Float32Array(pos.count * 3);
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      const d = v.clone().normalize();
+      const n = Math.sin(d.x * 5.1 + seed) * Math.sin(d.y * 4.3 + seed * 2) * Math.sin(d.z * 4.7 + seed * 3);
+      const k = 1 + n * 0.22;
+      v.set(d.x * r * k, d.y * r * k * squash, d.z * r * k);
+      pos.setXYZ(i, v.x + cx, v.y + cy, v.z + cz);
+      // Light from above: the underside of the crown is in its own shade.
+      const shade = 0.62 + 0.38 * (d.y * 0.5 + 0.5) + n * 0.05;
+      col[i * 3] = base.r * shade;
+      col[i * 3 + 1] = base.g * shade;
+      col[i * 3 + 2] = base.b * shade;
+    }
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    return g;
+  }
+
   static pineGeometry() {
     const parts: THREE.BufferGeometry[] = [];
-    const trunk = new THREE.CylinderGeometry(0.22, 0.3, 2.4, 6).translate(0, 1.2, 0);
-    paint(trunk, W.trunk);
+    const trunk = new THREE.CylinderGeometry(0.2, 0.32, 3, 7).translate(0, 1.5, 0);
+    paint(trunk, "#5a4130");
     parts.push(trunk);
-    for (const [y, r, h] of [
-      [2.4, 2.6, 4.2],
-      [4.6, 2.0, 3.6],
-      [6.6, 1.3, 3.0],
-    ]) {
-      const c = new THREE.ConeGeometry(r, h, 7).translate(0, y + h / 2 - 0.4, 0);
-      paint(c, "#ffffff");
+    const tiers: [number, number, number][] = [
+      [1.6, 3.0, 3.4],
+      [3.3, 2.5, 3.2],
+      [5.0, 2.0, 3.0],
+      [6.6, 1.45, 2.6],
+      [8.0, 0.9, 2.2],
+    ];
+    tiers.forEach(([y, r, h], k) => {
+      const c = new THREE.ConeGeometry(r, h, 10, 2).translate(0, y + h / 2 - 0.3, 0);
+      const pos = c.attributes.position;
+      const col = new Float32Array(pos.count * 3);
+      const base = new THREE.Color("#2f5a2c");
+      for (let i = 0; i < pos.count; i++) {
+        // A ragged hem on each tier and a little lean.
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+        const yy = pos.getY(i);
+        const a = Math.atan2(z, x);
+        const rim = 1 + Math.sin(a * 5 + k * 1.7) * 0.08;
+        pos.setXYZ(i, x * rim, yy - (Math.abs(Math.sin(a * 5 + k)) * 0.25 * (1 - (yy - y) / h)), z * rim);
+        const shade = 0.6 + 0.4 * ((yy - y) / h + 0.3) + k * 0.03;
+        col[i * 3] = base.r * shade;
+        col[i * 3 + 1] = base.g * shade;
+        col[i * 3 + 2] = base.b * shade;
+      }
+      c.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      c.computeVertexNormals();
       parts.push(c);
-    }
+    });
     return merge(parts);
   }
 
   static broadGeometry() {
-    const trunk = new THREE.CylinderGeometry(0.25, 0.35, 3, 6).translate(0, 1.5, 0);
-    paint(trunk, W.trunk);
-    const crown = new THREE.IcosahedronGeometry(2.6, 1).translate(0, 4.6, 0);
-    const crown2 = new THREE.IcosahedronGeometry(1.8, 1).translate(1.2, 5.4, 0.6);
-    paint(crown, "#ffffff");
-    paint(crown2, "#ffffff");
-    return merge([trunk, crown, crown2]);
+    const trunk = new THREE.CylinderGeometry(0.22, 0.36, 3.4, 7).translate(0, 1.7, 0);
+    paint(trunk, "#5e4632");
+    const branch = new THREE.CylinderGeometry(0.1, 0.16, 2, 5).rotateZ(0.7).translate(0.7, 3.6, 0);
+    paint(branch, "#5e4632");
+    const leaf = "#4d7f34";
+    return merge([
+      trunk,
+      branch,
+      TreeView.crown(2.5, 0, 5.0, 0, leaf, 1),
+      TreeView.crown(1.9, 1.5, 5.6, 0.6, "#558a38", 2),
+      TreeView.crown(1.8, -1.3, 5.3, -0.7, "#47772f", 3),
+      TreeView.crown(1.5, 0.2, 6.8, -0.4, "#5a9139", 4),
+    ]);
+  }
+
+  /** A tall, narrow poplar-like tree. */
+  static columnGeometry() {
+    const trunk = new THREE.CylinderGeometry(0.16, 0.26, 2.4, 6).translate(0, 1.2, 0);
+    paint(trunk, "#5e4632");
+    return merge([trunk, TreeView.crown(1.6, 0, 5.4, 0, "#4f8a36", 5, 2.4), TreeView.crown(1.1, 0.4, 7.6, 0.2, "#5b9640", 6, 1.8)]);
   }
 
   rebuild(trees: Float32Array, alive: Uint8Array, groundAt: (x: number, z: number) => number, shadows: boolean) {
@@ -289,10 +434,11 @@ export class TreeView {
       m.dispose();
     }
     this.meshes = [];
-    const geos = [TreeView.pineGeometry(), TreeView.broadGeometry()];
-    const counts = [0, 0];
-    for (let i = 0; i < alive.length; i++) if (alive[i]) counts[trees[i * 4 + 3] % 2]++;
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true, emissive: new THREE.Color("#1d3315"), emissiveIntensity: 0.35 });
+    const geos = [TreeView.pineGeometry(), TreeView.broadGeometry(), TreeView.columnGeometry()];
+    const kind = (v: number, x: number, z: number) => (v % 2 === 0 ? 0 : hash(x * 0.37, z * 0.73) < 0.22 ? 2 : 1);
+    const counts = [0, 0, 0];
+    for (let i = 0; i < alive.length; i++) if (alive[i]) counts[kind(trees[i * 4 + 3], trees[i * 4], trees[i * 4 + 1])]++;
+    const mat = foliageMaterial();
     const meshes = geos.map((g, k) => {
       const m = new THREE.InstancedMesh(g, mat, Math.max(1, counts[k]));
       m.castShadow = shadows;
@@ -303,18 +449,20 @@ export class TreeView {
     const mtx = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const c = new THREE.Color();
+    const white = new THREE.Color("#ffffff");
     for (let i = 0; i < alive.length; i++) {
       if (!alive[i]) continue;
       const x = trees[i * 4];
       const z = trees[i * 4 + 1];
       const s = trees[i * 4 + 2];
       const v = trees[i * 4 + 3];
-      const m = meshes[v % 2];
+      const m = meshes[kind(v, x, z)];
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), hash(x, z) * Math.PI * 2);
       const k = s * 1.45;
       mtx.compose(new THREE.Vector3(x, groundAt(x, z) - 0.2, z), q, new THREE.Vector3(k, k * (0.85 + hash(z, x) * 0.35), k));
       m.setMatrixAt(m.count, mtx);
-      c.set(W.trees[v % W.trees.length]).offsetHSL((hash(x) - 0.5) * 0.04, 0, (hash(z) - 0.5) * 0.08);
+      // Each tree a little different: some greener, some yellower, some darker.
+      c.copy(white).lerp(new THREE.Color(W.trees[v % W.trees.length]).multiplyScalar(1.6), 0.18).offsetHSL((hash(x) - 0.5) * 0.05, 0, (hash(z) - 0.5) * 0.12);
       m.setColorAt(m.count, c);
       m.count++;
     }

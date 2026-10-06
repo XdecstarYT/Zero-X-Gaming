@@ -610,6 +610,12 @@ export function CrisisCard() {
       </p>
       <h3 className="md-h text-[1.3em]">{t(`cr.${c.id}.t` as StringKey)}</h3>
       <p className="text-[0.95em]">{t(`cr.${c.id}.${c.stage}` as StringKey, vars)}</p>
+      {c.id !== "crunch" && (
+        <button type="button" className="zc-btn self-start" onClick={() => g.showCrisis()} data-testid="cr-show">
+          <Icon name="pin" size={16} />
+          {t("cr.show")}
+        </button>
+      )}
       <div className="grid gap-2 @3xl:grid-cols-3">
         {stage.options.map((o, i) => (
           <button key={i} type="button" className="zc-btn flex-col items-start gap-1 py-2 text-start" disabled={!c.can[i]} onClick={() => g.respondCrisis(i)} data-testid={`cr-opt-${i}`}>

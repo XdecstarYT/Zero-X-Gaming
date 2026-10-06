@@ -57,9 +57,17 @@ function facadeMaterial(glass: boolean) {
     diffuseColor.rgb = mix(diffuseColor.rgb, glassCol, zcWin);
     float h = fract(sin(dot(id + floor(vZcWorld.xz * 0.11) * 3.17, vec2(12.9898, 78.233))) * 43758.5453);
     zcLit = zcWin * step(0.42, h) * uNight;
+    // Masonry: faint courses on the wall, and weathering darker toward the street.
+    if (uGlass < 0.5) {
+      float course = step(0.9, fract(vZcUV.y / 0.32)) * (1.0 - zcWin) * (1.0 - frame);
+      diffuseColor.rgb *= 1.0 - course * 0.07;
+    }
+    diffuseColor.rgb *= mix(0.84, 1.0, smoothstep(0.0, 3.5, vZcUV.y));
   }`,
       )
-      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\n  roughnessFactor = mix(roughnessFactor, 0.16, zcWin);")
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\n  roughnessFactor = mix(roughnessFactor, 0.12, zcWin);")
+      // Glass is a mirror for the sky (the environment light), more so on glass towers.
+      .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\n  metalnessFactor = mix(metalnessFactor, uGlass > 0.5 ? 0.75 : 0.55, zcWin);")
       .replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\n  totalEmissiveRadiance += vec3(1.0, 0.78, 0.48) * zcLit * 1.9;");
   };
   m.customProgramCacheKey = () => (glass ? "zc-glass" : "zc-facade");
