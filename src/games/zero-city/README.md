@@ -69,6 +69,32 @@ Pick **Mayor** instead of **Sandbox** on the map screen. The rules live in
 The sim side is `SimSettings.policy` (demand bias, a tier cap, a car-share multiplier) and
 the coverage/pollution numbers in `Stats`. Saves keep `mode`, `politics` and `spent`.
 
+## Roads and the ground
+
+`world/city.ts` keeps the ground under roads consistent:
+
+- **Settling.** After any road change, `settle` sets every terrain vertex within a road's
+  flat strip (`flatOf`: the footprint plus 1.5 cells) to `GAP` below the lowest road over it.
+  It checks the new roads and every road near them. It uses the lowest road height within a
+  cell either way, so the straight ground between grid points can't cut across a bend in the
+  road and come up through it. Only spans over water (bridges) are left alone.
+- **Profiles don't drift.**
+  - Each road's surface heights are saved with the city (`CityJSON.profiles`) and kept in
+    undo snapshots, so a load or an undo puts roads back exactly.
+  - When a road is split or joined, the new pieces inherit the old heights (`inheritProfile`).
+  - Older saves read heights off the ground, which `groundFor` raises back by `GAP`.
+- **Grades.** Where a road's two ends differ by more than the 10% limit allows, it takes the
+  grade it needs instead of riding an embankment and dropping off a cliff at the far junction.
+- **Junctions are level** (`levelAtJunctions`): each arm eases to the junction's height near
+  it, so crossing roads on a slope meet flush.
+- **Rendering** (`render/roadView.ts`):
+  - Each arm stops short of a junction by the distance its whole width needs to clear every
+    other arm at that angle (`clearance`), so surfaces never overlap.
+  - Junction pads meet each arm at that arm's own height.
+  - Corner paving shares its vertices, so there are no wedge gaps.
+  - Roads' outer faces run down into the ground (`WALL_DEPTH`), so ground falling away beside
+    a road reads as a retaining wall, not a gap.
+
 ## The Metropolis update (0.7)
 
 - **Milestones** (`world/milestones.ts`): eight ranks by the best population the city has reached, from Hamlet to Megalopolis (`City.bestPop`, saved). Each one shows on the HUD chip, pays a grant in Mayor mode and unlocks landmarks.

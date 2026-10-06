@@ -4,6 +4,8 @@ import { formatClock, formatPlaytime, isRtl, LANGS, translate } from "./i18n";
 import { applyPreset, changeSetting, defaultSettings, matchingPreset, normaliseSettings, PRESETS } from "./settings";
 import { MAPS, gatewayPath, generateTerrain } from "./world/maps";
 import { City } from "./world/city";
+import { halfWidth } from "./world/roads";
+import { sampleAt } from "./core/geom";
 import { tierCap, buildingSpec } from "./world/buildingSpec";
 import { buildingParts } from "./render/buildingKit";
 
@@ -248,8 +250,12 @@ describe("terrain under roads", () => {
         for (const [a, b] of [[0, 0], [1, 0], [0, 1], [1, 1]]) worst = Math.max(worst, c.terrain.at(i + a, j + b) - road);
       }
     }
-    // Allow for the road's own grade across one 8 m cell.
-    expect(worst).toBeLessThan(0.9);
+    // A vertex up to one 8 m cell ahead sits on the road's own grade: allow for that.
+    let grade = 0;
+    for (let s = 6; s < 232; s += 2) grade = Math.max(grade, Math.abs(c.roadY(edge.id, s + 2) - c.roadY(edge.id, s)) / 2);
+    expect(worst).toBeLessThan(0.3 + 8 * grade);
+    // And the ground itself (between vertices) never rises through the road.
+    expect(worstPoke(c)).toBeLessThan(0.05);
     const marked = (city: City) => {
       let k = 0;
       for (let i = 0; i < city.terrain.graded.length; i++) k += city.terrain.graded[i];
@@ -260,4 +266,72 @@ describe("terrain under roads", () => {
     const d = new City("stonecrest", "Hills", JSON.parse(JSON.stringify(c.toJSON(null))));
     expect(Math.abs(marked(d) - marked(c))).toBeLessThanOrEqual(Math.ceil(marked(c) * 0.02));
   });
+
+  /** A steep dry line on Stonecrest (the same search as above). */
+  function hillLine(c: City) {
+    let best: number[] = [];
+    let range = 0;
+    for (let z = 200; z < 1850; z += 60)
+      for (let x = 200; x < 1700; x += 60) {
+        const ys = [0, 1, 2, 3, 4].map((k) => c.terrain.heightAt(x + k * 60, z));
+        if (ys.some((y) => y < 2)) continue;
+        const r = Math.max(...ys) - Math.min(...ys);
+        if (r > range) {
+          range = r;
+          best = [x, z, x + 240, z];
+        }
+      }
+    return best;
+  }
+
+  /** The surface height of whatever road is nearest a point. */
+  const surface = (c: City, x: number, z: number) => {
+    const near = c.roads.nearestEdge({ x, z, y: 0 } as never, 30)!;
+    return c.roadY(near.edge.id, near.s);
+  };
+
+  /** The most any ground (bilinear, inside the asphalt) rises above its road surface, over all roads. */
+  function worstPoke(c: City) {
+    let worst = -Infinity;
+    for (const e of c.roads.edges.values()) {
+      if (e.type === "highway") continue;
+      const cum = c.cumOf(e);
+      const L = cum[cum.length - 1];
+      const hw = halfWidth(e) * 0.9;
+      for (let s = 2; s < L - 2; s += 2) {
+        const p = sampleAt(e.pts, cum, s);
+        const y = c.roadY(e.id, s);
+        for (const o of [-hw, -hw / 2, 0, hw / 2, hw]) worst = Math.max(worst, c.terrain.heightAt(p.x - p.tz * o, p.z + p.tx * o) - y);
+      }
+    }
+    return worst;
+  }
+
+  it("crossing and neighbouring roads on a hillside never leave ground poking through any of them", () => {
+    const c = new City("stonecrest", "Hills");
+    const [x0, z0, x1] = hillLine(c);
+    c.addRoad([x0, z0, x1, z0], "avenue");
+    // Streets across it, a parallel street close by, and a diagonal through all of them.
+    for (const k of [0.3, 0.6]) c.addRoad([x0 + (x1 - x0) * k, z0 - 90, x0 + (x1 - x0) * k, z0 + 90], "street");
+    c.addRoad([x0, z0 + 40, x1, z0 + 40], "street");
+    c.addRoad([x0 + 20, z0 - 70, x1 - 20, z0 + 70], "street");
+    expect(c.roads.edges.size).toBeGreaterThan(10);
+    expect(worstPoke(c)).toBeLessThan(0.05);
+  });
+
+  it("roads keep their height when split by a crossing and over repeated save round trips", () => {
+    const c = new City("stonecrest", "Hills");
+    const [x0, z0, x1] = hillLine(c);
+    c.addRoad([x0, z0, x1, z0], "avenue");
+    // Away from the new junction (which levels the road within a few dozen metres of it).
+    const xs = [x0 + 15, x0 + 30, x0 + 200, x0 + 225];
+    const before = xs.map((x) => surface(c, x, z0));
+    c.addRoad([x0 + 120, z0 - 90, x0 + 120, z0 + 90], "street");
+    xs.forEach((x, i) => expect(Math.abs(surface(c, x, z0) - before[i])).toBeLessThan(0.05));
+    let d = c;
+    for (let k = 0; k < 3; k++) d = new City("stonecrest", "Hills", JSON.parse(JSON.stringify(d.toJSON(null))));
+    xs.forEach((x, i) => expect(Math.abs(surface(d, x, z0) - before[i])).toBeLessThan(0.08));
+    expect(worstPoke(d)).toBeLessThan(0.05);
+  });
 });
+

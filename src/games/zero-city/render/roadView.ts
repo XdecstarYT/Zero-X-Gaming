@@ -56,6 +56,8 @@ class Buf {
 }
 type V = [number, number, number];
 const WHITE = new THREE.Color("#ffffff");
+/** How far a road's outer face reaches down (hidden underground where the land is flush). */
+const WALL_DEPTH = 9;
 const LINE_W = new THREE.Color(W.lineWhite);
 const LINE_Y = new THREE.Color(W.lineYellow);
 const BUS = new THREE.Color(W.busLane);
@@ -107,19 +109,25 @@ export class RoadView {
 
   // ------------------------------------------------------------- geometry
 
+  /**
+   * How far an edge's own mesh stops short of a node, leaving the rest to the junction
+   * pad. Far enough that its full width (sidewalks included) never overlaps another arm's,
+   * whatever the angle between them, so crossing surfaces don't fight or poke through.
+   */
   private setback(nodeId: number, e: REdge) {
     const c = this.city();
     const es = c.roads.nodeEdges(nodeId);
     if (es.length <= 1) return 0;
+    const d = endDir(e, nodeId);
     if (es.length === 2) {
-      const [p, q] = es;
-      const dp = endDir(p, nodeId);
-      const dq = endDir(q, nodeId);
-      const dot = dp.x * dq.x + dp.z * dq.z;
-      if (dot < -0.97 && Math.abs(halfWidth(p) - halfWidth(q)) < 0.5) return 0;
-      return Math.max(halfWidth(p), halfWidth(q)) * 0.7;
+      const o = es[0] === e ? es[1] : es[0];
+      const dq = endDir(o, nodeId);
+      // A straight continuation of the same width needs no pad at all.
+      if (d.x * dq.x + d.z * dq.z < -0.97 && Math.abs(halfWidth(e) - halfWidth(o)) < 0.5) return 0;
     }
-    return Math.max(...es.map((o) => halfWidth(o))) + 1.2 + (e.type === "highway" ? 2 : 0);
+    let need = es.length >= 3 ? carriageway(e) / 2 + 1.2 : 0;
+    for (const o of es) if (o !== e) need = Math.max(need, clearance(d, halfWidth(e), endDir(o, nodeId), halfWidth(o)));
+    return need + (e.type === "highway" && es.length >= 3 ? 2 : 0);
   }
 
   private frames(e: REdge, ys: Float32Array, s0: number, s1: number, step = 3): Frame[] {
@@ -209,11 +217,15 @@ export class RoadView {
         const b = side * (half + t.sidewalk);
         this.band(walk, fr, Math.min(a, b), Math.max(a, b), 0.18, undefined, 4, t.sidewalk / 4);
         this.wall(curb, fr, a, 0.03, 0.18, side > 0);
-        this.wall(curb, fr, b, -0.6, 0.18, side < 0);
+        // The outer face runs well down into the ground: where the land falls away beside
+        // a road (two roads at different heights on a slope) it reads as a retaining wall,
+        // never a gap under the road.
+        this.wall(curb, fr, b, -WALL_DEPTH, 0.18, side < 0);
       }
     } else {
-      // Highway shoulders: solid edge lines.
+      // Highway shoulders: solid edge lines, and the embankment face below the edge.
       for (const side of [-1, 1]) this.band(lines, fr, side * (half - 0.45) - 0.08, side * (half - 0.45) + 0.08, 0.012, LINE_W);
+      for (const side of [-1, 1]) this.wall(concrete, fr, side * half, -WALL_DEPTH, 0.03, side < 0, CONCRETE);
     }
     // Median.
     if (t.median > 0) {
@@ -294,7 +306,7 @@ export class RoadView {
         const sp = SPEEDS.indexOf(t.speed);
         if (sp >= 0) for (let k = 0; k < Math.min(outLanes, 2); k++) this.number(decals, e, ys, sEdge + inward * 20, offs(outDir, k), outDir, sp);
       }
-      if (deg === 1) this.cap(asphalt, walk, e, ys, end, half, t.sidewalk);
+      if (deg === 1) this.cap(asphalt, walk, curb, e, ys, end, half, t.sidewalk);
     }
     // Bridges.
     this.bridge(concrete, e, ys, s0, s1, half + t.sidewalk);
@@ -319,7 +331,7 @@ export class RoadView {
     return g;
   }
 
-  private cap(asphalt: Buf, walk: Buf, e: REdge, ys: Float32Array, end: "a" | "b", half: number, sw: number) {
+  private cap(asphalt: Buf, walk: Buf, curb: Buf, e: REdge, ys: Float32Array, end: "a" | "b", half: number, sw: number) {
     const L = cumulative(e.pts)[e.pts.length / 2 - 1];
     const f = this.frames(e, ys, end === "a" ? 0 : L, end === "a" ? 0.01 : L, 1)[0];
     const out = end === "a" ? -1 : 1;
@@ -337,7 +349,15 @@ export class RoadView {
           const side = Math.sin(a) * r;
           return [f.x + f.tx * along - f.tz * side, f.y + dy, f.z + f.tz * along + f.tx * side];
         };
-        buf.quad(pt(r0, a0), pt(r1, a0), pt(r1, a1), pt(r0, a1), [0, 0, 1, 0, 1, 1, 0, 1]);
+        const a = pt(r0, a0);
+        const b = pt(r1, a0);
+        const c2 = pt(r1, a1);
+        const d = pt(r0, a1);
+        // World-space texture: the round end tiles on from the straight road.
+        const m = buf === asphalt ? 8 : 4;
+        buf.quad(a, b, c2, d, [a[0] / m, a[2] / m, b[0] / m, b[2] / m, c2[0] / m, c2[2] / m, d[0] / m, d[2] / m]);
+        // The outer rim runs down into the ground like the road's sides.
+        if (r1 === half + sw) curb.quad(c2, b, [b[0], b[1] - WALL_DEPTH, b[2]], [c2[0], c2[1] - WALL_DEPTH, c2[2]], undefined, undefined, false);
       }
     }
   }
@@ -421,9 +441,12 @@ export class RoadView {
     const arms = es
       .map((e) => {
         const d = endDir(e, id);
-        const set = Math.min(this.setback(id, e), cumulative(e.pts)[e.pts.length / 2 - 1] * 0.45);
+        const L = cumulative(e.pts)[e.pts.length / 2 - 1];
+        const set = Math.min(this.setback(id, e), L * 0.45);
         const t = ROAD_TYPES[e.type];
-        return { e, d, set, half: carriageway(e) / 2, sw: t.sidewalk, ang: Math.atan2(d.z, d.x), cx: n.x + d.x * set, cz: n.z + d.z * set };
+        // The pad meets each arm at the arm's own height there (roads on a slope aren't level).
+        const ay = c.roadY(e.id, e.a === id ? set : L - set);
+        return { e, d, set, half: carriageway(e) / 2, sw: t.sidewalk, ang: Math.atan2(d.z, d.x), cx: n.x + d.x * set, cz: n.z + d.z * set, y: ay };
       })
       .sort((a, b) => a.ang - b.ang);
     if (arms.every((a) => a.set < 0.01)) return null;
@@ -437,11 +460,12 @@ export class RoadView {
       const b = arms[(k + 1) % arms.length];
       const ra = { x: -a.d.z, z: a.d.x };
       const rb = { x: -b.d.z, z: b.d.x };
-      const left: V = [a.cx - ra.x * a.half, y + 0.03, a.cz - ra.z * a.half];
-      const right: V = [a.cx + ra.x * a.half, y + 0.03, a.cz + ra.z * a.half];
-      const next: V = [b.cx - rb.x * b.half, y + 0.03, b.cz - rb.z * b.half];
+      const left: V = [a.cx - ra.x * a.half, a.y + 0.03, a.cz - ra.z * a.half];
+      const right: V = [a.cx + ra.x * a.half, a.y + 0.03, a.cz + ra.z * a.half];
+      const next: V = [b.cx - rb.x * b.half, b.y + 0.03, b.cz - rb.z * b.half];
       ring.push(left, right);
-      const ctrl = intersect(right, a.d, next, b.d) ?? [(right[0] + next[0]) / 2, y + 0.03, (right[2] + next[2]) / 2];
+      const ctrl = intersect(right, a.d, next, b.d) ?? [(right[0] + next[0]) / 2, (a.y + b.y) / 2 + 0.03, (right[2] + next[2]) / 2];
+      ctrl[1] = (a.y + b.y) / 2 + 0.03;
       corners.push({ from: right, ctrl, to: next, a, b });
       for (let i = 1; i < 8; i++) ring.push(bez(right, ctrl, next, i / 8));
     }
@@ -452,19 +476,30 @@ export class RoadView {
       const sw = Math.min(k.a.sw, k.b.sw);
       const pts: V[] = [];
       for (let i = 0; i <= 8; i++) pts.push(bez(k.from, k.ctrl, k.to, i / 8));
+      // One outward offset per point (from the tangent through it), shared by the pieces on
+      // either side, so the paving runs round the corner without wedge-shaped gaps.
+      const outer: V[] = pts.map((p, i) => {
+        const a = pts[Math.max(0, i - 1)];
+        const b = pts[Math.min(pts.length - 1, i + 1)];
+        const dx = b[0] - a[0];
+        const dz = b[2] - a[2];
+        const l = Math.hypot(dx, dz) || 1;
+        // Outward is to the right of travel along the corner; p sits on the asphalt (+0.03), the walk 0.15 above.
+        return [p[0] + (-dz / l) * sw, p[1] + 0.15, p[2] + (dx / l) * sw];
+      });
+      // World-space texture, so the corner paving tiles on smoothly from the straight walks.
+      const uv = (v: V) => [v[0] / 4, v[2] / 4] as const;
       for (let i = 0; i < pts.length - 1; i++) {
         const p = pts[i];
         const q = pts[i + 1];
-        const dx = q[0] - p[0];
-        const dz = q[2] - p[2];
-        const l = Math.hypot(dx, dz) || 1;
-        // Outward is to the right of travel along the corner.
-        const ox = (-dz / l) * sw;
-        const oz = (dx / l) * sw;
-        const p2: V = [p[0] + ox, y + 0.18, p[2] + oz];
-        const q2: V = [q[0] + ox, y + 0.18, q[2] + oz];
-        walk.quad([p[0], y + 0.18, p[2]], p2, q2, [q[0], y + 0.18, q[2]], [0, 0, 1, 0, 1, 1, 0, 1]);
-        curb.quad([p[0], y + 0.03, p[2]], [q[0], y + 0.03, q[2]], [q[0], y + 0.18, q[2]], [p[0], y + 0.18, p[2]], undefined, undefined, false);
+        const pw: V = [p[0], p[1] + 0.15, p[2]];
+        const qw: V = [q[0], q[1] + 0.15, q[2]];
+        const p2 = outer[i];
+        const q2 = outer[i + 1];
+        walk.quad(pw, p2, q2, qw, [...uv(pw), ...uv(p2), ...uv(q2), ...uv(qw)] as [number, number, number, number, number, number, number, number]);
+        curb.quad([p[0], p[1], p[2]], [q[0], q[1], q[2]], qw, pw, undefined, undefined, false);
+        // The outer face of the corner walk, down into the ground like the edges' curbs.
+        curb.quad(q2, p2, [p2[0], p2[1] - WALL_DEPTH, p2[2]], [q2[0], q2[1] - WALL_DEPTH, q2[2]], undefined, undefined, false);
       }
     }
     const g = new THREE.Group();
@@ -768,6 +803,28 @@ export class RoadView {
 }
 
 /** Unit direction pointing from a node into an edge. */
+/**
+ * How far along arm A (direction da, half-width ha) its cross-section must start so no part
+ * of it lies inside arm B (direction db, half-width hb), both leaving the same node.
+ */
+function clearance(da: { x: number; z: number }, ha: number, db: { x: number; z: number }, hb: number) {
+  const na = { x: -da.z, z: da.x };
+  const clear = (s: number) => {
+    for (let k = 0; k <= 8; k++) {
+      const l = -ha + (2 * ha * k) / 8;
+      const px = da.x * s + na.x * l;
+      const pz = da.z * s + na.z * l;
+      const along = px * db.x + pz * db.z;
+      const off = Math.abs(px * -db.z + pz * db.x);
+      if (along > 0 && off < hb + 0.3) return false;
+    }
+    return true;
+  };
+  let s = 0;
+  while (s < 80 && !clear(s)) s += 0.5;
+  return s;
+}
+
 function endDir(e: REdge, nodeId: number) {
   const n = e.pts.length / 2;
   const [ax, az, bx, bz] = e.a === nodeId ? [e.pts[0], e.pts[1], e.pts[2], e.pts[3]] : [e.pts[(n - 1) * 2], e.pts[(n - 1) * 2 + 1], e.pts[(n - 2) * 2], e.pts[(n - 2) * 2 + 1]];

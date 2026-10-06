@@ -34,6 +34,14 @@ export interface Changes {
 
 const BRIDGE_DECK = WATER_LEVEL + 4.5;
 const MAX_GRADE = 0.1;
+/** Graded ground sits this far below the road surface (so grass never shows through). */
+const GAP = 0.3;
+/** Ground flattened under and beside a road: the footprint plus 1.5 terrain cells, so no 8 m terrain triangle under the road reaches a raised vertex. */
+const flatOf = (e: REdge) => halfWidth(e) + CELL * 1.5;
+/** A road at bridge-deck height (a bridge or its approach), which stands on piers instead of earth. */
+const isDeck = (y: number) => Math.abs(y - BRIDGE_DECK) < 0.6;
+/** graded[] values: 1 = blended verge, 2 = flattened under a road (GAP below it). */
+const UNDER_ROAD = 2;
 
 export interface CityJSON {
   mapId: string;
@@ -57,6 +65,8 @@ export interface CityJSON {
   spent?: number;
   /** The most people the city has had (milestones go by it). */
   bestPop?: number;
+  /** Each road's surface heights (edge id → encoded Float32Array), so a load puts roads back exactly. */
+  profiles?: Record<string, string>;
 }
 
 interface Snapshot {
@@ -67,6 +77,7 @@ interface Snapshot {
   lines: string;
   heights: Int16Array;
   trees: Float32Array;
+  profiles: [number, Float32Array][];
 }
 
 export class City {
@@ -115,11 +126,19 @@ export class City {
       this.playSeconds = json.playSeconds;
       this.bestPop = json.bestPop ?? 0;
       this.spent = json.spent ?? 0;
-      for (const e of this.roads.edges.values()) {
-        const ys = this.computeProfile(e);
-        this.profiles.set(e.id, ys);
-        this.groundRoad(e, ys, true);
-      }
+      // Saved heights put every road back exactly; older saves rebuild them from the ground.
+      let exact = !!json.profiles;
+      if (json.profiles)
+        for (const e of this.roads.edges.values()) {
+          const enc = json.profiles[String(e.id)];
+          const ys = enc ? decodeF32(enc) : null;
+          if (ys && ys.length === e.pts.length / 2) this.profiles.set(e.id, ys);
+          else exact = false;
+        }
+      if (exact) this.markGraded();
+      else this.rebuildProfiles();
+      // Ground under every road sits GAP below it (repairs saves from before roads were settled).
+      this.settle(this.roads.edges.keys(), false);
     } else {
       this.trees = generateTrees(this.map, this.terrain);
       this.treeAlive = new Uint8Array(this.trees.length / 4).fill(1);
@@ -154,6 +173,7 @@ export class City {
       lines: JSON.stringify(this.lines),
       heights: toI16(this.terrain.h),
       trees: this.trees.slice(),
+      profiles: [...this.profiles].map(([id, ys]) => [id, ys.slice()]),
     };
   }
 
@@ -204,9 +224,169 @@ export class City {
     this.terrain.version++;
     this.trees.set(s.trees);
     for (let i = 0; i < this.treeAlive.length; i++) this.treeAlive[i] = this.trees[i * 4 + 2] > 0 ? 1 : 0;
-    this.profiles.clear();
-    for (const e of this.roads.edges.values()) this.profiles.set(e.id, this.computeProfile(e));
+    this.profiles = new Map(s.profiles.map(([id, ys]) => [id, ys.slice()]));
+    this.markGraded();
     this.markAll();
+  }
+
+  /** Re-mark which ground is graded for the roads (the flags aren't saved). */
+  private markGraded() {
+    this.terrain.graded.fill(0);
+    for (const e of this.roads.edges.values()) {
+      const ys = this.profiles.get(e.id);
+      if (ys) this.groundRoad(e, ys, true);
+    }
+  }
+
+  /**
+   * Every road's profile from the ground under it. Graded ground was laid GAP below its
+   * road, so it's read back up by GAP: profiles don't sink a little on every load or split.
+   */
+  private rebuildProfiles() {
+    this.terrain.graded.fill(0);
+    this.profiles.clear();
+    const edges = [...this.roads.edges.values()];
+    for (const e of edges) this.profiles.set(e.id, this.computeProfile(e));
+    for (const e of edges) this.groundRoad(e, this.profiles.get(e.id)!, true);
+    // The ground was shaped to each road: read the road back off it rather than smoothing
+    // again (smoothing a smoothed profile on every load would slowly flatten it).
+    for (const e of edges) this.profiles.set(e.id, this.readProfile(e) ?? this.computeProfile(e));
+  }
+
+  /** A road's profile read straight off ground graded for it; null where some of it isn't. */
+  private readProfile(e: REdge) {
+    const t = this.terrain;
+    const n = e.pts.length / 2;
+    const ys = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = e.pts[i * 2];
+      const z = e.pts[i * 2 + 1];
+      if (this.terrainUnderIsWater(x, z)) {
+        ys[i] = BRIDGE_DECK;
+        continue;
+      }
+      const vi = Math.min(t.n - 1, Math.max(0, Math.round(x / CELL)));
+      const vj = Math.min(t.n - 1, Math.max(0, Math.round(z / CELL)));
+      if (t.graded[vj * t.n + vi] !== UNDER_ROAD) return null;
+      ys[i] = Math.max(WATER_LEVEL + 0.6, this.groundFor(x, z));
+    }
+    ys[0] = this.nodeY(e.a);
+    ys[n - 1] = this.nodeY(e.b);
+    return ys;
+  }
+
+  /**
+   * Junctions are level: within reach of a junction (3+ roads) every arm eases to the
+   * junction's height. On a slope the roads meeting there would otherwise sit at different
+   * heights side by side, and the ground can't be under one without leaving a pit under
+   * the other.
+   */
+  private levelAtJunctions(e: REdge, ys: Float32Array) {
+    const cum = this.cumOf(e);
+    const L = cum[cum.length - 1];
+    for (const end of ["a", "b"] as const) {
+      const id = end === "a" ? e.a : e.b;
+      const others = this.roads.nodeEdges(id).filter((o) => o.id !== e.id);
+      if (others.length < 2) continue;
+      const y0 = end === "a" ? ys[0] : ys[ys.length - 1];
+      if (isDeck(y0)) continue;
+      const R = Math.min(L * 0.4, Math.max(...others.map((o) => flatOf(o))) + 2);
+      const ramp = Math.min(L * 0.4, 16);
+      for (let i = 0; i < ys.length; i++) {
+        const d = end === "a" ? cum[i] : L - cum[i];
+        if (d >= R + ramp) continue;
+        const u = d <= R ? 0 : (d - R) / ramp;
+        const w = u * u * (3 - 2 * u);
+        ys[i] = y0 + (ys[i] - y0) * w;
+      }
+    }
+    return ys;
+  }
+
+  /** A profile for an edge cut from (or joined from) older ones: the old heights, carried over. */
+  private inheritProfile(e: REdge, sources: { pts: number[]; ys: Float32Array }[]) {
+    const n = e.pts.length / 2;
+    const ys = new Float32Array(n);
+    const cums = sources.map((src) => cumulative(src.pts));
+    for (let i = 0; i < n; i++) {
+      const p = { x: e.pts[i * 2], z: e.pts[i * 2 + 1] };
+      let best = Infinity;
+      for (let k = 0; k < sources.length; k++) {
+        const pr = project(sources[k].pts, cums[k], p);
+        if (pr.d >= best) continue;
+        best = pr.d;
+        const sy = sources[k].ys;
+        ys[i] = sy[pr.seg] + (sy[Math.min(pr.seg + 1, sy.length - 1)] - sy[pr.seg]) * pr.t;
+      }
+    }
+    return ys;
+  }
+
+  /** Ground height for a road resting here (graded ground is read back up to the road it was cut for). */
+  private groundFor(x: number, z: number) {
+    const t = this.terrain;
+    const i = Math.min(t.n - 1, Math.max(0, Math.round(x / CELL)));
+    const j = Math.min(t.n - 1, Math.max(0, Math.round(z / CELL)));
+    return t.heightAt(x, z) + (t.graded[j * t.n + i] === UNDER_ROAD ? GAP : 0);
+  }
+
+  /**
+   * Sit the ground flush under these roads and every road near them: each terrain vertex
+   * within a road's flat strip goes to GAP below the lowest road over it. This fixes ground
+   * that a newer road's grading pushed up through an older road (or left it floating), and
+   * where two roads' strips overlap the ground stays under both.
+   */
+  private settle(ids: Iterable<number>, withNeighbours = true) {
+    const t = this.terrain;
+    const seeds = [...ids].map((id) => this.roads.edges.get(id)).filter((e): e is REdge => !!e);
+    if (!seeds.length) return;
+    const box = (e: REdge, pad: number) => {
+      const xs = xsOf(e.pts);
+      const zs = zsOf(e.pts);
+      return [Math.min(...xs) - pad, Math.min(...zs) - pad, Math.max(...xs) + pad, Math.max(...zs) + pad];
+    };
+    const edges = new Set(seeds);
+    if (withNeighbours) {
+      const boxes = seeds.map((e) => box(e, flatOf(e) + 30));
+      for (const e of this.roads.edges.values()) {
+        if (edges.has(e)) continue;
+        const b = box(e, flatOf(e));
+        if (boxes.some((a) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3])) edges.add(e);
+      }
+    }
+    const target = new Map<number, number>();
+    for (const e of edges) {
+      const ys = this.profiles.get(e.id);
+      if (!ys) continue;
+      const flat = flatOf(e);
+      const cum = this.cumOf(e);
+      const [x0, z0, x1, z1] = box(e, flat);
+      for (let j = Math.max(0, Math.floor(z0 / CELL)); j <= Math.min(CELLS, Math.ceil(z1 / CELL)); j++)
+        for (let i = Math.max(0, Math.floor(x0 / CELL)); i <= Math.min(CELLS, Math.ceil(x1 / CELL)); i++) {
+          const pr = project(e.pts, cum, { x: i * CELL, z: j * CELL });
+          if (pr.d > flat) continue;
+          const h = t.at(i, j);
+          if (h < WATER_LEVEL + 0.3) continue;
+          // The lowest the road gets within a cell either way: ground between grid points is
+          // a straight line, and it mustn't cut across a bend in the road (the foot of a
+          // ramp, a junction levelling off) and come up through it.
+          const sv = cum[pr.seg] + (cum[Math.min(pr.seg + 1, cum.length - 1)] - cum[pr.seg]) * pr.t;
+          let y = Infinity;
+          for (let k = -12; k <= 12; k += 2) y = Math.min(y, profileAt(ys, cum, sv + k));
+          y -= GAP;
+          // Bridges stand over the water on piers; leave the ground alone there.
+          if (this.overWater(e.pts, pr)) continue;
+          const k = j * t.n + i;
+          const cur = target.get(k);
+          if (cur === undefined || y < cur) target.set(k, y);
+        }
+    }
+    for (const [k, y] of target) {
+      const i = k % t.n;
+      const j = (k - i) / t.n;
+      if (Math.abs(t.at(i, j) - y) > 0.01) t.set(i, j, y);
+      t.graded[k] = UNDER_ROAD;
+    }
   }
 
   // ----------------------------------------------------------------- roads
@@ -215,7 +395,7 @@ export class City {
   nodeY(id: number) {
     const n = this.roads.nodes.get(id)!;
     if (this.terrainUnderIsWater(n.x, n.z)) return BRIDGE_DECK;
-    return Math.max(WATER_LEVEL + 0.6, this.terrain.heightAt(n.x, n.z));
+    return Math.max(WATER_LEVEL + 0.6, this.groundFor(n.x, n.z));
   }
 
   private terrainUnderIsWater(x: number, z: number) {
@@ -230,7 +410,7 @@ export class City {
     for (let i = 0; i < n; i++) {
       const x = e.pts[i * 2];
       const z = e.pts[i * 2 + 1];
-      ys[i] = this.terrainUnderIsWater(x, z) ? BRIDGE_DECK : Math.max(WATER_LEVEL + 0.6, this.terrain.heightAt(x, z));
+      ys[i] = this.terrainUnderIsWater(x, z) ? BRIDGE_DECK : Math.max(WATER_LEVEL + 0.6, this.groundFor(x, z));
     }
     ys[0] = this.nodeY(e.a);
     ys[n - 1] = this.nodeY(e.b);
@@ -241,18 +421,22 @@ export class City {
         const avg = (ys[i - 1] + ys[i] * 2 + ys[i + 1]) / 4;
         ys[i] = deck ? Math.max(BRIDGE_DECK, avg) : avg;
       }
-    // Grade limit both ways (ramps up to bridges become embankments).
+    // Grade limit both ways (ramps up to bridges become embankments). Where the two ends
+    // are further apart in height than the limit allows, the road takes the grade it needs:
+    // otherwise the limit lifts the road all the way along and it drops off a cliff at the
+    // far junction.
+    const g = Math.max(MAX_GRADE, (Math.abs(ys[0] - ys[n - 1]) / Math.max(1, cum[n - 1])) * 1.05);
     for (let i = 1; i < n; i++) {
       const run = cum[i] - cum[i - 1];
-      ys[i] = Math.max(ys[i], ys[i - 1] - run * MAX_GRADE);
+      ys[i] = Math.max(ys[i], ys[i - 1] - run * g);
     }
     for (let i = n - 2; i >= 0; i--) {
       const run = cum[i + 1] - cum[i];
-      ys[i] = Math.max(ys[i], ys[i + 1] - run * MAX_GRADE);
+      ys[i] = Math.max(ys[i], ys[i + 1] - run * g);
     }
     ys[0] = this.nodeY(e.a);
     ys[n - 1] = this.nodeY(e.b);
-    return ys;
+    return this.levelAtJunctions(e, ys);
   }
 
   /** Road surface height at arc length s along an edge. */
@@ -283,8 +467,7 @@ export class City {
    * graded (after loading a save).
    */
   private groundRoad(e: REdge, ys: Float32Array, markOnly = false) {
-    const hw = halfWidth(e);
-    const flat = hw + CELL * 1.2;
+    const flat = flatOf(e);
     const reach = flat + 14;
     const cum = cumulative(e.pts);
     const L = cum[cum.length - 1];
@@ -302,15 +485,26 @@ export class City {
         if (h < WATER_LEVEL + 0.3) continue;
         const seg = pr.seg;
         const t = pr.t;
-        const y = ys[seg] + (ys[Math.min(seg + 1, ys.length - 1)] - ys[seg]) * t - 0.15;
-        if (y > BRIDGE_DECK - 0.5 && h < y - 3) continue;
+        const y = ys[seg] + (ys[Math.min(seg + 1, ys.length - 1)] - ys[seg]) * t - GAP;
+        if (this.overWater(e.pts, pr)) continue;
         const u = pr.d <= flat ? 1 : 1 - (pr.d - flat) / (reach - flat);
         const w = u * u * (3 - 2 * u);
-        this.terrain.graded[j * this.terrain.n + i] = 1;
+        const k = j * this.terrain.n + i;
+        if (pr.d <= flat) this.terrain.graded[k] = UNDER_ROAD;
+        else if (!this.terrain.graded[k]) this.terrain.graded[k] = 1;
         if (markOnly) continue;
         const nh = h + (y - h) * Math.max(0, Math.min(1, w));
         if (Math.abs(nh - h) > 0.02) this.terrain.set(i, j, nh);
       }
+  }
+
+  /** Is the road's centre line over water at this projection (a bridge span)? */
+  private overWater(pts: number[], pr: { seg: number; t: number }) {
+    const i = pr.seg;
+    const j = Math.min(i + 1, pts.length / 2 - 1);
+    const x = pts[i * 2] + (pts[j * 2] - pts[i * 2]) * pr.t;
+    const z = pts[i * 2 + 1] + (pts[j * 2 + 1] - pts[i * 2 + 1]) * pr.t;
+    return this.terrainUnderIsWater(x, z);
   }
 
   /** Clear the trees standing on a lot (when something is built there). */
@@ -342,6 +536,8 @@ export class City {
    */
   addRoad(pts: number[], type: RoadTypeId, opts: { record?: boolean; name?: string; lanes?: [number, number] } = {}) {
     if (opts.record !== false) this.record();
+    // What each edge looked like before (an edge this road splits keeps its heights).
+    const prior = new Map([...this.roads.edges.values()].map((e) => [e.id, { pts: e.pts, ys: this.profiles.get(e.id) }]));
     const r = this.roads.addPath(pts, type, { name: opts.name, snap: 5, lanes: opts.lanes });
     for (const old of r.removed) {
       this.occ.removeRoad(old);
@@ -355,7 +551,8 @@ export class City {
         const e = this.roads.edges.get(k);
         if (!e) continue;
         this.occ.addRoad(e);
-        this.profiles.set(k, this.computeProfile(e));
+        const was = prior.get(old);
+        this.profiles.set(k, was?.ys ? this.inheritProfile(e, [{ pts: was.pts, ys: was.ys }]) : this.computeProfile(e));
         this.changes.edges.add(k);
       }
     }
@@ -369,6 +566,17 @@ export class City {
       this.changes.nodes.add(e.a);
       this.changes.nodes.add(e.b);
     }
+    // Every road at a junction this made (or grew) eases level into it.
+    const touched = new Set<number>();
+    for (const e of r.created) for (const nid of [e.a, e.b]) for (const ne of this.roads.nodeEdges(nid)) touched.add(ne.id);
+    for (const kids of r.replaced.values()) for (const k of kids) touched.add(k);
+    for (const id of touched) {
+      const e = this.roads.edges.get(id);
+      const ys = this.profiles.get(id);
+      if (e && ys) this.profiles.set(id, this.levelAtJunctions(e, ys));
+    }
+    // Seat the ground under the new roads and their neighbours.
+    this.settle(touched);
     // Neighbours share junctions; refresh their ends.
     for (const e of r.created) for (const nid of [e.a, e.b]) for (const ne of this.roads.nodeEdges(nid)) this.changes.edges.add(ne.id);
     this.dropClashes();
@@ -405,6 +613,7 @@ export class City {
     this.occ.removeRoad(id);
     this.profiles.delete(id);
     this.changes.removedEdges.add(id);
+    const prior = new Map([...this.roads.edges.values()].map((x) => [x.id, { pts: x.pts, ys: this.profiles.get(x.id) }]));
     const res = this.roads.removeEdge(id);
     for (const m of res.merged) {
       for (const f of m.from) {
@@ -418,7 +627,9 @@ export class City {
       this.reattachStops(m.from[0], [m.to]);
       this.reattachStops(m.from[1], [m.to]);
       this.occ.addRoad(ne);
-      this.profiles.set(ne.id, this.computeProfile(ne));
+      const srcs = m.from.map((f) => prior.get(f)).filter((x): x is { pts: number[]; ys: Float32Array } => !!x?.ys);
+      this.profiles.set(ne.id, srcs.length === m.from.length ? this.inheritProfile(ne, srcs) : this.computeProfile(ne));
+      this.settle([ne.id]);
       this.changes.edges.add(ne.id);
     }
     for (const nid of [e.a, e.b]) {
@@ -440,6 +651,7 @@ export class City {
     if (op.oneway) this.roads.cycleOneWay(id);
     this.occ.addRoad(e);
     this.profiles.set(id, this.computeProfile(e));
+    this.settle([id]);
     this.dropClashes();
     this.changes.edges.add(id);
     for (const nid of [e.a, e.b]) this.changes.nodes.add(nid);
@@ -592,6 +804,7 @@ export class City {
       const ys = this.computeProfile(e);
       this.profiles.set(e.id, ys);
       this.groundRoad(e, ys);
+      this.settle([e.id]);
       this.changes.edges.add(e.id);
       this.changes.nodes.add(e.a);
       this.changes.nodes.add(e.b);
@@ -665,6 +878,7 @@ export class City {
       created: this.created,
       playSeconds: this.playSeconds,
       bestPop: this.bestPop,
+      profiles: Object.fromEntries([...this.profiles].map(([id, ys]) => [String(id), encodeF32(ys)])),
       heights: encodeHeights(this.terrain.h),
       trees: encodeF32(this.trees),
       roads: this.roads.toJSON(),
@@ -692,6 +906,22 @@ export class City {
 
 function freshChanges(): Changes {
   return { edges: new Set(), removedEdges: new Set(), nodes: new Set(), lots: false, services: false, trees: false, transit: false };
+}
+
+/** A profile's height at arc length s (clamped to the edge). */
+function profileAt(ys: Float32Array, cum: Float64Array, s: number) {
+  const n = ys.length;
+  if (s <= 0) return ys[0];
+  if (s >= cum[n - 1]) return ys[n - 1];
+  let lo = 0;
+  let hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (cum[mid] <= s) lo = mid;
+    else hi = mid;
+  }
+  const seg = cum[hi] - cum[lo] || 1;
+  return ys[lo] + (ys[hi] - ys[lo]) * ((s - cum[lo]) / seg);
 }
 
 const xsOf = (pts: number[]) => pts.filter((_, i) => i % 2 === 0);
