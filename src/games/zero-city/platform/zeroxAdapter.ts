@@ -50,6 +50,10 @@ export interface ZeroXPlatform {
   unlockAchievement(id: string): Promise<boolean>;
   getAchievements(): Promise<string[]>;
   track(event: string, props?: Record<string, unknown>): void;
+  /** Does this player own the Riviera DLC? */
+  dlcOwned(): Promise<boolean>;
+  /** Buy the Riviera DLC (50 ZX Cash on Zero X). */
+  buyDlc(): Promise<{ ok: boolean; error?: string }>;
   onPause(cb: () => void): () => void;
   onResume(cb: () => void): () => void;
 }
@@ -135,6 +139,12 @@ export function createMockPlatform(signals = new Signals()): ZeroXPlatform {
       return "local";
     },
     track() {},
+    // Standalone builds have no shop: the DLC is a local switch.
+    dlcOwned: async () => !!(await idbGet<boolean>("kv", `${player.id}/dlc-riviera`)),
+    async buyDlc() {
+      await idbSet("kv", `${player.id}/dlc-riviera`, true);
+      return { ok: true };
+    },
     onPause: (cb) => signals.onPause(cb),
     onResume: (cb) => signals.onResume(cb),
   };
@@ -149,6 +159,9 @@ export interface ZeroXHost {
   postScore(value: number): Promise<boolean>;
   /** Live score for the platform UI (the pause overlay shows it). */
   progress(value: number): void;
+  /** The Riviera DLC: owned, and buying it with ZX Cash. */
+  dlcOwned(): Promise<boolean>;
+  buyDlc(): Promise<{ ok: boolean; error?: string }>;
 }
 
 /**
@@ -182,6 +195,8 @@ export function createZeroXPlatform(host: ZeroXHost, signals: Signals): ZeroXPla
     track(event, props) {
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("zx:track", { detail: { game: "zero-city", event, ...props } }));
     },
+    dlcOwned: () => host.dlcOwned(),
+    buyDlc: () => host.buyDlc(),
     onPause: (cb) => signals.onPause(cb),
     onResume: (cb) => signals.onResume(cb),
   };

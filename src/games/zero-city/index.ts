@@ -72,6 +72,23 @@ class ZeroCity implements GameModule {
           }
         },
         progress: (value) => this.emitter.progress(value, performance.now()),
+        dlcOwned: async () => {
+          try {
+            const { zeroCityDlcOwned } = await import("@/lib/season-client");
+            return await zeroCityDlcOwned();
+          } catch {
+            return false;
+          }
+        },
+        buyDlc: async () => {
+          try {
+            const { buyZeroCityDlc } = await import("@/lib/season-client");
+            await buyZeroCityDlc();
+            return { ok: true };
+          } catch (e) {
+            return { ok: false, error: e instanceof Error ? e.message : String(e) };
+          }
+        },
       },
       this.signals,
     );

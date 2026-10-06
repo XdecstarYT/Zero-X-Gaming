@@ -23,6 +23,10 @@ export type UBusinessTier = keyof typeof UBUSINESS_PRICES;
 /** What Ultimate costs you now. */
 export const ubusinessPrice = (tier: UBusinessTier, owned: UBusinessTier | null) => (tier === "ultimate" && owned === "lite" ? UBUSINESS_PRICES.ultimate - UBUSINESS_PRICES.lite : UBUSINESS_PRICES[tier]);
 
+/** Zero City's Riviera DLC: three coastal maps, the Riviera look and four seaside landmarks. A one-time unlock. */
+export const ZERO_CITY_DLC_PRICE = 50;
+export const ZERO_CITY_DLC_ID = "zero-city-riviera";
+
 /** ZLink+: the membership. 40 coins for 30 days; joining again adds 30 more. */
 export const ZLINK_PRICE = 40;
 export const ZLINK_DAYS = 30;

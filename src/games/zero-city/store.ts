@@ -3,23 +3,24 @@ import type { Lang, StringKey } from "./i18n";
 import type { Player, SaveSummary } from "./platform/zeroxAdapter";
 import type { Settings } from "./settings";
 import type { Notice, Stats } from "./sim/sim";
-import type { BillResult, DilemmaId, ElectionResult, Faction, Ledger, PolicyId, PromiseId, Taxes } from "./politics/politics";
+import type { DilemmaId, ElectionResult, Faction, Ledger, Minister, Ministry, PartyId, PolicyId, PromiseId, Taxes } from "./politics/politics";
+import type { ParlVote } from "./politics/parliament";
 import type { Zone, ServiceKind } from "./world/lots";
 import type { Landmark } from "./world/milestones";
 import type { RoadTypeId } from "./world/roads";
 
 export type Screen = "loading" | "menu" | "maps" | "game";
-export type Overlay = null | "settings" | "load" | "log" | "credits" | "pause";
+export type Overlay = null | "settings" | "load" | "log" | "credits" | "pause" | "dlc";
 export type Tab = "roads" | "zoning" | "transit" | "terrain" | "build" | "move" | "land" | "bulldoze";
 export const TABS: Tab[] = ["roads", "zoning", "transit", "terrain", "build", "move", "land", "bulldoze"];
-export type DrawMode = "straight" | "curve" | "scurve" | "freeform" | "roundabout" | "lanes" | "oneway" | "upgrade";
+export type DrawMode = "straight" | "curve" | "scurve" | "freeform" | "roundabout" | "lanes" | "oneway" | "upgrade" | "repair";
 export type ZoneMode = "line" | "area" | "single";
 export type TransitMode = "stop" | "line" | "rail";
 export type TerrainMode = "raise" | "lower" | "smooth" | "water" | "trees" | "clear";
 export type MoveMode = "select" | "move" | "rotate" | "copy" | "delete";
 export type BulldozeMode = "all" | "roads" | "buildings" | "zones";
 /** What the Land tab colours lots by. */
-export type LandView = "value" | "services" | "pollution" | "fire";
+export type LandView = "value" | "services" | "pollution" | "fire" | "roads";
 
 export interface Toast {
   id: number;
@@ -49,7 +50,10 @@ export interface VehicleInfo {
 }
 
 export type GameMode = "sandbox" | "mayor";
-export type HallTab = "overview" | "budget" | "policies" | "council";
+export type HallTab = "overview" | "budget" | "policies" | "council" | "cabinet";
+
+/** A vote's result: in the chamber (by party) or a referendum (by the public). */
+export type BillView = ParlVote & { referendum?: boolean; support?: number };
 
 /** What the HUD shows of Mayor mode (a snapshot, refreshed a few times a second). */
 export interface PoliticsView {
@@ -72,6 +76,22 @@ export interface PoliticsView {
   challenger: string;
   status: "office" | "ousted";
   townHallReady: boolean;
+  parl: {
+    seats: Record<PartyId, number>;
+    coalition: PartyId[];
+    relations: Record<PartyId, number>;
+    capital: number;
+    gov: number;
+    ministers: Record<Ministry, Minister | null>;
+    pool: Minister[];
+    /** The bill on the floor with the chamber's forecast. */
+    draft: { law: PolicyId; enable: boolean; lobbied: PartyId[]; forecast: ParlVote } | null;
+    failed: { law: PolicyId; enable: boolean } | null;
+    canReferendum: boolean;
+    demands: Partial<Record<PartyId, PolicyId>>;
+    campaign: { rallies: Faction[]; ads: number; debated: boolean; open: boolean };
+    scandal: Ministry | null;
+  };
 }
 
 export interface UIState {
@@ -116,7 +136,9 @@ export interface UIState {
   landView: LandView;
   /** City milestone reached (index), progress to the next, and each landmark's state. */
   milestone: { i: number; progress: number };
-  landmarks: Record<Landmark, "locked" | "built" | "ready">;
+  landmarks: Record<Landmark, "locked" | "built" | "ready" | "dlc">;
+  /** The Riviera DLC: owned, a purchase in flight, the last error. */
+  dlc: { owned: boolean; busy: boolean; error: string | null };
   canUndo: boolean;
   canRedo: boolean;
   statsOpen: boolean;
@@ -134,7 +156,7 @@ export interface UIState {
   newMode: GameMode;
   politics: PoliticsView | null;
   hall: HallTab | null;
-  bill: BillResult | null;
+  bill: BillView | null;
   election: ElectionResult | null;
 }
 
@@ -180,7 +202,8 @@ export function makeStore(settings: Settings) {
     bulldozeMode: "all",
     landView: "value",
     milestone: { i: 0, progress: 0 },
-    landmarks: { hospital: "locked", museum: "locked", university: "locked", stadium: "locked", tower: "locked" },
+    landmarks: { hospital: "locked", museum: "locked", university: "locked", stadium: "locked", tower: "locked", marina: "dlc", lighthouse: "dlc", casino: "dlc", resort: "dlc" },
+    dlc: { owned: false, busy: false, error: null },
     canUndo: false,
     canRedo: false,
     statsOpen: false,

@@ -154,6 +154,52 @@ export class OverlayView {
     this.group.add(m);
   }
 
+  private ribbons: THREE.Mesh | null = null;
+
+  /** Coloured ribbons along roads (the road condition view), or none. */
+  setRibbons(list: { pts: number[]; ys: (s: number) => number; color: string }[] | null) {
+    if (this.ribbons) {
+      this.group.remove(this.ribbons);
+      this.ribbons.geometry.dispose();
+      (this.ribbons.material as THREE.Material).dispose();
+      this.ribbons = null;
+    }
+    if (!list?.length) return;
+    const pos: number[] = [];
+    const col: number[] = [];
+    const idx: number[] = [];
+    const c = new THREE.Color();
+    for (const r of list) {
+      c.set(r.color);
+      const n = r.pts.length / 2;
+      let s = 0;
+      const base = pos.length / 3;
+      for (let i = 0; i < n; i++) {
+        const j = Math.min(n - 1, i + 1);
+        const k = Math.max(0, i - 1);
+        let tx = r.pts[j * 2] - r.pts[k * 2];
+        let tz = r.pts[j * 2 + 1] - r.pts[k * 2 + 1];
+        const l = Math.hypot(tx, tz) || 1;
+        tx /= l;
+        tz /= l;
+        if (i > 0) s += Math.hypot(r.pts[i * 2] - r.pts[i * 2 - 2], r.pts[i * 2 + 1] - r.pts[i * 2 - 1]);
+        const y = r.ys(s) + 0.5;
+        const w = 2.2;
+        pos.push(r.pts[i * 2] - tz * w, y, r.pts[i * 2 + 1] + tx * w, r.pts[i * 2] + tz * w, y, r.pts[i * 2 + 1] - tx * w);
+        col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+        if (i < n - 1) idx.push(base + i * 2, base + i * 2 + 2, base + i * 2 + 1, base + i * 2 + 1, base + i * 2 + 2, base + i * 2 + 3);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+    m.renderOrder = 6;
+    this.ribbons = m;
+    this.group.add(m);
+  }
+
   setBrush(at: THREE.Vector3 | null, r: number) {
     this.brush.visible = !!at;
     if (!at) return;

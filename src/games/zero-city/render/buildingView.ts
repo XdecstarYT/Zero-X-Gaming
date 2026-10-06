@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { FLOOR } from "../world/buildingSpec";
 import type { Lot, Service } from "../world/lots";
+import type { Look } from "./buildingKit";
 import { sideNormal } from "../world/lots";
 import type { Building } from "../sim/sim";
 import { shared } from "./engine";
@@ -162,6 +163,8 @@ export class BuildingView {
   private services = new Map<number, Placed>();
   density = 1;
   res: number[] = [0, 0, 0, 0];
+  /** The map's building palette (the Riviera DLC maps are whitewashed). */
+  look: Look = "base";
   private glowMat: THREE.MeshStandardMaterial;
 
   constructor(private groundAt: (x: number, z: number) => number) {
@@ -271,7 +274,7 @@ export class BuildingView {
       return;
     }
     if (old) this.release(old);
-    const { parts } = buildingParts(lot.zone, b.tier, lot.w, lot.d, b.seed, this.density, this.res);
+    const { parts } = buildingParts(lot.zone, b.tier, lot.w, lot.d, b.seed, this.density, this.res, this.look);
     this.placed.set(lot.id, this.place(parts, lot.cx, lot.cz, lot.ang, lot.side, b.progress, key, lot.w, lot.d));
   }
 

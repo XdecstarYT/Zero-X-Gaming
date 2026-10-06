@@ -51,7 +51,7 @@ test("Zero City: members only; settings, a new city, roads, zones and growth wit
 
   // Ten maps; start on the first.
   await page.getByTestId("zc-new").click();
-  await expect(page.locator('[data-testid^="zc-map-"]:not([data-testid="zc-map-detail"])')).toHaveCount(10);
+  await expect(page.locator('[data-testid^="zc-map-"]:not([data-testid="zc-map-detail"])')).toHaveCount(13);
   await page.getByTestId("zc-start").click();
   await expect(page.getByTestId("zc-hud")).toBeVisible({ timeout: 90_000 });
   const start = await state(page);
@@ -314,5 +314,108 @@ test("Zero City Metropolis update: milestones, landmarks, fires, info views and 
   });
   await page.waitForTimeout(1500);
   if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/33-night.png` });
+  expect(errors).toEqual([]);
+});
+
+test("Zero City 0.8: the Riviera DLC for ZX Cash, roadworks and the parliament", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "covered on desktop");
+  test.setTimeout(420_000);
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/ERR_TUNNEL|Failed to load resource|supabase/i.test(m.text())) errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("zx-season-s1"))
+      localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+  });
+  await page.goto("/games/zero-city?zc=test");
+  await page.getByTestId("zlink-lock-join").click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByTestId("zc-menu")).toBeVisible({ timeout: 90_000 });
+  await hook(page, (zc) => zc.quality("low"));
+  type S = { roadCondition: number; roadworks: number; dlc: boolean; look: string; services: string[]; parl: { seats: Record<string, number>; coalition: string[]; capital: number } | null };
+  const st = () => page.evaluate(() => (window as unknown as { __zc: { debugState: () => S } }).__zc.debugState());
+
+  // Riviera maps are locked: their Start button opens the store instead.
+  await expect(page.getByTestId("zc-dlc")).toContainText("50 ZX Cash");
+  await page.getByTestId("zc-new").click();
+  await expect(page.getByTestId("zc-dlcbadge-riviera-coast")).toBeVisible();
+  await page.getByTestId("zc-map-riviera-coast").click();
+  await expect(page.getByTestId("zc-start")).toHaveText(/Unlock for 50 ZX Cash/i);
+  await page.getByTestId("zc-start").click();
+  await expect(page.getByTestId("zc-dlcsheet")).toBeVisible();
+  if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/40-dlc.png` });
+
+  // Buy it with ZX Cash (the guest wallet here): the maps open up.
+  await page.getByTestId("zc-dlc-buy").click();
+  await expect(page.getByTestId("zc-dlc-play")).toBeVisible({ timeout: 15_000 });
+  expect((await st()).dlc).toBe(true);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("zx-season-s1") ?? "{}").purchases)).toContain("unlock:zero-city-riviera");
+  await page.getByTestId("zc-dlc-play").click();
+  await page.getByTestId("zc-map-riviera-coast").click();
+  await page.getByTestId("zc-mode-mayor").click();
+  await expect(page.getByTestId("zc-start")).toHaveText(/start/i);
+  await page.getByTestId("zc-start").click();
+  await expect(page.getByTestId("zc-treasury")).toBeVisible({ timeout: 90_000 });
+  expect((await st()).look).toBe("riviera");
+
+  // The Riviera landmarks are on the build bar and ready.
+  await page.getByTestId("zc-tab-build").click();
+  await expect(page.getByTestId("zc-dlc-row")).toBeVisible();
+  await expect(page.getByTestId("zc-svc-marina")).toHaveAttribute("aria-label", "Marina");
+  await expect(page.getByTestId("zc-svc-depot")).toBeVisible();
+  await page.getByTestId("zc-tab-build").click();
+
+  // Roadworks: worn roads show on the Road condition view; the Repair tool orders works.
+  await hook(page, (zc) => (zc as unknown as { debugWear: (c: number) => void }).debugWear(0.2));
+  await expect.poll(async () => (await st()).roadCondition, { timeout: 15_000 }).toBeLessThan(0.5);
+  await page.getByTestId("zc-tab-land").click();
+  await page.getByTestId("zc-iv-roads").click();
+  await expect(page.getByTestId("zc-iv-roads")).toHaveAttribute("aria-pressed", "true");
+  if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/41-roads.png` });
+  await page.getByTestId("zc-tab-land").click();
+  await page.getByTestId("zc-tab-roads").click();
+  await page.getByTestId("zc-dm-repair").click();
+  const end = await hook(page, (zc) => zc.gateEnd());
+  await page.evaluate(([x, z]) => (window as unknown as { __zc: ZC }).__zc.look(x, z, 260, 1.0, 0), [end.x, end.z]);
+  await page.waitForTimeout(800);
+  // Click the end of the highway: it sends a crew.
+  const p = await page.evaluate(([x, z]) => (window as unknown as { __zc: ZC }).__zc.screenOf(x, z), [end.x, end.z]);
+  await page.mouse.move(p!.x, p!.y, { steps: 3 });
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(page.locator("text=/Repair crew sent/").first()).toBeVisible({ timeout: 10_000 });
+  await expect.poll(async () => (await st()).roadworks, { timeout: 15_000 }).toBeGreaterThan(0);
+  if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/42-roadworks.png` });
+  await page.keyboard.press("Escape");
+
+  // Parliament: seats and a government, a law on the floor, lobbying and a vote.
+  const parl = (await st()).parl!;
+  expect(Object.values(parl.seats).reduce((a, b) => a + b, 0)).toBe(15);
+  await page.getByTestId("zc-hall").click();
+  await page.getByTestId("zc-ph-council").click();
+  await expect(page.getByTestId("zc-gov")).toBeVisible();
+  await expect(page.getByTestId("zc-council")).toBeVisible();
+  await page.getByTestId("zc-ph-policies").click();
+  await page.getByTestId("zc-pol-roadFund-go").click();
+  await expect(page.getByTestId("zc-bill")).toBeVisible();
+  await expect(page.getByTestId("zc-forecast")).toContainText(/Forecast/);
+  const lobby = page.locator('[data-testid^="zc-lobby-"]:not([disabled])').first();
+  if (await lobby.count()) await lobby.click();
+  if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/43-parliament.png` });
+  await page.getByTestId("zc-bill-vote").click();
+  await expect(page.getByTestId("zc-bill-result")).toBeVisible();
+  // The cabinet: appoint a finance minister.
+  await page.getByTestId("zc-ph-cabinet").click();
+  await expect(page.getByTestId("zc-min-finance")).toBeVisible();
+  const sel = page.getByTestId("zc-appoint-finance");
+  if (await sel.isEnabled()) {
+    const v = await sel.locator("option").nth(1).getAttribute("value");
+    await sel.selectOption(v!);
+    await expect(page.getByTestId("zc-min-finance")).toContainText(/Skill/);
+  }
+  if (process.env.ZC_SHOTS) await page.getByTestId("zero-city").screenshot({ path: `${process.env.ZC_SHOTS}/44-cabinet.png` });
+  await page.getByTestId("zc-hall-close").click();
   expect(errors).toEqual([]);
 });

@@ -12,7 +12,7 @@ import { Icon } from "./Icons";
 import { CityHall, DilemmaCard, ElectionNight, HallButton, TreasuryChip } from "./politics";
 import { rampColor } from "../render/overlayView";
 import { VEHICLES } from "../sim/sim";
-import { LANDMARK_UNLOCK, LANDMARKS, MILESTONES } from "../world/milestones";
+import { DLC_LANDMARKS, LANDMARK_UNLOCK, LANDMARKS, MILESTONES } from "../world/milestones";
 
 const TAB_ICON: Record<Tab, string> = { roads: "roads", zoning: "zoning", transit: "transit", terrain: "terrain", build: "build", move: "move", land: "land", bulldoze: "bulldoze" };
 
@@ -262,7 +262,7 @@ function RoadsBar() {
   const type = useUI((s) => s.roadType);
   const mode = useUI((s) => s.drawMode);
   const group = GROUPS.find((gr) => gr.types.includes(type))!;
-  const modes: DrawMode[] = ["straight", "curve", "scurve", "freeform", "roundabout", "lanes", "oneway", "upgrade"];
+  const modes: DrawMode[] = ["straight", "curve", "scurve", "freeform", "roundabout", "lanes", "oneway", "upgrade", "repair"];
   const set = (p: Partial<{ roadType: RoadTypeId; drawMode: DrawMode }>) => {
     g.tools.reset();
     g.store.setState(p);
@@ -420,7 +420,7 @@ function BuildBar() {
   const t = useT();
   const svc = useUI((s) => s.service);
   const landmarks = useUI((s) => s.landmarks);
-  const icons: Record<ServiceKind, string> = { police: "police", fire: "fire", clinic: "clinic", school: "school", power: "power", water: "watertower", park: "park", hospital: "hospital", museum: "museum", university: "university", stadium: "stadium", tower: "landmark" };
+  const icons: Record<ServiceKind, string> = { police: "police", fire: "fire", clinic: "clinic", school: "school", power: "power", water: "watertower", park: "park", depot: "cone", hospital: "hospital", museum: "museum", university: "university", stadium: "stadium", tower: "landmark", marina: "marina", lighthouse: "lighthouse", casino: "casino", resort: "resort" };
   return (
     <div className="flex flex-col items-center gap-1">
       <div className="flex flex-wrap justify-center gap-1">
@@ -437,6 +437,26 @@ function BuildBar() {
           return (
             <span key={k} className="relative" style={{ opacity: st === "ready" ? 1 : 0.55 }}>
               <Chip on={svc === k} icon={icons[k]} label={label} onClick={() => g.store.setState({ service: k })} iconOnly testId={`zc-svc-${k}`} />
+              {st !== "ready" && (
+                <span className="pointer-events-none absolute -end-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-black/70 px-0.5 text-[0.6em] font-black" aria-hidden>
+                  {st === "built" ? "✓" : "🔒"}
+                </span>
+              )}
+            </span>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-1" role="group" aria-label={t("dlc.name")} data-testid="zc-dlc-row">
+        <span className="zc-label px-1 text-[0.65em] opacity-70" style={{ color: "var(--zc-accent)" }}>
+          {t("dlc.short")}
+        </span>
+        {DLC_LANDMARKS.map((k) => {
+          const st = landmarks[k];
+          const name = t(`svc.${k}` as StringKey);
+          const label = st === "dlc" ? `${name} · ${t("dlc.locked")}` : st === "built" ? `${name} · ${t("lm.done")}` : name;
+          return (
+            <span key={k} className="relative" style={{ opacity: st === "ready" ? 1 : 0.6 }}>
+              <Chip on={svc === k} icon={icons[k]} label={label} onClick={() => (st === "dlc" ? g.openDlc() : g.store.setState({ service: k }))} iconOnly testId={`zc-svc-${k}`} />
               {st !== "ready" && (
                 <span className="pointer-events-none absolute -end-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-black/70 px-0.5 text-[0.6em] font-black" aria-hidden>
                   {st === "built" ? "✓" : "🔒"}
@@ -479,12 +499,14 @@ function LandBar() {
     ["services", "build"],
     ["pollution", "factory"],
     ["fire", "fire"],
+    ["roads", "cone"],
   ];
   const legend: Record<LandView, [string, string, string]> = {
     value: [t("lvLow"), `linear-gradient(90deg, ${theme.ramp.join(",")})`, t("lvHigh")],
     services: [t("iv.none"), `linear-gradient(90deg, ${theme.ramp.join(",")})`, t("iv.all")],
     pollution: [t("iv.clean"), "linear-gradient(90deg,#3fbf7f 50%,#e8553d 50%)", t("iv.polluted")],
     fire: [t("iv.covered"), "linear-gradient(90deg,#3fbf7f 50%,#f5a524 50%)", t("iv.uncovered")],
+    roads: [t("iv.broken"), `linear-gradient(90deg, ${theme.ramp.join(",")})`, t("iv.newRoad")],
   };
   const [lo, bg, hi] = legend[view];
   return (
@@ -550,6 +572,8 @@ function StatsPanel() {
     ["pedestriansCount", num(stats.peds)],
     ["congestion", `${Math.round(stats.congestion * 100)}%`],
     ["tourists", num(stats.tourists ?? 0)],
+    ["roadCondition", `${Math.round((stats.roadCondition ?? 1) * 100)}%`],
+    ["roadworksNow", num(stats.roadworks ?? 0)],
     ["firesNow", num(stats.fires ?? 0)],
   ];
   const h = Math.floor(play / 3600);

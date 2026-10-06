@@ -18,13 +18,16 @@ export const MILESTONES: { id: MilestoneId; pop: number; grant: number }[] = [
   { id: "megalopolis", pop: 50_000, grant: 400_000 },
 ];
 
-export type Landmark = "hospital" | "museum" | "university" | "stadium" | "tower";
+export type Landmark = "hospital" | "museum" | "university" | "stadium" | "tower" | "marina" | "lighthouse" | "casino" | "resort";
 export const LANDMARKS: Landmark[] = ["hospital", "museum", "university", "stadium", "tower"];
+/** The Riviera DLC's landmarks: open from the start, once the DLC is owned. */
+export const DLC_LANDMARKS: Landmark[] = ["marina", "lighthouse", "casino", "resort"];
 
 /** The milestone (index into MILESTONES) that unlocks each landmark. */
-export const LANDMARK_UNLOCK: Record<Landmark, number> = { hospital: 2, museum: 3, university: 4, stadium: 5, tower: 6 };
+export const LANDMARK_UNLOCK: Record<Landmark, number> = { hospital: 2, museum: 3, university: 4, stadium: 5, tower: 6, marina: 0, lighthouse: 0, casino: 0, resort: 0 };
 
-export const isLandmark = (k: ServiceKind | string): k is Landmark => (LANDMARKS as string[]).includes(k);
+export const isLandmark = (k: ServiceKind | string): k is Landmark => (LANDMARKS as string[]).includes(k) || (DLC_LANDMARKS as string[]).includes(k);
+export const isDlcLandmark = (k: ServiceKind | string) => (DLC_LANDMARKS as string[]).includes(k);
 
 /** Index of the milestone a population has reached. */
 export function milestoneAt(pop: number) {
@@ -43,7 +46,8 @@ export function milestoneProgress(pop: number) {
 }
 
 /** Can this landmark be built now (unlocked, and not built already)? */
-export function landmarkState(kind: Landmark, best: number, built: Set<string>): "locked" | "built" | "ready" {
+export function landmarkState(kind: Landmark, best: number, built: Set<string>, dlc = false): "locked" | "built" | "ready" | "dlc" {
+  if (isDlcLandmark(kind) && !dlc) return "dlc";
   if (built.has(kind)) return "built";
   return milestoneAt(best) >= LANDMARK_UNLOCK[kind] ? "ready" : "locked";
 }

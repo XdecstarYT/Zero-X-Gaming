@@ -27,7 +27,7 @@ without workers.
 | `platform/zeroxAdapter.ts` | **The only file that talks to the host platform** (see below) |
 | `platform/idb.ts` | IndexedDB key–value store with an in-memory fallback |
 | `world/terrain.ts` | Heightfield (257 × 257 vertices, 8 m apart, 64 × 64-cell chunks) |
-| `world/maps.ts` | The ten maps: seeds, terrain recipes, resources, gateway highway, trees, thumbnails |
+| `world/maps.ts` | The ten maps and the three Riviera DLC maps: seeds, terrain recipes, resources, gateway highway, trees, thumbnails |
 | `world/roads.ts` | Road types and groups, the road graph (split at crossings, snap, merge), lane layout, names |
 | `world/lots.ts` | Occupancy grid, lot cutting from road frontage, civic building footprints |
 | `world/buildingSpec.ts` | Floors, style and capacity for a zone × tier × lot (shared by sim and renderer) |
@@ -38,7 +38,8 @@ without workers.
 | `tools.ts` | Input routing (camera vs tool) and every tool |
 | `game.ts` | The controller: screens, loading, saves, autosave, achievements, scores, audio |
 | `audio.ts` | Generative ambient music, city hum, effects (all synthesised) |
-| `politics/politics.ts` | Mayor mode: treasury, taxes, voter groups, approval, policies, council votes, dilemmas, promises, elections (pure, unit-tested) |
+| `politics/politics.ts` | Mayor mode: treasury, taxes, voter groups, approval, laws and ministries, dilemmas, promises, elections (pure, unit-tested) |
+| `politics/parliament.ts` | The parliament: parties and seats, coalitions, political capital, bills, lobbying, referendums, the cabinet and scandals, the campaign (pure, unit-tested) |
 | `ui/*` | React screens (loading, menu, map select, settings, load, update log, credits, pause), HUD, City Hall (`politics.tsx`) and the liquid glass (`glass.tsx`) |
 
 ## Mayor mode
@@ -55,10 +56,9 @@ Pick **Mayor** instead of **Sandbox** on the map screen. The rules live in
   heading toward a target computed from what they care about (jobs, taxes, traffic,
   service coverage, pollution, parks, the books) plus policies and short-lived moods.
   Their share of the electorate follows the kind of city it is.
-- **Council and policies.** Ten policies (free buses, a heritage height limit, a rent
-  cap, …) each change the sim (demand, max tier, car share) and cost per day. Proposing
-  or repealing one goes to the seven-seat council: each councillor weighs their voters'
-  stance and their view of you.
+- **Parliament and laws.** See "The parliament" below. 24 laws in six ministries each
+  change the sim (demand, max tier, car share, road wear, fires, tourism) or the books,
+  and cost per day.
 - **Dilemmas, promises, town halls.** A dilemma lands on the desk every half day or so;
   ignoring it costs approval. One campaign promise per term pays off (or costs 1.5×) on
   election day. A town hall once a day buys a little goodwill.
@@ -107,6 +107,62 @@ the coverage/pollution numbers in `Stats`. Saves keep `mode`, `politics` and `sp
   - Settings → Building fires switches fires off.
 - **Info views**: the Land tab colours lots by land value, services in reach, pollution or fire cover. The sim sends the per-lot cover mask with land values.
 - **Zone plots**: empty zoned lots are drawn as outlines with a faint fill. They're strong while zoning, quiet otherwise, and dimmed at night, so they no longer glare as bright slabs. Trees on a plot are cleared when something is built there.
+
+## Roadworks (0.8)
+
+- **Wear** (`roadwork()` in `sim/sim.ts`, once a sim second): every road has a condition
+  from 1 (new) to 0. Cars wear it (`WEAR_PER_CAR`, spread over length and lanes; trucks
+  count four times) and so does age (`WEAR_AGE` a day). The Road fund law and a good
+  transport minister slow it (`SimPolicy.wearMul`).
+- **Effects**: below half condition cars slow down (`roadSpeedFactor`, also used for route
+  costs) and nearby land loses value. Notices ask for repairs or a depot.
+- **Roadworks**: a maintenance depot (Build tab) sends up to two crews at a time to the
+  worst roads in its reach once they drop below 45%. Works take `60 + length / 4` game
+  minutes; the road is down to 45% speed with one lane coned off, then it's as new.
+  The Repair draw mode in the Roads tab orders works on any road (Mayor mode charges per
+  metre, cheaper with a depot).
+- **Drawing**: `render/roadView.ts` adds cracks, potholes and patches by condition, and
+  cones, barriers and fresh tarmac during works. The Land tab's Road condition view
+  colours every road from red to green.
+- **Saves**: `SimSave.roads` keeps each road's condition and works.
+
+## The parliament (0.8)
+
+Mayor mode's council is now a 15-seat chamber (`politics/parliament.ts`), loosely in the
+style of Lawgivers:
+
+- **Parties**: your Civic Party plus Labour, Enterprise, Greens and Heritage, each speaking
+  for a mix of voter groups (`PARTY_BASE`). Seats are shared out by largest remainder
+  after each election. If you lose the popular vote but your coalition still holds 8
+  seats, you stay mayor.
+- **Coalitions and capital**: political capital builds every hour (faster when popular
+  and with a majority). Spend it to invite parties into government (they accept by
+  relations and how their voters rate you), lobby, appoint ministers and call
+  referendums. Partners leave if relations sour; each party has a law it wants.
+- **Bills**: drafting a law puts it on the floor with a seat-by-seat forecast. Lobby
+  parties to move their votes, then call the vote. A failed law can go to a referendum
+  once a term.
+- **Cabinet**: six ministries (finance, transport, environment, housing, safety, culture).
+  A minister's skill boosts their area (`simPolicy`, `ledger`, `targets`); low loyalty
+  risks a scandal you either sack them over or ride out.
+- **Campaign**: once a challenger appears (the last day of a term), rallies for each voter group, up to three ad
+  blitzes and one TV debate.
+
+## The Riviera DLC (0.8)
+
+A paid expansion: 50 ZX Cash, once (`ZERO_CITY_DLC_PRICE` in `src/lib/economy.ts`).
+
+- **Content**: three coastal maps (`dlc: "riviera"` in `world/maps.ts`), a warm building
+  palette (`look: "riviera"`, `LOOKS` in `render/buildingKit.ts`) and four landmarks (marina,
+  lighthouse, casino, beach resort) that can be built on any map and need no milestone.
+- **Gate**: `ZeroXPlatform.dlcOwned()` / `buyDlc()`. On Zero X they go to
+  `zeroCityDlcOwned` / `buyZeroCityDlc` in `src/lib/season-client.ts`: guests pay from the
+  device wallet, signed-in players through the `buy_zero_city_dlc` RPC
+  (`supabase/migrations/20261026100000_zero_city_riviera.sql`), which charges with
+  `add_coins` and records a `player_unlocks` row. The mock platform keeps a flag in IndexedDB.
+- **UI**: a menu row and store sheet (`DlcSheet`), a RIVIERA badge on the maps (Start
+  becomes Unlock), and a Riviera row on the Build bar. `newCity` refuses a locked map.
+  Saves made on a Riviera map still load if the DLC is not owned.
 
 ## Liquid glass
 

@@ -77,6 +77,10 @@ export interface SimPolicy {
   bias: { R: number; C: number; I: number; M: number };
   maxTier: number;
   carShare: number;
+  /** Multipliers from laws (and ministers): road wear, fire risk, tourism. */
+  wearMul?: number;
+  fireMul?: number;
+  tourismMul?: number;
 }
 export const NO_POLICY: SimPolicy = { bias: { R: 0, C: 0, I: 0, M: 0 }, maxTier: 9, carShare: 1 };
 
@@ -109,6 +113,17 @@ export interface SimSave {
   minutes: number;
   seed: number;
   buildings: Building[];
+  /** Road condition: edge id, condition 0–1, game minutes of roadworks left. */
+  roads?: [number, number, number][];
+}
+
+/** A road's state: condition (1 = new, 0 = falling apart) and roadworks under way. */
+export interface RoadState {
+  c: number;
+  /** Game minutes of work left (0 = no works). */
+  works: number;
+  /** Ordered by the player (a contractor if no depot covers it). */
+  ordered?: boolean;
 }
 
 export interface Stats {
@@ -135,6 +150,10 @@ export interface Stats {
   tourists: number;
   /** Buildings on fire right now. */
   fires: number;
+  /** Roads: average condition (by length, 0–1), roads under works, roads in poor shape. */
+  roadCondition: number;
+  roadworks: number;
+  poorRoads: number;
 }
 
 export interface Notice {
@@ -209,14 +228,27 @@ interface NodeInfo {
   controlled: boolean;
 }
 
-const SERVICE_STAFF: Record<string, number> = { police: 12, fire: 10, clinic: 14, school: 20, power: 15, water: 6, park: 2, hospital: 60, museum: 20, university: 80, stadium: 40, tower: 30 };
-const SERVICE_RADIUS: Record<string, number> = { police: 340, fire: 360, clinic: 320, school: 420, park: 200, hospital: 700, museum: 500, university: 800, stadium: 450, tower: 700 };
+const SERVICE_STAFF: Record<string, number> = { police: 12, fire: 10, clinic: 14, school: 20, power: 15, water: 6, park: 2, depot: 14, marina: 25, lighthouse: 3, casino: 70, resort: 60, hospital: 60, museum: 20, university: 80, stadium: 40, tower: 30 };
+/** Road wear: per car per game minute on a road (trucks wear it four times as fast), and by age alone per game day. */
+const WEAR_PER_CAR = 0.000003;
+const WEAR_AGE = 0.015;
+/** Roads below this get a crew sent from a depot in reach; how far a depot reaches; crews per depot. */
+const WORKS_BELOW = 0.45;
+const DEPOT_REACH = 650;
+const CREWS_PER_DEPOT = 2;
+/** How fast traffic may go on a road in this state (fraction of the limit). */
+export function roadSpeedFactor(r: RoadState | undefined) {
+  if (!r) return 1;
+  if (r.works > 0) return 0.45;
+  return r.c >= 0.5 ? 1 : 0.7 + 0.6 * r.c;
+}
+const SERVICE_RADIUS: Record<string, number> = { police: 340, fire: 360, clinic: 320, school: 420, park: 200, marina: 600, lighthouse: 500, casino: 550, resort: 600, hospital: 700, museum: 500, university: 800, stadium: 450, tower: 700 };
 /** Landmarks that also count as an everyday service's coverage. */
 const COVER_AS: Record<string, string> = { hospital: "clinic", university: "school" };
 /** Land value each service adds within its radius. */
-const VALUE_ADD: Record<string, number> = { park: 0.12, hospital: 0.1, museum: 0.16, university: 0.12, stadium: 0.08, tower: 0.2 };
+const VALUE_ADD: Record<string, number> = { park: 0.12, marina: 0.14, lighthouse: 0.1, casino: 0.06, resort: 0.12, hospital: 0.1, museum: 0.16, university: 0.12, stadium: 0.08, tower: 0.2 };
 /** Visitors a day each draws. */
-const TOURISM: Record<string, number> = { park: 12, museum: 260, university: 70, stadium: 520, tower: 420 };
+const TOURISM: Record<string, number> = { park: 12, marina: 380, lighthouse: 140, casino: 600, resort: 520, museum: 260, university: 70, stadium: 520, tower: 420 };
 /** Fire: chance per building per game hour; minutes until firefighters put it out (covered) or it burns down. */
 const FIRE_RATE = 0.0003;
 const FIRE_OUT = 30;
@@ -247,6 +279,9 @@ export class Sim {
   private nextAgent = 1;
   private t = 0;
   private growAcc = 0;
+  private roadAcc = 0;
+  /** Road states are sent to the main thread when this is set (about once a second). */
+  private roadsOut = true;
   private lvAcc = 0;
   private spawnAcc = 0;
   private noticeAcc = 0;
@@ -256,6 +291,8 @@ export class Sim {
   fires = new Map<number, { t: number; covered: boolean }>();
   /** One-off messages for the player (drained with each tick). */
   events: Notice[] = [];
+  /** Every road's condition and roadworks. */
+  roads = new Map<number, RoadState>();
   /** Lots whose building changed since the last drain. */
   private changed = new Set<number>();
   private removedLots = new Set<number>();
@@ -273,11 +310,18 @@ export class Sim {
     this.rand = rng(save.seed + Math.floor(save.minutes));
     this.buildings.clear();
     for (const b of save.buildings) this.buildings.set(b.lot, { ...b });
+    this.roads.clear();
+    for (const [id, c, works] of save.roads ?? []) this.roads.set(id, { c, works });
     for (const id of this.buildings.keys()) this.changed.add(id);
   }
 
   save(): SimSave {
-    return { minutes: this.minutes, seed: this.seed, buildings: [...this.buildings.values()].map((b) => ({ ...b })) };
+    return {
+      minutes: this.minutes,
+      seed: this.seed,
+      buildings: [...this.buildings.values()].map((b) => ({ ...b })),
+      roads: [...this.roads].map(([id, r]) => [id, Math.round(r.c * 1000) / 1000, Math.round(r.works)] as [number, number, number]),
+    };
   }
 
   setWorld(w: SimWorld) {
@@ -322,6 +366,9 @@ export class Sim {
       this.connected.add(id);
       for (const nb of und.get(id) ?? []) stack.push(nb);
     }
+    // Roads: new ones start as new, gone ones are forgotten.
+    for (const id of [...this.roads.keys()]) if (!this.edges.has(id)) this.roads.delete(id);
+    for (const id of this.edges.keys()) if (!this.roads.has(id)) this.roads.set(id, { c: 1, works: 0 });
     this.lots.clear();
     for (const l of w.lots) this.lots.set(l.id, l);
     // Buildings on lots that are gone or rezoned go too.
@@ -399,6 +446,11 @@ export class Sim {
       this.spawnAgents();
     }
     this.moveCars(dt);
+    this.roadAcc += dt;
+    if (this.roadAcc > 1) {
+      this.roadwork(this.roadAcc);
+      this.roadAcc = 0;
+    }
     this.movePeds(dt);
     if (this.noticeAcc > 2) {
       this.noticeAcc = 0;
@@ -464,10 +516,87 @@ export class Sim {
     for (const b of this.buildings.values()) {
       if (b.progress < 1 || this.fires.has(b.lot)) continue;
       const covered = ((this.cover.get(b.lot) ?? 0) & COVER_BIT.fire) !== 0;
-      if (this.rand.next() > FIRE_RATE * hours * (1 + b.tier * 0.3) * (covered ? 0.35 : 1)) continue;
+      if (this.rand.next() > FIRE_RATE * hours * (1 + b.tier * 0.3) * (covered ? 0.35 : 1) * (this.settings.policy?.fireMul ?? 1)) continue;
       this.fires.set(b.lot, { t: 0, covered });
       this.events.push({ key: covered ? "ev.fire" : "ev.fireNoStation", vars: { road: this.roadOf(b.lot) } });
     }
+  }
+
+  /**
+   * Roads wear with traffic (trucks most) and age. A depot sends a crew to the worst road
+   * in its reach once it's worn; roadworks close a lane and slow traffic until it's done.
+   */
+  private roadwork(dt: number) {
+    const minutes = dt * GAME_MINUTES_PER_SECOND;
+    const mul = this.settings.policy?.wearMul ?? 1;
+    const traffic = new Map<number, number>();
+    for (const c of this.cars) {
+      if (c.crossing) continue;
+      const e = c.route[c.ri]?.edge;
+      if (e !== undefined) traffic.set(e, (traffic.get(e) ?? 0) + (c.type === 4 ? 4 : 1));
+    }
+    for (const [id, r] of this.roads) {
+      const info = this.edges.get(id);
+      if (!info) continue;
+      if (r.works > 0) {
+        r.works -= minutes;
+        if (r.works <= 0) {
+          r.works = 0;
+          r.c = 1;
+          if (r.ordered) this.events.push({ key: "ev.roadDone", vars: { road: info.e.name } });
+          r.ordered = false;
+        }
+        continue;
+      }
+      // Wear spreads over the road's length and lanes: a short busy street wears fastest.
+      const per = (traffic.get(id) ?? 0) / Math.max(1, (info.L / 60) * Math.max(1, info.e.lanesF + info.e.lanesB) * 0.5);
+      r.c = Math.max(0, r.c - (per * WEAR_PER_CAR * 60 * minutes + (WEAR_AGE * minutes) / 1440) * mul);
+    }
+    // Depots send crews to the worst roads they reach.
+    for (const d of this.world.services) {
+      if (d.kind !== "depot") continue;
+      const near: [number, RoadState, EdgeInfo][] = [];
+      let busy = 0;
+      for (const [id, r] of this.roads) {
+        const info = this.edges.get(id);
+        if (!info) continue;
+        const m = info.e.pts.length >> 2 << 1;
+        if (Math.hypot(info.e.pts[m] - d.cx, info.e.pts[m + 1] - d.cz) > DEPOT_REACH) continue;
+        if (r.works > 0 && !r.ordered) busy++;
+        else if (r.works <= 0 && r.c < WORKS_BELOW) near.push([id, r, info]);
+      }
+      near.sort((a, b) => a[1].c - b[1].c);
+      for (const [, r, info] of near.slice(0, Math.max(0, CREWS_PER_DEPOT - busy))) r.works = worksMinutes(info.L);
+    }
+    this.roadsOut = true;
+  }
+
+  /** Order roadworks on these roads now (the Repair tool). Returns the ones started. */
+  repair(ids: number[]) {
+    const out: number[] = [];
+    for (const id of ids) {
+      const r = this.roads.get(id);
+      const info = this.edges.get(id);
+      if (!r || !info || r.works > 0 || r.c > 0.97) continue;
+      r.works = worksMinutes(info.L);
+      r.ordered = true;
+      out.push(id);
+    }
+    this.roadsOut = true;
+    return out;
+  }
+
+  /** Age every road (not under works) to this condition (tests and the debug hook). */
+  wear(c: number) {
+    for (const r of this.roads.values()) if (r.works <= 0) r.c = Math.min(r.c, c);
+    this.roadsOut = true;
+  }
+
+  /** Road states for the renderer, about once a second (null in between). */
+  takeRoads() {
+    if (!this.roadsOut) return null;
+    this.roadsOut = false;
+    return [...this.roads].map(([id, r]) => [id, r.c, r.works] as [number, number, number]);
   }
 
   /** Start a fire now (tests and the debug hook). */
@@ -605,6 +734,8 @@ export class Sim {
       this.cover.set(l.id, mask);
       if (l.wet) v += 0.12;
       v -= (this.congestion.get(l.edge) ?? 0) * 0.12;
+      // Potholes outside put people off.
+      v -= (1 - (this.roads.get(l.edge)?.c ?? 1)) * 0.1;
       const b = this.buildings.get(l.id);
       if (b) v += Math.min(0.08, b.age / 6000);
       this.lv.set(l.id, clamp(v, 0, 1));
@@ -644,7 +775,7 @@ export class Sim {
     const R = clamp(bias.R + 0.5 + (0.75 * (jobs + svcJobs - labour)) / (labour * 0.5 + 60) - traffic * 0.25, -1, 1);
     // Visitors come for the landmarks (more as the city gets known), and shop.
     const draw = this.world.services.reduce((n, s) => n + (TOURISM[s.kind] ?? 0), 0);
-    const tourists = Math.round(draw * (0.4 + 0.6 * Math.min(1, pop / 6000)));
+    const tourists = Math.round(draw * (0.4 + 0.6 * Math.min(1, pop / 6000)) * (this.settings.policy?.tourismMul ?? 1));
     const C = clamp(bias.C + 0.12 + (pop * 0.16 - cJobs) / (pop * 0.08 + 24) + Math.min(0.35, tourists / (pop * 0.4 + 500)) - traffic * 0.15, -1, 1);
     const I = clamp(bias.I + 0.3 + (labour * 0.36 - iJobs) / (labour * 0.22 + 24) + 0.05 * (res[1] + res[2] + res[3]) - traffic * 0.15, -1, 1);
     this.stats = {
@@ -666,7 +797,24 @@ export class Sim {
       iJobs,
       tourists,
       fires: this.fires.size,
+      ...this.roadStats(),
     };
+  }
+
+  private roadStats() {
+    let len = 0;
+    let sum = 0;
+    let works = 0;
+    let poor = 0;
+    for (const [id, r] of this.roads) {
+      const info = this.edges.get(id);
+      if (!info) continue;
+      len += info.L;
+      sum += r.c * info.L;
+      if (r.works > 0) works++;
+      else if (r.c < 0.35) poor++;
+    }
+    return { roadCondition: len ? sum / len : 1, roadworks: works, poorRoads: poor };
   }
 
   private avgCongestion() {
@@ -693,6 +841,7 @@ export class Sim {
     if (st.population > 150 && st.demand.C > 0.55) out.push({ key: "n.shops" });
     if (st.population >= 800 && !this.hasService("school")) out.push({ key: "n.school" });
     if (this.fires.size) out.push({ key: "n.fires", vars: { n: this.fires.size } });
+    if (st.poorRoads >= 3) out.push({ key: this.hasService("depot") ? "n.roadsPoor" : "n.roadsDepot", vars: { n: st.poorRoads } });
     let worst: { e: SimEdge; c: number } | null = null;
     for (const [id, c] of this.congestion) {
       const info = this.edges.get(id);
@@ -707,7 +856,7 @@ export class Sim {
 
   private cost(edge: number, dir: 1 | -1) {
     const info = this.edges.get(edge)!;
-    const v = (info.e.speed / 3.6) * 0.85;
+    const v = (info.e.speed / 3.6) * 0.85 * roadSpeedFactor(this.roads.get(edge));
     return (info.L / v) * (1 + 2 * (this.congestion.get(edge) ?? 0)) + (dir ? 0 : 0);
   }
 
@@ -1054,7 +1203,7 @@ export class Sim {
       const last = c.ri === c.route.length - 1;
       const endSet = leg.dir === 1 ? info.setB : info.setA;
       const stopLine = L - endSet;
-      const v0 = (info.e.speed / 3.6) * c.v0 * (c.kind === "bus" ? 0.85 : 1);
+      const v0 = (info.e.speed / 3.6) * c.v0 * (c.kind === "bus" ? 0.85 : 1) * roadSpeedFactor(this.roads.get(leg.edge));
       const bucket = buckets.get(`${leg.edge}:${leg.dir}:${c.lane}`) ?? [];
       const idx = bucket.indexOf(c);
       const leader = idx >= 0 ? bucket[idx + 1] : bucket.find((k) => k.d > c.d);
@@ -1394,8 +1543,13 @@ export class Sim {
   }
 }
 
+/** How long a crew takes to resurface a road, game minutes. */
+function worksMinutes(L: number) {
+  return 60 + L * 0.25;
+}
+
 function emptyStats(): Stats {
-  return { population: 0, jobs: 0, workers: 0, unemployed: 0, demand: { R: 0.5, C: 0.12, I: 0.3, M: 0.3 }, buildings: 0, cars: 0, peds: 0, congestion: 0, power: false, water: false, staff: 0, coverage: { police: 0, fire: 0, clinic: 0, school: 0, park: 0 }, pollution: 0, cJobs: 0, iJobs: 0, tourists: 0, fires: 0 };
+  return { population: 0, jobs: 0, workers: 0, unemployed: 0, demand: { R: 0.5, C: 0.12, I: 0.3, M: 0.3 }, buildings: 0, cars: 0, peds: 0, congestion: 0, power: false, water: false, staff: 0, coverage: { police: 0, fire: 0, clinic: 0, school: 0, park: 0 }, pollution: 0, cJobs: 0, iJobs: 0, tourists: 0, fires: 0, roadCondition: 1, roadworks: 0, poorRoads: 0 };
 }
 
 /** Binary min-heap of node ids by priority. */

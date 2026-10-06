@@ -4,7 +4,7 @@ import { OUTFITS, WRAPS } from "@/games/neon-siege/cosmetics";
 import { readLoadout, writeLoadout, type Loadout } from "@/games/neon-siege/loadout";
 import { useAuth } from "@/store/auth";
 import { useWallet } from "@/store/wallet";
-import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE, ubusinessFreeOpen, ubusinessPrice, ZLINK_DAYS, ZLINK_DROP, ZLINK_PRICE, zlinkActive, zlinkDropReady, zlinkExtend, type UBusinessTier } from "./economy";
+import { BATTLE_PASS_PRICE, cashCupPrize, CASH_CUP_DIFFICULTY, currentDrop, isCashCup, SPORTS_PASS_ID, SPORTS_PASS_PRICE, ubusinessFreeOpen, ubusinessPrice, ZERO_CITY_DLC_ID, ZERO_CITY_DLC_PRICE, ZLINK_DAYS, ZLINK_DROP, ZLINK_PRICE, zlinkActive, zlinkDropReady, zlinkExtend, type UBusinessTier } from "./economy";
 import { deviceSaveSuffix } from "./device-accounts";
 import { CUP_ENTRY, CUP_OPEN_MINUTES, cupPrize, freeLeft, plausible, type CupResult } from "./cash-cup";
 import { getSupabaseBrowser } from "./supabase/client";
@@ -413,6 +413,35 @@ export async function buySportsPass(): Promise<{ coins: number }> {
   if (g.coins < SPORTS_PASS_PRICE) throw buyError("not enough coins");
   g.coins -= SPORTS_PASS_PRICE;
   g.purchases.push(`unlock:${SPORTS_PASS_ID}`);
+  writeGuest(g);
+  useWallet.getState().set(g.coins);
+  return { coins: g.coins };
+}
+
+/** Do you own Zero City's Riviera DLC? */
+export async function zeroCityDlcOwned(): Promise<boolean> {
+  const auth = signedInClient();
+  if (!auth) return readGuest().purchases.includes(`unlock:${ZERO_CITY_DLC_ID}`);
+  const { data, error } = await (auth.supabase as unknown as { rpc: (f: string) => PromiseLike<{ data: unknown; error: { message: string } | null }> }).rpc("zero_city_dlc_owned");
+  if (error) throw new Error(error.message);
+  return data === true;
+}
+
+/** Buy Zero City's Riviera DLC for 50 coins. */
+export async function buyZeroCityDlc(): Promise<{ coins: number }> {
+  const auth = signedInClient();
+  if (auth) {
+    const { data, error } = await (auth.supabase as unknown as { rpc: (f: string) => PromiseLike<{ data: unknown; error: { message: string } | null }> }).rpc("buy_zero_city_dlc");
+    if (error) throw buyError(error.message);
+    const r = data as { coins: number };
+    useWallet.getState().set(r.coins);
+    return r;
+  }
+  const g = readGuest();
+  if (g.purchases.includes(`unlock:${ZERO_CITY_DLC_ID}`)) throw buyError("already owned");
+  if (g.coins < ZERO_CITY_DLC_PRICE) throw buyError("not enough coins");
+  g.coins -= ZERO_CITY_DLC_PRICE;
+  g.purchases.push(`unlock:${ZERO_CITY_DLC_ID}`);
   writeGuest(g);
   useWallet.getState().set(g.coins);
   return { coins: g.coins };

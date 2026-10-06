@@ -67,11 +67,18 @@ const paths: Record<string, string> = {
   hall: "M3 21h18M4 10h16M12 3l9 5H3zM6 10v8M10 10v8M14 10v8M18 10v8",
   vote: "M4 13h16v8H4zM8 13V4h8v9M10 8l1.5 1.5L14 7",
   mega: "M3 10v4h3l7 4V6l-7 4zM17 9a4 4 0 0 1 0 6",
+  cone: "M9 4h6l4 15H5zM7.5 10h9M6.3 15h11.4M3 19h18",
+  repair: "M14.7 6.3a4 4 0 0 0-5.4 5.2L3 17.8 6.2 21l6.3-6.3a4 4 0 0 0 5.2-5.4l-2.6 2.6-2.4-.6-.6-2.4z",
   hospital: "M4 21V6h16v15M10 10h4M12 8v4M9 21v-5h6v5M2 21h20",
   museum: "M3 21h18M5 18h14M12 3l9 5H3zM6 9v9M10 9v9M14 9v9M18 9v9",
   university: "M2 9l10-5 10 5-10 5zM6 11v5c0 2 3 3 6 3s6-1 6-3v-5M21 9v6",
   stadium: "M2 12c0-4 4.5-7 10-7s10 3 10 7-4.5 7-10 7S2 16 2 12zM7 12c0-2 2.2-3.5 5-3.5s5 1.5 5 3.5-2.2 3.5-5 3.5S7 14 7 12z",
   landmark: "M10 21l1-14h2l1 14M12 3v4M8 21h8M9 13h6",
+  marina: "M12 3v13M12 4l6 9h-6M4 16h16l-2 4H6zM2 21c2 0 2-1 4-1s2 1 4 1 2-1 4-1 2 1 4 1 2-1 4-1",
+  lighthouse: "M9 21l1.5-13h3L15 21M8 8h8M10 8V5l2-2 2 2v3M4 5l4 2M20 5l-4 2M6 21h12",
+  casino: "M4 4h16v16H4zM8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01",
+  resort: "M3 21h18M5 21V9l7-5 7 5v12M9 13h2M13 13h2M9 17h2M13 17h2",
+  sun: "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4",
 };
 
 export function Icon({ name, size = 22, className, style }: { name: string; size?: number; className?: string; style?: React.CSSProperties }) {

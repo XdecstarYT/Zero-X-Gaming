@@ -2,7 +2,7 @@ import { CELL, CELLS, UNDO_LIMIT, WATER_LEVEL } from "../config";
 import { cumulative, project, sampleAt, type P } from "../core/geom";
 import type { SimSave, SimWorld } from "../sim/sim";
 import { LotStore, Occupancy, rectCells, sideNormal, type Lot, type PaintOpts, type ServiceKind } from "./lots";
-import { MAPS, gatewayPath, generateTerrain, generateTrees, mapById, type MapDef } from "./maps";
+import { BASE_MAPS, gatewayPath, generateTerrain, generateTrees, mapById, type MapDef } from "./maps";
 import { halfWidth, ROAD_TYPES, RoadGraph, type REdge, type RoadTypeId } from "./roads";
 import { Terrain } from "./terrain";
 
@@ -965,4 +965,4 @@ function decodeF32(s: string) {
   return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4).slice();
 }
 
-export const ALL_MAP_IDS = MAPS.map((m) => m.id);
+export const ALL_MAP_IDS = BASE_MAPS.map((m) => m.id);

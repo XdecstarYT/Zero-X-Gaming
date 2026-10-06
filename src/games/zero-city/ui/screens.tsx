@@ -10,6 +10,7 @@ import { useGame, useNum, useT, useUI } from "./hooks";
 import { Icon } from "./Icons";
 import { Logo, Mark } from "./Mark";
 import type { GameMode } from "../store";
+import { ZERO_CITY_DLC_PRICE } from "@/lib/economy";
 
 // ---------------------------------------------------------------- loading
 
@@ -44,6 +45,7 @@ export function MainMenu() {
   const num = useNum();
   const lang = useUI((s) => s.lang);
   const saves = useUI((s) => s.saves);
+  const dlcOwned = useUI((s) => s.dlc.owned);
   const last = saves[0];
   const latest = UPDATE_LOG[0];
   const open = (o: "settings" | "load" | "log" | "credits") => {
@@ -85,6 +87,7 @@ export function MainMenu() {
             )}
             <MenuRow icon="plus" title={t("newCity")} hint={t("pickMap")} onClick={() => g.store.setState({ screen: "maps" })} testId="zc-new" />
             <MenuRow icon="folder" title={t("loadCity")} hint={hint} onClick={() => open("load")} testId="zc-load" />
+            <MenuRow icon="sun" title={t("dlc.name")} pill={dlcOwned ? t("dlc.owned") : t("dlc.price", { n: ZERO_CITY_DLC_PRICE })} onClick={() => g.openDlc()} testId="zc-dlc" />
             <div className="my-2 h-px bg-white/10" />
             <MenuRow icon="gear" title={t("settings")} onClick={() => open("settings")} testId="zc-settings" />
             <MenuRow icon="log" title={t("updateLog")} pill={t("newPill", { v: VERSION })} onClick={() => open("log")} testId="zc-log" />
@@ -173,6 +176,8 @@ export function MapSelect() {
   const def = MAPS.find((m) => m.id === sel)!;
   const [name, setName] = useState("");
   const newMode = useUI((s) => s.newMode);
+  const dlcOwned = useUI((s) => s.dlc.owned);
+  const locked = !!def.dlc && !dlcOwned;
   const big = useThumb(def, 320);
   const levels: StringKey[] = ["level.0", "level.1", "level.2"];
   const res: [StringKey, string][] = [
@@ -221,6 +226,11 @@ export function MapSelect() {
               <div className="flex items-center gap-2">
                 <h3 className="zc-h flex-1 text-[1.35em]">{t(`map.${def.id}` as StringKey)}</h3>
                 <span className="zc-pill bg-white/12">{t(def.tag)}</span>
+                {def.dlc && (
+                  <span className="zc-pill" style={{ background: "var(--zc-accent)", color: "var(--zc-ink)" }}>
+                    {t("dlc.short")}
+                  </span>
+                )}
               </div>
               <p className="text-[0.92em] opacity-80">{t(`desc.${def.id}` as StringKey)}</p>
               <p className="text-[0.9em]">
@@ -273,11 +283,12 @@ export function MapSelect() {
                 onClick={() => {
                   g.audio.unlock();
                   g.audio.click();
-                  void g.newCity(def.id, name.trim(), newMode);
+                  if (locked) g.openDlc();
+                  else void g.newCity(def.id, name.trim(), newMode);
                 }}
                 data-testid="zc-start"
               >
-                {t("start")}
+                {locked ? t("dlc.unlockN", { n: ZERO_CITY_DLC_PRICE }) : t("start")}
               </button>
             </aside>
           </div>
@@ -289,6 +300,7 @@ export function MapSelect() {
 
 function MapCard({ def, selected, onClick }: { def: MapDef; selected: boolean; onClick: () => void }) {
   const t = useT();
+  const owned = useUI((s) => s.dlc.owned);
   const src = useThumb(def, 160);
   return (
     <button
@@ -301,6 +313,11 @@ function MapCard({ def, selected, onClick }: { def: MapDef; selected: boolean; o
     >
       <div className="aspect-square overflow-hidden rounded-[10px] bg-black/30">{src && <img src={src} alt="" className="h-full w-full object-cover" />}</div>
       <p className="mt-1.5 truncate text-[0.9em] font-bold">{t(`map.${def.id}` as StringKey)}</p>
+      {def.dlc && (
+        <span className="zc-pill absolute start-3 top-3 text-[0.7em]" style={{ background: "var(--zc-accent)", color: "var(--zc-ink)" }} data-testid={`zc-dlcbadge-${def.id}`}>
+          {owned ? t("dlc.short") : `🔒 ${t("dlc.short")}`}
+        </span>
+      )}
       {selected && (
         <span className="absolute end-3 top-3 grid h-7 w-7 place-items-center rounded-full" style={{ background: "var(--zc-accent)", color: "var(--zc-ink)" }}>
           <Icon name="check" size={16} />
@@ -507,6 +524,75 @@ export function LogSheet() {
         ))}
       </ol>
     </Sheet>
+  );
+}
+
+export function DlcSheet() {
+  const g = useGame();
+  const t = useT();
+  const dlc = useUI((s) => s.dlc);
+  const close = () => g.store.setState((s) => ({ overlay: s.overlayFrom, overlayFrom: null }));
+  const maps = MAPS.filter((m) => m.dlc);
+  const features: [string, StringKey, StringKey][] = [
+    ["land", "dlc.f.maps", "dlc.f.mapsB"],
+    ["marina", "dlc.f.landmarks", "dlc.f.landmarksB"],
+    ["resort", "dlc.f.look", "dlc.f.lookB"],
+    ["star", "dlc.f.tourism", "dlc.f.tourismB"],
+  ];
+  return (
+    <Sheet title={t("dlc.name")} onClose={close} chip={dlc.owned ? <span className="zc-pill bg-[var(--zc-on)] text-[var(--zc-ink)]">{t("dlc.owned")}</span> : undefined}>
+      <div className="flex flex-col gap-4" data-testid="zc-dlcsheet">
+        <div className="relative overflow-hidden rounded-[var(--zc-rs)] p-5" style={{ background: "linear-gradient(135deg,#ff9a5a 0%,#ff5e7e 45%,#2fb7d6 100%)", color: "#14121c" }}>
+          <p className="zc-label opacity-80">{t("dlc.kicker")}</p>
+          <p className="zc-h mt-1 text-[1.8em] leading-tight">{t("dlc.name")}</p>
+          <p className="mt-2 max-w-lg font-semibold">{t("dlc.pitch")}</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {maps.map((m) => (
+            <DlcMap key={m.id} def={m} />
+          ))}
+        </div>
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {features.map(([icon, title, body]) => (
+            <li key={title} className="flex gap-3 rounded-[var(--zc-rs)] border border-white/10 bg-white/5 p-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-white/8">
+                <Icon name={icon} size={20} />
+              </span>
+              <span>
+                <span className="block font-bold">{t(title)}</span>
+                <span className="block text-[0.88em] opacity-75">{t(body)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        {dlc.error !== null && (
+          <p className="rounded-[var(--zc-rs)] p-3 font-semibold" style={{ background: "color-mix(in srgb, var(--zc-off) 20%, transparent)" }} role="alert" data-testid="zc-dlc-error">
+            {dlc.error || t("dlc.failed")}
+          </p>
+        )}
+        {dlc.owned ? (
+          <button type="button" className="zc-btn zc-on min-h-[52px] font-black uppercase tracking-[0.12em]" onClick={() => g.store.setState({ overlay: null, overlayFrom: null, screen: g.store.getState().screen === "game" ? "game" : "maps" })} data-testid="zc-dlc-play">
+            {t("dlc.play")}
+          </button>
+        ) : (
+          <button type="button" className="zc-btn zc-on min-h-[52px] font-black uppercase tracking-[0.12em]" disabled={dlc.busy} onClick={() => void g.buyDlc()} data-testid="zc-dlc-buy">
+            {dlc.busy ? t("dlc.buying") : t("dlc.buyN", { n: ZERO_CITY_DLC_PRICE })}
+          </button>
+        )}
+        <p className="text-center text-[0.8em] opacity-60">{t("dlc.fine")}</p>
+      </div>
+    </Sheet>
+  );
+}
+
+function DlcMap({ def }: { def: MapDef }) {
+  const t = useT();
+  const src = useThumb(def, 160);
+  return (
+    <div className="overflow-hidden rounded-[var(--zc-rs)] border border-white/10 bg-black/20 p-1.5">
+      <div className="aspect-square overflow-hidden rounded-[8px] bg-black/30">{src && <img src={src} alt="" className="h-full w-full object-cover" />}</div>
+      <p className="mt-1 truncate text-[0.82em] font-bold">{t(`map.${def.id}` as StringKey)}</p>
+    </div>
   );
 }
 

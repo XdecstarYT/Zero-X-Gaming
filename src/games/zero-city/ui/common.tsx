@@ -106,11 +106,15 @@ export function Slider({ value, onChange, label, min = 0, max = 100, testId, suf
   );
 }
 
-export function Segmented<T extends string>({ options, value, onChange, label, testId }: { options: { id: T; label: string }[]; value: T; onChange: (v: T) => void; label: string; testId?: string }) {
+// The theme's .zc-btn / .zc-label rules outrank utility classes, so the compact look is inline.
+const FIT = { minWidth: "fit-content", padding: "0 0.5em", letterSpacing: "0.05em" };
+
+/** `fit` keeps every label whole (wrapping to a second row if needed) for longer option lists. */
+export function Segmented<T extends string>({ options, value, onChange, label, testId, fit = false }: { options: { id: T; label: string }[]; value: T; onChange: (v: T) => void; label: string; testId?: string; fit?: boolean }) {
   return (
     <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1 rounded-[var(--zc-rs)] border border-white/10 bg-black/25 p-1" data-testid={testId}>
       {options.map((o) => (
-        <button key={o.id} type="button" role="radio" aria-checked={o.id === value} onClick={() => onChange(o.id)} className={`zc-btn zc-label min-w-0 flex-1 border-0 px-2 text-[0.68em] ${o.id === value ? "zc-on" : "bg-transparent"}`} data-testid={testId ? `${testId}-${o.id}` : undefined}>
+        <button key={o.id} type="button" role="radio" aria-checked={o.id === value} onClick={() => onChange(o.id)} className={`zc-btn zc-label min-w-0 flex-1 border-0 px-2 text-[0.68em] ${o.id === value ? "zc-on" : "bg-transparent"}`} style={fit ? FIT : undefined} data-testid={testId ? `${testId}-${o.id}` : undefined}>
           {o.label}
         </button>
       ))}

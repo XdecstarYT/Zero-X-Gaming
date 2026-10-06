@@ -520,6 +520,12 @@ export class Tools {
       this.upgradeAt(p);
       return;
     }
+    if (mode === "repair") {
+      this.dragging = true;
+      this.upgradeSeen.clear();
+      this.repairAt(p);
+      return;
+    }
     void e;
   }
 
@@ -534,6 +540,8 @@ export class Tools {
       return;
     }
     if (mode === "upgrade" && this.dragging) return this.upgradeAt(p);
+    if (mode === "repair" && this.dragging) return this.repairAt(p);
+    if (mode === "repair") return this.repairHover(p);
     if (mode === "lanes" || mode === "oneway" || mode === "upgrade") return this.hoverEdge(p);
     if (mode === "roundabout") {
       if (this.pts.length === 1) this.showRoadGhost(this.roundaboutPts(this.pts[0], p).flat(), true);
@@ -559,7 +567,7 @@ export class Tools {
       return;
     }
     this.dragging = false;
-    if (mode === "upgrade") {
+    if (mode === "upgrade" || mode === "repair") {
       this.upgradeSeen.clear();
       return;
     }
@@ -761,6 +769,27 @@ export class Tools {
     const scr = this.g.toScreen(new THREE.Vector3(near.x, p.y, near.z));
     if (scr) this.g.store.setState({ cursorLabel: { x: scr.x, y: scr.y, text: `${e.name} · ${this.g.t(ROAD_TYPES[e.type].label)} · ${e.lanesF}+${e.lanesB}` } });
     return near;
+  }
+
+  /** Hovering with Repair: the road's condition and what resurfacing it costs. */
+  private repairHover(p: V3) {
+    const near = this.hoverEdge(p);
+    if (!near) return null;
+    const e = near.edge;
+    const r = this.g.roadCondition(e.id);
+    const cost = this.g.repairCost(e.id);
+    const state = r && r.works > 0 ? this.g.t("rw.underWay") : this.g.t("rw.condition", { n: Math.round((r?.c ?? 1) * 100) });
+    const scr = this.g.toScreen(new THREE.Vector3(near.x, p.y, near.z));
+    if (scr) this.g.store.setState({ cursorLabel: { x: scr.x, y: scr.y, text: `${e.name} · ${state}${cost ? ` · ${this.g.money(cost)}` : ""}`, bad: !!r && r.c < 0.35 } });
+    return near;
+  }
+
+  /** Order roadworks on the road under the pointer (once per drag per road). */
+  private repairAt(p: V3) {
+    const near = this.repairHover(p);
+    if (!near || this.upgradeSeen.has(near.edge.id)) return;
+    this.upgradeSeen.add(near.edge.id);
+    if (this.g.repairRoads([near.edge.id])) this.g.toast(this.g.t("rw.ordered", { road: near.edge.name }));
   }
 
   private upgradeAt(p: V3) {

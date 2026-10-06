@@ -30,7 +30,15 @@ const HOUSE = ["#efe6d0", "#d9c9a8", "#c9d6df", "#e8d5c4", "#b7c4a6", "#f2e8d8"]
  * The modular kit: base, middle, top and props, picked from the lot's seed so
  * no two blocks match. `density` (0–1) thins out optional props.
  */
-export function buildingParts(zone: Zone, tier: number, w: number, d: number, seed: number, density: number, res: number[]): { parts: Part[]; spec: ReturnType<typeof buildingSpec> } {
+/** Building palettes: the base game's, and the Riviera DLC's whitewash and terracotta. */
+const LOOKS = {
+  base: { brick: W.brick, cream: W.cream, roofTile: W.roofTile },
+  riviera: { brick: ["#efe2cc", "#e8c79c", "#f2d3a6", "#e9b9a0"], cream: ["#fbf7ef", "#f4e9d6", "#efe1c8"], roofTile: ["#c4572f", "#b5482a", "#cf6a3c"] },
+};
+export type Look = keyof typeof LOOKS;
+
+export function buildingParts(zone: Zone, tier: number, w: number, d: number, seed: number, density: number, res: number[], look: Look = "base"): { parts: Part[]; spec: ReturnType<typeof buildingSpec> } {
+  const pal = LOOKS[look];
   const spec = buildingSpec(zone, tier, w, d, seed);
   const r = rng(seed);
   const P: Part[] = [];
@@ -39,8 +47,8 @@ export function buildingParts(zone: Zone, tier: number, w: number, d: number, se
   const front = -d / 2;
   const frontAt = (depth: number, setback: number) => front + setback + depth / 2;
 
-  const brick = r.pick(W.brick);
-  const cream = r.pick(W.cream);
+  const brick = r.pick(pal.brick);
+  const cream = r.pick(pal.cream);
   const grey = r.pick(W.grey);
   const roofEquip = (cx: number, cz: number, top: number, bw: number, bd: number, n = 3) => {
     for (let i = 0; i < n; i++) {
@@ -103,7 +111,7 @@ export function buildingParts(zone: Zone, tier: number, w: number, d: number, se
       const c = r.pick(HOUSE);
       plinth(0, cz, bw, bd);
       box("facade", 0, 0, cz, bw, H, bd, c);
-      const roof = r.pick(W.roofTile);
+      const roof = r.pick(pal.roofTile);
       const alongX = r.next() < 0.5;
       P.push({ k: "prism", x: 0, y: H + 1.6, z: cz, sx: alongX ? bw + 0.8 : bd + 0.8, sy: 3.2, sz: alongX ? bd + 0.8 : bw + 0.8, ry: alongX ? 0 : Math.PI / 2, c: roof });
       if (prop()) box("box", bw / 3, H, cz + bd / 5, 0.8, 2.6, 0.8, "#8a5a44");
@@ -335,6 +343,72 @@ export function serviceParts(kind: ServiceKind, w: number, d: number, seed: numb
       box("box", 6, 0.04, d / 2 - 9, 13, 0.04, 0.2, "#ffffff");
       box("metal", -w / 2 + 3, 0, front + 1.5, 0.12, 7, 0.12, "#d0d4d8");
       box("glow", -w / 2 + 3.6, 6, front + 1.5, 1.2, 0.8, 0.05, "#22e5ff");
+      break;
+    }
+    case "depot": {
+      // A highways depot: a grey shed with orange doors, a salt dome and two works trucks.
+      box("dark", 0, -0.1, 0, w - 1, 0.15, d - 1, "#6b6e72");
+      plinth(w * 0.55, d * 0.5, -d / 8);
+      box("facade", -w / 8, 0, -d / 8, w * 0.55, 7, d * 0.5, "#8c939b");
+      for (let i = 0; i < 3; i++) box("box", -w / 8 - w * 0.17 + i * w * 0.17, 0, -d / 8 - d * 0.25 - 0.05, w * 0.13, 4.5, 0.2, "#f28c28");
+      box("cone", w / 3, 0, d / 4, 9, 6, 9, "#d9d4c7");
+      for (let i = 0; i < 2; i++) {
+        box("box", -w / 4 + i * 6, 0.4, d / 3, 2.4, 2.2, 5.5, "#f28c28");
+        box("glow", -w / 4 + i * 6, 2.7, d / 3 - 1.2, 1.6, 0.25, 0.4, "#ffb020");
+      }
+      break;
+    }
+    case "marina": {
+      // Jetties into the water, moored boats, a harbour office.
+      box("dark", 0, -0.1, -d / 4, w - 2, 0.15, d / 2 - 2, "#b9b2a4");
+      box("facade", -w / 3, 0, -d / 4, 10, 5, 7, "#f4efe6");
+      box("box", -w / 3, 5, -d / 4, 10.4, 0.5, 7.4, "#2e7fb8");
+      for (let i = 0; i < 4; i++) {
+        const x = -w / 2 + 8 + i * ((w - 14) / 3);
+        box("box", x, -0.2, d / 8, 1.6, 0.4, d * 0.7, "#8a6a48");
+        for (const sx of [-1, 1]) {
+          box("box", x + sx * 2.2, -0.4, d / 8 + (sx > 0 ? 3 : -2), 1.6, 0.8, 5, i % 2 ? "#f4f4f2" : "#1f4e79");
+          box("cyl", x + sx * 2.2, 0.4, d / 8 + (sx > 0 ? 3 : -2), 0.12, 6, 0.12, "#d9d9d9");
+        }
+      }
+      box("glow", -w / 3, 3.6, -d / 4 - 3.55, 4, 0.6, 0.1, "#7dd3fc");
+      break;
+    }
+    case "lighthouse": {
+      // A striped tower with a glowing lamp room on a rocky base.
+      box("box", 0, -0.4, 0, w - 4, 1.4, d - 4, "#8d877c");
+      for (let i = 0; i < 5; i++) box("cyl", 0, 1 + i * 3.4, 0, 4.2 - i * 0.3, 3.4, 4.2 - i * 0.3, i % 2 ? "#d93a2b" : "#f6f3ec");
+      box("box", 0, 18, 0, 3.6, 0.4, 3.6, "#2b2b2b");
+      box("glow", 0, 18.4, 0, 2.4, 2, 2.4, "#fff2b0");
+      box("cone", 0, 20.4, 0, 3, 1.8, 3, "#2b2b2b");
+      box("facade", w / 3, 1, d / 4, 5, 3, 5, "#f6f3ec");
+      break;
+    }
+    case "casino": {
+      // A glittering palace: gold fascia, a glass dome and a fountain out front.
+      plinth(w - 4, d - 8, 2);
+      box("facade", 0, 0, 2, w - 4, 3 * FLOOR, d - 8, "#f3e7c9");
+      box("glow", 0, 3 * FLOOR - 1.6, front + 4.1, w - 8, 1.2, 0.2, "#ffcc4d");
+      box("box", 0, 3 * FLOOR, 2, w - 3.5, 0.6, d - 7.5, "#c9a227");
+      box("cyl", 0, 3 * FLOOR + 0.6, 2, 12, 5, 12, "#7fb7d8");
+      box("cone", 0, 3 * FLOOR + 5.6, 2, 12, 4, 12, "#c9a227");
+      box("cyl", 0, 0, front + 1.6, 5, 0.6, 5, "#d8d2c4");
+      box("glow", 0, 0.6, front + 1.6, 3.8, 0.12, 3.8, "#7dd3fc");
+      for (const sx of [-1, 1]) box("glow", sx * (w / 2 - 4), 0, front + 2, 0.5, 9, 0.5, "#ff5ac8");
+      break;
+    }
+    case "resort": {
+      // A stepped white hotel with balconies, a pool and palms.
+      plinth(w - 6, d / 2, -d / 6);
+      for (let i = 0; i < 4; i++) box("facade", 0, i * 2 * FLOOR, -d / 6 + i * 1.6, w - 8 - i * 6, 2 * FLOOR, d / 2 - i * 3.2, "#fbf7ef");
+      box("box", 0, 8 * FLOOR, -d / 6 + 4.8, w - 32, 0.5, d / 2 - 12, "#c4572f");
+      box("box", 0, 0.02, d / 3, w * 0.5, 0.1, d / 4, "#e9dcc3");
+      box("glow", 0, 0.08, d / 3, w * 0.4, 0.06, d / 6, "#38bdf8");
+      for (let i = 0; i < 4; i++) {
+        const x = -w / 2 + 6 + i * ((w - 12) / 3);
+        box("cyl", x, 0, d / 2 - 3, 0.35, 6, 0.35, "#8a6a48");
+        box("crown", x, 5.5, d / 2 - 3, 4, 1.4, 4, "#3f8f3a");
+      }
       break;
     }
     case "hospital": {

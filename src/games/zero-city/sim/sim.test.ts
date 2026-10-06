@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { City } from "../world/city";
 import type { ServiceKind } from "../world/lots";
 import { LANDMARK_UNLOCK, landmarkState, MILESTONES, milestoneAt, milestoneProgress } from "../world/milestones";
-import { Sim } from "./sim";
+import { roadSpeedFactor, Sim } from "./sim";
 
 /** A town on Broad Plains: an avenue off the highway with a grid of streets, zoned and serviced. */
 function town(rows = 3, cols = 5, spacing = 96, extra: ServiceKind[] = []) {
@@ -122,6 +122,10 @@ describe("the Metropolis update", () => {
     expect(landmarkState("hospital", 500, new Set())).toBe("locked");
     expect(landmarkState("hospital", MILESTONES[LANDMARK_UNLOCK.hospital].pop, new Set())).toBe("ready");
     expect(landmarkState("hospital", 100_000, new Set(["hospital"]))).toBe("built");
+    // Riviera landmarks need the DLC, then they're ready from day one.
+    expect(landmarkState("marina", 0, new Set())).toBe("dlc");
+    expect(landmarkState("marina", 0, new Set(), true)).toBe("ready");
+    expect(landmarkState("casino", 0, new Set(["casino"]), true)).toBe("built");
   });
 
   it("an uncovered building that catches fire burns down; a fire station puts fires out", () => {
@@ -164,5 +168,56 @@ describe("the Metropolis update", () => {
     // The hospital counts as clinic cover far beyond a clinic's reach.
     const clinicCovered = [...sim.coverage().values()].filter((m) => m & 4).length;
     expect(clinicCovered).toBeGreaterThan(sim.coverage().size * 0.5);
+  }, 60_000);
+});
+
+describe("the Roadworks update", () => {
+  it("traffic wears roads; worn roads slow cars; Repair orders works that close and then renew them", () => {
+    const c = town();
+    const sim = grown(c, 1200);
+    const worn = [...sim.roads.values()].filter((r) => r.c < 1);
+    expect(worn.length).toBeGreaterThan(5);
+    expect(sim.stats.roadCondition).toBeLessThan(1);
+    expect(roadSpeedFactor({ c: 1, works: 0 })).toBe(1);
+    expect(roadSpeedFactor({ c: 0.2, works: 0 })).toBeLessThan(0.85);
+    expect(roadSpeedFactor({ c: 1, works: 30 })).toBeLessThan(0.5);
+
+    // Wear one road right down and repair it by hand.
+    const id = [...c.roads.edges.values()].find((e) => e.type === "street" && sim.roads.has(e.id))!.id;
+    const r = sim.roads.get(id)!;
+    r.c = 0.2;
+    expect(sim.repair([id])).toEqual([id]);
+    expect(sim.repair([id])).toEqual([]);
+    expect(r.works).toBeGreaterThan(0);
+    sim.drainEvents();
+    for (let i = 0; i < 2000 && r.works > 0; i++) sim.step(0.1, 3);
+    expect(r.works).toBe(0);
+    expect(r.c).toBeGreaterThan(0.95);
+    expect(sim.drainEvents().map((e) => e.key)).toContain("ev.roadDone");
+
+    // Saved and loaded with the city.
+    r.c = 0.5;
+    const back = new Sim();
+    back.load(sim.save());
+    back.setWorld(c.toSim());
+    expect(back.roads.get(id)?.c).toBeCloseTo(0.5);
+  }, 60_000);
+
+  it("a maintenance depot sends crews to worn roads on its own, and road fund laws slow wear", () => {
+    const c = town(3, 5, 96, ["depot"]);
+    const sim = grown(c, 300);
+    for (const r of sim.roads.values()) r.c = 0.3;
+    sim.step(0.1, 3);
+    for (let i = 0; i < 20; i++) sim.step(0.1, 3);
+    const works = [...sim.roads.values()].filter((r) => r.works > 0).length;
+    expect(works).toBeGreaterThan(0);
+    expect(works).toBeLessThanOrEqual(2);
+
+    const a = grown(town(), 900);
+    const slow = new Sim();
+    slow.settings = { ...slow.settings, fires: false, policy: { ...(slow.settings.policy ?? {}), wearMul: 0.2 } as never };
+    slow.setWorld(town().toSim());
+    for (let i = 0; i < 900; i++) slow.step(0.1, 3);
+    expect(slow.stats.roadCondition).toBeGreaterThan(a.stats.roadCondition);
   }, 60_000);
 });

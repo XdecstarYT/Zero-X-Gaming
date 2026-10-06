@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { rng } from "../core/rng";
 import { WATER_LEVEL } from "../config";
 import { cumulative, sampleAt } from "../core/geom";
 import { world as W } from "../theme";
@@ -56,6 +57,12 @@ class Buf {
 }
 type V = [number, number, number];
 const WHITE = new THREE.Color("#ffffff");
+const CONE = new THREE.Color("#ff7a1a");
+const BARRIER = new THREE.Color("#e8452c");
+const FRESH = new THREE.Color("#141416");
+const CRACK = new THREE.Color("#1d1d1f");
+const HOLE = new THREE.Color("#121213");
+const PATCH = new THREE.Color("#3a3a3d");
 /** How far a road's outer face reaches down (hidden underground where the land is flush). */
 const WALL_DEPTH = 9;
 const LINE_W = new THREE.Color(W.lineWhite);
@@ -87,6 +94,8 @@ export class RoadView {
   private signs: THREE.InstancedMesh | null = null;
   private propsDirty = true;
   shadows = true;
+  /** A road's condition (1 new … 0 broken) and whether roadworks are on, from the sim. */
+  roadState: (edgeId: number) => { c: number; works: number } | undefined = () => undefined;
 
   constructor(private city: () => City) {
     const asphalt = asphaltTexture();
@@ -308,6 +317,8 @@ export class RoadView {
       }
       if (deg === 1) this.cap(asphalt, walk, curb, e, ys, end, half, t.sidewalk);
     }
+    // Wear and roadworks.
+    this.wear(lines, concrete, e, ys, s0, s1, offs);
     // Bridges.
     this.bridge(concrete, e, ys, s0, s1, half + t.sidewalk);
 
@@ -329,6 +340,74 @@ export class RoadView {
     add(concrete, this.mats.concrete, true);
     g.userData.edge = e.id;
     return g;
+  }
+
+  /**
+   * A worn road gets cracks, then patches and potholes; a road under works gets its outer
+   * lane coned off with barriers at each end.
+   */
+  private wear(lines: Buf, concrete: Buf, e: REdge, ys: Float32Array, s0: number, s1: number, offs: (dir: 1 | -1, lane: number) => number) {
+    const st = this.roadState(e.id);
+    if (!st) return;
+    const r = rng(e.id * 7919 + 13);
+    const half = carriageway(e) / 2;
+    const len = s1 - s0;
+    if (st.works > 0) {
+      const dir: 1 | -1 = e.lanesF > 0 ? 1 : -1;
+      const n = dir === 1 ? e.lanesF : e.lanesB;
+      const lane = offs(dir, Math.max(0, n - 1));
+      const inner = lane - (dir * LANE) / 2;
+      const a = s0 + 4;
+      const b = s1 - 4;
+      if (b - a < 6) return;
+      // Cones along the closed lane's inner edge, barriers across both ends.
+      for (let s = a; s <= b; s += 5) this.cone(concrete, e, ys, s, inner);
+      for (const s of [a - 1, b + 1]) {
+        const f = this.frames(e, ys, s, s + 0.4, 1);
+        this.band(concrete, f, Math.min(inner, lane + (dir * LANE) / 2), Math.max(inner, lane + (dir * LANE) / 2), 0.9, BARRIER);
+        this.band(concrete, f, Math.min(inner, lane + (dir * LANE) / 2), Math.max(inner, lane + (dir * LANE) / 2), 1.0, WHITE);
+      }
+      // Fresh black tarmac where they've dug up.
+      this.band(lines, this.frames(e, ys, a + 2, Math.min(b - 2, a + 2 + len * 0.4), 2), Math.min(lane - LANE / 2 + 0.3, lane + LANE / 2 - 0.3), Math.max(lane - LANE / 2 + 0.3, lane + LANE / 2 - 0.3), 0.009, FRESH);
+      return;
+    }
+    if (st.c >= 0.75) return;
+    // Cracks first; patches and potholes as it gets worse.
+    const cracks = Math.floor(((0.75 - st.c) * len) / 9);
+    for (let i = 0; i < cracks; i++) {
+      const s = s0 + r.range(2, Math.max(3, len - 2));
+      const o = r.range(-half + 0.6, half - 0.6);
+      this.band(lines, this.frames(e, ys, s, Math.min(s1, s + r.range(1.5, 4)), 1), o - 0.04, o + 0.04, 0.0105, CRACK);
+    }
+    if (st.c >= 0.5) return;
+    const holes = Math.floor(((0.5 - st.c) * len) / 7) + 1;
+    for (let i = 0; i < holes; i++) {
+      const s = s0 + r.range(2, Math.max(3, len - 2));
+      const o = r.range(-half + 0.8, half - 0.8);
+      const sz = r.range(0.5, 1.3);
+      this.band(lines, this.frames(e, ys, s, Math.min(s1, s + sz), 1), o - sz / 2, o + sz / 2, 0.0105, r.next() < 0.5 ? HOLE : PATCH);
+    }
+  }
+
+  /** A traffic cone at arc length s, lateral offset o. */
+  private cone(buf: Buf, e: REdge, ys: Float32Array, s: number, o: number) {
+    const f = this.frames(e, ys, s, s + 0.01, 1)[0];
+    const cx = f.x - f.tz * o;
+    const cz = f.z + f.tx * o;
+    const y = f.y + 0.03;
+    const r = 0.22;
+    const top: V = [cx, y + 0.75, cz];
+    const base: V[] = [
+      [cx - r, y, cz - r],
+      [cx + r, y, cz - r],
+      [cx + r, y, cz + r],
+      [cx - r, y, cz + r],
+    ];
+    for (let i = 0; i < 4; i++) buf.tri(base[i], top, base[(i + 1) % 4], CONE);
+    // The white band.
+    const k = 0.45;
+    const band = base.map((p): V => [cx + (p[0] - cx) * (1 - k), y + 0.75 * k + 0.01, cz + (p[2] - cz) * (1 - k)]);
+    for (let i = 0; i < 4; i++) buf.tri(band[i], [cx, y + 0.75 * k + 0.12, cz], band[(i + 1) % 4], WHITE);
   }
 
   private cap(asphalt: Buf, walk: Buf, curb: Buf, e: REdge, ys: Float32Array, end: "a" | "b", half: number, sw: number) {

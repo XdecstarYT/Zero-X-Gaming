@@ -11,6 +11,8 @@ export type ToSim =
   | { t: "lv"; id: number }
   | { t: "demolish"; lots: number[] }
   | { t: "ignite"; lot: number }
+  | { t: "wear"; c: number }
+  | { t: "repair"; edges: number[] }
   | { t: "stop" };
 
 export type FromSim =
@@ -25,6 +27,8 @@ export type FromSim =
       peds: Float32Array;
       fires: [number, number, number][];
       events: Sim["events"];
+      /** Road states [edge, condition, works minutes left], about once a second. */
+      roads: [number, number, number][] | null;
     }
   | { t: "saved"; id: number; save: SimSave }
   | { t: "route"; id: number; route: ReturnType<Sim["routeOf"]> }
@@ -45,7 +49,7 @@ export function createRunner(post: (m: FromSim, transfer?: Transferable[]) => vo
     const ch = sim.drainChanges();
     const cars = sim.carBuffer();
     const peds = sim.pedBuffer();
-    post({ t: "tick", minutes: sim.minutes, stats: sim.stats, notices: sim.notices, changed: ch.changed, removed: ch.removed, cars, peds, fires: sim.fireList(), events: sim.drainEvents() }, [cars.buffer, peds.buffer]);
+    post({ t: "tick", minutes: sim.minutes, stats: sim.stats, notices: sim.notices, changed: ch.changed, removed: ch.removed, cars, peds, fires: sim.fireList(), events: sim.drainEvents(), roads: sim.takeRoads() }, [cars.buffer, peds.buffer]);
   }, 1000 / TICK_HZ);
   return {
     handle(m: ToSim) {
@@ -80,6 +84,12 @@ export function createRunner(post: (m: FromSim, transfer?: Transferable[]) => vo
           break;
         case "ignite":
           sim.ignite(m.lot);
+          break;
+        case "repair":
+          sim.repair(m.edges);
+          break;
+        case "wear":
+          sim.wear(m.c);
           break;
         case "stop":
           clearInterval(timer);

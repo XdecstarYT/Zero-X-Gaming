@@ -16,6 +16,10 @@ export interface MapDef {
   /** Where the highway comes in: map edge and position along it (0–1). */
   gate: { edge: Edge; pos: number };
   shape: (u: number, v: number, n: Noise) => number;
+  /** Part of a DLC (locked until it's owned). */
+  dlc?: "riviera";
+  /** Building palette: whitewashed walls and terracotta roofs. */
+  look?: "riviera";
 }
 
 interface Noise {
@@ -203,7 +207,65 @@ export const MAPS: MapDef[] = [
       return h;
     },
   },
+  // ---------------------------------------------------------- Riviera DLC
+  {
+    id: "riviera-coast",
+    seed: 12121,
+    tag: "tag.riviera",
+    relief: "relief.rolling",
+    res: [2, 1, 1, 0],
+    gate: { edge: "W", pos: 0.3 },
+    dlc: "riviera",
+    look: "riviera",
+    shape: (u, v, n) => {
+      // Terraced hills stepping down to a long south-facing sea, with sandy coves.
+      const shore = 0.68 + 0.05 * Math.sin(u * 9) + 0.03 * fbm(n.b, u * 5, 0.3, 3);
+      const sea = ss(shore, shore + 0.07, v);
+      const hills = 4 + 30 * ss(shore, 0.05, v) * (0.5 + 0.5 * Math.max(0, fbm(n.a, u * 4, v * 4, 4) + 0.4));
+      const terraces = Math.round(hills / 4) * 4 * 0.35 + hills * 0.65;
+      const cove = 6 * gauss(u, v, 0.32, shore + 0.02, 0.05) + 6 * gauss(u, v, 0.74, shore + 0.02, 0.05);
+      return terraces * (1 - sea) - 15 * sea - cove;
+    },
+  },
+  {
+    id: "sunset-isles",
+    seed: 13131,
+    tag: "tag.isles",
+    relief: "relief.gentle",
+    res: [2, 1, 0, 0],
+    gate: { edge: "W", pos: 0.5 },
+    dlc: "riviera",
+    look: "riviera",
+    shape: (u, v, n) => {
+      // Two big islands across a narrow strait, the mainland on the west.
+      const isle = (cu: number, cv: number, r: number) => ss(r, r * 0.72, Math.hypot(u - cu, (v - cv) * 0.9) + 0.035 * fbm(n.b, u * 7, v * 7, 3));
+      const main = ss(0.24, 0.16, u);
+      const land = Math.max(main, isle(0.45, 0.42, 0.2), isle(0.78, 0.6, 0.17));
+      return -12 + land * (16 + 14 * Math.max(0, fbm(n.a, u * 5, v * 5, 4) + 0.3));
+    },
+  },
+  {
+    id: "cliffside-bay",
+    seed: 14141,
+    tag: "tag.cliffs",
+    relief: "relief.hilly",
+    res: [2, 2, 0, 1],
+    gate: { edge: "N", pos: 0.5 },
+    dlc: "riviera",
+    look: "riviera",
+    shape: (u, v, n) => {
+      // A horseshoe bay ringed by cliffs, open to the south.
+      const r = Math.hypot(u - 0.5, (v - 0.72) * 1.15);
+      const bay = ss(0.3, 0.2, r) * ss(0.45, 0.6, v);
+      const sea = Math.max(bay, ss(0.88, 0.95, v));
+      const cliffs = 10 + 28 * ss(0.2, 0.34, r) + 12 * Math.max(0, fbm(n.a, u * 5, v * 5, 4) + 0.3);
+      return cliffs * (1 - sea) - 16 * sea;
+    },
+  },
 ];
+
+/** The base game's maps (DLC maps aside). */
+export const BASE_MAPS = MAPS.filter((m) => !m.dlc);
 
 export const mapById = (id: string) => MAPS.find((m) => m.id === id) ?? MAPS[0];
 

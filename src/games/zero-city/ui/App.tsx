@@ -3,7 +3,7 @@ import { isRtl } from "../i18n";
 import { GameContext, useGame, useUI } from "./hooks";
 import { GlassDefs, canRefract, trackSheen } from "./glass";
 import { Hud } from "./hud";
-import { CreditsSheet, LoadingScreen, LoadSheet, LogSheet, MainMenu, MapSelect, PauseMenu, SettingsSheet } from "./screens";
+import { CreditsSheet, DlcSheet, LoadingScreen, LoadSheet, LogSheet, MainMenu, MapSelect, PauseMenu, SettingsSheet } from "./screens";
 import type { Game } from "../game";
 
 function Root() {
@@ -46,6 +46,7 @@ function Root() {
           {overlay === "log" && <LogSheet />}
           {overlay === "credits" && <CreditsSheet />}
           {overlay === "pause" && <PauseMenu />}
+          {overlay === "dlc" && <DlcSheet />}
           {screen === "loading" && <LoadingScreen />}
         </div>
       </div>

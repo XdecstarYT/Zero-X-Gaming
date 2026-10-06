@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { en } from "./i18n/en";
 import { formatClock, formatPlaytime, isRtl, LANGS, translate } from "./i18n";
 import { applyPreset, changeSetting, defaultSettings, matchingPreset, normaliseSettings, PRESETS } from "./settings";
-import { MAPS, gatewayPath, generateTerrain } from "./world/maps";
+import { BASE_MAPS, MAPS, gatewayPath, generateTerrain } from "./world/maps";
 import { City } from "./world/city";
 import { halfWidth } from "./world/roads";
 import { sampleAt } from "./core/geom";
@@ -53,8 +53,10 @@ describe("settings", () => {
 });
 
 describe("maps", () => {
-  it("ten maps, each the same every time, with the highway coming in to dry land", () => {
-    expect(MAPS).toHaveLength(10);
+  it("ten base maps and three Riviera maps, each the same every time, with the highway coming in to dry land", () => {
+    expect(MAPS).toHaveLength(13);
+    expect(BASE_MAPS).toHaveLength(10);
+    expect(MAPS.filter((m) => m.dlc).map((m) => m.look)).toEqual(["riviera", "riviera", "riviera"]);
     expect(MAPS[0].id).toBe("broad-plains");
     for (const m of MAPS) {
       const a = generateTerrain(m);

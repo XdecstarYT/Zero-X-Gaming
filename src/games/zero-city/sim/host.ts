@@ -108,6 +108,13 @@ export class SimHost {
   ignite(lot: number) {
     this.send({ t: "ignite", lot });
   }
+  repair(edges: number[]) {
+    this.send({ t: "repair", edges });
+  }
+  /** Test hook: age every road to this condition. */
+  wear(c: number) {
+    this.send({ t: "wear", c });
+  }
   dispose() {
     this.send({ t: "stop" });
     this.worker?.terminate();

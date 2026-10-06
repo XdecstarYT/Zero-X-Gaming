@@ -23,9 +23,9 @@ export interface Lot {
   zone: Zone;
 }
 
-export type ServiceKind = "police" | "fire" | "clinic" | "school" | "power" | "water" | "park" | "hospital" | "museum" | "university" | "stadium" | "tower";
+export type ServiceKind = "police" | "fire" | "clinic" | "school" | "power" | "water" | "park" | "depot" | "marina" | "lighthouse" | "casino" | "resort" | "hospital" | "museum" | "university" | "stadium" | "tower";
 /** The everyday civic buildings (landmarks are listed in `milestones.ts`). */
-export const SERVICE_KINDS: ServiceKind[] = ["police", "fire", "clinic", "school", "power", "water", "park"];
+export const SERVICE_KINDS: ServiceKind[] = ["police", "fire", "clinic", "school", "power", "water", "park", "depot"];
 /** Footprint (frontage × depth, metres) and coverage radius. */
 export const SERVICE_SPEC: Record<ServiceKind, { w: number; d: number; radius: number }> = {
   police: { w: 24, d: 24, radius: 340 },
@@ -35,6 +35,11 @@ export const SERVICE_SPEC: Record<ServiceKind, { w: number; d: number; radius: n
   power: { w: 40, d: 40, radius: 0 },
   water: { w: 16, d: 16, radius: 0 },
   park: { w: 28, d: 28, radius: 200 },
+  depot: { w: 32, d: 28, radius: 650 },
+  marina: { w: 48, d: 32, radius: 600 },
+  lighthouse: { w: 16, d: 16, radius: 500 },
+  casino: { w: 44, d: 36, radius: 550 },
+  resort: { w: 52, d: 40, radius: 600 },
   hospital: { w: 44, d: 40, radius: 700 },
   museum: { w: 40, d: 32, radius: 500 },
   university: { w: 60, d: 48, radius: 800 },

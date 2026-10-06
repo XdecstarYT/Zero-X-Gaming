@@ -22,9 +22,10 @@ import { TABS } from "./store";
 import { Tools } from "./tools";
 import { ALL_MAP_IDS, City, type CityJSON } from "./world/city";
 import * as Pol from "./politics/politics";
+import * as Parl from "./politics/parliament";
 import type { GameMode, HallTab } from "./store";
 import type { Lot, ServiceKind } from "./world/lots";
-import { LANDMARK_UNLOCK, LANDMARKS, landmarkState, isLandmark, MILESTONES, milestoneAt, milestoneProgress, type Landmark } from "./world/milestones";
+import { DLC_LANDMARKS, LANDMARK_UNLOCK, LANDMARKS, landmarkState, isLandmark, MILESTONES, milestoneAt, milestoneProgress, type Landmark } from "./world/milestones";
 import type { RoadTypeId } from "./world/roads";
 import { cumulative } from "./core/geom";
 import { formatNumber } from "./i18n";
@@ -63,6 +64,7 @@ class WorldViews {
     this.roads.shadows = shadows;
     this.buildings = new BuildingView((x, z) => this.city.terrain.surfaceAt(x, z));
     this.buildings.res = city.map.res;
+    this.buildings.look = city.map.look ?? "base";
     this.agents = new AgentView(() => this.city);
     this.overlays = new OverlayView(() => this.city);
     this.group.add(this.terrain.group, this.trees.group, this.roads.group, this.buildings.group, this.agents.group, this.overlays.group, this.fires.group);
@@ -121,6 +123,8 @@ export class Game {
   private overlayDirty = true;
   private overlayAt = 0;
   private lv = new Map<number, number>();
+  /** Road condition and roadworks per edge, from the sim. */
+  private roadStates = new Map<number, { c: number; works: number }>();
   /** Lot → services reaching it (bit mask from the sim), for the info views. */
   private cover = new Map<number, number>();
   private thudAt = 0;
@@ -193,6 +197,7 @@ export class Game {
     ]);
     this.visited = visited;
     set({ player, saves, achievements, bests, loading: { ...this.store.getState().loading, progress: 0.25 } });
+    void this.refreshDlc();
     await frame();
     if (!this.demo) this.demo = demoCity();
     set({ loading: { ...this.store.getState().loading, progress: 0.7 } });
@@ -230,6 +235,7 @@ export class Game {
       if (lot) city.clearTreesOnLot(lot);
     }
     this.views.trees.rebuild(city.trees, city.treeAlive, (x, z) => city.terrain.surfaceAt(x, z), this.settings.shadows !== "off");
+    this.views.roads.roadState = (id) => this.roadStates.get(id);
     this.views.roads.rebuildAll();
     for (const b of buildings) {
       const lot = city.lots.lots.get(b.lot);
@@ -255,6 +261,11 @@ export class Game {
   // ---------------------------------------------------------- new / load
 
   async newCity(mapId: string, name: string, mode: GameMode = "sandbox") {
+    // Riviera maps need the DLC.
+    if (MAPS.find((m) => m.id === mapId)?.dlc && !this.store.getState().dlc.owned) {
+      this.openDlc();
+      return;
+    }
     const set = this.store.setState;
     const label = this.t("loadingMap", { map: this.t(`map.${mapId}` as StringKey) });
     set({ screen: "loading", overlay: null, loading: { label, progress: 0.1, tip: 1 + Math.floor(Math.random() * 6) } });
@@ -450,6 +461,7 @@ export class Game {
       this.audio.thud();
     }
     v.agents.push(m.cars, m.peds, now);
+    if (m.roads) this.takeRoads(m.roads);
     v.fires.set(
       m.fires,
       (id) => city.lots.lots.get(id),
@@ -493,11 +505,47 @@ export class Game {
     const city = this.city;
     if (!city) return;
     const built = new Set<string>([...city.lots.services.values()].map((s) => s.kind));
-    const landmarks = Object.fromEntries(LANDMARKS.map((k) => [k, landmarkState(k, city.bestPop, built)])) as Record<Landmark, "locked" | "built" | "ready">;
+    const owned = this.store.getState().dlc.owned;
+    const landmarks = Object.fromEntries([...LANDMARKS, ...DLC_LANDMARKS].map((k) => [k, landmarkState(k, city.bestPop, built, owned)])) as Record<Landmark, "locked" | "built" | "ready" | "dlc">;
     const cur = this.store.getState();
     const i = milestoneAt(city.bestPop);
     const progress = Math.round(milestoneProgress(city.bestPop) * 100) / 100;
-    if (cur.milestone.i !== i || cur.milestone.progress !== progress || LANDMARKS.some((k) => cur.landmarks[k] !== landmarks[k])) this.store.setState({ milestone: { i, progress }, landmarks });
+    if (cur.milestone.i !== i || cur.milestone.progress !== progress || [...LANDMARKS, ...DLC_LANDMARKS].some((k) => cur.landmarks[k] !== landmarks[k])) this.store.setState({ milestone: { i, progress }, landmarks });
+  }
+
+  // ------------------------------------------------------------------ DLC
+
+  /** Ask the platform whether the Riviera DLC is owned. */
+  async refreshDlc() {
+    let owned = false;
+    try {
+      owned = await this.platform.dlcOwned();
+    } catch {
+      owned = false;
+    }
+    this.store.setState((s) => ({ dlc: { ...s.dlc, owned } }));
+    this.publishCityProgress();
+    return owned;
+  }
+
+  openDlc() {
+    this.audio.tick();
+    this.store.setState((s) => ({ overlay: "dlc", overlayFrom: s.overlay === "dlc" ? s.overlayFrom : s.overlay, dlc: { ...s.dlc, error: null } }));
+  }
+
+  /** Buy the Riviera DLC (50 ZX Cash on Zero X). */
+  async buyDlc() {
+    if (this.store.getState().dlc.busy) return;
+    this.store.setState((s) => ({ dlc: { ...s.dlc, busy: true, error: null } }));
+    const r = await this.platform.buyDlc();
+    const owned = r.ok || (await this.platform.dlcOwned().catch(() => false));
+    this.store.setState({ dlc: { owned, busy: false, error: owned ? null : (r.error ?? "") } });
+    if (owned) {
+      this.audio.chime();
+      this.toast(this.t("dlc.thanks"), undefined, "achievement");
+      this.publishCityProgress();
+      this.platform.track("dlc_buy", { id: "riviera" });
+    } else this.audio.error();
   }
 
   /** Can this civic building go up now? Landmarks are one each, once unlocked. */
@@ -505,6 +553,10 @@ export class Game {
     if (!isLandmark(kind)) return true;
     const st = this.store.getState().landmarks[kind];
     if (st === "ready") return true;
+    if (st === "dlc") {
+      this.openDlc();
+      return false;
+    }
     this.audio.error();
     this.toast(this.t(st === "built" ? "lm.built" : "lm.locked", { name: this.t(`svc.${kind}` as StringKey), ms: this.t(`ms.${MILESTONES[LANDMARK_UNLOCK[kind]].id}` as StringKey) }));
     return false;
@@ -542,12 +594,76 @@ export class Game {
     this.overlayDirty = true;
   }
 
+  /** New road states: redraw the roads whose look changed (worn further, works on or off). */
+  private takeRoads(list: [number, number, number][]) {
+    const look = (r: { c: number; works: number } | undefined) => (!r ? 0 : r.works > 0 ? 9 : r.c >= 0.75 ? 0 : r.c >= 0.5 ? 1 : r.c >= 0.3 ? 2 : 3);
+    const redraw = new Set<number>();
+    for (const [id, c, works] of list) {
+      const before = look(this.roadStates.get(id));
+      const r = { c, works };
+      this.roadStates.set(id, r);
+      if (look(r) !== before) redraw.add(id);
+    }
+    if (redraw.size && this.views && this.city) {
+      for (const id of redraw) if (!this.city.roads.edges.has(id)) redraw.delete(id);
+      this.views.roads.sync({ edges: redraw, removedEdges: new Set(), nodes: new Set() });
+    }
+    if (this.store.getState().tab === "land" && this.store.getState().landView === "roads") this.showRoadRibbons();
+  }
+
+  /** The road condition view: every road coloured from green (new) to red (broken), works in orange. */
+  private showRoadRibbons() {
+    const city = this.city;
+    if (!city || !this.views) return;
+    const on = this.store.getState().tab === "land" && this.store.getState().landView === "roads";
+    if (!on) return this.views.overlays.setRibbons(null);
+    const list = [...city.roads.edges.values()].map((e) => {
+      const r = this.roadStates.get(e.id);
+      const color = r && r.works > 0 ? "#ff8a1f" : rampColor(r ? r.c : 1);
+      return { pts: e.pts, ys: (s: number) => city.roadY(e.id, s), color };
+    });
+    this.views.overlays.setRibbons(list);
+  }
+
+  /** Order roadworks on these roads (the Repair tool). Mayor mode pays a contractor by the metre. */
+  repairRoads(ids: number[]) {
+    const city = this.city;
+    if (!city || !this.sim) return 0;
+    const todo = ids.filter((id) => {
+      const r = this.roadStates.get(id);
+      return city.roads.edges.has(id) && !(r && (r.works > 0 || r.c > 0.97));
+    });
+    if (!todo.length) return 0;
+    const cost = todo.reduce((n, id) => n + this.repairCost(id), 0);
+    if (!this.canAfford(cost)) return 0;
+    this.sim.repair(todo);
+    this.charge(cost);
+    for (const id of todo) this.roadStates.set(id, { c: this.roadStates.get(id)?.c ?? 1, works: 1 });
+    this.views?.roads.sync({ edges: new Set(todo), removedEdges: new Set(), nodes: new Set() });
+    this.audio.thud();
+    return todo.length;
+  }
+
+  /** What resurfacing a road costs: per metre, less with a depot (and the transport minister's skill). */
+  repairCost(id: number) {
+    const e = this.city?.roads.edges.get(id);
+    if (!e || !this.mayor) return 0;
+    const L = cumulative(e.pts)[e.pts.length / 2 - 1];
+    const depot = [...(this.city?.lots.services.values() ?? [])].some((s) => s.kind === "depot");
+    return Math.round(L * (depot ? 5 : 9) * Pol.repairDiscount(this.politics!));
+  }
+
+  roadCondition(id: number) {
+    return this.roadStates.get(id);
+  }
+
   /** The Land tab's colour for a lot, by the chosen view. */
   private landColor(l: Lot) {
     const view = this.store.getState().landView;
     const m = this.cover.get(l.id) ?? 0;
     if (view === "pollution") return m & 32 ? "#e8553d" : "#3fbf7f";
     if (view === "fire") return m & 2 ? "#3fbf7f" : "#f5a524";
+    if (view === "roads") return rampColor(this.roadStates.get(l.edge)?.c ?? 1);
     if (view === "services") {
       let n = 0;
       for (const bit of [1, 2, 4, 8, 16]) if (m & bit) n++;
@@ -556,9 +672,10 @@ export class Game {
     return rampColor(this.lv.get(l.id) ?? 0.3);
   }
 
-  setLandView(view: "value" | "services" | "pollution" | "fire") {
+  setLandView(view: "value" | "services" | "pollution" | "fire" | "roads") {
     this.store.setState({ landView: view });
     this.audio.tick();
+    this.showRoadRibbons();
     void this.refreshLandValues();
   }
 
@@ -808,7 +925,16 @@ export class Game {
         this.audio.chime();
       } else if (e.t === "campaign") this.toast(this.t("n.campaign"), this.t("campaignOn", { name: e.challenger }));
       else if (e.t === "broke") this.toast(this.t("treasury"), this.t("broke", { n: this.money(Pol.CREDIT) }));
-      else if (e.t === "election") this.electionNight(e.result);
+      else if (e.t === "election") this.electionNight(Parl.afterElection(p, e.result, stats));
+    }
+    for (const e of Parl.parlHour(p, minutes, stats)) {
+      if (e.t === "partnerLeft") {
+        this.toast(this.t("pa.left", { party: this.t(`party.${e.party}` as StringKey) }));
+        this.audio.error();
+      } else if (e.t === "scandal") {
+        this.toast(this.t("pa.scandal", { name: e.name, ministry: this.t(`min.${e.ministry}` as StringKey) }));
+        this.audio.chime();
+      }
     }
     if (JSON.stringify(Pol.simPolicy(p)) !== policyBefore) this.sim?.setSettings(this.simSettings());
     this.publishPolitics(stats);
@@ -843,8 +969,89 @@ export class Game {
         challenger: p.challenger,
         status: p.status,
         townHallReady: minutes - p.townHallAt >= 24 * 60,
+        parl: {
+          seats: { ...p.parl.seats },
+          coalition: [...p.parl.coalition],
+          relations: { ...p.parl.relations },
+          capital: p.parl.capital,
+          gov: Parl.govSeats(p),
+          ministers: { ...p.parl.ministers },
+          pool: [...p.parl.pool],
+          draft: p.parl.bill ? { ...p.parl.bill, lobbied: [...p.parl.bill.lobbied], forecast: Parl.forecast(p, p.parl.bill.law, p.parl.bill.enable, p.parl.bill.lobbied) } : null,
+          failed: p.parl.failed,
+          canReferendum: !!p.parl.failed && p.parl.referendum !== p.term && p.parl.capital >= Parl.COST.referendum,
+          demands: { ...p.parl.demands },
+          campaign: { ...p.parl.campaign, rallies: [...p.parl.campaign.rallies], open: Parl.campaignOpen(p) },
+          scandal: p.parl.scandal,
+        },
       },
     });
+  }
+
+  // ------------------------------------------------------------ parliament
+
+  /** Run a parliament action, then refresh the sim (laws change it) and the HUD. */
+  private parl<T>(fn: (p: Pol.PoliticsState) => T, ok: (r: T) => boolean = (r) => !!r) {
+    if (!this.mayor) return null;
+    const before = JSON.stringify(Pol.simPolicy(this.politics!));
+    const r = fn(this.politics!);
+    if (ok(r)) this.audio.click();
+    else this.audio.error();
+    if (JSON.stringify(Pol.simPolicy(this.politics!)) !== before) this.sim?.setSettings(this.simSettings());
+    this.publishPolitics();
+    return r;
+  }
+
+  draftBill(id: Pol.PolicyId, enable: boolean) {
+    this.store.setState({ bill: null });
+    this.parl((p) => (Parl.draftBill(p, id, enable), true));
+  }
+  cancelBill() {
+    this.parl((p) => ((p.parl.bill = null), true));
+  }
+  lobby(party: Pol.PartyId) {
+    this.parl((p) => Parl.lobby(p, party));
+  }
+  callVote() {
+    const v = this.parl((p) => Parl.callVote(p), (r) => !!r?.passed);
+    if (!v) return;
+    this.store.setState({ bill: v });
+    if (v.passed) this.audio.chime();
+    this.platform.track("bill", { policy: v.law, enable: v.enable, passed: v.passed });
+  }
+  referendum() {
+    const st = this.lastTick?.stats;
+    if (!st) return;
+    const r = this.parl((p) => Parl.referendum(p, st), (x) => !!x?.passed);
+    if (!r) return;
+    this.store.setState({ bill: { law: r.law, enable: r.enable, passed: r.passed, yes: Math.round(r.support * 100), no: 100 - Math.round(r.support * 100), votes: [], referendum: true, support: r.support } });
+    if (r.passed) this.audio.chime();
+  }
+  invite(party: Pol.PartyId) {
+    const r = this.parl((p) => Parl.invite(p, party), (x) => !!x?.yes);
+    if (r) this.toast(this.t(r.yes ? "pa.joined" : "pa.refused", { party: this.t(`party.${party}` as StringKey) }));
+  }
+  dropPartner(party: Pol.PartyId) {
+    this.parl((p) => Parl.dropPartner(p, party));
+  }
+  appoint(ministry: Pol.Ministry, id: number) {
+    this.parl((p) => Parl.appoint(p, ministry, id));
+  }
+  dismissMinister(ministry: Pol.Ministry) {
+    this.parl((p) => Parl.dismiss(p, ministry));
+  }
+  resolveScandal(sack: boolean) {
+    this.parl((p) => Parl.resolveScandal(p, sack));
+  }
+  rally(f: Pol.Faction) {
+    this.parl((p) => Parl.rally(p, f));
+  }
+  adBlitz() {
+    this.parl((p) => Parl.adBlitz(p));
+  }
+  debate() {
+    const won = this.parl((p) => Parl.debate(p), (x) => x === true);
+    if (won !== null && won !== undefined) this.toast(this.t(won ? "pa.debateWon" : "pa.debateLost"));
   }
 
   openHall(tab: HallTab | null) {
@@ -859,16 +1066,9 @@ export class Game {
     this.publishPolitics();
   }
 
+  /** Put a law (or its repeal) before the chamber: it goes to the floor, where you can lobby before the vote. */
   proposePolicy(id: Pol.PolicyId, enable: boolean) {
-    if (!this.mayor) return;
-    const r = Pol.propose(this.politics!, id, enable);
-    this.store.setState({ bill: r });
-    if (r.passed) {
-      this.audio.chime();
-      this.sim?.setSettings(this.simSettings());
-    } else this.audio.error();
-    this.platform.track("bill", { policy: id, enable, passed: r.passed });
-    this.publishPolitics();
+    this.draftBill(id, enable);
   }
 
   decide(pick: "a" | "b") {
@@ -935,6 +1135,7 @@ export class Game {
       this.views.overlays.mode = next === "land" ? "land" : "zones";
       this.overlayDirty = true;
       if (next === "land") void this.refreshLandValues();
+      this.showRoadRibbons();
     }
     this.tools.onTab(next);
     this.audio.tick();
@@ -1102,6 +1303,11 @@ export class Game {
       fires: this.lastTick?.fires.length ?? 0,
       tourists: this.lastTick?.stats.tourists ?? 0,
       services: [...(this.city?.lots.services.values() ?? [])].map((s) => s.kind),
+      roadCondition: this.lastTick?.stats.roadCondition ?? 1,
+      roadworks: this.lastTick?.stats.roadworks ?? 0,
+      dlc: this.store.getState().dlc.owned,
+      look: this.city?.map.look ?? "base",
+      parl: this.politics ? { seats: this.politics.parl.seats, coalition: this.politics.parl.coalition, capital: this.politics.parl.capital } : null,
     };
   }
 
@@ -1111,6 +1317,11 @@ export class Game {
     if (id === undefined) return false;
     this.sim?.ignite(id);
     return true;
+  }
+
+  /** Test hook: age every road to this condition. */
+  debugWear(c: number) {
+    this.sim?.wear(c);
   }
 
   /** Test hook: pretend the city has reached a population (milestones and landmarks). */
