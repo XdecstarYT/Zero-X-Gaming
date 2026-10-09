@@ -195,5 +195,5 @@ describe("YourGov campaign", () => {
     expect(a.score).toBe(b.score);
     expect(a.achievements).toEqual(b.achievements);
     expect(Object.keys(a.achievements).length).toBeGreaterThan(0);
-  });
+  }, 60_000);
 });

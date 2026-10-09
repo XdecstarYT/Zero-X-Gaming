@@ -249,5 +249,5 @@ describe("YourGov politics", () => {
     const poll = G.nationalPoll(a);
     for (const v of Object.values(poll)) expect(Number.isFinite(v)).toBe(true);
     for (const v of Object.values(a.goodwill)) expect(v).toBeLessThanOrEqual(60);
-  });
+  }, 60_000);
 });

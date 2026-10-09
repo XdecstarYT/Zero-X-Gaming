@@ -13,7 +13,7 @@ import * as G from "../sim";
 import { Portrait } from "./Chamber";
 import { Hemicycle } from "./charts";
 import { Icon } from "./icons";
-import { Group, Modal, money, pct, Row, Seg, Stars, Sw } from "./kit";
+import { Group, Modal, money, pct, Row, Seg, Stars, Sw, wage } from "./kit";
 
 const posDist = (a: Pos, b: Pos) => Math.hypot(a.e - b.e, a.s - b.s);
 
@@ -245,7 +245,7 @@ function Staff({ g }: { g: Game }) {
   return (
     <div data-testid="yg-staff">
       <p className="yg-lede">
-        Wages {money(s, C.payroll(s))} a week. New people are looking for work in {next} week{next === 1 ? "" : "s"}. Run out of money and your staff walk.
+        Wages {wage(s, C.payroll(s))} a week. New people are looking for work in {next} week{next === 1 ? "" : "s"}. Run out of money and your staff walk.
       </p>
       {C.ROLES.map((r) => {
         const cur = s.staff[r.id];
@@ -264,7 +264,7 @@ function Staff({ g }: { g: Game }) {
                 <span className="grow">
                   {cur.name} <Stars n={2 + cur.skill * 1.4} />
                 </span>
-                <span className="r small muted">{money(s, cur.salary)}/wk</span>
+                <span className="r small muted">{wage(s, cur.salary)}/wk</span>
                 <button type="button" className="yg-btn small" onClick={() => g.fire(r.id)} data-testid={`yg-fire-${r.id}`}>
                   Let go
                 </button>
@@ -275,7 +275,7 @@ function Staff({ g }: { g: Game }) {
                   <span className="grow">
                     {x.name} <Stars n={2 + x.skill * 1.4} />
                   </span>
-                  <span className="r small muted">{money(s, x.salary)}/wk</span>
+                  <span className="r small muted">{wage(s, x.salary)}/wk</span>
                   <button type="button" className="yg-btn small primary" disabled={s.parties[s.party].funds < x.salary * 4} onClick={() => g.hire(r.id, i)} data-testid={`yg-hire-${r.id}-${i}`}>
                     Hire
                   </button>

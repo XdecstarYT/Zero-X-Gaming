@@ -6,6 +6,8 @@ import { Icon } from "./icons";
 
 /** Party money, in millions of the country's currency. */
 export const money = (s: G.GameState, m: number) => `${m < 0 ? "–" : ""}${s.sc.economy.cur}${Math.abs(m) >= 1000 ? (Math.abs(m) / 1000).toFixed(2) + " B" : Math.abs(m).toFixed(1) + " M"}`;
+/** A small weekly amount (wages), in thousands. */
+export const wage = (s: G.GameState, m: number) => `${s.sc.economy.cur}${Math.round(m * 1000)} k`;
 export const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 export const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 /** A big amount in billions of the country's currency (trillions above a thousand). */

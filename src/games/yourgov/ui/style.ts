@@ -446,7 +446,7 @@ select.yg-input option{background:#151a24;color:#fff}
 .yg-xtab>span{display:flex;align-items:center;justify-content:center;min-height:30px;padding:0 4px;border-radius:7px;font-weight:700;font-size:12px}
 .yg-xtab>span.h{font-size:10.5px;letter-spacing:.04em;color:var(--muted);gap:4px;min-height:24px}
 .yg-xtab>span.h i{width:8px;height:8px;border-radius:50%;background:var(--c)}
-.yg-xtab>span.n{justify-content:flex-start;font-weight:600;font-size:11.5px;background:rgba(255,255,255,.05);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.yg-xtab>span.n{justify-content:flex-start;font-weight:600;font-size:11.5px;line-height:1.15;padding:3px 6px;background:rgba(255,255,255,.05)}
 .yg-xtab>span.c{box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
 .yg-xtab>span.c.mine{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.7)}
 .yg-xtab>span.all{font-weight:850;margin-bottom:4px}
@@ -475,7 +475,7 @@ select.yg-input option{background:#151a24;color:#fff}
 
 /* ---- achievements, election night ---- */
 .yg-badges{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px}
-.yg-badge-tile{display:grid;justify-items:center;text-align:center;gap:1px;padding:9px 6px;border-radius:14px;background:rgba(255,255,255,.04);opacity:.42;filter:grayscale(1)}
+.yg-badge-tile{display:grid;justify-items:center;text-align:center;gap:1px;padding:9px 6px;border-radius:14px;background:rgba(255,255,255,.04);opacity:.58;filter:grayscale(1)}
 .yg-badge-tile span{font-size:22px}
 .yg-badge-tile b{font-size:11px;line-height:1.15}
 .yg-badge-tile small{font-size:9.5px;color:var(--muted);line-height:1.15}
@@ -515,6 +515,7 @@ select.yg-input option{background:#151a24;color:#fff}
   .yg-sheet{left:96px;width:min(380px,calc(100% - 108px));top:60px;bottom:64px}
   .yg-missions,.yg-election{top:60px;bottom:64px}
   .yg-title{padding-top:58px}
+  .yg-modal-back{padding-top:56px}
   .yg-top{top:8px}
 }
 /* Phones held upright: the dock runs along the bottom and panels take the full width. */
@@ -538,7 +539,7 @@ select.yg-input option{background:#151a24;color:#fff}
   .yg-timebar{padding:0 6px 0 10px;gap:6px}
   .yg-date{font-size:12.5px}
   .yg-toasts{width:94%}
-  .yg-modal-back{padding:8px}
+  .yg-modal-back{padding:56px 8px 8px}
   .yg-modal-head{padding:14px 12px 6px 14px}.yg-modal-body{padding:4px 14px 10px}.yg-modal-foot{padding:10px 12px 12px 14px}
   .yg-grid{grid-template-columns:repeat(4,1fr)}
   .yg-title{padding:8px}
