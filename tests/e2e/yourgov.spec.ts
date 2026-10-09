@@ -171,6 +171,8 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   await expect(page.getByTestId("yg-p-chamber")).toContainText("Senate");
   await page.getByTestId("yg-view-map").dispatchEvent("click");
   await page.getByTestId("yg-tab-parties").click();
+  // The polling centre reopens on the page you left it at (seats, above): back to the parties.
+  await page.getByTestId("yg-poll-parties").click();
   await expect(page.getByRole("img", { name: "National polls over time" })).toBeVisible();
   await page.getByTestId("yg-mapmode-support").click();
   await page.getByTestId("yg-tab-settings").click();
