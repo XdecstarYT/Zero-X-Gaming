@@ -12,6 +12,7 @@ import * as G from "../sim";
 import * as C from "../campaign";
 import { BudgetBox, BudgetCard, QTCard, ScandalCard } from "./Campaign";
 import { ConferenceCard, NomineeCard } from "./Power";
+import { OfficeBox, SotnCard, SummitCard } from "./Office";
 import { Portrait } from "./Chamber";
 import { Icon } from "./icons";
 import { Bar, fxText, Group, MidBar, Modal, money, pct, Row, Seg, Sheet, Stars, Sw } from "./kit";
@@ -21,6 +22,7 @@ const KINDS: { id: EventKind; label: string }[] = [
   { id: "voters", label: "Voters" },
   { id: "money", label: "Money" },
   { id: "party", label: "Party" },
+  { id: "mine", label: "Yours" },
   { id: "diary", label: "Diary" },
 ];
 
@@ -84,17 +86,17 @@ function eventFx(s: G.GameState, e: EventDef) {
 export function Events({ g }: { g: Game }) {
   const s = g.s!;
   const kind = g.ui.evKind;
-  const sel = g.ui.event ? EVENT[g.ui.event] : null;
+  const sel = g.ui.event ? (G.eventOf(s, g.ui.event) ?? null) : null;
   const c = G.country(s);
   const st = g.ui.state ?? s.homeState;
   const funds = s.parties[s.party].funds;
   const week = Math.max(s.week, g.ui.evWeek ?? s.week);
   const planning = week > s.week;
   const poll = s.polled[st] !== undefined ? G.statePoll(s, st) : null;
-  const list = EVENTS.filter((e) => e.kind === kind);
+  const list = kind === "mine" ? s.studio.events : EVENTS.filter((e) => e.kind === kind);
   const usesFor = (id: string) => (planning ? s.plan.filter((p) => p.week === week && p.event === id).length : G.eventUses(s, id));
   const blocked = sel ? (planning ? (usesFor(sel.id) >= EVENT_MAX ? "Already twice that week." : null) : G.eventBlocked(s, sel.id)) : null;
-  const pick = (k: EventKind) => g.setUI({ evKind: k, event: g.ui.event && EVENT[g.ui.event]?.kind === k ? g.ui.event : null });
+  const pick = (k: EventKind) => g.setUI({ evKind: k, event: g.ui.event && G.eventOf(s, g.ui.event)?.kind === k ? g.ui.event : null });
   // On a small screen the card for the event you pick is below the grid: bring it into view.
   const card = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -111,6 +113,16 @@ export function Events({ g }: { g: Game }) {
             <p className="yg-note small">
               Fundraisers pay for themselves, so you can always hold one. Donors give less if you ask too often: right now they give <b>{Math.round(G.donorFactor(s) * 100)}%</b>.
             </p>
+          )}
+          {kind === "mine" && !list.length && (
+            <button type="button" className="yg-cta" onClick={() => g.setUI({ tab: "studio", studioPage: "events" })} data-testid="yg-ev-design">
+              <span className="yg-cta-icon">✨</span>
+              <span>
+                <b>Design an event of your own</b>
+                <small>In the Customise panel: set what it does, and it shows up here</small>
+              </span>
+              <Icon name="chevron" size={18} />
+            </button>
           )}
           <div className="yg-grid">
             {list.map((e) => {
@@ -201,7 +213,7 @@ function Diary({ g }: { g: Game }) {
   const s = g.s!;
   const c = G.country(s);
   const weeks = [...new Set(s.plan.map((p) => p.week))];
-  const cost = s.plan.reduce((a, p) => a + (EVENT[p.event].fund ? 0 : EVENT[p.event].cost), 0);
+  const cost = s.plan.reduce((a, p) => a + (G.eventOf(s, p.event)?.fund ? 0 : (G.eventOf(s, p.event)?.cost ?? 0)), 0);
   return (
     <div data-testid="yg-diary">
       <p className="yg-lede">
@@ -216,7 +228,8 @@ function Diary({ g }: { g: Game }) {
           {s.plan
             .filter((p) => p.week === w)
             .map((p) => {
-              const e = EVENT[p.event];
+              const e = G.eventOf(s, p.event);
+              if (!e) return null;
               return (
                 <Row key={p.id} testId={`yg-plan-${p.id}`}>
                   <span className="yg-tile-ico small">{e.icon}</span>
@@ -419,13 +432,14 @@ function Cabinet({ g }: { g: Game }) {
 function Orders({ g }: { g: Game }) {
   const s = g.s!;
   const [sel, setSel] = useState<string | null>(null);
-  const o = sel ? P.ORDER[sel] : null;
+  const o = sel ? P.orderOf(s, sel) : null;
   const presidential = G.sys(s).exec === "presidential";
+  const all: P.OrderDef[] = [...P.ORDERS, ...s.studio.orders];
   return (
     <>
       <p className="yg-label">{presidential ? "Executive orders" : "Government actions"}</p>
       <div className="yg-grid" data-testid="yg-orders">
-        {P.ORDERS.map((x) => {
+        {all.map((x) => {
           const wait = Math.max(0, (s.orders[x.id] ?? 0) - s.week);
           return (
             <button key={x.id} type="button" className="yg-tile" aria-pressed={sel === x.id} onClick={() => setSel(sel === x.id ? null : x.id)} data-testid={`yg-order-${x.id}`}>
@@ -458,6 +472,11 @@ function Orders({ g }: { g: Game }) {
               </span>
             ))}
             {o.foreign ? <span className="yg-chip bad">Abroad {o.foreign}</span> : null}
+            {Object.entries(o.society ?? {}).map(([k, v]) => (
+              <span key={k} className={`yg-chip ${v > 0 ? "good" : "bad"}`}>
+                {k} {v > 0 ? "better" : "worse"}
+              </span>
+            ))}
             {o.risk ? <span className="yg-chip warn">{Math.round(o.risk * (presidential ? 100 : 50))}% the courts block it</span> : null}
           </div>
           <button type="button" className="yg-btn primary wide" disabled={(s.orders[o.id] ?? 0) > s.week} onClick={() => g.order(o.id)} data-testid="yg-order-go">
@@ -581,9 +600,9 @@ export function Government({ g }: { g: Game }) {
       )}
       {s.crisis && !g.ui.appoint && (
         <button type="button" className="yg-cta warn" onClick={() => g.setUI({ later: { ...g.ui.later, crisis: -1 } })} data-testid="yg-open-crisis">
-          <span className="yg-cta-icon">{P.CRISIS[s.crisis.id].icon}</span>
+          <span className="yg-cta-icon">{P.crisisOf(s, s.crisis.id).icon}</span>
           <span>
-            <b>{P.crisisText(s, s.crisis, P.CRISIS[s.crisis.id].title)}</b>
+            <b>{P.crisisText(s, s.crisis, P.crisisOf(s, s.crisis.id).title)}</b>
             <small>{s.crisis.mine ? "Waiting on your decision" : "How will you respond?"}</small>
           </span>
           <Icon name="chevron" size={18} />
@@ -595,6 +614,7 @@ export function Government({ g }: { g: Game }) {
           {head ? (
             <>
               <Orders g={g} />
+              <OfficeBox g={g} />
               <Group label="Referendums">
                 <Row onClick={() => g.setUI({ tab: "write", law: null })}>
                   <span className="grow small">
@@ -621,7 +641,7 @@ export function Government({ g }: { g: Game }) {
 function CrisisCard({ g }: { g: Game }) {
   const s = g.s!;
   const c = s.crisis!;
-  const def = P.CRISIS[c.id];
+  const def = P.crisisOf(s, c.id);
   const optFx = (o: P.CrisisOption) => (
     <span className="yg-chips">
       {fxText(s, { approval: o.approval, happiness: o.happiness, budget: o.budget, growth: o.growth })
@@ -845,11 +865,13 @@ export function Decisions({ g }: { g: Game }) {
   if (s.qt && s.qt.week < s.week && !later("qt")) return <QTCard g={g} />;
   if (s.conference && !later("conference")) return <ConferenceCard g={g} />;
   if (s.court?.nominees && s.gov.head === s.you && !later("court")) return <NomineeCard g={g} />;
+  if (s.wd?.summit && !later("summit")) return <SummitCard g={g} />;
+  if (s.ox?.sotn !== null && s.ox?.sotn !== undefined && s.gov.head === s.you && !later("sotn")) return <SotnCard g={g} />;
   return null;
 }
 
 /** What needs the player's attention in the government panel. */
-export const govAlert = (s: G.GameState) => !!s.crisis || C.budgetDue(s) || (s.gov.head === s.you && Object.keys(s.cabinet).length < P.PORTFOLIOS.length);
+export const govAlert = (s: G.GameState) => !!s.crisis || !!s.wd?.summit || C.budgetDue(s) || (s.gov.head === s.you && Object.keys(s.cabinet).length < P.PORTFOLIOS.length);
 
 /** For the law page: put a change to the people. */
 export function ReferendumButton({ g, law, option }: { g: Game; law: string; option: number }) {

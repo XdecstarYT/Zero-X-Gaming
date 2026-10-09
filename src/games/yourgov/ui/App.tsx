@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createRng } from "../../engine/rng";
 import { COMMITTEES, LAW_GROUPS, type LawDef, type PartyId } from "../data";
-import type { CountryPage, Game, PollPage, Tab } from "../game";
+import { ACCENTS, type CountryPage, type Game, type PollPage, type Tab } from "../game";
+import * as So from "../society";
 import { EXEC_KINDS, LOWER_SYSTEMS, UPPER_KINDS } from "../scenario";
 import * as G from "../sim";
 import { Portrait } from "./Chamber";
@@ -13,6 +14,12 @@ import { Achievements, Crosstabs, ExitPoll, HQ, Issues, Leaders, RegionTable, Se
 import { CourtBox, FrontPage, LegacyBox, MarketsPage, Timeline as Story, TraitChip, WhipControl } from "./Power";
 import { Confetti, Decisions, Events, Factions, Government, govAlert, ReferendumButton, Voters } from "./Politics";
 import { LawStudio } from "./LawStudio";
+import { StudioPanel } from "./Studio";
+import { WorldPanel } from "./World";
+import { BillTools, ConfidenceBox } from "./Office";
+import { CareerStats, CommandPalette, Help, Inbox, PhotoExit, SaveSlots, UpdateNotes } from "./Extras";
+import { featureCount } from "./notes";
+import { Swatches } from "./forms";
 import type { MapMode } from "./mapColors";
 import { Scene } from "./Scene";
 import { Title } from "./Title";
@@ -25,7 +32,8 @@ function useGame(g: Game) {
 function billName(s: G.GameState, b: G.Bill) {
   if (b.budget) return "Budget approval";
   const l = G.lawOf(s, b.law);
-  return l ? `${l.name}: ${l.options[b.option].label}` : "A repealed law";
+  const what = l ? `${l.name}: ${l.options[b.option].label}` : "A repealed law";
+  return b.title ? `${b.title} (${what})` : what;
 }
 
 const live = (b: G.Bill) => b.stage !== "passed" && b.stage !== "failed";
@@ -298,6 +306,7 @@ function Bills({ g }: { g: Game }) {
             {btn(-1, "Decline", proj?.no, "bad")}
           </div>
           <WhipControl g={g} b={b} rebels={proj?.rebels ?? 0} />
+          <BillTools g={g} b={b} />
           <Group label={`Lobby the parties (${money(s, G.LOBBY_COST)} a go, twice each)`}>
             {G.partyDefs(s)
               .filter((p) => p.id !== s.party && G.voters(s, b).some((id) => G.pol(s, id)?.party === p.id))
@@ -590,7 +599,16 @@ function MyParty({ g }: { g: Game }) {
   );
   const role = s.gov.parties[0] === s.party ? `Leading the government` : G.inGovernment(s) ? "Junior partner in government" : "Opposition";
   return (
-    <Sheet title={p.name} eyebrow={`${p.ideology} · ${p.short}`} onClose={() => g.setUI({ tab: null })} testId="yg-p-party">
+    <Sheet title={`${s.studio.logo ? `${s.studio.logo} ` : ""}${p.name}`} eyebrow={`${p.ideology} · ${p.short}`} onClose={() => g.setUI({ tab: null })} testId="yg-p-party">
+      {s.studio.slogan && <p className="yg-slogan">“{s.studio.slogan}”</p>}
+      <button type="button" className="yg-cta" onClick={() => g.setUI({ tab: "studio", studioPage: "party" })} data-testid="yg-rebrand-open">
+        <span className="yg-cta-icon">🎨</span>
+        <span>
+          <b>Rebrand the party</b>
+          <small>Name, colour, slogan and logo</small>
+        </span>
+        <Icon name="chevron" size={18} />
+      </button>
       <div className="yg-tiles">
         <div className="yg-tile-stat">
           <span>Members</span>
@@ -637,6 +655,7 @@ function MyParty({ g }: { g: Game }) {
         {line("Mayors", mayors, s.mayors.length)}
       </Group>
       <Factions g={g} />
+      <ConfidenceBox g={g} />
       <p className="yg-label">Where the parties stand</p>
       <div className="yg-center">
         <Compass s={s} />
@@ -827,7 +846,69 @@ function Settings({ g }: { g: Game }) {
           </span>
         </label>
       </Group>
+      <Group label="Look and feel">
+        <div className="yg-row" style={{ flexWrap: "wrap" }}>
+          <span className="grow">Accent colour</span>
+          <Swatches value={p.accent} options={ACCENTS} onChange={(c) => g.setPrefs({ accent: c })} label="Accent colour" />
+        </div>
+        <Row>
+          <span className="grow">Text size</span>
+          <Seg value={String(p.text)} label="Text size" onChange={(v) => g.setPrefs({ text: Number(v) })} options={[{ id: "0", label: "S" }, { id: "1", label: "M" }, { id: "2", label: "L" }, { id: "3", label: "XL" }]} testId="yg-textsize" />
+        </Row>
+        {(
+          [
+            ["compact", "Compact mode", "Tighter rows and panels"],
+            ["calm", "Calm mode", "No animations"],
+            ["hideTicker", "Hide the news ticker", ""],
+            ["hideMissions", "Hide the missions card", ""],
+            ["cb", "Colour-blind friendly map", "Support shown in blue and orange"],
+            ["confirmVotes", "Ask before ending a week with a vote waiting", ""],
+          ] as const
+        ).map(([k, label, about]) => (
+          <label key={k} className="yg-row yg-switch-row">
+            <span className="grow">
+              {label}
+              {about && <small className="yg-muted" style={{ display: "block" }}>{about}</small>}
+            </span>
+            <span className="yg-switch">
+              <input type="checkbox" checked={!!p[k]} onChange={(e) => g.setPrefs({ [k]: e.target.checked })} data-testid={`yg-pref-${k}`} />
+              <i />
+            </span>
+          </label>
+        ))}
+        <Row>
+          <span className="grow">Skip ahead at most</span>
+          <Seg value={String(p.ffWeeks)} label="Skip ahead at most" onChange={(v) => g.setPrefs({ ffWeeks: Number(v) })} options={[{ id: "4", label: "4w" }, { id: "8", label: "8w" }, { id: "12", label: "12w" }, { id: "26", label: "26w" }]} testId="yg-ffweeks" />
+        </Row>
+      </Group>
+      <Group label="Saves">
+        <Row onClick={() => g.setUI({ extra: "slots" })} testId="yg-open-slots">
+          <span className="yg-tile-ico small">💾</span>
+          <span className="grow">Save slots, export and import</span>
+          <Icon name="chevron" size={15} className="yg-faint" />
+        </Row>
+      </Group>
       <Group label="Help">
+        <Row onClick={() => g.setUI({ extra: "notes" })} testId="yg-open-notes">
+          <span className="yg-tile-ico small">🆕</span>
+          <span className="grow">What&apos;s new: {featureCount()} new features</span>
+          <Icon name="chevron" size={15} className="yg-faint" />
+        </Row>
+        <Row onClick={() => g.setUI({ extra: "help" })} testId="yg-open-help">
+          <span className="yg-tile-ico small">❓</span>
+          <span className="grow">Help, shortcuts and glossary</span>
+          <Icon name="chevron" size={15} className="yg-faint" />
+        </Row>
+        <Row onClick={() => g.setUI({ extra: "stats" })} testId="yg-open-stats">
+          <span className="yg-tile-ico small">📈</span>
+          <span className="grow">Career stats</span>
+          <Icon name="chevron" size={15} className="yg-faint" />
+        </Row>
+        <Row onClick={() => g.setUI({ photo: true, tab: null })} testId="yg-open-photo">
+          <span className="yg-tile-ico small">📷</span>
+          <span className="grow">Photo mode</span>
+          <Icon name="chevron" size={15} className="yg-faint" />
+        </Row>
         <Row onClick={() => g.setPrefs({ tips: true })}>
           <span className="grow">Show the first-steps tips</span>
         </Row>
@@ -843,7 +924,7 @@ function Settings({ g }: { g: Game }) {
           <span className="grow">Retire (end your career)</span>
         </Row>
       </Group>
-      <p className="yg-muted small">Drag to pan the map, scroll or pinch to zoom, right-drag or two-finger twist to turn it. Enter ends the week.</p>
+      <p className="yg-muted small">Drag to pan the map, scroll or pinch to zoom, right-drag or two-finger twist to turn it. Enter ends the week; / searches everything; I opens the inbox; H is photo mode.</p>
     </Sheet>
   );
 }
@@ -1020,6 +1101,7 @@ function Talks({ g }: { g: Game }) {
 function TopBar({ g }: { g: Game }) {
   const s = g.s!;
   const ps = s.parties[s.party];
+  const inbox = g.inboxItems().length;
   const stat = (icon: string, value: string, label: string, cls = "", testId?: string, onClick?: () => void) =>
     onClick ? (
       <button type="button" className={`yg-stat btn ${cls}`} title={label} data-testid={testId} onClick={onClick}>
@@ -1043,6 +1125,12 @@ function TopBar({ g }: { g: Game }) {
         <Flag code={s.sc.flag} name={s.sc.name} />
         <span className="yg-brand-name">{s.sc.name}</span>
       </div>
+      <button type="button" className="yg-glass yg-btn icon yg-inbox-btn" aria-label={`Inbox: ${inbox} waiting`} onClick={() => g.setUI({ inbox: true })} data-testid="yg-open-inbox">
+        📥{inbox > 0 && <span className="yg-count">{inbox > 9 ? "9+" : inbox}</span>}
+      </button>
+      <button type="button" className="yg-glass yg-btn icon yg-search-btn" aria-label="Search everything" onClick={() => g.setUI({ palette: true })} data-testid="yg-open-palette">
+        🔍
+      </button>
       <div className="yg-glass yg-capsule yg-stats" aria-label="The country and your party">
         {stat("smile", s.stats.happiness.toFixed(1), "Happiness")}
         {stat("thumb", `${s.stats.approval.toFixed(0)}%`, "Approval")}
@@ -1062,6 +1150,9 @@ function TopBar({ g }: { g: Game }) {
             options={[
               { id: "politics", label: "Politics", title: "Who leads each county" },
               { id: "support", label: "Support", title: "Your party's support" },
+              { id: "margin", label: "Margin", title: "How close each county is" },
+              { id: "second", label: "Runner-up", title: "Who comes second" },
+              { id: "targets", label: "Targets", title: "Your battlegrounds and targets" },
               { id: "states", label: cap(G.titles(s).regions.split(" ")[0]), title: `The ${G.titles(s).regions}` },
               { id: "terrain", label: "Land", title: "Just the land" },
             ]}
@@ -1087,6 +1178,8 @@ const TABS: { id: Exclude<Tab, null | "settings">; icon: string; label: string }
   { id: "party", icon: "party", label: "Your party" },
   { id: "gov", icon: "cabinet", label: "Government" },
   { id: "hq", icon: "people", label: "Campaign HQ" },
+  { id: "studio", icon: "sparkle", label: "Customise" },
+  { id: "world", icon: "city", label: "Society and the world" },
   { id: "country", icon: "country", label: "The country" },
   { id: "news", icon: "news", label: "News" },
 ];
@@ -1100,7 +1193,7 @@ function Dock({ g }: { g: Game }) {
       {TABS.map((t) => (
         <button key={t.id} type="button" className="yg-dock-btn" title={t.label} aria-label={t.label} aria-pressed={g.ui.tab === t.id} disabled={!!s.election} onClick={() => g.setUI({ tab: g.ui.tab === t.id ? null : t.id, bill: null, law: null, appoint: null })} data-testid={`yg-tab-${t.id}`}>
           <Icon name={t.icon} size={21} />
-          {((t.id === "bills" && toVote) || (t.id === "news" && freshNews) || (t.id === "gov" && govAlert(s)) || (t.id === "party" && (s.lowUnity >= 3 || !!s.challenge))) && <span className="yg-badge" />}
+          {((t.id === "bills" && toVote) || (t.id === "news" && freshNews) || (t.id === "gov" && govAlert(s)) || (t.id === "party" && (s.lowUnity >= 3 || !!s.challenge)) || (t.id === "world" && s.soc.protests.length > 0) || (t.id === "studio" && s.studio.policies.some((p) => p.status === "announced" && p.deadline - s.week <= 8))) && <span className="yg-badge" />}
         </button>
       ))}
     </nav>
@@ -1159,6 +1252,15 @@ function Timeline({ g }: { g: Game }) {
   );
 }
 
+/** End the week (asking first, if the player wants that, when a vote of theirs is waiting). */
+function endWeek(g: Game) {
+  const s = g.s;
+  if (!s) return;
+  const waiting = s.bills.some((b) => live(b) && G.youVoteOn(s, b) && b.yourVote === null && b.voteAt <= s.week);
+  if (g.prefs.confirmVotes && waiting && !window.confirm("A vote of yours is waiting. End the week anyway? (Unanswered, you abstain.)")) return;
+  g.endTurn();
+}
+
 function BottomBar({ g }: { g: Game }) {
   const s = g.s!;
   return (
@@ -1193,7 +1295,10 @@ function BottomBar({ g }: { g: Game }) {
         )}
       </div>
       <div className="yg-glass yg-capsule yg-timebar">
-        <span className="yg-date" data-testid="yg-date">
+        <span className="yg-date" data-testid="yg-date" title={So.season(s)}>
+          <span className="yg-season" aria-hidden>
+            {So.SEASON_ICON[So.season(s)]}
+          </span>
           {G.dateLabel(s)}
         </span>
         <Timeline g={g} />
@@ -1201,7 +1306,7 @@ function BottomBar({ g }: { g: Game }) {
       <button type="button" className="yg-glass yg-btn icon yg-ff" title="Skip ahead to the next thing that needs you" aria-label="Skip ahead" disabled={!!s.election || !!s.talks || s.over} onClick={() => g.fastForward()} data-testid="yg-ff">
         ⏩
       </button>
-      <button type="button" className="yg-endturn" title="End the week (Enter)" disabled={!!s.election || !!s.talks || s.over} onClick={() => g.endTurn()} data-testid="yg-end-turn">
+      <button type="button" className="yg-endturn" title="End the week (Enter)" disabled={!!s.election || !!s.talks || s.over} onClick={() => endWeek(g)} data-testid="yg-end-turn">
         <Icon name="hourglass" size={20} stroke={2} />
         <span>End week</span>
       </button>
@@ -1325,9 +1430,27 @@ export function App({ game }: { game: Game }) {
       if (t && (t.closest("input, textarea, select, button, [role=slider]") || g.ui.studio)) return;
       // A decision on screen (a crisis, a debate, a challenge) is answered, not skipped by a stray key.
       if (document.querySelector(".yg-decision")) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const s = g.s;
+      if (!s) return;
+      if (g.ui.palette || g.ui.inbox || g.ui.extra) return;
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        g.endTurn();
+        endWeek(g);
+        return;
+      }
+      if (s.election) return;
+      const k = e.key.toLowerCase();
+      if (k === "/" || k === "k") {
+        e.preventDefault();
+        g.setUI({ palette: true });
+      } else if (e.key === "?") g.setUI({ extra: "help" });
+      else if (k === "i") g.setUI({ inbox: true });
+      else if (k === "h") g.setUI({ photo: !g.ui.photo, tab: null });
+      else if (k === "f") g.fastForward();
+      else if (/^[0-9]$/.test(k)) {
+        const t = TABS[k === "0" ? 9 : Number(k) - 1];
+        if (t) g.setUI({ tab: g.ui.tab === t.id ? null : t.id, bill: null, law: null, appoint: null });
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1346,6 +1469,8 @@ export function App({ game }: { game: Game }) {
         ) : (
           <Title g={g} />
         )}
+        {g.ui.extra === "slots" && <SaveSlots g={g} />}
+        {g.ui.extra === "notes" && <UpdateNotes g={g} />}
       </div>
     );
   const tab = s.election ? null : g.ui.tab;
@@ -1378,16 +1503,31 @@ export function App({ game }: { game: Game }) {
       </Sheet>
     ) : tab === "settings" ? (
       <Settings g={g} />
+    ) : tab === "studio" ? (
+      <StudioPanel g={g} />
+    ) : tab === "world" ? (
+      <WorldPanel g={g} />
     ) : null;
+  const p = g.prefs;
+  const look = { ["--pc" as string]: G.party(s, s.party).color, ["--accent" as string]: p.accent, ["--fs" as string]: [0.92, 1, 1.1, 1.22][p.text] ?? 1 };
+  const mods = `${p.compact ? " yg-compact" : ""}${p.calm ? " yg-calm" : ""}${p.text !== 1 ? " yg-scaled" : ""}`;
+  if (g.ui.photo && !s.election)
+    return (
+      <div className={`${cls}${mods} yg-photomode`} ref={root} data-testid="yourgov" style={look}>
+        <GlassDefs />
+        <Scene g={g} />
+        <PhotoExit g={g} />
+      </div>
+    );
   return (
-    <div className={`${cls}${panel ? " yg-panel-open" : ""}`} ref={root} data-testid="yourgov" style={{ ["--pc" as string]: G.party(s, s.party).color }}>
+    <div className={`${cls}${mods}${panel ? " yg-panel-open" : ""}`} ref={root} data-testid="yourgov" style={look}>
       <GlassDefs />
       <Scene g={g} />
       <div className="yg-vignette" aria-hidden />
       <TopBar g={g} />
       <Dock g={g} />
       {panel}
-      {!s.election && !panel && g.ui.view === "map" && <Missions g={g} />}
+      {!s.election && !panel && g.ui.view === "map" && !p.hideMissions && <Missions g={g} />}
       {!s.election && g.ui.view === "map" && g.ui.state !== null && (
         <div className="yg-glass yg-capsule yg-statepill">
           <Icon name="pin" size={15} /> {G.country(s).states[g.ui.state].name}
@@ -1396,7 +1536,7 @@ export function App({ game }: { game: Game }) {
           </button>
         </div>
       )}
-      {!s.election && !panel && <Ticker g={g} />}
+      {!s.election && !panel && !p.hideTicker && <Ticker g={g} />}
       <BottomBar g={g} />
       <Toasts g={g} />
       {s.election && <ElectionCard g={g} />}
@@ -1405,6 +1545,12 @@ export function App({ game }: { game: Game }) {
       <Decisions g={g} />
       {g.ui.paper && !s.election && <FrontPage g={g} />}
       {s.over && !g.ui.result && <GameOver g={g} />}
+      {g.ui.palette && !s.election && <CommandPalette g={g} tabs={TABS} />}
+      {g.ui.inbox && !s.election && <Inbox g={g} />}
+      {g.ui.extra === "notes" && <UpdateNotes g={g} />}
+      {g.ui.extra === "help" && <Help g={g} />}
+      {g.ui.extra === "stats" && <CareerStats g={g} />}
+      {g.ui.extra === "slots" && <SaveSlots g={g} />}
     </div>
   );
 }

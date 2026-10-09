@@ -12,6 +12,10 @@ import type { Country } from "./map";
 import * as C from "./campaign";
 import * as K from "./career";
 import * as M from "./media";
+import * as Gr from "./grassroots";
+import * as O from "./office";
+import * as S from "./society";
+import * as St from "./studio";
 import * as G from "./sim";
 
 const dist = (a: Pos, b: Pos) => Math.hypot(a.e - b.e, a.s - b.s);
@@ -35,14 +39,14 @@ export interface VoterGroup {
 }
 
 export const GROUPS: VoterGroup[] = [
-  { id: "young", name: "Young voters", icon: "🎓", base: 0.16, urban: 0.6, pos: { e: -0.35, s: -0.6 }, likes: { education: 1, housing: 1, carbonTax: 1, drugPolicy: 1, votingAge: -1, transport: 1, marriage: 1 }, lobby: "Student union" },
-  { id: "retirees", name: "Retirees", icon: "🧓", base: 0.19, urban: -0.2, pos: { e: 0.05, s: 0.45 }, likes: { pensions: 1, healthcare: 1, police: 1 }, lobby: "Seniors' association" },
-  { id: "workers", name: "Working families", icon: "🛠️", base: 0.2, urban: 0, pos: { e: -0.45, s: 0.25 }, likes: { minimumWage: 1, unions: 1, welfare: 1, trade: -1, healthcare: 1 }, lobby: "Trade unions" },
-  { id: "business", name: "Business owners", icon: "💼", base: 0.08, urban: 0.4, pos: { e: 0.7, s: 0 }, likes: { corporateTax: -1, capitalGains: -1, unions: -1, trade: 1, minimumWage: -1 }, lobby: "Chamber of commerce" },
-  { id: "rural", name: "Farmers & rural", icon: "🚜", base: 0.1, urban: -1, pos: { e: 0.25, s: 0.55 }, likes: { subsidies: 1, carbonTax: -1, gunPolicy: 1, trade: -1, energy: -1 }, lobby: "Farmers' federation" },
-  { id: "professionals", name: "Urban professionals", icon: "🏙️", base: 0.12, urban: 1, pos: { e: 0.15, s: -0.55 }, likes: { transport: 1, immigration: 1, education: 1, incomeTax: -1 }, lobby: "Tech industry" },
-  { id: "faith", name: "Religious voters", icon: "⛪", base: 0.09, urban: -0.5, pos: { e: 0.1, s: 0.85 }, likes: { marriage: -1, church: -1, drugPolicy: -1 }, lobby: "Faith council" },
-  { id: "green", name: "Environmentalists", icon: "🌿", base: 0.06, urban: 0.5, pos: { e: -0.35, s: -0.5 }, likes: { carbonTax: 1, energy: 1, transport: 1 }, lobby: "Green groups" },
+  { id: "young", name: "Young voters", icon: "🎓", base: 0.16, urban: 0.6, pos: { e: -0.35, s: -0.6 }, likes: { education: 1, housing: 1, carbonTax: 1, drugPolicy: 1, votingAge: -1, transport: 1, marriage: 1, fourDayWeek: 1, rentControl: 1, dataPrivacy: 1, prisonReform: 1, nationalService: -1 }, lobby: "Student union" },
+  { id: "retirees", name: "Retirees", icon: "🧓", base: 0.19, urban: -0.2, pos: { e: 0.05, s: 0.45 }, likes: { pensions: 1, healthcare: 1, police: 1, retirementAge: -1, publicBroadcaster: 1, prisonReform: -1 }, lobby: "Seniors' association" },
+  { id: "workers", name: "Working families", icon: "🛠️", base: 0.2, urban: 0, pos: { e: -0.45, s: 0.25 }, likes: { minimumWage: 1, unions: 1, welfare: 1, trade: -1, healthcare: 1, fourDayWeek: 1, wealthTax: 1, retirementAge: -1 }, lobby: "Trade unions" },
+  { id: "business", name: "Business owners", icon: "💼", base: 0.08, urban: 0.4, pos: { e: 0.7, s: 0 }, likes: { corporateTax: -1, capitalGains: -1, unions: -1, trade: 1, minimumWage: -1, wealthTax: -1, fourDayWeek: -1, rentControl: -1, aiRules: -1 }, lobby: "Chamber of commerce" },
+  { id: "rural", name: "Farmers & rural", icon: "🚜", base: 0.1, urban: -1, pos: { e: 0.25, s: 0.55 }, likes: { subsidies: 1, carbonTax: -1, gunPolicy: 1, trade: -1, energy: -1, animalWelfare: -1, nationalService: 1 }, lobby: "Farmers' federation" },
+  { id: "professionals", name: "Urban professionals", icon: "🏙️", base: 0.12, urban: 1, pos: { e: 0.15, s: -0.55 }, likes: { transport: 1, immigration: 1, education: 1, incomeTax: -1, dataPrivacy: 1, wealthTax: -1, aiRules: -1 }, lobby: "Tech industry" },
+  { id: "faith", name: "Religious voters", icon: "⛪", base: 0.09, urban: -0.5, pos: { e: 0.1, s: 0.85 }, likes: { marriage: -1, church: -1, drugPolicy: -1, nationalService: 1, sugarTax: 1 }, lobby: "Faith council" },
+  { id: "green", name: "Environmentalists", icon: "🌿", base: 0.06, urban: 0.5, pos: { e: -0.35, s: -0.5 }, likes: { carbonTax: 1, energy: 1, transport: 1, animalWelfare: 1 }, lobby: "Green groups" },
 ];
 export const GROUP: Record<string, VoterGroup> = Object.fromEntries(GROUPS.map((g) => [g.id, g]));
 /** Groups that pull against each other: courting one costs a little with the other. */
@@ -110,8 +114,9 @@ export function courtGroup(s: G.GameState, group: string, v: number) {
 export function lawChanged(s: G.GameState, law: string, from: number, to: number, byYou: boolean, govCredit: boolean) {
   const dir = Math.sign(to - from);
   if (!dir) return;
+  const own = G.lawOf(s, law)?.likes;
   for (const g of GROUPS) {
-    const like = g.likes[law];
+    const like = own?.[g.id] ?? g.likes[law];
     if (!like) continue;
     const v = like * dir;
     if (byYou) {
@@ -211,7 +216,7 @@ export const PLAN_MAX = 24;
 
 /** Schedule an event for a later week (it's held, and paid for, when the week comes). */
 export function schedule(s: G.GameState, event: string, week: number, state = s.homeState): PlanItem | string {
-  if (!EVENT[event]) return "Unknown event.";
+  if (!G.eventOf(s, event)) return "Unknown event.";
   if (week <= s.week) return "Pick a week from next week on.";
   if (week > s.week + PLAN_AHEAD) return `You can plan ${PLAN_AHEAD} weeks ahead.`;
   if (s.plan.length >= PLAN_MAX) return "Your diary is full.";
@@ -233,8 +238,9 @@ export function runPlan(s: G.GameState) {
   s.plan = s.plan.filter((p) => p.week > s.week);
   for (const p of due) {
     const r = G.holdEvent(s, p.event, p.state);
-    const ev = EVENT[p.event];
-    if (!r.ok) G.news(s, "event", `Planned ${ev.name.toLowerCase()} called off: not enough party funds`, -1);
+    const ev = G.eventOf(s, p.event);
+    if (!ev) continue;
+    if (!r.ok) G.news(s, "event", `Planned ${ev.name.toLowerCase()} called off: ${(r.why ?? "not enough party funds").replace(/\.$/, "").toLowerCase()}`, -1);
     else if (!r.backfired) G.news(s, "event", `${ev.name} held as planned${ev.scope === "state" ? ` in ${G.country(s).states[p.state]?.name ?? ""}` : ""}`, 1);
   }
 }
@@ -275,7 +281,7 @@ export function debateAnswer(s: G.GameState, style: DebateStyle) {
   const you = G.pol(s, s.you);
   const ch = you?.charisma ?? 5;
   const unity = s.parties[s.party].unity;
-  const points = (style === "facts" ? 2 + r.next() * 3 + (unity - 60) / 25 : style === "attack" ? -6 + r.next() * 16 : (ch - 5) * 1.3 + (r.next() - 0.4) * 8) + C.staffSkill(s, "speech") * 0.4;
+  const points = (style === "facts" ? 2 + r.next() * 3 + (unity - 60) / 25 + (s.studio?.background === "scientist" ? 0.5 : 0) : style === "attack" ? -6 + r.next() * 16 : (ch - 5) * 1.3 + (r.next() - 0.4) * 8) + C.staffSkill(s, "speech") * 0.4 + Gr.shadowEdge(s);
   d.answers.push({ style, points: Math.round(points * 10) / 10 });
   if (d.answers.length >= d.topics.length) return { points, done: finishDebate(s) };
   return { points, done: null };
@@ -331,6 +337,8 @@ const VACANT = 4;
 const PAR = 8;
 /** "Minister of Health", or "Secretary of Health" in presidential systems. */
 export const ministerTitle = (s: G.GameState, portfolio: string) => {
+  const own = s.studio?.ministries?.[portfolio];
+  if (own) return own;
   const pf = PORTFOLIOS.find((x) => x.id === portfolio)!;
   return `${G.sys(s).exec === "presidential" ? "Secretary" : "Minister"} of ${pf.name}`;
 };
@@ -426,6 +434,7 @@ function wish(s: G.GameState, p: PartyId) {
 /** A new government: partners' moods and the deals that hold it together. */
 export function newGovernment(s: G.GameState) {
   formCabinet(s);
+  Gr.shadowToCabinet(s);
   s.partners = Object.fromEntries(s.gov.parties.slice(1).map((p) => [p, 60]));
   s.deals = [];
   const youLead = s.gov.parties[0] === s.party;
@@ -511,6 +520,8 @@ export interface CrisisOption {
   growth?: number;
   goodwill?: Record<string, number>;
   foreign?: number;
+  /** Better (+) or worse (-) for society's indices. */
+  society?: Partial<Record<S.SocKey, number>>;
 }
 export interface CrisisDef {
   id: string;
@@ -539,6 +550,17 @@ export const CRISES: CrisisDef[] = [
   { id: "row", icon: "🚩", title: "A diplomatic row with {partner}", text: "{partner} accuses our diplomats of spying.", options: [{ label: "Expel their diplomats", approval: 2, foreign: -20 }, { label: "Apologise", approval: -2, foreign: 10 }, { label: "Quiet talks", foreign: 4 }] },
   { id: "teachers", icon: "🏫", title: "Teachers threaten to strike", text: "Schools could close next month over pay.", options: [{ label: "A pay rise", budget: -6, goodwill: { young: 2, workers: 3 } }, { label: "Hold the line", approval: -2, goodwill: { workers: -3 } }] },
   { id: "storm", icon: "🌀", title: "A storm batters {region}", text: "Power lines are down and roads cut off across {region}.", options: [{ label: "Rebuild fast", budget: -9, approval: 3 }, { label: "Insurance and loans", budget: -3, approval: 1 }, { label: "A slow, cheap repair", approval: -3 }] },
+  // The mega super update's crises.
+  { id: "heatwave", icon: "🌡️", title: "A record heatwave", text: "Temperatures pass 40 degrees. Hospitals fill with the elderly; the trains buckle.", options: [{ label: "Open cooling centres", budget: -3, approval: 2, goodwill: { retirees: 4 }, society: { health: 2 } }, { label: "Order a work-from-home week", growth: -0.15, happiness: 1, goodwill: { business: -3 } }, { label: "Tell people to take care", approval: -2, society: { health: -2 } }] },
+  { id: "quake", icon: "🏚️", title: "An earthquake strikes {region}", text: "Buildings have collapsed across {region}. Rescuers are digging through the night.", options: [{ label: "Send everything we have", budget: -14, approval: 5, happiness: 1, society: { infrastructure: 3 } }, { label: "Accept help from abroad", budget: -5, approval: 2, foreign: 8 }, { label: "Leave it to the region", approval: -5 }] },
+  { id: "dataLeak", icon: "🔓", title: "Millions of medical records leak", text: "A government contractor left patients' records on an open server.", options: [{ label: "Sue the contractor and compensate patients", budget: -4, approval: 2, society: { trust: 2 } }, { label: "A new data watchdog", budget: -2, goodwill: { professionals: 3, young: 2 } }, { label: "Play it down", approval: -3, society: { trust: -4 } }] },
+  { id: "bridge", icon: "🌉", title: "A bridge collapses in {region}", text: "A motorway bridge in {region} gives way. Engineers warn hundreds more are crumbling.", options: [{ label: "Repair every bridge in the country", budget: -12, growth: 0.05, approval: 3, society: { infrastructure: 5 } }, { label: "Fix this one, inspect the rest", budget: -3, approval: 1 }, { label: "Blame the last government", approval: -2, society: { trust: -2 } }] },
+  { id: "detained", icon: "🧑‍⚖️", title: "Citizens detained in {partner}", text: "Three of our citizens have been arrested in {partner} on charges no one believes.", options: [{ label: "Quiet diplomacy", foreign: 4, approval: -1 }, { label: "Expel their ambassador", approval: 3, foreign: -15 }, { label: "Offer a prisoner swap", approval: 1, foreign: 2, goodwill: { retirees: -2 } }] },
+  { id: "skirmish", icon: "⚔️", title: "Shots fired on the border with {partner}", text: "Soldiers from {partner} and our own exchanged fire overnight. Nobody was killed, this time.", options: [{ label: "Reinforce the border", budget: -6, approval: 3, foreign: -8, goodwill: { rural: 3 } }, { label: "Call for talks", foreign: 6, approval: -1 }, { label: "Take it to the United Nations", foreign: 3, approval: 1 }] },
+  { id: "foodPrices", icon: "🧺", title: "Food prices soar", text: "A bad harvest abroad sends the price of bread and milk up a fifth in a month.", options: [{ label: "Cut the tax on food", budget: -8, happiness: 1.5, goodwill: { workers: 4 } }, { label: "Support for the poorest", budget: -4, happiness: 0.5, goodwill: { workers: 2 }, society: { inequality: 2 } }, { label: "Let prices settle", happiness: -2, approval: -2 }] },
+  { id: "nurses", icon: "🩺", title: "Nurses go on strike", text: "For the first time ever, the nurses walk out over pay and staffing.", options: [{ label: "A pay rise", budget: -7, approval: 2, goodwill: { workers: 4, retirees: 3 }, society: { health: 2 } }, { label: "Call in the army medics", budget: -2, approval: -1, goodwill: { workers: -4 } }, { label: "Hold the line", approval: -3, goodwill: { workers: -5 }, society: { health: -3 } }] },
+  { id: "spill", icon: "🛢️", title: "A chemical spill poisons a river", text: "A factory leak turns the river through {region} a strange colour. Fish are dying.", options: [{ label: "Make the company pay for the clean-up", approval: 2, goodwill: { green: 4, business: -3 }, society: { environment: 3 } }, { label: "Clean it up ourselves", budget: -5, approval: 1, society: { environment: 4 } }, { label: "Wait for the tests", approval: -3, goodwill: { green: -5 } }] },
+  { id: "crash", icon: "📉", title: "The stock market crashes", text: "Shares lose a fifth of their value in a day. Pension funds are in trouble.", options: [{ label: "A rescue package", budget: -20, growth: 0.2, approval: 1, goodwill: { business: 4, workers: -2 } }, { label: "Protect pensions only", budget: -8, goodwill: { retirees: 5 } }, { label: "Let the market find its floor", growth: -0.4, approval: -2, goodwill: { business: -3 } }] },
 ];
 export const CRISIS: Record<string, CrisisDef> = Object.fromEntries(CRISES.map((c) => [c.id, c]));
 
@@ -552,6 +574,9 @@ export interface CrisisState {
   govChoice: number;
 }
 
+/** A crisis by id: built in, or one the player wrote. */
+export const crisisOf = (s: G.GameState, id: string): CrisisDef => CRISIS[id] ?? St.myCrisis(s, id) ?? CRISES[0];
+
 export const crisisText = (s: G.GameState, c: CrisisState, t: string) => t.replace(/\{region\}/g, G.country(s).states[c.region]?.name ?? "the north").replace(/\{partner\}/g, c.partner);
 
 /** Apply a crisis option's effects (for whoever governs). */
@@ -563,17 +588,20 @@ function applyOption(s: G.GameState, o: CrisisOption, scale = 1) {
   if (o.budget) st.debt -= o.budget * k * scale;
   if (o.growth) s.boosts.growth += o.growth * scale;
   if (o.foreign) for (const f of s.foreign) f.rel = clamp(f.rel + o.foreign * scale * (f.name === s.crisis?.partner ? 1 : 0.3), -100, 100);
+  for (const [k, v] of Object.entries(o.society ?? {})) S.improve(s, k as S.SocKey, v * scale);
 }
 
 /** Decide (or react to) the crisis on the table. */
 export function answerCrisis(s: G.GameState, choice: number) {
   const c = s.crisis;
   if (!c) return false;
-  const def = CRISIS[c.id];
+  const def = crisisOf(s, c.id);
   s.crisis = null;
   if (c.mine) {
     const o = def.options[choice] ?? def.options[0];
-    applyOption(s, o);
+    // Emergency powers make the government's choices bite harder; an old soldier steadies the nerves.
+    applyOption(s, o, O.emergencyOn(s) ? 1.3 : 1);
+    if (s.studio?.background === "soldier") s.stats.approval = clamp(s.stats.approval + 1, 5, 95);
     // The groups remember who decided.
     for (const [g, v] of Object.entries(o.goodwill ?? {})) bump(s.goodwill, g, v);
     s.score += (o.approval ?? 0) > 0 ? 20 : 5;
@@ -603,7 +631,12 @@ function maybeCrisis(s: G.GameState) {
   const r = G.roll(s);
   const [gap, spread] = K.crisisGap(s);
   s.nextCrisis = s.week + gap + r.int(0, spread);
-  const def = r.pick(CRISES);
+  // The season makes some crises likelier; crises the player wrote join the pool.
+  const se = S.season(s);
+  const mine = s.studio?.crises ?? [];
+  const share = St.CRISIS_RATES[s.studio?.crisisRate ?? 1]?.share ?? 0;
+  const hot = CRISES.filter((x) => S.SEASON_CRISES[se].includes(x.id));
+  const def = mine.length && r.next() < share ? r.pick(mine) : r.pick([...CRISES, ...hot, ...hot]);
   const c = G.country(s);
   const head = s.gov.head === s.you;
   const best = def.options.reduce((bi, o, i) => ((o.approval ?? 0) - (o.budget ?? 0) * 0.03 > (def.options[bi].approval ?? 0) - (def.options[bi].budget ?? 0) * 0.03 ? i : bi), 0);
@@ -630,6 +663,8 @@ export interface OrderDef {
   foreign?: number;
   /** Chance the courts (or the legislature) block it in a presidential system. */
   risk?: number;
+  /** Better (+) or worse (-) for society's indices. */
+  society?: Partial<Record<S.SocKey, number>>;
 }
 
 export const ORDERS: OrderDef[] = [
@@ -643,12 +678,23 @@ export const ORDERS: OrderDef[] = [
   { id: "tariffs", name: "Emergency tariffs", icon: "🚧", desc: "Protect home industry from imports.", cooldown: 52, growth: -0.1, foreign: -10, goodwill: { workers: 4, rural: 2, business: -4 }, risk: 0.2 },
   { id: "youthJobs", name: "Youth jobs scheme", icon: "🧑‍🔧", desc: "A guaranteed job or training for every young person.", cooldown: 26, budget: -6, unemployment: -0.3, goodwill: { young: 5 } },
   { id: "border", name: "Border order", icon: "🛂", desc: "Tighten the border by order.", cooldown: 52, approval: 1, foreign: -5, goodwill: { workers: 3, professionals: -3 }, risk: 0.25 },
+  // The mega super update's orders.
+  { id: "nurses", name: "Hire 20,000 nurses", icon: "🩺", desc: "Fast-track nurses into the health service.", cooldown: 52, budget: -6, happiness: 0.5, goodwill: { retirees: 4 }, society: { health: 4 } },
+  { id: "rentFreeze", name: "Rent freeze", icon: "🧊", desc: "No rent rises for a year.", cooldown: 52, happiness: 1, goodwill: { young: 5, business: -3 }, society: { housing: 3 }, risk: 0.2 },
+  { id: "schoolMeals", name: "Free breakfast clubs", icon: "🥣", desc: "Breakfast for every primary school child.", cooldown: 52, budget: -3, goodwill: { workers: 3 }, society: { education: 2, inequality: 1 } },
+  { id: "redTape", name: "Bonfire of red tape", icon: "📑", desc: "Scrap a thousand regulations.", cooldown: 52, growth: 0.1, goodwill: { business: 4, green: -3 }, society: { environment: -2 } },
+  { id: "trees", name: "Plant a billion trees", icon: "🌳", desc: "A new forest in every region.", cooldown: 52, budget: -4, goodwill: { green: 5, rural: 1 }, society: { environment: 4 } },
+  { id: "lobbyBan", name: "Ban lobbyists' gifts", icon: "🚫", desc: "No more free dinners for ministers.", cooldown: 52, approval: 1, goodwill: { business: -2 }, society: { trust: 4 } },
+  { id: "cyberShield", name: "Cyber shield", icon: "🛡️", desc: "Protect hospitals and power stations from hackers.", cooldown: 52, budget: -3, approval: 1, society: { infrastructure: 2 } },
+  { id: "seniorsCard", name: "Free travel for over-65s", icon: "🚌", desc: "Buses and trains free for pensioners.", cooldown: 52, budget: -3, goodwill: { retirees: 5 } },
 ];
 export const ORDER: Record<string, OrderDef> = Object.fromEntries(ORDERS.map((o) => [o.id, o]));
+/** An order by id: built in, or one the player wrote. */
+export const orderOf = (s: G.GameState, id: string): OrderDef | undefined => ORDER[id] ?? St.myOrder(s, id);
 
 /** Use an executive action (heads of government only; each has a cooldown). */
 export function issueOrder(s: G.GameState, id: string): { ok: boolean; blocked?: boolean; why?: string } {
-  const o = ORDER[id];
+  const o = orderOf(s, id);
   if (!o) return { ok: false, why: "Unknown action." };
   if (s.gov.head !== s.you) return { ok: false, why: `Only the ${G.titles(s).head} can do that.` };
   if ((s.orders[id] ?? 0) > s.week) return { ok: false, why: `Ready again in ${s.orders[id] - s.week} weeks.` };
@@ -668,6 +714,8 @@ export function issueOrder(s: G.GameState, id: string): { ok: boolean; blocked?:
   if (o.unemployment) s.stats.unemployment = Math.max(1, s.stats.unemployment + o.unemployment);
   if (o.foreign) for (const f of s.foreign) f.rel = clamp(f.rel + o.foreign, -100, 100);
   for (const [g, v] of Object.entries(o.goodwill ?? {})) bump(s.goodwill, g, v);
+  for (const [k, v] of Object.entries(o.society ?? {})) S.improve(s, k as S.SocKey, v);
+  if (!ORDER[id]) C.note(s, "myOrders");
   s.score += 10;
   G.news(s, "government", `${presidential ? "Executive order" : "Government action"}: ${o.name.toLowerCase()}`, 1);
   return { ok: true };
@@ -721,6 +769,8 @@ export interface Foreign {
   rel: number;
   base: number;
   deal: boolean;
+  /** Under our sanctions. */
+  sanctioned?: boolean;
   /** Week of the next visit you can make. */
   ready: number;
 }

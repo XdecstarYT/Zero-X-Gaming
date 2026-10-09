@@ -46,6 +46,8 @@ export function needsYou(s: G.GameState): string | null {
   if (s.qt && s.qt.week < s.week) return C.qtName(s);
   if (s.conference) return "The party conference";
   if (s.court?.nominees && s.gov.head === s.you) return "A court vacancy";
+  if (s.wd?.summit) return "A summit";
+  if (s.ox?.sotn !== null && s.ox?.sotn !== undefined) return "The State of the Nation";
   if (C.budgetDue(s)) return "The budget";
   if (s.bills.some((b) => b.stage !== "passed" && b.stage !== "failed" && b.voteAt <= s.week && G.youVoteOn(s, b) && b.yourVote === null)) return "A vote";
   return null;

@@ -312,6 +312,7 @@ const big = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `
 export function Social({ g }: { g: Game }) {
   const s = g.s!;
   const left = Md.POST_MAX - Md.postsThisWeek(s);
+  const [own, setOwn] = useState("");
   return (
     <div data-testid="yg-social">
       <div className="yg-tiles">
@@ -330,12 +331,27 @@ export function Social({ g }: { g: Game }) {
       </div>
       <div className="yg-grid">
         {Md.POST_KINDS.map((k) => (
-          <button key={k.id} type="button" className="yg-tile" title={k.about} disabled={left <= 0} onClick={() => g.post(k.id)} data-testid={`yg-post-${k.id}`}>
+          <button
+            key={k.id}
+            type="button"
+            className="yg-tile"
+            title={k.about}
+            disabled={left <= 0}
+            onClick={() => {
+              g.post(k.id, own);
+              setOwn("");
+            }}
+            data-testid={`yg-post-${k.id}`}
+          >
             <span className="yg-tile-ico">{k.icon}</span>
             <span className="yg-tile-name">{k.name}</span>
           </button>
         ))}
       </div>
+      <label className="yg-field" style={{ marginTop: 8 }}>
+        <span>Write it yourself (optional), then pick the kind of post</span>
+        <textarea className="yg-input" rows={2} maxLength={140} value={own} placeholder="Leave empty and your team writes it" onChange={(e) => setOwn(e.target.value)} data-testid="yg-post-own" />
+      </label>
       <p className="yg-muted small" style={{ margin: "6px 4px" }}>
         Most posts win a few followers. Some fly, and lift you everywhere; some backfire. A bigger following helps the next one fly.
       </p>

@@ -10,6 +10,8 @@
 import { WEEKS, type Effects, type PartyId, type Pos } from "./data";
 import * as K from "./career";
 import * as P from "./politics";
+import * as Gr from "./grassroots";
+import * as S from "./society";
 import * as G from "./sim";
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
@@ -70,7 +72,7 @@ export const ISSUES = [
   { id: "values", name: "Family & values", icon: "⛪", group: "faith" },
 ];
 /** Crises that put an issue at the top of the news. */
-const CRISIS_ISSUE: Record<string, string> = { pandemic: "health", housing: "housing", refugees: "immigration", wildfire: "climate", flood: "climate", storm: "climate", drought: "climate", oil: "cost", protest: "cost", bank: "economy", factory: "economy", strike: "economy", corruption: "crime", teachers: "values" };
+const CRISIS_ISSUE: Record<string, string> = { pandemic: "health", housing: "housing", refugees: "immigration", wildfire: "climate", flood: "climate", storm: "climate", drought: "climate", oil: "cost", protest: "cost", bank: "economy", factory: "economy", strike: "economy", corruption: "crime", teachers: "values", heatwave: "climate", quake: "economy", dataLeak: "crime", bridge: "economy", detained: "immigration", skirmish: "immigration", foodPrices: "cost", nurses: "health", spill: "climate", crash: "economy" };
 
 /** The most important issues facing the country, as shares that add up to one. */
 export function issues(s: G.GameState): Record<string, number> {
@@ -89,6 +91,8 @@ export function issues(s: G.GameState): Record<string, number> {
   };
   const hot = s.crisis ? CRISIS_ISSUE[s.crisis.id] : undefined;
   if (hot) raw[hot] += 16;
+  // Society: rising crime, failing hospitals, unaffordable homes, a dirty environment.
+  for (const [k, v] of Object.entries(S.issuePull(s))) raw[k] = (raw[k] ?? 0) + v;
   const sum = Object.values(raw).reduce((a, b) => a + b, 0);
   return Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, v / sum]));
 }
@@ -354,7 +358,7 @@ export function answerQT(s: G.GameState, style: string) {
   const ch = G.pol(s, s.you)?.charisma ?? 5;
   const sw = staffSkill(s, "speech") * 0.4;
   let pts = style === "record" ? 1 + r.next() * 3 : style === "attack" ? -5 + r.next() * 12 : style === "heart" ? (ch - 5) * 1.1 + (r.next() - 0.4) * 6 : -0.5 + r.next();
-  if (style !== "dodge") pts += sw;
+  if (style !== "dodge") pts += sw + Gr.shadowEdge(s) + (s.studio?.background === "lawyer" ? 0.5 : 0);
   pts = Math.round(pts * 10) / 10;
   const ps = s.parties[s.party];
   P.pressEvent(s, pts * 0.6);
@@ -554,6 +558,23 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "bull", name: "Bull market", icon: "🐂", about: "See the stock market up by half", score: 75, check: (s) => (s.mk?.index ?? 0) >= 1500 },
   { id: "aaa", name: "Triple A", icon: "🏅", about: "Lead a country rated AAA", score: 100, check: (s) => s.gov.head === s.you && s.mk?.rating === 0 },
   { id: "decade", name: "Old hand", icon: "🕰️", about: "Last ten years in politics", score: 100, check: (s) => s.week >= WEEKS * 10 },
+  // The two super mega updates.
+  { id: "delivered", name: "Promise made, promise kept", icon: "✅", about: "Deliver a policy you announced", score: 75, check: (s) => (s.counters.policiesDelivered ?? 0) >= 1 },
+  { id: "delivery", name: "Delivery unit", icon: "📦", about: "Deliver five policies", score: 150, check: (s) => (s.counters.policiesDelivered ?? 0) >= 5 },
+  { id: "rebrand", name: "New look", icon: "🎨", about: "Rebrand the party", score: 25, check: (s) => (s.counters.rebrands ?? 0) >= 1 },
+  { id: "myOrder", name: "Signed by me", icon: "🖋️", about: "Issue an executive order you wrote", score: 50, check: (s) => (s.counters.myOrders ?? 0) >= 1 },
+  { id: "myEvent", name: "Showrunner", icon: "🎬", about: "Hold an event you designed", score: 25, check: (s) => (s.counters.myEvents ?? 0) >= 1 },
+  { id: "summit", name: "World stage", icon: "🌐", about: "Lead the talks at a summit", score: 75, check: (s) => (s.wd?.led ?? 0) >= 1 },
+  { id: "treaty", name: "Treaty maker", icon: "📜", about: "Sign a treaty", score: 75, check: (s) => (s.counters.treaties ?? 0) >= 1 },
+  { id: "peace", name: "Peacemaker", icon: "🕊️", about: "End a protest by meeting it or giving way", score: 50, check: (s) => (s.counters.protestsEnded ?? 0) >= 1 },
+  { id: "defector", name: "Crossing the floor", icon: "🔀", about: "Win over a member of another party", score: 75, check: (s) => (s.counters.defectors ?? 0) >= 1 },
+  { id: "oppDay", name: "Opposition day", icon: "📣", about: "Win an opposition day motion", score: 75, check: (s) => (s.counters.oppDays ?? 0) >= 1 },
+  { id: "filibuster", name: "Talk it out", icon: "🗣️", about: "Filibuster a bill", score: 25, check: (s) => (s.counters.filibusters ?? 0) >= 1 },
+  { id: "gotv", name: "Every vote counts", icon: "🚪", about: "Run a get-out-the-vote drive", score: 25, check: (s) => (s.counters.gotv ?? 0) >= 1 },
+  { id: "holiday", name: "Bank holiday", icon: "🎉", about: "Create a national holiday", score: 50, check: (s) => (s.counters.holidays ?? 0) >= 1 },
+  { id: "safe", name: "Safe streets", icon: "🚔", about: "Get crime below 35", score: 100, check: (s) => (s.soc?.idx.crime ?? 100) < 35 },
+  { id: "longLives", name: "Long lives", icon: "🧬", about: "Life expectancy over 84", score: 100, check: (s) => S.lifeExpectancy(s) > 84 },
+  { id: "nation", name: "State of the Nation", icon: "📜", about: "Give a State of the Nation address", score: 50, check: (s) => (s.counters.sotn ?? 0) >= 1 },
 ];
 
 /** Unlock anything newly earned. Returns what was. */

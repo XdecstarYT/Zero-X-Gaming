@@ -49,6 +49,8 @@ export interface LawDef {
   custom?: boolean;
   /** One line on what it's about (custom laws). */
   about?: string;
+  /** Voter groups that want it moved up the options (+1) or down (-1) (custom laws). */
+  likes?: Record<string, number>;
 }
 
 /** The committee each group of laws goes to by default. */
@@ -106,6 +108,20 @@ export const LAWS: LawDef[] = [
   { id: "campaignFinance", name: "Campaign finance", group: "Government", committee: 8, start: 1, options: opts(["Public funding only", -0.5, -0.3, { budget: -2 }], ["Capped donations", 0, 0, {}], ["Unlimited donations", 0.7, 0.2, {}]) },
   { id: "unions", name: "Trade unions", group: "Economy", committee: 5, start: 1, options: opts(["Restricted", 0.7, 0.3, { growth: 0.1, happiness: -1 }], ["Recognised", 0, 0, {}], ["Strong rights", -0.7, -0.1, { growth: -0.1, happiness: 1.5 }]) },
   { id: "welfare", name: "Unemployment benefits", group: "Services", committee: 3, start: 1, options: opts(["None", 0.8, 0.3, { budget: 12, happiness: -3 }], ["Basic", 0, 0, {}], ["Universal basic income", -0.9, -0.2, { budget: -60, happiness: 6, unemployment: 0.5 }]) },
+  // The mega super update's laws.
+  { id: "wealthTax", name: "Wealth tax", group: "Economy", committee: 1, start: 0, options: opts(["None", 0.6, 0, {}], ["1% on fortunes over 10M", -0.4, 0, { budget: 8, growth: -0.03 }], ["3% on fortunes over 1M", -0.8, -0.1, { budget: 18, growth: -0.12, happiness: 0.5 }]) },
+  { id: "rentControl", name: "Rent control", group: "Services", committee: 4, start: 0, options: opts(["Free market", 0.6, 0.1, {}], ["Rent caps", -0.4, -0.1, { happiness: 1.5, growth: -0.05 }], ["Strict controls", -0.8, -0.2, { happiness: 2, growth: -0.15 }]) },
+  { id: "retirementAge", name: "Retirement age", group: "Services", committee: 3, start: 1, options: opts(["60", -0.5, 0, { budget: -15, happiness: 2 }], ["65", 0, 0, {}], ["68", 0.5, 0, { budget: 14, happiness: -2.5, unemployment: 0.1 }]) },
+  { id: "fourDayWeek", name: "Working week", group: "Economy", committee: 5, start: 0, options: opts(["Five days", 0.3, 0.2, {}], ["Four-day pilots", -0.2, -0.2, { happiness: 1 }], ["Four days by law", -0.7, -0.4, { happiness: 3, growth: -0.2 }]) },
+  { id: "nationalService", name: "National service", group: "Security", committee: 7, start: 0, options: opts(["None", 0, -0.3, {}], ["Voluntary scheme", 0, 0.2, { budget: -3, unemployment: -0.1 }], ["Compulsory at 18", 0.2, 0.8, { budget: -9, happiness: -2, unemployment: -0.3 }]) },
+  { id: "publicBroadcaster", name: "Public broadcaster", group: "Society", committee: 6, start: 1, options: opts(["Privatised", 0.7, 0.1, { budget: 3 }], ["Licence fee", 0, 0, {}], ["Fully state funded", -0.5, -0.2, { budget: -4, happiness: 0.5 }]) },
+  { id: "dataPrivacy", name: "Data privacy", group: "Society", committee: 8, start: 1, options: opts(["Light touch", 0.5, 0.2, { growth: 0.05 }], ["Data protection law", 0, -0.2, {}], ["Strict privacy rights", -0.3, -0.5, { growth: -0.05, happiness: 0.5 }]) },
+  { id: "aiRules", name: "Artificial intelligence", group: "Economy", committee: 4, start: 0, options: opts(["Unregulated", 0.6, 0, {}], ["Safety rules", -0.1, -0.2, { growth: -0.03 }], ["Strict licensing", -0.4, 0.2, { growth: -0.12, unemployment: -0.1 }]) },
+  { id: "animalWelfare", name: "Animal welfare", group: "Society", committee: 2, start: 1, options: opts(["Minimal", 0.4, 0.3, { growth: 0.03 }], ["Standard", 0, 0, {}], ["Strong protections", -0.3, -0.5, { growth: -0.03, happiness: 0.3 }]) },
+  { id: "sugarTax", name: "Sugar tax", group: "Services", committee: 3, start: 0, options: opts(["None", 0.4, 0.1, {}], ["Sugar levy", -0.3, 0.1, { budget: 3, happiness: -0.3 }], ["Junk food tax", -0.5, 0.2, { budget: 6, happiness: -0.8 }]) },
+  { id: "prisonReform", name: "Prisons", group: "Security", committee: 5, start: 1, options: opts(["Tough sentencing", 0.2, 0.7, { budget: -4 }], ["Standard", 0, 0, {}], ["Rehabilitation first", -0.3, -0.6, { budget: 2 }]) },
+  { id: "compulsoryVoting", name: "Compulsory voting", group: "Government", committee: 8, start: 0, constitutional: true, options: opts(["Voluntary", 0.1, 0.1, {}], ["Compulsory", -0.1, -0.1, {}]) },
+  { id: "parliamentTerm", name: "Parliament's term", group: "Government", committee: 8, start: 2, constitutional: true, options: opts(["2 years", 0, -0.2, {}], ["3 years", 0, -0.1, {}], ["4 years", 0, 0, {}], ["5 years", 0, 0.2, {}]) },
 ];
 export const LAW: Record<string, LawDef> = Object.fromEntries(LAWS.map((l) => [l.id, l]));
 
@@ -139,8 +155,8 @@ export interface EventDef {
   /** Chance it backfires (negative boost). */
   risk?: number;
   desc: string;
-  /** Which tab of the events panel it's in. */
-  kind: "campaign" | "voters" | "money" | "party";
+  /** Which tab of the events panel it's in ("mine": one the player designed). */
+  kind: "campaign" | "voters" | "money" | "party" | "mine";
   /** Goodwill it wins with a voter group (and its interest group). */
   group?: string;
   goodwill?: number;
@@ -194,6 +210,21 @@ export const EVENTS: EventDef[] = [
   { id: "manifesto", kind: "party", name: "Policy launch", icon: "📜", cost: 1, scope: "national", boost: 2, unity: 5, desc: "Unveil a big idea. (Your manifesto is in Campaign HQ.)" },
   { id: "caucus", kind: "party", name: "Caucus dinner", icon: "🍷", cost: 0.4, scope: "self", boost: 0, unity: 6, desc: "Keep your lawmakers sweet." },
   { id: "training", kind: "party", name: "Candidate school", icon: "🧑‍🏫", cost: 1.2, scope: "national", boost: 0.8, members: 600, desc: "Train the next generation of candidates." },
+  // The mega super update's events.
+  { id: "podcast", kind: "campaign", name: "Podcast interview", icon: "🎧", cost: 0.2, scope: "national", boost: 1.4, members: 200, risk: 0.12, desc: "Three hours, no script. Younger listeners love it." },
+  { id: "phoneBank", kind: "campaign", name: "Phone bank", icon: "📞", cost: 0.3, scope: "state", boost: 2, members: 150, desc: "Volunteers call every number in the region." },
+  { id: "billboard", kind: "campaign", name: "Billboard blitz", icon: "🪧", cost: 3.5, scope: "national", boost: 2, desc: "Your face on every motorway." },
+  { id: "localRadio", kind: "campaign", name: "Local radio phone-in", icon: "📻", cost: 0.15, scope: "state", boost: 1.2, risk: 0.05, desc: "Take calls on the breakfast show." },
+  { id: "matchDay", kind: "campaign", name: "Big match appearance", icon: "🏟️", cost: 0.5, scope: "state", boost: 2.5, risk: 0.1, desc: "Cheer on the home team. Don't get the score wrong." },
+  { id: "hospital", kind: "voters", name: "Hospital visit", icon: "🏥", cost: 0.3, scope: "state", boost: 1.5, group: "retirees", goodwill: 4, desc: "Thank the nurses, meet the patients." },
+  { id: "smallBiz", kind: "voters", name: "Small business tour", icon: "🏪", cost: 0.4, scope: "state", boost: 2, group: "business", goodwill: 4, desc: "Corner shops, cafés and workshops." },
+  { id: "festival", kind: "voters", name: "Music festival stall", icon: "🎶", cost: 1, scope: "state", boost: 2, group: "young", goodwill: 5, desc: "Wristbands, wellies and voter registration." },
+  { id: "feast", kind: "voters", name: "Community feast", icon: "🥘", cost: 0.4, scope: "state", boost: 1.5, group: "faith", goodwill: 4, desc: "Break bread with a faith community." },
+  { id: "marketDay", kind: "voters", name: "Market day", icon: "🧺", cost: 0.3, scope: "state", boost: 2, group: "rural", goodwill: 4, desc: "Shake hands at the county market." },
+  { id: "commuters", kind: "voters", name: "Station meet-and-greet", icon: "🚉", cost: 0.2, scope: "state", boost: 1.5, group: "professionals", goodwill: 4, desc: "Coffee for the morning commuters." },
+  { id: "treePlant", kind: "voters", name: "Tree planting", icon: "🌳", cost: 0.4, scope: "state", boost: 1.5, group: "green", goodwill: 5, desc: "Plant a thousand saplings with volunteers." },
+  { id: "thinkTank", kind: "money", name: "Think-tank dinner", icon: "🧠", cost: 0.5, scope: "self", boost: 0, money: 3, group: "professionals", goodwill: 2, fund: true, desc: "Policy wonks with deep pockets." },
+  { id: "volunteers", kind: "party", name: "Volunteer weekend", icon: "🙌", cost: 0.6, scope: "self", boost: 0, members: 1500, unity: 3, desc: "Train and thank the volunteers who do the work." },
 ];
 export const EVENT: Record<string, EventDef> = Object.fromEntries(EVENTS.map((e) => [e.id, e]));
 

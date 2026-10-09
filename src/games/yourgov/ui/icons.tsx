@@ -44,6 +44,7 @@ const P: Record<string, string> = {
   mic: "M12 3a3 3 0 013 3v5a3 3 0 01-6 0V6a3 3 0 013-3zM6 11a6 6 0 0012 0M12 17v4M8.5 21h7",
   bolt: "M13 3L5 13.5h6L10 21l8-10.5h-6z",
   crown: "M3 18h18M4 16L3 7l5 4 4-6 4 6 5-4-1 9z",
+  city: "M3 21h18M5 21V10l4-3v14M9 21V4l6 3v14M15 21v-9l4 2v7M11.5 9h1M11.5 13h1M11.5 17h1",
 };
 
 export type IconName = keyof typeof P;

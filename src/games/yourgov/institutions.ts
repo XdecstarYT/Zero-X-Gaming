@@ -99,7 +99,7 @@ export const COURT_SIZE = 9;
 const COURT_NAMES: Record<string, string> = { us: "Supreme Court", gb: "Supreme Court", ca: "Supreme Court", au: "High Court", de: "Federal Constitutional Court", fr: "Constitutional Council", es: "Constitutional Court", it: "Constitutional Court", jp: "Supreme Court", in: "Supreme Court", br: "Supreme Federal Court", mx: "Supreme Court of Justice" };
 export const courtName = (s: G.GameState) => COURT_NAMES[s.sc.map.kind === "real" ? s.sc.map.code : ""] ?? "Supreme Court";
 /** Laws about rights get challenged in court far more often. */
-const RIGHTS = new Set(["speech", "marriage", "gunPolicy", "deathPenalty", "immigration", "church", "drugPolicy", "votingAge", "campaignFinance", "unions", "police"]);
+const RIGHTS = new Set(["speech", "marriage", "gunPolicy", "deathPenalty", "immigration", "church", "drugPolicy", "votingAge", "campaignFinance", "unions", "police", "dataPrivacy", "nationalService", "compulsoryVoting", "prisonReform"]);
 export const leanLabel = (p: Pos) => (p.s < -0.25 ? "Liberal" : p.s > 0.25 ? "Conservative" : "Centrist");
 
 function judgeName(s: G.GameState, r: ReturnType<typeof G.roll>) {

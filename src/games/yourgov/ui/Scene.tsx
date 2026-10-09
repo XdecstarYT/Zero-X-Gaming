@@ -65,7 +65,9 @@ export function Scene({ g }: { g: Game }) {
 
   // The politics on the land: recoloured when the week, the mode or the count moves on.
   const countBucket = s.election ? Math.round(g.ui.count * 240) : -1;
-  const colors = useMemo(() => countyColors(s, g.ui.mapMode, s.election ? countBucket / 240 : null), [s, s.week, g.ui.mapMode, countBucket, s.election, g.ui.state]); // eslint-disable-line react-hooks/exhaustive-deps
+  // (A rebrand's colour, the colour-blind palette and your targets repaint it too.)
+  const repaint = `${G.party(s, s.party).color}|${g.prefs.cb ? 1 : 0}|${s.gr?.targets.join(",") ?? ""}`;
+  const colors = useMemo(() => countyColors(s, g.ui.mapMode, s.election ? countBucket / 240 : null, g.prefs.cb), [s, s.week, g.ui.mapMode, countBucket, s.election, g.ui.state, repaint]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const st = stage.current;
     if (!st) return;
@@ -115,7 +117,7 @@ export function Scene({ g }: { g: Game }) {
   if (failed)
     return view === "map" ? (
       <div className="yg-flat">
-        <MapView s={s} mode={g.ui.mapMode === "terrain" ? "politics" : g.ui.mapMode} selected={g.ui.state} count={s.election ? g.ui.count : null} onSelect={(st) => g.setUI({ state: st })} />
+        <MapView s={s} mode={g.ui.mapMode === "states" || g.ui.mapMode === "support" ? g.ui.mapMode : "politics"} selected={g.ui.state} count={s.election ? g.ui.count : null} onSelect={(st) => g.setUI({ state: st })} />
       </div>
     ) : (
       <div className="yg-flat light">

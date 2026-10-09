@@ -14,7 +14,12 @@ import * as Mk from "./markets";
 import * as Md from "./media";
 import * as P from "./politics";
 import * as G from "./sim";
-import { Sound } from "./audio";
+import * as Gr from "./grassroots";
+import * as O from "./office";
+import * as So from "./society";
+import * as St from "./studio";
+import * as W from "./world";
+import { Sound, type Cue } from "./audio";
 import type { MapMode } from "./ui/mapColors";
 
 const LIBRARY_KEY = "zx-yourgov-scenarios";
@@ -22,13 +27,19 @@ const HALL_KEY = "zx-yourgov-hall";
 /** Most custom scenarios kept. */
 export const LIBRARY_MAX = 24;
 
-export type Tab = "bills" | "write" | "events" | "chamber" | "parties" | "party" | "country" | "news" | "missions" | "settings" | "voters" | "gov" | "hq" | null;
+export type Tab = "bills" | "write" | "events" | "chamber" | "parties" | "party" | "country" | "news" | "missions" | "settings" | "voters" | "gov" | "hq" | "studio" | "world" | null;
 /** The pages of the polling centre (the parties panel). */
 export type PollPage = "parties" | "groups" | "regions" | "leaders" | "issues" | "seats";
-export type HqPage = "staff" | "manifesto" | "position" | "social";
+export type HqPage = "staff" | "manifesto" | "position" | "social" | "ground" | "targets" | "shadow";
+/** The pages of the customisation studio. */
+export type StudioPage = "policies" | "orders" | "events" | "crises" | "party" | "leader" | "speech" | "names" | "holidays";
+/** The pages of the society and world panel. */
+export type WorldPage = "society" | "economy" | "world" | "protests";
+/** Pages that open over the game from the settings, the palette or a shortcut. */
+export type Extra = "notes" | "help" | "stats" | "slots" | null;
 export type CountryPage = "overview" | "markets";
 /** The sections of the events panel. */
-export type EventKind = "campaign" | "voters" | "money" | "party" | "diary";
+export type EventKind = "campaign" | "voters" | "money" | "party" | "mine" | "diary";
 
 /** An outcome worth a card of its own (a debate, a referendum, a challenge). */
 export interface ResultCard {
@@ -72,6 +83,15 @@ export interface UIState {
   toasts: { id: number; text: string; tone: 1 | 0 | -1 }[];
   /** Election count progress 0–1 (animated by the UI). */
   count: number;
+  studioPage: StudioPage;
+  worldPage: WorldPage;
+  /** The command palette is open. */
+  palette: boolean;
+  /** The inbox is open. */
+  inbox: boolean;
+  /** Photo mode: everything but the country hidden. */
+  photo: boolean;
+  extra: Extra;
 }
 
 export interface Prefs {
@@ -82,10 +102,30 @@ export interface Prefs {
   overlay: number;
   /** Tips for a new player (cleared when they're dismissed). */
   tips: boolean;
+  /** The highlight colour of the controls. */
+  accent: string;
+  /** Text size: 0 small, 1 normal, 2 large, 3 larger. */
+  text: number;
+  /** Tighter rows and panels. */
+  compact: boolean;
+  /** No animations. */
+  calm: boolean;
+  hideTicker: boolean;
+  hideMissions: boolean;
+  /** Ask before ending a week with a vote of yours still waiting. */
+  confirmVotes: boolean;
+  /** How many weeks the skip-ahead button may skip. */
+  ffWeeks: number;
+  /** Map colours that people with red-green colour blindness can tell apart. */
+  cb: boolean;
 }
 
 const PREFS_KEY = "zx-yourgov-prefs";
-const DEFAULT_PREFS: Prefs = { gfx: "auto", sound: true, clouds: true, overlay: 0.8, tips: true };
+const SLOT_KEY = "zx-yourgov-slot-";
+export const SLOTS = 3;
+const DEFAULT_PREFS: Prefs = { gfx: "auto", sound: true, clouds: true, overlay: 0.8, tips: true, accent: "#0a84ff", text: 1, compact: false, calm: false, hideTicker: false, hideMissions: false, confirmVotes: false, ffWeeks: 12, cb: false };
+/** The accent colours on offer. */
+export const ACCENTS = ["#0a84ff", "#30d158", "#ff9f0a", "#ff375f", "#bf5af2", "#64d2ff", "#ffd60a", "#ac8e68"];
 
 export interface Scorer {
   progress(n: number): void;
@@ -94,7 +134,7 @@ export interface Scorer {
 
 export class Game {
   s: G.GameState | null = null;
-  ui: UIState = { tab: "missions", view: "map", mapMode: "politics", house: "house", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, poll: "parties", hq: "staff", budget: false, country: "overview", paper: false, studio: null, toasts: [], count: 0 };
+  ui: UIState = { tab: "missions", view: "map", mapMode: "politics", house: "house", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, poll: "parties", hq: "staff", budget: false, country: "overview", paper: false, studio: null, toasts: [], count: 0, studioPage: "policies", worldPage: "society", palette: false, inbox: false, photo: false, extra: null };
   prefs: Prefs = { ...DEFAULT_PREFS };
   readonly sound = new Sound();
   private listeners = new Set<() => void>();
@@ -219,7 +259,7 @@ export class Game {
     this.hallPlace = -1;
     this.finalScore = null;
     this.startedAt = performance.now();
-    this.ui = { ...this.ui, tab: "missions", view: "map", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, poll: "parties", hq: "staff", budget: false, country: "overview", paper: false, studio: null, count: 0 };
+    this.ui = { ...this.ui, tab: "missions", view: "map", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, poll: "parties", hq: "staff", budget: false, country: "overview", paper: false, studio: null, count: 0, studioPage: "policies", worldPage: "society", palette: false, inbox: false, photo: false, extra: null };
     this.sound.play("start");
     this.changed();
   }
@@ -417,7 +457,7 @@ export class Game {
   // ------------------------------------------------------------------ the wider politics
 
   /** Put a decision (crisis, debate, challenge…) off to the end of the week. */
-  later(kind: "crisis" | "debate" | "challenge" | "qt" | "scandal" | "budget" | "court" | "conference") {
+  later(kind: "crisis" | "debate" | "challenge" | "qt" | "scandal" | "budget" | "court" | "conference" | "summit" | "sotn") {
     if (!this.s) return;
     this.setUI({ later: { ...this.ui.later, [kind]: this.s.week } });
   }
@@ -584,8 +624,8 @@ export class Game {
 
   // ------------------------------------------------------------------ the super mega update
 
-  /** End weeks until something needs you (at most a dozen). */
-  fastForward(max = 12) {
+  /** End weeks until something needs you (at most a dozen, or what the settings say). */
+  fastForward(max = this.prefs.ffWeeks) {
     const s = this.s;
     if (!s) return;
     const why = K.needsYou(s);
@@ -635,10 +675,10 @@ export class Game {
     this.changed();
   }
 
-  post(kind: string) {
+  post(kind: string, own?: string) {
     const s = this.s;
     if (!s) return;
-    const r = Md.post(s, kind);
+    const r = Md.post(s, kind, own);
     if (!r.ok) return this.toast(r.why ?? "You can't post now", -1);
     this.sound.play(r.viral ? "win" : r.backfired ? "bad" : "click");
     this.toast(r.viral ? "It's going viral!" : r.backfired ? "That didn't land…" : "Posted", r.viral ? 1 : r.backfired ? -1 : 0);
@@ -698,5 +738,197 @@ export class Game {
     this.toast(`${name} is struck from the books`, 0);
     this.setUI({ law: null, studio: null });
     this.changed();
+  }
+
+  // ------------------------------------------------------------------ the two super mega updates
+
+  /**
+   * Run one of the player's actions: it returns why it couldn't be done (a toast), or nothing
+   * (a sound, the news it made as a toast, and a save).
+   */
+  run(f: (s: G.GameState) => string | null | undefined | void, ok?: string | ((s: G.GameState) => string), cue: Cue = "paper", tone: 1 | 0 | -1 = 1) {
+    const s = this.s;
+    if (!s) return false;
+    const before = s.news[0];
+    const e = f(s);
+    if (typeof e === "string" && e) {
+      this.toast(e, -1);
+      return false;
+    }
+    this.sound.play(cue);
+    const fresh = s.news[0] !== before ? s.news[0] : null;
+    const msg = typeof ok === "function" ? ok(s) : (ok ?? fresh?.text);
+    if (msg) this.toast(msg, fresh && ok === undefined ? fresh.tone : tone);
+    if (s.over) this.finish();
+    this.changed();
+    return true;
+  }
+
+  /** Announce a policy (returns an error, or null). */
+  announcePolicy(d: St.PolicyDraft): string | null {
+    let err: string | null = null;
+    this.run((s) => {
+      const r = St.announcePolicy(s, d);
+      err = typeof r === "string" ? r : null;
+      return err;
+    }, undefined, "cheer");
+    return err;
+  }
+
+  /** Save one of your own orders, events or crises (returns an error, or null). */
+  saveMade(kind: "order" | "event" | "crisis", d: unknown, id?: string): string | null {
+    const s = this.s;
+    if (!s) return "No game";
+    const r = kind === "order" ? St.saveOrder(s, d as Partial<St.MyOrder>, id) : kind === "event" ? St.saveEvent(s, d as St.EventDraft, id) : St.saveCrisis(s, d as Partial<P.CrisisDef>, id);
+    if (typeof r === "string") return r;
+    this.sound.play("paper");
+    this.toast(`${"title" in r ? r.title : r.name}: saved`, 1);
+    this.changed();
+    return null;
+  }
+
+  giveSpeech(d: St.SpeechDraft) {
+    this.run((s) => {
+      const r = St.giveSpeech(s, d);
+      return typeof r === "string" ? r : null;
+    }, undefined, "cheer");
+  }
+
+  answerSummit(i: number) {
+    this.run((s) => (W.answerSummit(s, i) ? null : "No summit"), undefined, "paper");
+  }
+
+  giveSotn(d: St.SpeechDraft) {
+    const s = this.s;
+    if (!s) return;
+    const r = O.giveSotn(s, d);
+    if (!r) return;
+    this.sound.play(r.points >= 0.5 ? "cheer" : "click");
+    this.setUI({ result: { icon: "📜", title: r.points >= 2 ? "A triumph" : r.points >= 0.5 ? "Well received" : r.points >= -0.5 ? "Mixed reviews" : "It fell flat", lines: [`“${r.quote}”`, `Approval ${r.points >= 0 ? "+" : ""}${r.points.toFixed(1)}.`], tone: r.points >= 0.5 ? 1 : r.points < -0.5 ? -1 : 0 } });
+    this.changed();
+  }
+
+  oppositionDay(law: string, option: number) {
+    this.run((s) => {
+      const r = Gr.oppositionDay(s, law, option);
+      if (typeof r === "string") return r;
+      this.setUI({ result: { icon: "📣", title: r.passed ? "Motion carried" : "Motion defeated", lines: [`${r.yes} to ${r.no}.`, r.passed ? "A blow to the government, and a lift for you." : "The government holds firm."], tone: r.passed ? 1 : -1 } });
+      return null;
+    }, "", "gavel", 0);
+  }
+
+  poach(party: PartyId) {
+    this.run((s) => {
+      const r = Gr.poach(s, party);
+      return r.ok ? null : (r.why ?? "No");
+    }, undefined, "paper");
+  }
+
+  confidenceVote() {
+    this.run((s) => {
+      const r = O.confidenceVote(s);
+      if (typeof r === "string") return r;
+      this.setUI({ result: { icon: r.won ? "👑" : "👋", title: r.won ? "You win the vote" : "You lose the vote", lines: [`${Math.round(r.support * 100)}% of the party backed you.`, r.won ? "The rebels are silenced, for now." : "Your time as leader is over."], tone: r.won ? 1 : -1 } });
+      return null;
+    }, "", "gavel", 0);
+  }
+
+  // ------------------------------------------------------------------ save slots
+
+  slotInfo(i: number): { name: string; date: string; score: number } | null {
+    try {
+      const raw = localStorage.getItem(SLOT_KEY + i);
+      if (!raw) return null;
+      const s = JSON.parse(raw) as G.GameState;
+      return { name: `${s.sc?.name ?? "?"} · ${s.sc?.parties?.find((p) => p.id === s.party)?.short ?? ""}`, date: G.dateLabel(s), score: s.score ?? 0 };
+    } catch {
+      return null;
+    }
+  }
+
+  saveSlot(i: number) {
+    if (!this.s) return;
+    try {
+      localStorage.setItem(SLOT_KEY + i, G.save(this.s));
+      this.toast(`Saved to slot ${i + 1}`, 1);
+    } catch {
+      this.toast("There's no room to save on this device", -1);
+    }
+    this.changed(false);
+  }
+
+  /** Load a save (from a slot or a file). Returns why it couldn't be read, or null. */
+  async loadSave(json: string | null): Promise<string | null> {
+    const s = G.load(json);
+    if (!s) return "That save can't be read.";
+    if (!mapReady(s.sc.map)) {
+      this.loadingSave = true;
+      this.changed(false);
+      try {
+        await prepareMap(s.sc.map);
+      } catch {
+        this.loadingSave = false;
+        this.changed(false);
+        return "The map for that save couldn't be loaded.";
+      }
+      this.loadingSave = false;
+    }
+    this.submitFinal();
+    this.s = s;
+    this.finalScore = null;
+    this.hallPlace = -1;
+    this.ui = { ...this.ui, tab: null, extra: null, palette: false, inbox: false, photo: false, bill: null, law: null, studio: null, result: null, later: {} };
+    this.sound.play("start");
+    this.changed();
+    return null;
+  }
+
+  loadSlot(i: number) {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(SLOT_KEY + i);
+    } catch {
+      raw = null;
+    }
+    return this.loadSave(raw);
+  }
+
+  deleteSlot(i: number) {
+    try {
+      localStorage.removeItem(SLOT_KEY + i);
+    } catch {
+      /* ignore */
+    }
+    this.changed(false);
+  }
+
+  /** The game as a file's text, to keep or move to another device. */
+  exportSave() {
+    return this.s ? G.save(this.s) : "";
+  }
+
+  // ------------------------------------------------------------------ the inbox
+
+  /** Everything waiting on the player, most urgent first. */
+  inboxItems(): { icon: string; text: string; go: Partial<UIState> }[] {
+    const s = this.s;
+    if (!s) return [];
+    const out: { icon: string; text: string; go: Partial<UIState> }[] = [];
+    const later = (k: string) => this.ui.later[k] === s.week;
+    for (const b of s.bills) if (b.stage !== "passed" && b.stage !== "failed" && G.youVoteOn(s, b) && b.yourVote === null) out.push({ icon: "🗳️", text: `Your vote: ${b.title ?? (b.budget ? "the budget" : G.lawOf(s, b.law)?.name ?? "a bill")}`, go: { tab: "bills", bill: b.id } });
+    if (s.crisis && later("crisis")) out.push({ icon: "🚨", text: "A crisis is waiting on you", go: { later: { ...this.ui.later, crisis: -1 } } });
+    if (s.wd?.summit && later("summit")) out.push({ icon: "🌐", text: "A summit is waiting on you", go: { later: { ...this.ui.later, summit: -1 } } });
+    if (s.ox?.sotn !== null && s.ox?.sotn !== undefined && later("sotn")) out.push({ icon: "📜", text: "Write the State of the Nation", go: { later: { ...this.ui.later, sotn: -1 } } });
+    if (C.budgetDue(s)) out.push({ icon: "💷", text: "Draft the budget", go: { budget: true } });
+    for (const p of s.studio?.policies ?? []) if (p.status === "announced" && p.deadline - s.week <= 8) out.push({ icon: p.icon, text: `${p.name}: deliver within ${Math.max(0, p.deadline - s.week)} weeks`, go: { tab: "studio", studioPage: "policies" } });
+    for (const p of s.soc?.protests ?? []) out.push({ icon: So.PROTEST[p.def]?.icon ?? "📢", text: `${So.PROTEST[p.def]?.name ?? "A protest"} (${Math.round(p.size)}% strength)`, go: { tab: "world", worldPage: "protests" } });
+    if (s.gov.head === s.you && Object.keys(s.cabinet).length < P.PORTFOLIOS.length) out.push({ icon: "🪑", text: "Your cabinet has empty posts", go: { tab: "gov" } });
+    if ((s.gr?.energy ?? 100) < 30) out.push({ icon: "🔋", text: `You're running on empty (${s.gr.energy}% energy)`, go: { tab: "hq", hq: "ground" } });
+    if (s.parties[s.party].funds < 1) out.push({ icon: "💸", text: "The party is nearly broke: hold a fundraiser", go: { tab: "events", evKind: "money", event: "fundraiser", evWeek: null } });
+    if (C.manifestoOpen(s) && !s.manifesto) out.push({ icon: "📜", text: "Publish your manifesto before the election", go: { tab: "hq", hq: "manifesto" } });
+    const n = G.nextElection(s);
+    if (n.kind !== "upper" && n.week - s.week <= 6 && s.gr && s.gr.gotv !== n.week) out.push({ icon: "🚪", text: "Election soon: book a get-out-the-vote drive", go: { tab: "hq", hq: "ground" } });
+    if (s.soc?.sport && !s.soc.sport.revealed && !s.soc.sport.watched && s.soc.sport.year === G.yearOf(s)) out.push({ icon: "🏟️", text: `The ${s.soc.sport.name} are on`, go: { tab: "world", worldPage: "society" } });
+    return out;
   }
 }

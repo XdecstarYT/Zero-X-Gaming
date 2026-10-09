@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { COMMITTEES, GROUP_COMMITTEE, LAW_GROUPS, type Effects, type LawGroup, type Pos } from "../data";
+import { COMMITTEES, GROUP_COMMITTEE, LAW_GROUPS, LAWS, type Effects, type LawGroup, type Pos } from "../data";
+import { GROUPS } from "../politics";
 import type { PartyDef } from "../scenario";
 import type { Game } from "../game";
 import * as G from "../sim";
@@ -35,6 +36,88 @@ const TEMPLATES: { id: string; label: string; options: Opt[]; start: number }[] 
       { label: "Low", pos: { e: 0.6, s: 0 }, fx: { budget: 10 } },
       { label: "Medium", pos: { e: 0, s: 0 }, fx: {} },
       { label: "High", pos: { e: -0.6, s: 0 }, fx: { budget: -10 } },
+    ],
+  },
+  {
+    id: "frequency",
+    label: "Never · Sometimes · Always",
+    start: 1,
+    options: [
+      { label: "Never", pos: { e: 0, s: -0.4 }, fx: {} },
+      { label: "Sometimes", pos: { e: 0, s: 0 }, fx: {} },
+      { label: "Always", pos: { e: 0, s: 0.4 }, fx: {} },
+    ],
+  },
+  {
+    id: "tax",
+    label: "Ban · Tax · Subsidise",
+    start: 1,
+    options: [
+      { label: "Banned", pos: { e: 0, s: 0.5 }, fx: {} },
+      { label: "Taxed", pos: { e: -0.2, s: 0 }, fx: { budget: 5 } },
+      { label: "Subsidised", pos: { e: -0.5, s: -0.2 }, fx: { budget: -8 } },
+    ],
+  },
+  {
+    id: "rollout",
+    label: "None · Pilot · Nationwide",
+    start: 0,
+    options: [
+      { label: "None", pos: { e: 0.3, s: 0.2 }, fx: {} },
+      { label: "Pilot schemes", pos: { e: 0, s: 0 }, fx: { budget: -2 } },
+      { label: "Nationwide", pos: { e: -0.4, s: -0.2 }, fx: { budget: -10, happiness: 1 } },
+    ],
+  },
+  {
+    id: "ownership",
+    label: "Private · Mixed · Public",
+    start: 1,
+    options: [
+      { label: "Private", pos: { e: 0.7, s: 0 }, fx: { budget: 5 } },
+      { label: "Mixed", pos: { e: 0, s: 0 }, fx: {} },
+      { label: "Public", pos: { e: -0.7, s: 0 }, fx: { budget: -8, happiness: 1 } },
+    ],
+  },
+  {
+    id: "power",
+    label: "Local · Regional · National",
+    start: 1,
+    options: [
+      { label: "Local councils", pos: { e: 0.2, s: -0.2 }, fx: {} },
+      { label: "Regions", pos: { e: 0, s: 0 }, fx: {} },
+      { label: "National government", pos: { e: -0.2, s: 0.2 }, fx: {} },
+    ],
+  },
+  {
+    id: "strict",
+    label: "Strict · Moderate · Lax",
+    start: 1,
+    options: [
+      { label: "Strict", pos: { e: -0.1, s: 0.5 }, fx: { growth: -0.05 } },
+      { label: "Moderate", pos: { e: 0, s: 0 }, fx: {} },
+      { label: "Lax", pos: { e: 0.4, s: -0.2 }, fx: { growth: 0.05 } },
+    ],
+  },
+  {
+    id: "rates",
+    label: "0% · 5% · 10% · 20%",
+    start: 0,
+    options: [
+      { label: "0%", pos: { e: 0.6, s: 0 }, fx: {} },
+      { label: "5%", pos: { e: 0.2, s: 0 }, fx: { budget: 6, happiness: -0.3 } },
+      { label: "10%", pos: { e: -0.2, s: 0 }, fx: { budget: 12, happiness: -0.7 } },
+      { label: "20%", pos: { e: -0.6, s: 0 }, fx: { budget: 22, happiness: -1.5, growth: -0.05 } },
+    ],
+  },
+  {
+    id: "consent",
+    label: "Off · Opt-in · Opt-out · Required",
+    start: 0,
+    options: [
+      { label: "Off", pos: { e: 0.2, s: 0.2 }, fx: {} },
+      { label: "Opt-in", pos: { e: 0.1, s: 0 }, fx: {} },
+      { label: "Opt-out", pos: { e: -0.1, s: -0.1 }, fx: {} },
+      { label: "Required", pos: { e: -0.3, s: 0.3 }, fx: {} },
     ],
   },
   {
@@ -115,6 +198,7 @@ export function LawStudio({ g }: { g: Game }) {
   const [constitutional, setConstitutional] = useState(!!editing?.constitutional);
   const [options, setOptions] = useState<Opt[]>(editing ? clone(editing.options) : clone(TEMPLATES[1].options));
   const [start, setStart] = useState(editing?.start ?? TEMPLATES[1].start);
+  const [likes, setLikes] = useState<Record<string, number>>(editing?.likes ?? {});
   const [open, setOpen] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const funds = s.parties[s.party].funds;
@@ -126,7 +210,7 @@ export function LawStudio({ g }: { g: Game }) {
       f(next[i]);
       return next;
     });
-  const draft = (): G.LawDraft => ({ name, about, group, committee, constitutional, start, options });
+  const draft = (): G.LawDraft => ({ name, about, group, committee, constitutional, start, options, likes });
   const check = G.checkDraft(s, draft(), editing?.id);
   // Who would vote to move the law from today's option to each other option?
   const backers = (i: number) =>
@@ -202,6 +286,55 @@ export function LawStudio({ g }: { g: Game }) {
                 <small>Changing it needs two thirds of each house.</small>
               </span>
             </label>
+            <div className="yg-field">
+              <span>Who cares (wants it higher up the options, or lower)</span>
+              <div className="yg-likes" data-testid="yg-law-likes">
+                {GROUPS.map((gr) => {
+                  const v = likes[gr.id] ?? 0;
+                  return (
+                    <button
+                      key={gr.id}
+                      type="button"
+                      className={`yg-like ${v > 0 ? "up" : v < 0 ? "down" : ""}`}
+                      onClick={() => setLikes((l) => ({ ...l, [gr.id]: v === 0 ? 1 : v > 0 ? -1 : 0 }))}
+                      aria-label={`${gr.name}: ${v > 0 ? "want it higher" : v < 0 ? "want it lower" : "don't mind"}`}
+                      data-testid={`yg-like-${gr.id}`}
+                    >
+                      <span>{gr.icon}</span>
+                      <b>{v > 0 ? "▲" : v < 0 ? "▼" : "·"}</b>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {!editing && (
+              <label className="yg-field">
+                <span>Or copy an existing law</span>
+                <select
+                  className="yg-input"
+                  value=""
+                  onChange={(e) => {
+                    const l = LAWS.find((x) => x.id === e.target.value);
+                    if (!l) return;
+                    setName(`My ${l.name.toLowerCase()}`.slice(0, 40));
+                    setGroup(l.group);
+                    setCommittee(l.committee);
+                    setConstitutional(!!l.constitutional);
+                    setOptions(clone(l.options.slice(0, 5)));
+                    setStart(Math.min(l.start, 4));
+                    setOpen(0);
+                  }}
+                  data-testid="yg-law-copy"
+                >
+                  <option value="">Pick a law…</option>
+                  {LAWS.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {!editing && (
               <div className="yg-field">
                 <span>Start from</span>

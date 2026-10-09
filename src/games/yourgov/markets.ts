@@ -77,7 +77,7 @@ export function marketFx(s: G.GameState) {
 }
 
 /** Crises that hit prices or the markets when they break. */
-const CRISIS_SHOCK: Record<string, { inflation?: number; index?: number }> = { oil: { inflation: 1.8, index: -0.04 }, bank: { index: -0.1 }, pandemic: { inflation: -0.4, index: -0.06 }, drought: { inflation: 0.6 }, strike: { index: -0.015 }, cyber: { index: -0.02 }, techhq: { index: 0.03 }, storm: { inflation: 0.2 } };
+const CRISIS_SHOCK: Record<string, { inflation?: number; index?: number }> = { oil: { inflation: 1.8, index: -0.04 }, bank: { index: -0.1 }, pandemic: { inflation: -0.4, index: -0.06 }, drought: { inflation: 0.6 }, strike: { index: -0.015 }, cyber: { index: -0.02 }, techhq: { index: 0.03 }, storm: { inflation: 0.2 }, crash: { index: -0.2 }, foodPrices: { inflation: 1 }, quake: { index: -0.03 }, heatwave: { inflation: 0.2 } };
 
 /** The markets' week (after the economy has moved). */
 export function marketsWeek(s: G.GameState) {

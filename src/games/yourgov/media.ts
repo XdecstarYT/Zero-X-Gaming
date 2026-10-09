@@ -9,6 +9,8 @@
 import type { PartyId } from "./data";
 import * as C from "./campaign";
 import * as P from "./politics";
+import * as Gr from "./grassroots";
+import * as St from "./studio";
 import * as G from "./sim";
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
@@ -85,7 +87,7 @@ export const followerCap = (s: G.GameState) => Math.max(50_000, G.country(s).pop
 export const postsThisWeek = (s: G.GameState) => s.social.posts.filter((p) => p.party === s.party && p.week === s.week).length;
 
 /** Post on social media. Returns what happened. */
-export function post(s: G.GameState, kind: string): { ok: boolean; viral?: boolean; backfired?: boolean; why?: string } {
+export function post(s: G.GameState, kind: string, own?: string): { ok: boolean; viral?: boolean; backfired?: boolean; why?: string } {
   const k = POST_KINDS.find((x) => x.id === kind);
   if (!k) return { ok: false, why: "Unknown post." };
   if (s.over) return { ok: false, why: "Your career is over." };
@@ -108,14 +110,17 @@ export function post(s: G.GameState, kind: string): { ok: boolean; viral?: boole
     P.pressEvent(s, -3);
     so.followers = Math.round(so.followers * 0.99);
   } else {
-    const lift = viral ? 0.8 * reach : 0.15;
+    const lift = (viral ? 0.8 * reach : 0.15) * Gr.postK(s);
     for (let i = 0; i < camp.length; i++) camp[i] = clamp(camp[i] + lift, -20, 40);
     so.followers = Math.round(so.followers + (cap - so.followers) * (viral ? 0.05 : 0.004 + r.next() * 0.004));
     if (viral) P.pressEvent(s, 2);
     if (kind === "attack" && rival) s.parties[rival].swing -= viral ? 0.012 : 0.004;
     if (kind === "meme") P.courtGroup(s, "young", viral ? 3 : 1);
   }
-  const text = fill(s, r.pick(LINES[kind]), r, rival);
+  const canned = fill(s, r.pick(LINES[kind]), r, rival);
+  // Your own words, if you wrote them.
+  const mine = St.clean(own, 140);
+  const text = mine.length >= 3 ? mine : canned;
   const likes = Math.round(so.followers * (viral ? 0.25 + r.next() * 0.3 : backfired ? 0.004 : 0.01 + r.next() * 0.03));
   push(s, { week: s.week, party: s.party, text, likes, viral, backfired });
   if (viral) G.news(s, "event", `${G.fullName(you!)}'s post goes viral: "${text}"`, 1);

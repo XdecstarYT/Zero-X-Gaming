@@ -15,6 +15,7 @@ import { Hemicycle } from "./charts";
 import { Icon } from "./icons";
 import { Group, Modal, money, pct, Row, Seg, Stars, Sw, wage } from "./kit";
 import { Social, TraitChip } from "./Power";
+import { GroundGame, Opposition, Targets } from "./Ground";
 
 const posDist = (a: Pos, b: Pos) => Math.hypot(a.e - b.e, a.s - b.s);
 
@@ -431,20 +432,24 @@ function Position({ g }: { g: Game }) {
 export function HQ({ g }: { g: Game }) {
   return (
     <>
-      <Seg<HqPage>
-        value={g.ui.hq}
-        label="Campaign HQ"
-        onChange={(v) => g.setUI({ hq: v })}
-        options={[
-          { id: "staff", label: "Staff" },
-          { id: "manifesto", label: "Manifesto" },
-          { id: "position", label: "Position" },
-          { id: "social", label: "Social" },
-        ]}
-        testId="yg-hq"
-        className="yg-seg-fill"
-      />
-      {g.ui.hq === "staff" ? <Staff g={g} /> : g.ui.hq === "manifesto" ? <Manifesto g={g} /> : g.ui.hq === "social" ? <Social g={g} /> : <Position g={g} />}
+      <div className="yg-scrollseg">
+        <Seg<HqPage>
+          value={g.ui.hq}
+          label="Campaign HQ"
+          onChange={(v) => g.setUI({ hq: v })}
+          options={[
+            { id: "staff", label: "Staff" },
+            { id: "ground", label: "Ground game" },
+            { id: "targets", label: "Targets" },
+            { id: "manifesto", label: "Manifesto" },
+            { id: "shadow", label: G.inGovernment(g.s!) ? "Rivals" : "Opposition" },
+            { id: "position", label: "Position" },
+            { id: "social", label: "Social" },
+          ]}
+          testId="yg-hq"
+        />
+      </div>
+      {g.ui.hq === "staff" ? <Staff g={g} /> : g.ui.hq === "manifesto" ? <Manifesto g={g} /> : g.ui.hq === "social" ? <Social g={g} /> : g.ui.hq === "ground" ? <GroundGame g={g} /> : g.ui.hq === "targets" ? <Targets g={g} /> : g.ui.hq === "shadow" ? <Opposition g={g} /> : <Position g={g} />}
     </>
   );
 }

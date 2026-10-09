@@ -113,6 +113,13 @@ export function Title({ g }: { g: Game }) {
             <h1>YourGov</h1>
             <p>Lead a party. Write the laws. Win the country, county by county.</p>
           </div>
+          <span className="grow" />
+          <button type="button" className="yg-btn small" onClick={() => g.setUI({ extra: "slots" })} data-testid="yg-title-saves">
+            💾 Saves
+          </button>
+          <button type="button" className="yg-btn small" onClick={() => g.setUI({ extra: "notes" })} data-testid="yg-title-notes">
+            🆕 What&apos;s new
+          </button>
         </div>
 
         {step === "country" ? (
