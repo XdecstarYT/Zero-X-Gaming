@@ -88,8 +88,13 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   await page.getByTestId("yg-propose-1").click();
   expect(await yg(page, (g) => g.s.bills.some((b) => b.law === "custom-1" && b.stage === "committee"))).toBe(true);
 
-  // Write a bill on a built-in law: it goes to committee.
+  // Typing in a text field never pauses the game (P is the pause key).
   await page.getByTestId("yg-tab-write").click();
+  await page.getByRole("textbox", { name: "Search the laws" }).pressSequentially("pop p");
+  await expect(page.getByRole("button", { name: "Resume" })).toHaveCount(0);
+  await page.getByRole("textbox", { name: "Search the laws" }).fill("");
+
+  // Write a bill on a built-in law: it goes to committee.
   await page.getByTestId("yg-law-corporateTax").click();
   await page.getByTestId("yg-propose-2").click();
   expect(await yg(page, (g) => g.s.bills.some((b) => b.law === "corporateTax" && b.stage === "committee"))).toBe(true);

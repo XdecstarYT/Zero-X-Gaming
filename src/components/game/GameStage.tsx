@@ -67,6 +67,16 @@ type Submit =
  * Hosts a GameModule: lazy-loads it, owns the lifecycle (start / pause /
  * resume / destroy), the overlays, and score submission.
  */
+
+/** Is the player typing (a text field or editable area has the keys)? */
+function isTyping(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target.tagName === "TEXTAREA" || target.tagName === "SELECT") return true;
+  if (target.tagName !== "INPUT") return false;
+  const type = (target as HTMLInputElement).type;
+  return !["checkbox", "radio", "range", "button", "submit", "reset", "color", "file", "image"].includes(type);
+}
+
 export function GameStage({ game }: { game: Game }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -194,11 +204,12 @@ export function GameStage({ game }: { game: Game }) {
   // Tear the module down when leaving the page.
   useEffect(() => () => moduleRef.current?.destroy(), []);
 
-  // Pause when the tab is hidden; pause/resume on Esc or the pause key.
+  // Pause when the tab is hidden; pause/resume on Esc or the pause key (but never while typing in a game's text field).
   useEffect(() => {
     const onVisibility = () => document.hidden && phase === "playing" && pause();
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== "Escape" && e.code !== pauseKey) return;
+      if (isTyping(e.target)) return;
       if (phase === "playing") {
         e.preventDefault();
         pause();
@@ -219,8 +230,9 @@ export function GameStage({ game }: { game: Game }) {
     const onChange = () => {
       const fs = document.fullscreenElement === frameRef.current;
       setIsFullscreen(fs);
-      // Android back / swipe out of fullscreen mid-game: pause rather than keep playing blind.
-      if (!fs && immersive) pause();
+      // Android back / swipe out of fullscreen mid-game: pause rather than keep playing blind. Some phones leave
+      // fullscreen when the keyboard opens for a text field: that isn't leaving the game.
+      if (!fs && immersive && !isTyping(document.activeElement)) pause();
     };
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
