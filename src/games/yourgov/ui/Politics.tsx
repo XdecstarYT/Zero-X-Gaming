@@ -4,7 +4,7 @@
  * actions, coalition deals, foreign relations), your party's factions, and the cards that
  * need an answer: crises, TV debates, leadership challenges and results.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EVENT, EVENT_MAX, EVENTS, type EventDef, type PartyId } from "../data";
 import type { EventKind, Game } from "../game";
 import * as P from "../politics";
@@ -92,6 +92,11 @@ export function Events({ g }: { g: Game }) {
   const usesFor = (id: string) => (planning ? s.plan.filter((p) => p.week === week && p.event === id).length : G.eventUses(s, id));
   const blocked = sel ? (planning ? (usesFor(sel.id) >= EVENT_MAX ? "Already twice that week." : null) : G.eventBlocked(s, sel.id)) : null;
   const pick = (k: EventKind) => g.setUI({ evKind: k, event: g.ui.event && EVENT[g.ui.event]?.kind === k ? g.ui.event : null });
+  // On a small screen the card for the event you pick is below the grid: bring it into view.
+  const card = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (g.ui.event) card.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [g.ui.event]);
   return (
     <Sheet title={planning ? `Plan for ${G.dateLabel(s, week)}` : "Events"} eyebrow={`Funds ${money(s, funds)}${s.plan.length ? ` · ${s.plan.length} planned` : ""}`} onClose={() => g.setUI({ tab: null, event: null })} testId="yg-p-events">
       <Seg<EventKind> value={kind} label="Kind of event" onChange={pick} options={KINDS.map((k) => ({ id: k.id, label: k.id === "diary" && s.plan.length ? `${k.label} ${s.plan.length}` : k.label }))} testId="yg-evkind" className="yg-seg-fill" />
@@ -119,7 +124,7 @@ export function Events({ g }: { g: Game }) {
         </>
       )}
       {kind !== "diary" && sel && sel.kind === kind && (
-        <div className="yg-evcard" data-testid="yg-evcard">
+        <div className="yg-evcard" data-testid="yg-evcard" ref={card}>
           <div className="yg-evcard-head">
             <span className="yg-evcard-ico">{sel.icon}</span>
             <div className="grow">
@@ -150,10 +155,10 @@ export function Events({ g }: { g: Game }) {
               <span className="grow">This {planning ? "week" : "week so far"}</span>
               <span className="r">
                 {usesFor(sel.id)} of {EVENT_MAX}
-                {usesFor(sel.id) === 1 && !planning ? " (the second does a little less)" : ""}
               </span>
             </Row>
           </Group>
+          {usesFor(sel.id) === 1 && !planning && <p className="yg-muted small">The second time this week does a little less.</p>}
           {sel.scope === "state" && <RegionSelect g={g} />}
           {planning ? (
             <button type="button" className="yg-btn primary wide big" disabled={!!blocked} onClick={() => g.planEvent(sel.id, week, st)} data-testid="yg-plan">
@@ -200,6 +205,9 @@ function Diary({ g }: { g: Game }) {
         Book events up to {P.PLAN_AHEAD} weeks ahead: pick a week on the strip in any other tab, then an event. {s.plan.length ? `${s.plan.length} booked, ${money(s, cost)} to pay as they come.` : ""}
       </p>
       {!s.plan.length && <p className="yg-empty">Nothing in the diary yet.</p>}
+      <button type="button" className="yg-btn primary wide" onClick={() => g.setUI({ evKind: "campaign", evWeek: s.week + 1, event: null })} data-testid="yg-diary-add">
+        <Icon name="calendar" size={16} /> Plan an event
+      </button>
       {weeks.map((w) => (
         <Group key={w} label={`${G.dateLabel(s, w)} · ${w - s.week === 1 ? "next week" : `in ${w - s.week} weeks`}`}>
           {s.plan
@@ -260,7 +268,7 @@ export function Voters({ g }: { g: Game }) {
               <MidBar v={gw} lo={-40} hi={60} />
               <div className="yg-groupcard-foot small">
                 <span className="grow yg-muted">
-                  Most back the <b style={{ color: G.party(s, top[0]).color }}>{G.party(s, top[0]).short}</b> · {gr.lobby}: {s.lobbies[gr.id] >= 55 ? "endorsing you" : moodWord((s.lobbies[gr.id] ?? 0) / 1.6).toLowerCase()}
+                  Most back <Sw c={G.party(s, top[0]).color} /> <b className="yg-text">{G.party(s, top[0]).short}</b> · {gr.lobby}: {s.lobbies[gr.id] >= 55 ? "endorsing you" : moodWord((s.lobbies[gr.id] ?? 0) / 1.6).toLowerCase()}
                 </span>
                 {ev && (
                   <button type="button" className="yg-btn small" onClick={() => g.setUI({ tab: "events", evKind: "voters", event: ev })} data-testid={`yg-court-${gr.id}`}>
@@ -279,9 +287,7 @@ export function Voters({ g }: { g: Game }) {
               {o.name}
               <span className="yg-muted small"> · {o.kind}</span>
             </span>
-            <span style={{ width: 90 }}>
-              <MidBar v={s.press[o.id] ?? 0} lo={-50} hi={50} />
-            </span>
+            <MidBar v={s.press[o.id] ?? 0} lo={-50} hi={50} w={90} />
           </Row>
         ))}
       </Group>
@@ -296,9 +302,7 @@ export function Voters({ g }: { g: Game }) {
               {(s.lobbies[gr.id] ?? 0) >= 55 && <span className="yg-tag good">Backs you</span>}
             </span>
             <span className="r muted small">{(s.lobbies[gr.id] ?? 0) > 0 ? `gives ${money(s, Math.max(0, s.lobbies[gr.id]) * 0.0025 * 52)}/yr` : ""}</span>
-            <span style={{ width: 70 }}>
-              <MidBar v={s.lobbies[gr.id] ?? 0} lo={-50} hi={100} />
-            </span>
+            <MidBar v={s.lobbies[gr.id] ?? 0} lo={-50} hi={100} w={70} />
           </Row>
         ))}
       </Group>
@@ -323,9 +327,7 @@ export function Factions({ g }: { g: Game }) {
             <span className="r small muted" style={{ width: 64 }}>
               {f.mood >= 70 ? "Happy" : f.mood >= 45 ? "Content" : f.mood >= 25 ? "Restless" : "Furious"}
             </span>
-            <span style={{ width: 80 }}>
-              <Bar v={f.mood / 100} color={f.mood >= 45 ? "var(--good)" : f.mood >= 25 ? "var(--warn)" : "var(--bad)"} />
-            </span>
+            <Bar v={f.mood / 100} color={f.mood >= 45 ? "var(--good)" : f.mood >= 25 ? "var(--warn)" : "var(--bad)"} w={80} />
           </Row>
         ))}
       </Group>
@@ -478,9 +480,7 @@ function Coalition({ g }: { g: Game }) {
           <span className="r small muted" style={{ width: 66 }}>
             {s.partners[p] >= 60 ? "Loyal" : s.partners[p] >= 35 ? "Uneasy" : "On the brink"}
           </span>
-          <span style={{ width: 70 }}>
-            <Bar v={s.partners[p] / 100} color={s.partners[p] >= 35 ? "var(--good)" : "var(--bad)"} />
-          </span>
+          <Bar v={s.partners[p] / 100} color={s.partners[p] >= 35 ? "var(--good)" : "var(--bad)"} w={70} />
         </Row>
       ))}
       {s.deals.map((d, i) => {
@@ -523,9 +523,7 @@ function Foreign({ g }: { g: Game }) {
               <span className="r small muted" style={{ width: 54 }}>
                 {f.rel >= 50 ? "Ally" : f.rel >= 15 ? "Friendly" : f.rel > -15 ? "Cool" : "Hostile"}
               </span>
-              <span style={{ width: 70 }}>
-                <MidBar v={f.rel} lo={-100} hi={100} />
-              </span>
+              <MidBar v={f.rel} lo={-100} hi={100} w={70} />
             </Row>
             {open === f.name && head && (
               <div className="yg-actions">

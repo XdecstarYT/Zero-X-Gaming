@@ -57,19 +57,20 @@ export const Group = ({ label, children, testId }: { label?: ReactNode; children
   </div>
 );
 
-export const Bar = ({ v, color }: { v: number; color: string }) => (
-  <span className="yg-bar">
+/** A bar 0–1 (it fills the row, or takes a fixed width with `w`). */
+export const Bar = ({ v, color, w }: { v: number; color: string; w?: number }) => (
+  <span className="yg-bar" style={w ? { flex: "none", width: w } : undefined}>
     <i style={{ width: `${Math.max(0, Math.min(1, v)) * 100}%`, background: color }} />
   </span>
 );
 
 /** A bar for a value that can go either way, filled from the middle. */
-export const MidBar = ({ v, lo, hi }: { v: number; lo: number; hi: number }) => {
+export const MidBar = ({ v, lo, hi, w }: { v: number; lo: number; hi: number; w?: number }) => {
   const zero = -lo / (hi - lo);
   const at = (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo);
   const left = Math.min(zero, at);
   return (
-    <span className="yg-bar mid">
+    <span className="yg-bar mid" style={w ? { width: w } : undefined}>
       <i style={{ marginLeft: `${left * 100}%`, width: `${Math.abs(at - zero) * 100}%`, background: v >= 0 ? "var(--good)" : "var(--bad)" }} />
       <b style={{ left: `${zero * 100}%` }} />
     </span>

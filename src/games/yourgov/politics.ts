@@ -320,8 +320,8 @@ export const FACTION_IDS = ["left", "centre", "right"] as const;
 export const factionOf = (p: G.Politician) => FACTION_IDS[(p.face >>> 9) % 3];
 /** An empty post is run by civil servants: worse than most ministers. */
 const VACANT = 4;
-/** A cabinet of ministers this good leaves the country as it is. */
-const PAR = 7;
+/** A cabinet of ministers this good leaves the country as it is (a typical one comes out about here). */
+const PAR = 8;
 /** "Minister of Health", or "Secretary of Health" in presidential systems. */
 export const ministerTitle = (s: G.GameState, portfolio: string) => {
   const pf = PORTFOLIOS.find((x) => x.id === portfolio)!;

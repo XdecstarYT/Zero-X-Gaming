@@ -1,10 +1,14 @@
 import type { Page } from "@playwright/test";
-import { expect, test } from "./fixtures";
+import { dismissRotate, expect, test } from "./fixtures";
 
 test.use({ viewport: { width: 1400, height: 900 } });
 
 type YG = {
-  s: { week: number; cal: { lower: number }; bills: { law: string; stage: string }[]; election: unknown; lastElection: unknown; talks: unknown; news: { text: string }[]; custom: { id: string; name: string; options: { label: string }[] }[]; laws: Record<string, number>; house: number[]; sc: { id: string; name: string } };
+  s: {
+    parties: Record<string, { funds: number }>;
+    party: string;
+    plan: { week: number; event: string; state: number }[];
+    usedEvents: string[]; week: number; cal: { lower: number }; bills: { law: string; stage: string }[]; election: unknown; lastElection: unknown; talks: unknown; news: { text: string }[]; custom: { id: string; name: string; options: { label: string }[] }[]; laws: Record<string, number>; house: number[]; sc: { id: string; name: string } };
   endTurn: () => void;
   quit: () => void;
   library: { id: string; name: string }[];
@@ -77,12 +81,49 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   await page.getByTestId("yg-hold").click();
   await expect(page.getByText("Poll results are in")).toBeVisible();
 
+  // Any event twice a week, not three times.
+  await page.getByTestId("yg-ev-rally").click();
+  await page.getByTestId("yg-hold").click();
+  await expect(page.getByTestId("yg-hold")).toHaveText("Hold it again");
+  await page.getByTestId("yg-hold").click();
+  await expect(page.getByTestId("yg-hold")).toBeDisabled();
+  expect(await yg(page, (g) => g.s.usedEvents.filter((e) => e === "rally").length)).toBe(2);
+
+  // Broke? A fundraiser pays for itself (the funds in the top bar open it).
+  await yg(page, (g) => (g.s.parties[g.s.party].funds = 0));
+  await page.getByTestId("yg-funds").click();
+  await expect(page.getByTestId("yg-evkind-money")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("yg-hold")).toBeEnabled();
+  await page.getByTestId("yg-hold").click();
+  expect(await yg(page, (g) => g.s.parties[g.s.party].funds)).toBeGreaterThan(0);
+
+  // Plan a town hall for two weeks' time in a region picked from the list.
+  await page.getByTestId("yg-evkind-campaign").click();
+  await page.getByTestId("yg-ev-townHall").click();
+  await page.getByTestId("yg-week-2").click();
+  await page.getByTestId("yg-region").selectOption({ index: 2 });
+  await page.getByTestId("yg-plan").click();
+  const plan = await yg(page, (g) => g.s.plan.map((p) => ({ event: p.event, in: p.week - g.s.week })));
+  expect(plan).toEqual([{ event: "townHall", in: 2 }]);
+  await page.getByTestId("yg-evkind-diary").click();
+  await expect(page.getByTestId("yg-diary")).toContainText("Town hall");
+
+  // Voters and the press, the government, your party's factions.
+  await page.getByTestId("yg-tab-voters").click();
+  await expect(page.getByTestId("yg-p-voters")).toContainText("Young voters");
+  await page.getByTestId("yg-tab-gov").click();
+  await expect(page.getByTestId("yg-cabinet")).toBeVisible();
+  await page.getByTestId("yg-tab-party").click();
+  await expect(page.getByTestId("yg-factions")).toBeVisible();
+
   // End three weeks (the hourglass and the Enter key).
   await page.getByTestId("yg-end-turn").dispatchEvent("click");
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("Enter");
   await page.getByTestId("yg-end-turn").dispatchEvent("click");
   await expect(page.getByTestId("yg-date")).toHaveText("2046.05");
+  // The planned town hall was held when its week came.
+  expect(await yg(page, (g) => g.s.plan.length)).toBe(0);
 
   // The chamber view, the parliament, the polls and the settings.
   await page.getByTestId("yg-view-chamber").dispatchEvent("click");
@@ -168,4 +209,43 @@ test("YourGov: a real country's parliament, and a scenario of your own from the 
   expect(await yg(page, (g) => g.s.sc.name)).toBe("Freedonia");
   await expect(page.getByTestId("yg-loading")).toHaveCount(0, { timeout: 120_000 });
   expect(errors).toEqual([]);
+});
+
+test("YourGov on a phone held upright: the title card fits, panels scroll, regions come from a list", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile", "the phone layout");
+  test.setTimeout(300_000);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("zx-season-s1"))
+      localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+    localStorage.setItem("zx-yourgov-prefs", JSON.stringify({ gfx: "low", sound: false, clouds: false }));
+  });
+  await page.goto("/games/yourgov?yg");
+  await page.getByTestId("zlink-lock-join").click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await dismissRotate(page);
+  await expect(page.getByTestId("yg-title")).toBeVisible({ timeout: 120_000 });
+  // The title card is never taller than the screen (it scrolls instead).
+  const vh = page.viewportSize()!.height;
+  const card = await page.locator(".yg-title-card").boundingBox();
+  expect(card!.y + card!.height).toBeLessThanOrEqual(vh + 1);
+  await page.getByTestId("yg-next").click();
+  await page.getByTestId("yg-party-grn").click();
+  await page.getByTestId("yg-start").click();
+  await expect(page.getByTestId("yourgov")).toBeVisible();
+  await page.getByTestId("yg-tab-events").click();
+  await page.getByTestId("yg-ev-rally").click();
+  // The card for the event scrolls into view inside the panel.
+  await expect(page.getByTestId("yg-hold")).toBeInViewport();
+  await page.getByTestId("yg-region").selectOption({ index: 3 });
+  await page.getByTestId("yg-hold").click();
+  const held = await yg(page, (g) => g.s.usedEvents);
+  expect(held).toEqual(["rally"]);
+  // The panel body scrolls.
+  const body = page.locator(".yg-sheet-body");
+  const top = await body.evaluate((el) => {
+    el.scrollTop = 0;
+    el.scrollTop = 200;
+    return el.scrollTop;
+  });
+  expect(top).toBeGreaterThan(0);
 });

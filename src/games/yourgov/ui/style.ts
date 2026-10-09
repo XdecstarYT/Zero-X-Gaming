@@ -329,7 +329,7 @@ select.yg-input option{background:#151a24;color:#fff}
 .yg-pickinfo{margin:12px 2px 6px}
 .yg-pickinfo b{font-size:15px}
 .yg-title-actions{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
-.yg-title-actions .grow{flex:1}
+.yg-title-actions .grow{flex:1 0 auto;min-width:auto}
 
 /* ---- the scenario studio ---- */
 .yg-modal.huge{width:min(1000px,100%);height:760px;max-height:100%}
@@ -381,6 +381,7 @@ select.yg-input option{background:#151a24;color:#fff}
 .yg-chip.good{background:rgba(48,209,88,.22);color:#9dffb6}.yg-chip.bad{background:rgba(255,69,58,.22);color:#ffaba5}.yg-chip.warn{background:rgba(255,214,10,.2);color:#ffe680}
 .yg-note.small{font-size:12px;font-weight:550;color:var(--muted)}.yg-note b{color:var(--text)}
 .yg-warn{color:#ffe066;font-weight:700}
+.yg-text{color:var(--text)}
 .yg-optbtns{display:inline-flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
 
 /* ---- voters, factions, the government ---- */
@@ -449,6 +450,14 @@ select.yg-input option{background:#151a24;color:#fff}
   .yg-election{left:12px;width:auto}
   .yg-endturn span{display:none}.yg-endturn{padding:0 14px}
 }
+@container (max-height:560px){
+  .yg-dock{display:grid;grid-template-columns:repeat(2,36px);gap:2px;padding:4px;border-radius:22px}
+  .yg-dock-btn{width:36px;height:36px}
+  .yg-sheet{left:100px;width:min(380px,calc(100% - 112px))}
+  .yg-grid{grid-template-columns:repeat(5,1fr)}
+  .yg-tile{aspect-ratio:auto;min-height:62px}
+  .yg-tile-ico{font-size:19px}
+}
 @container (max-height:520px){.yg-dock{gap:0;padding:4px}.yg-dock-btn{width:36px;height:36px}.yg-sheet{top:62px;bottom:70px}.yg-bottom{bottom:8px}.yg-viewswitch,.yg-timebar,.yg-endturn{height:42px}}
 /* Phones in landscape: room for the platform's pause button at the top centre, and a dock in two columns. */
 @container (max-height:460px){
@@ -462,15 +471,20 @@ select.yg-input option{background:#151a24;color:#fff}
 }
 /* Phones held upright: the dock runs along the bottom and panels take the full width. */
 @container (max-width:560px){
-  .yg-top{left:8px;right:8px;top:8px;gap:6px}
+  .yg-top{left:8px;right:8px;top:8px;gap:6px;flex-wrap:wrap;row-gap:6px}
   .yg-brand{padding:0 10px}
-  .yg-stats{flex:1;justify-content:space-around;padding:0 4px}
+  .yg-stats{order:9;flex:1 1 100%;justify-content:space-around;padding:0 4px;height:40px}
   .yg-stat{padding:0 5px;gap:3px}.yg-stat.opt3{display:none}
-  .yg-modes{top:50px;left:0;right:auto}
+  .yg-stat.opt2{display:flex}
+  .yg-modes{top:96px;left:0;right:auto}
+  .yg-panel-open .yg-modes{display:none}
+  .yg-missions,.yg-statepill,.yg-toasts{top:104px}
   .yg-dock{left:8px;right:8px;top:auto;bottom:64px;flex-direction:row;max-height:none;overflow-x:auto;overflow-y:hidden;border-radius:24px;padding:4px;gap:2px;touch-action:pan-x}
   .yg-dock-btn{width:40px;height:40px}
-  .yg-sheet{left:8px;right:8px;width:auto;top:58px;bottom:118px}
-  .yg-election{left:8px;right:8px;width:auto;top:58px;bottom:118px}
+  .yg-sheet{left:8px;right:8px;width:auto;top:104px;bottom:118px}
+  .yg-election{left:8px;right:8px;width:auto;top:104px;bottom:118px}
+  .yg-grid{grid-template-columns:repeat(4,1fr)}
+  .yg-tile{aspect-ratio:1;min-height:0}
   .yg-bottom{left:8px;right:8px;bottom:8px;gap:6px}
   .yg-viewswitch{padding:0 4px}
   .yg-timebar{padding:0 6px 0 10px;gap:6px}

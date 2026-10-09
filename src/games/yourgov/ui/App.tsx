@@ -1252,6 +1252,8 @@ export function App({ game }: { game: Game }) {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.closest("input, textarea, select, button, [role=slider]") || g.ui.studio)) return;
+      // A decision on screen (a crisis, a debate, a challenge) is answered, not skipped by a stray key.
+      if (document.querySelector(".yg-decision")) return;
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         g.endTurn();
@@ -1303,7 +1305,7 @@ export function App({ game }: { game: Game }) {
       <Settings g={g} />
     ) : null;
   return (
-    <div className={cls} ref={root} data-testid="yourgov" style={{ ["--pc" as string]: G.party(s, s.party).color }}>
+    <div className={`${cls}${panel ? " yg-panel-open" : ""}`} ref={root} data-testid="yourgov" style={{ ["--pc" as string]: G.party(s, s.party).color }}>
       <GlassDefs />
       <Scene g={g} />
       <div className="yg-vignette" aria-hidden />
