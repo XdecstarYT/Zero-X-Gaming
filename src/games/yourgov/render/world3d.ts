@@ -17,7 +17,17 @@ const W = MAP_W;
 const H = MAP_H;
 /** Direction the sunlight comes from (toward the sun), matching the baked shading. */
 const SUN = new THREE.Vector3(-0.55, 0.62, -0.55).normalize();
-const PAL = 1024;
+export const PAL = 2048;
+
+/** A map label: a region's name or a city's, with how much it matters and how wide it is. */
+interface LabelEl {
+  el: HTMLElement;
+  p: THREE.Vector3;
+  kind: "state" | "city";
+  id: number;
+  size: number;
+  w: number;
+}
 
 export interface WorldOverlay {
   /** Per county: r, g, b (sRGB 0–255) and strength 0–255. */
@@ -67,7 +77,7 @@ export class WorldView {
   private selFor = -2;
   private ribbonWidth = { value: 1 };
   private overlayBase = 1;
-  private labelEls: { el: HTMLElement; p: THREE.Vector3; kind: "state" | "city"; id: number }[] = [];
+  private labelEls: LabelEl[] = [];
   private time = 0;
   ready = false;
   cloudsOn = true;
@@ -534,13 +544,15 @@ void main(){ vec3 p = position; p.xz += vec2(-dir.y, dir.x) * side * uWidth * uS
     if (!root) return;
     root.textContent = "";
     this.labelEls = [];
+    this.sortedLabels = null;
     const c = this.country;
     for (const st of c.states) {
       const el = document.createElement("div");
       el.className = "yg-ml state";
       el.textContent = st.name;
       root.appendChild(el);
-      this.labelEls.push({ el, p: new THREE.Vector3(st.cx - W / 2, this.heightAt(st.cx, st.cy) + 1.5, st.cy - H / 2), kind: "state", id: st.id });
+      const area = st.sections.reduce((a, id) => a + c.sections[id].area, 0);
+      this.labelEls.push({ el, p: new THREE.Vector3(st.cx - W / 2, this.heightAt(st.cx, st.cy) + 1.5, st.cy - H / 2), kind: "state", id: st.id, size: Math.sqrt(area), w: st.name.length * 8.6 + 8 });
     }
     for (const sec of c.sections) {
       if (!sec.city && !c.states.some((s) => s.capital === sec.id)) continue;
@@ -549,34 +561,46 @@ void main(){ vec3 p = position; p.xz += vec2(-dir.y, dir.x) * side * uWidth * uS
       el.innerHTML = `<i></i><span></span>`;
       el.querySelector("span")!.textContent = sec.town;
       root.appendChild(el);
-      this.labelEls.push({ el, p: new THREE.Vector3(sec.cx - W / 2, this.heightAt(sec.cx, sec.cy) + 0.6, sec.cy - H / 2), kind: "city", id: sec.id });
+      this.labelEls.push({ el, p: new THREE.Vector3(sec.cx - W / 2, this.heightAt(sec.cx, sec.cy) + 0.6, sec.cy - H / 2), kind: "city", id: sec.id, size: sec.pop, w: sec.town.length * 7 + 16 });
     }
   }
 
   private v = new THREE.Vector3();
+  private placed: number[] = [];
   private placeLabels(w: number, h: number, selected: number, hidden: boolean) {
     const d = this.rig.cur.dist;
     const showState = !hidden && d > 70;
     const showCity = !hidden && d < 300;
-    for (const L of this.labelEls) {
-      const on = L.kind === "state" ? showState : showCity;
+    // Big regions and big cities first; a label that would overlap one already placed waits
+    // until the camera comes closer (small states, crowded coasts).
+    if (!this.sortedLabels) this.sortedLabels = [...this.labelEls].sort((a, b) => (a.kind === b.kind ? b.size - a.size : a.kind === "state" ? -1 : 1));
+    const placed = this.placed;
+    placed.length = 0;
+    for (const L of this.sortedLabels) {
+      let on = L.kind === "state" ? showState && (L.id === selected || L.size > d * 0.045) : showCity && (d < 160 || this.country.sections[L.id].city);
+      if (on) {
+        this.v.copy(L.p).project(this.camera);
+        on = !(this.v.z > 1 || Math.abs(this.v.x) > 1.1 || Math.abs(this.v.y) > 1.1);
+      }
+      let x = 0;
+      let y = 0;
+      if (on) {
+        x = (this.v.x * 0.5 + 0.5) * w;
+        y = (-this.v.y * 0.5 + 0.5) * h;
+        const hw = L.w / 2;
+        for (let i = 0; i < placed.length && on; i += 4) if (Math.abs(placed[i] - x) < hw + placed[i + 2] && Math.abs(placed[i + 1] - y) < 8 + placed[i + 3]) on = L.id === selected && L.kind === "state";
+        if (on) placed.push(x, y, hw, 8);
+      }
       if (!on) {
         if (L.el.style.display !== "none") L.el.style.display = "none";
         continue;
       }
-      this.v.copy(L.p).project(this.camera);
-      if (this.v.z > 1 || Math.abs(this.v.x) > 1.1 || Math.abs(this.v.y) > 1.1) {
-        L.el.style.display = "none";
-        continue;
-      }
       L.el.style.display = "";
-      const x = (this.v.x * 0.5 + 0.5) * w;
-      const y = (-this.v.y * 0.5 + 0.5) * h;
       L.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%)`;
       if (L.kind === "state") L.el.classList.toggle("on", L.id === selected);
-      else L.el.style.opacity = d < 160 || this.country.sections[L.id].city ? "1" : "0";
     }
   }
+  private sortedLabels: LabelEl[] | null = null;
 
   // ------------------------------------------------------------------ queries
 

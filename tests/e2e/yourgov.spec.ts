@@ -4,8 +4,10 @@ import { expect, test } from "./fixtures";
 test.use({ viewport: { width: 1400, height: 900 } });
 
 type YG = {
-  s: { week: number; bills: { law: string; stage: string }[]; election: unknown; lastElection: unknown; news: { text: string }[]; custom: { id: string; name: string; options: { label: string }[] }[]; laws: Record<string, number> };
+  s: { week: number; cal: { lower: number }; bills: { law: string; stage: string }[]; election: unknown; lastElection: unknown; talks: unknown; news: { text: string }[]; custom: { id: string; name: string; options: { label: string }[] }[]; laws: Record<string, number>; house: number[]; sc: { id: string; name: string } };
   endTurn: () => void;
+  quit: () => void;
+  library: { id: string; name: string }[];
 };
 const yg = <T,>(page: Page, f: (g: YG) => T) => page.evaluate(`(${f.toString()})(window.__yg)`) as Promise<T>;
 
@@ -34,6 +36,8 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await expect(page.getByTestId("yg-title")).toBeVisible({ timeout: 120_000 });
 
+  // Avalon is picked to begin with; on to the parties.
+  await page.getByTestId("yg-next").click();
   await page.getByTestId("yg-party-grn").click();
   await page.getByTestId("yg-start").click();
   await expect(page.getByTestId("yourgov")).toBeVisible();
@@ -93,9 +97,9 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   await page.getByTestId("yg-tab-settings").click();
   await expect(page.getByTestId("yg-p-settings")).toBeVisible();
 
-  // Jump to the eve of the midterms: the count runs county by county, then seats change hands.
+  // Jump to the eve of the election: the count runs county by county, then seats change hands.
   await yg(page, (g) => {
-    g.s.week = 52 * 2 + 43;
+    g.s.week = g.s.cal.lower - 1;
     g.endTurn();
   });
   expect(await yg(page, (g) => !!g.s.election)).toBe(true);
@@ -105,5 +109,63 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   expect(await yg(page, (g) => !g.s.election && !!g.s.lastElection)).toBe(true);
   await expect(page.getByTestId("yg-chamber")).toBeVisible();
 
+  expect(errors).toEqual([]);
+});
+
+test("YourGov: a real country's parliament, and a scenario of your own from the studio", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "the desktop run covers play");
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/ERR_TUNNEL|Failed to load resource|supabase/i.test(m.text())) errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("zx-season-s1"))
+      localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+    localStorage.setItem("zx-yourgov-prefs", JSON.stringify({ gfx: "low", sound: false }));
+  });
+  await page.goto("/games/yourgov?yg");
+  await page.getByTestId("zlink-lock-join").click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByTestId("yg-title")).toBeVisible({ timeout: 120_000 });
+
+  // The United Kingdom: Labour's 411 seats, a Prime Minister, the Lords.
+  await page.getByTestId("yg-country-gb").click();
+  await page.getByTestId("yg-next").click();
+  await page.getByTestId("yg-party-lab").click();
+  await expect(page.getByTestId("yg-start")).toBeEnabled({ timeout: 60_000 });
+  await page.getByTestId("yg-start").click();
+  await expect(page.getByTestId("yg-date")).toHaveText("2026.02");
+  expect(await yg(page, (g) => ({ name: g.s.sc.name, seats: g.s.house.length }))).toEqual({ name: "United Kingdom", seats: 650 });
+  await page.getByTestId("yg-tab-chamber").click();
+  await expect(page.getByTestId("yg-p-chamber")).toContainText("House of Commons");
+  await expect(page.getByTestId("yg-p-chamber")).toContainText("411");
+  await page.getByTestId("yg-house-senate").click();
+  await expect(page.getByTestId("yg-p-chamber")).toContainText("House of Lords");
+
+  // A country of your own: a new scenario from the studio, saved, then played.
+  await yg(page, (g) => g.quit());
+  await page.getByTestId("yg-tab-mine").click();
+  await page.getByTestId("yg-new-scenario").click();
+  await expect(page.getByTestId("yg-scenario-studio")).toBeVisible();
+  await page.getByTestId("yg-sc-name").fill("Freedonia");
+  await page.getByTestId("yg-sc-shape-island").click();
+  await page.getByTestId("yg-st-parties").click();
+  await page.getByTestId("yg-sp-add").click();
+  await page.getByTestId("yg-sp-name").fill("Pirate Party");
+  await page.getByTestId("yg-st-system").click();
+  await page.getByTestId("yg-sy-exec-parliamentary").click();
+  await page.getByTestId("yg-st-share").click();
+  await expect(page.getByTestId("yg-share-code")).toHaveValue(/^YG1\./);
+  await page.getByTestId("yg-sc-save").click();
+  await expect(page.getByTestId("yg-scenario-studio")).toHaveCount(0);
+  const lib = await yg(page, (g) => g.library.map((x) => x.name));
+  expect(lib).toEqual(["Freedonia"]);
+  await page.getByTestId("yg-next").click();
+  await page.getByTestId("yg-start").click();
+  await expect(page.getByTestId("yourgov")).toBeVisible();
+  expect(await yg(page, (g) => g.s.sc.name)).toBe("Freedonia");
+  await expect(page.getByTestId("yg-loading")).toHaveCount(0, { timeout: 120_000 });
   expect(errors).toEqual([]);
 });

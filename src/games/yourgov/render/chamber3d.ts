@@ -1,21 +1,38 @@
 /**
- * The debating chamber in 3D: tiers of polished walnut desks in a horseshoe on a deep carpet,
- * leather chairs, every member at their seat (in their party's tie), the Speaker's dais with
- * flags and the clerks, a coffered dome with an oculus, and the electronic vote board. Each
- * desk has a voting lamp that lights green, red or white as the votes come in.
+ * The debating chamber in 3D: tiers of polished walnut desks in a horseshoe on a deep carpet
+ * (or, Westminster style, green and red benches facing each other across the table), leather
+ * chairs, every member at their seat (in their party's tie), the Speaker's dais with the
+ * country's flags and seal, a coffered dome with an oculus, and the electronic vote board. Each
+ * seat has a voting lamp that lights green, red or white as the votes come in. Any size of
+ * house fits: rows are added and the figures scaled down as it grows.
  *
  * Members are instanced (a few draw calls for the whole House); textures are drawn on canvases.
  */
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { PARTY, type PartyId } from "../data";
 import { Rig } from "./rig";
 
 export interface Member {
   id: number;
-  party: PartyId;
+  party: string;
+  /** Tie colour (the party's). */
+  color: string;
+  /** Where the party sits left to right (its economic position). */
+  e: number;
+  /** Westminster: 1 government benches, -1 opposition, 0 crossbenches. */
+  side?: number;
   face: number;
   you?: boolean;
+}
+
+export interface ChamberStyle {
+  /** Board titles for the two houses. */
+  names: { house: string; senate: string };
+  layout: "hemicycle" | "westminster";
+  /** The seal on the far wall. */
+  seal: { title: string; sub: string; year: string };
+  /** The country's flag (an image URL) for the flags by the dais. */
+  flag: string;
 }
 
 export interface ChamberVote {
@@ -133,7 +150,7 @@ function wallTexture() {
 }
 
 /** A seal for the wall behind the Speaker. */
-function sealTexture() {
+function sealTexture(seal: ChamberStyle["seal"]) {
   return canvasTex(512, 512, (g) => {
     g.clearRect(0, 0, 512, 512);
     const cx = 256;
@@ -157,13 +174,26 @@ function sealTexture() {
       g.arc(cx + Math.cos(a) * 192, cx + Math.sin(a) * 192, 7, 0, Math.PI * 2);
       g.fill();
     }
-    g.font = "bold 46px Georgia, serif";
     g.textAlign = "center";
-    g.fillText("AVALON", cx, cx + 18);
+    const title = seal.title.toUpperCase();
+    g.font = `bold ${Math.min(46, Math.floor(560 / Math.max(6, title.length)))}px Georgia, serif`;
+    g.fillText(title, cx, cx + 16);
     g.font = "bold 22px Georgia, serif";
-    g.fillText("FEDERATION", cx, cx - 50);
-    g.fillText("MMXLVI", cx, cx + 70);
+    g.fillText(seal.sub.toUpperCase().slice(0, 22), cx, cx - 50);
+    g.fillText(seal.year, cx, cx + 70);
   });
+}
+
+/** Roman numerals for the seal's year. */
+export function roman(n: number) {
+  const t: [number, string][] = [[1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"], [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]];
+  let out = "";
+  for (const [v, r] of t)
+    while (n >= v) {
+      out += r;
+      n -= v;
+    }
+  return out;
 }
 
 /** A curved slab: a ring segment from r0 to r1, angles a0..a1, heights y0..y1 (center at origin). */
@@ -191,6 +221,10 @@ export class ChamberView {
   private builtFor = "";
   private kind: "house" | "senate" = "house";
   private wood = woodTexture();
+  private style: ChamberStyle = { names: { house: "House of Representatives", senate: "Senate" }, layout: "hemicycle", seal: { title: "Avalon", sub: "Federation", year: "MMXLVI" }, flag: "" };
+  private seal: THREE.Mesh | null = null;
+  private flagMats: THREE.MeshStandardMaterial[] = [];
+  private styleKey = "";
 
   constructor(private quality: "high" | "low") {
     this.rig = new Rig({ minDist: 8, maxDist: 25, minPitch: 0.15, maxPitch: 1.25, yaw: [-1.2, 1.2] }, { target: new THREE.Vector3(0, 1.2, -6.5), dist: 21, yaw: 0.32, pitch: 0.6 });
@@ -282,30 +316,30 @@ export class ChamberView {
     seat.position.set(0, 1.35, 4.95);
     s.add(back, crest, seat);
     // The seal of the Federation high on the far wall, facing the Speaker.
-    const seal = new THREE.Mesh(new THREE.CircleGeometry(1.7, 64), new THREE.MeshStandardMaterial({ map: sealTexture(), transparent: true, roughness: 0.4, metalness: 0.3 }));
+    const seal = new THREE.Mesh(new THREE.CircleGeometry(1.7, 64), new THREE.MeshStandardMaterial({ map: sealTexture(this.style.seal), transparent: true, roughness: 0.4, metalness: 0.3 }));
     seal.position.set(0, 8.3, -20.85);
     s.add(seal);
+    this.seal = seal;
     for (const x of [-4.6, 4.6]) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 5, 12), new THREE.MeshStandardMaterial({ color: "#c9a227", metalness: 0.9, roughness: 0.3 }));
       pole.position.set(x, 3.4, 5.4);
       s.add(pole);
-      const flag = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.5, 1.0, 12, 6),
-        new THREE.MeshStandardMaterial({
-          side: THREE.DoubleSide,
-          roughness: 0.8,
-          map: canvasTex(96, 64, (g) => {
-            g.fillStyle = "#24408e";
-            g.fillRect(0, 0, 96, 64);
-            g.fillStyle = "#f4f4f4";
-            g.fillRect(0, 21, 96, 22);
-            g.fillStyle = "#d6a520";
-            g.beginPath();
-            g.arc(48, 32, 11, 0, Math.PI * 2);
-            g.fill();
-          }),
+      const flagMat = new THREE.MeshStandardMaterial({
+        side: THREE.DoubleSide,
+        roughness: 0.8,
+        map: canvasTex(192, 128, (g) => {
+          g.fillStyle = "#24408e";
+          g.fillRect(0, 0, 192, 128);
+          g.fillStyle = "#f4f4f4";
+          g.fillRect(0, 42, 192, 44);
+          g.fillStyle = "#d6a520";
+          g.beginPath();
+          g.arc(96, 64, 22, 0, Math.PI * 2);
+          g.fill();
         }),
-      );
+      });
+      this.flagMats.push(flagMat);
+      const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.0, 12, 6), flagMat);
       // A gentle drape.
       const p = flag.geometry.attributes.position as THREE.BufferAttribute;
       for (let i = 0; i < p.count; i++) p.setZ(i, Math.sin((p.getX(i) + 0.75) * 3) * 0.08 * (p.getX(i) + 0.75));
@@ -378,7 +412,9 @@ export class ChamberView {
     g.font = "bold 40px 'Courier New', monospace";
     g.textAlign = "center";
     if (!v) {
-      g.fillText(this.kind === "house" ? "HOUSE OF REPRESENTATIVES" : "SENATE", 512, 120);
+      const name = (this.kind === "house" ? this.style.names.house : this.style.names.senate).toUpperCase();
+      g.font = `bold ${Math.min(40, Math.floor(1700 / Math.max(10, name.length)))}px 'Courier New', monospace`;
+      g.fillText(name, 512, 120);
       g.fillStyle = "#9a7a20";
       g.font = "bold 30px 'Courier New', monospace";
       g.fillText("IN SESSION", 512, 200);
@@ -404,6 +440,38 @@ export class ChamberView {
     this.board.tex.needsUpdate = true;
   }
 
+  /** The country's chamber: names on the board, the layout, the seal and the flags. */
+  setStyle(st: ChamberStyle) {
+    const key = JSON.stringify(st);
+    if (key === this.styleKey) return;
+    this.styleKey = key;
+    const was = this.style.layout;
+    this.style = st;
+    this.builtFor = "";
+    // Westminster is best seen from behind the Speaker's chair, down the length of the chamber.
+    if (was !== st.layout)
+      this.rig.jump(st.layout === "westminster" ? { target: new THREE.Vector3(0, 0.8, -5.5), dist: 15, yaw: 0.18, pitch: 0.5 } : { target: new THREE.Vector3(0, 1.2, -6.5), dist: 21, yaw: 0.32, pitch: 0.6 });
+    if (this.seal) {
+      const m = this.seal.material as THREE.MeshStandardMaterial;
+      m.map?.dispose();
+      m.map = sealTexture(st.seal);
+      m.needsUpdate = true;
+    }
+    if (st.flag && typeof Image !== "undefined") {
+      const img = new Image();
+      img.onload = () => {
+        for (const mat of this.flagMats) {
+          const t = canvasTex(192, 128, (g) => g.drawImage(img, 0, 0, 192, 128));
+          mat.map?.dispose();
+          mat.map = t;
+          mat.needsUpdate = true;
+        }
+      };
+      img.src = st.flag;
+    }
+    this.drawBoard(null);
+  }
+
   // ------------------------------------------------------------------ the members
 
   /** Seat a house: tiers of desks sized to fit, and everyone at their seat by party. */
@@ -425,48 +493,119 @@ export class ChamberView {
     this.scene.add(group);
     const hi = this.quality === "high";
 
-    // Order round the horseshoe: left-wing parties on the Speaker's left.
-    const order = Object.keys(PARTY).sort((a, b) => PARTY[a as PartyId].pos.e - PARTY[b as PartyId].pos.e);
-    const sorted = [...members].sort((a, b) => order.indexOf(a.party) - order.indexOf(b.party) || a.id - b.id);
-    const rows = kind === "house" ? 5 : 3;
-    const r0 = kind === "house" ? 7 : 7.5;
-    const gap = 1.75;
-    const lens = Array.from({ length: rows }, (_, k) => r0 + k * gap);
-    const tot = lens.reduce((a, b) => a + b, 0);
-    let left = sorted.length;
-    const per = lens.map((l, k) => {
-      const n = k === rows - 1 ? left : Math.round((sorted.length * l) / tot);
-      left -= n;
-      return n;
-    });
-    const A0 = Math.PI * 0.06;
-    const A1 = Math.PI * 0.94;
-    const slots: { k: number; a: number }[] = [];
-    per.forEach((n, k) => {
-      for (let j = 0; j < n; j++) slots.push({ k, a: A0 + ((A1 - A0) * (j + 0.5)) / n });
-    });
-    // Fill angle by angle across the rows, so each party sits in a wedge.
-    slots.sort((p, q) => q.a - p.a);
-
-    // Tiers, desks and the steps.
+    const west = this.style.layout === "westminster";
+    // Seats: each with a position, a height and the way the member faces.
+    type Slot = { x: number; y: number; z: number; yaw: number };
+    const slots: Slot[] = [];
+    let sorted: Member[];
+    let sc = 1;
     const carpet = carpetTexture(kind === "house" ? "#1f4a3a" : "#6b1f26", kind === "house" ? "rgba(214,180,90,0.35)" : "rgba(230,190,110,0.35)");
     carpet.repeat.set(10, 10);
     const tierMat = new THREE.MeshStandardMaterial({ map: carpet, roughness: 0.95 });
     const deskMat = new THREE.MeshPhysicalMaterial({ map: this.wood, roughness: 0.33, clearcoat: 0.7, clearcoatRoughness: 0.2 });
     const topMat = new THREE.MeshStandardMaterial({ color: "#2b1a10", roughness: 0.5 });
-    for (let k = 0; k < rows; k++) {
-      const r = lens[k];
-      const y = k * 0.42;
-      const tier = new THREE.Mesh(arcBox(r - 0.95, r + 0.85, A0 - 0.06, A1 + 0.06, 0, y + 0.02, 48), tierMat);
-      tier.receiveShadow = hi;
-      group.add(tier);
-      const desk = new THREE.Mesh(arcBox(r - 0.8, r - 0.42, A0 - 0.03, A1 + 0.03, y, y + 0.78, 48), deskMat);
-      desk.castShadow = hi;
-      desk.receiveShadow = hi;
-      group.add(desk);
-      const top = new THREE.Mesh(arcBox(r - 0.86, r - 0.3, A0 - 0.03, A1 + 0.03, y + 0.78, y + 0.82, 48), topMat);
-      top.receiveShadow = hi;
-      group.add(top);
+    if (west) {
+      // Government benches on the Speaker's right, the opposition facing them, crossbenches at the far end.
+      const gov = members.filter((m) => (m.side ?? 0) > 0).sort((a, b) => b.e - a.e || a.id - b.id);
+      const opp = members.filter((m) => (m.side ?? 0) < 0).sort((a, b) => a.e - b.e || a.id - b.id);
+      const cross = members.filter((m) => !m.side).sort((a, b) => a.e - b.e || a.id - b.id);
+      const most = Math.max(gov.length, opp.length, 1);
+      const rows = Math.max(2, Math.min(6, Math.ceil(Math.sqrt(most / 12))));
+      const len = 19;
+      const per = Math.ceil(most / rows);
+      sc = Math.max(0.42, Math.min(1, len / per / 0.78));
+      const benchMat = new THREE.MeshStandardMaterial({ color: kind === "house" ? "#2f6b48" : "#8a2430", roughness: 0.55 });
+      const rowW = 1.25 * Math.max(0.7, sc);
+      const lay = (list: Member[], dir: number) => {
+        for (let k = 0; k < rows; k++) {
+          const x = dir * (2.7 + k * rowW);
+          const y = k * 0.42;
+          // The step the row stands on, a long leather bench and its back.
+          if (y > 0) {
+            const tier = new THREE.Mesh(new THREE.BoxGeometry(rowW, y, len + 1), tierMat);
+            tier.position.set(x, y / 2, -7);
+            tier.receiveShadow = hi;
+            group.add(tier);
+          }
+          const seat = new THREE.Mesh(new THREE.BoxGeometry(0.55 * Math.max(0.7, sc), 0.42 * sc, len + 0.6), benchMat);
+          seat.position.set(x + dir * 0.06, y + 0.21 * sc, -7);
+          const back = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.62 * sc, len + 0.6), benchMat);
+          back.position.set(x + dir * (0.06 + 0.3 * Math.max(0.7, sc)), y + 0.52 * sc, -7);
+          for (const b of [seat, back]) {
+            b.castShadow = hi;
+            b.receiveShadow = hi;
+            group.add(b);
+          }
+        }
+        list.forEach((m, i) => {
+          const k = i % rows;
+          const j = Math.floor(i / rows);
+          slots.push({ x: dir * (2.7 + k * rowW), y: k * 0.42 - 0.12 * sc, z: 2.2 - (j + 0.5) * (len / per), yaw: dir > 0 ? -Math.PI / 2 : Math.PI / 2 });
+        });
+      };
+      lay(gov, 1);
+      lay(opp, -1);
+      // The crossbenches: rows across the far end, facing the Speaker.
+      const cPer = Math.max(1, Math.ceil(cross.length / 3));
+      cross.forEach((_, i) => {
+        const k = Math.floor(i / cPer);
+        const j = i % cPer;
+        slots.push({ x: ((j + 0.5) / cPer - 0.5) * 4.6, y: k * 0.45 - 0.2, z: -17.6 - k * 1.1, yaw: 0 });
+      });
+      sorted = [...gov, ...opp, ...cross];
+      // The table of the house, with the mace.
+      const table = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.85, 5.2), deskMat);
+      table.position.set(0, 0.42, 0.2);
+      table.castShadow = hi;
+      const mace = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.5, 12), new THREE.MeshStandardMaterial({ color: "#d4a62a", metalness: 0.9, roughness: 0.25 }));
+      mace.rotation.x = Math.PI / 2;
+      mace.position.set(0, 0.92, 0.2);
+      group.add(table, mace);
+    } else {
+      // Order round the horseshoe: left-wing parties on the Speaker's left.
+      sorted = [...members].sort((a, b) => a.e - b.e || a.party.localeCompare(b.party) || a.id - b.id);
+      const n = sorted.length;
+      const rows = Math.max(3, Math.min(9, Math.round(Math.sqrt(n / 11))));
+      const r0 = 6.8;
+      const gap = rows > 6 ? 1.45 : 1.65;
+      const lens = Array.from({ length: rows }, (_, k) => r0 + k * gap);
+      const tot = lens.reduce((a, b) => a + b, 0);
+      sc = Math.max(0.42, Math.min(1, (tot * Math.PI * 0.88) / Math.max(1, n) / 0.78));
+      let left = n;
+      const per = lens.map((l, k) => {
+        const c = k === rows - 1 ? left : Math.round((n * l) / tot);
+        left -= c;
+        return c;
+      });
+      const A0 = Math.PI * 0.06;
+      const A1 = Math.PI * 0.94;
+      const arcSlots: { k: number; a: number }[] = [];
+      per.forEach((c, k) => {
+        for (let j = 0; j < c; j++) arcSlots.push({ k, a: A0 + ((A1 - A0) * (j + 0.5)) / c });
+      });
+      // Fill angle by angle across the rows, so each party sits in a wedge.
+      arcSlots.sort((p, q) => q.a - p.a);
+      for (const sl of arcSlots) {
+        const r = lens[sl.k] + 0.05;
+        const cx = Math.cos(sl.a);
+        const cz = -Math.sin(sl.a);
+        slots.push({ x: cx * r, y: sl.k * 0.42, z: cz * r, yaw: Math.atan2(-cx, -cz) });
+      }
+      // Tiers and desks.
+      for (let k = 0; k < rows; k++) {
+        const r = lens[k];
+        const y = k * 0.42;
+        const tier = new THREE.Mesh(arcBox(r - 0.95, r + 0.85, A0 - 0.06, A1 + 0.06, 0, y + 0.02, 48), tierMat);
+        tier.receiveShadow = hi;
+        group.add(tier);
+        const desk = new THREE.Mesh(arcBox(r - 0.8, r - 0.42, A0 - 0.03, A1 + 0.03, y, y + 0.78 * Math.max(0.7, sc), 48), deskMat);
+        desk.castShadow = hi;
+        desk.receiveShadow = hi;
+        group.add(desk);
+        const top = new THREE.Mesh(arcBox(r - 0.86, r - 0.3, A0 - 0.03, A1 + 0.03, y + 0.78 * Math.max(0.7, sc), y + 0.82 * Math.max(0.7, sc), 48), topMat);
+        top.receiveShadow = hi;
+        group.add(top);
+      }
     }
 
     // The people: instanced bodies, heads, hair, arms, shirts and ties; chairs behind them.
@@ -489,6 +628,8 @@ export class ChamberView {
     const chairGeo = new THREE.BoxGeometry(0.62, 0.95, 0.12);
     chairGeo.translate(0, 0.47, 0);
     const chairs = inst(chairGeo, new THREE.MeshStandardMaterial({ color: kind === "house" ? "#1d5a43" : "#7a2028", roughness: 0.5 }));
+    // Westminster benches need no chairs.
+    chairs.visible = !west;
     const lamps = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.03, 0.08), new THREE.MeshBasicMaterial({ toneMapped: false }), n);
     group.add(lamps);
     this.lamps = lamps;
@@ -511,35 +652,30 @@ export class ChamberView {
     this.seatOf.clear();
     this.lampOn = [];
     sorted.forEach((m, i) => {
-      const sl = slots[i];
-      const r = lens[sl.k] + 0.05;
-      const y = sl.k * 0.42;
-      const cx = Math.cos(sl.a);
-      const cz = -Math.sin(sl.a);
-      const x = cx * r;
-      const z = cz * r;
-      // Facing the centre of the hemicycle.
-      const yaw = Math.atan2(-cx, -cz);
-      const fx = -cx;
-      const fz = -cz;
-      put(chairs, i, x - fx * 0.25, y, z - fz * 0.25, yaw);
-      put(torso, i, x, y + 0.82, z, yaw, 0.1);
-      put(shirt, i, x + fx * 0.2, y + 0.98, z + fz * 0.2, yaw, 0.1);
-      put(tie, i, x + fx * 0.225, y + 0.95, z + fz * 0.225, yaw, 0.1);
-      put(head, i, x + fx * 0.03, y + 1.38, z + fz * 0.03, yaw, 0, 0, 0.95, 1.08, 1);
+      const sl = slots[i] ?? slots[slots.length - 1] ?? { x: 0, y: 0, z: 0, yaw: 0 };
+      const { x, y, z, yaw } = sl;
+      // Facing the way the seat faces.
+      const fx = Math.sin(yaw);
+      const fz = Math.cos(yaw);
+      const k = sc;
+      put(chairs, i, x - fx * 0.25 * k, y, z - fz * 0.25 * k, yaw, 0, 0, k, k, k);
+      put(torso, i, x, y + 0.82 * k, z, yaw, 0.1, 0, k, k, k);
+      put(shirt, i, x + fx * 0.2 * k, y + 0.98 * k, z + fz * 0.2 * k, yaw, 0.1, 0, k, k, k);
+      put(tie, i, x + fx * 0.225 * k, y + 0.95 * k, z + fz * 0.225 * k, yaw, 0.1, 0, k, k, k);
+      put(head, i, x + fx * 0.03 * k, y + 1.38 * k, z + fz * 0.03 * k, yaw, 0, 0, 0.95 * k, 1.08 * k, k);
       const longHair = Math.floor(m.face / 53) % 3 === 0;
-      put(hair, i, x - fx * 0.005, y + 1.4, z - fz * 0.005, yaw, -0.25, 0, 1, longHair ? 1.25 : 1, 1);
-      // Forearms resting on the desk.
+      put(hair, i, x - fx * 0.005 * k, y + 1.4 * k, z - fz * 0.005 * k, yaw, -0.25, 0, k, (longHair ? 1.25 : 1) * k, k);
+      // Forearms resting on the desk (or the knees, on a bench).
       const side = { x: -fz, z: fx };
-      put(armL, i, x + fx * 0.28 + side.x * 0.22, y + 0.86, z + fz * 0.28 + side.z * 0.22, yaw, Math.PI / 2 - 0.25);
-      put(armR, i, x + fx * 0.28 - side.x * 0.22, y + 0.86, z + fz * 0.28 - side.z * 0.22, yaw, Math.PI / 2 - 0.25);
-      put(lamps, i, x + fx * 0.6 + side.x * 0.18, y + 0.84, z + fz * 0.6 + side.z * 0.18, yaw);
-      put(mic, i, x + fx * 0.62 - side.x * 0.1, y + 0.98, z + fz * 0.62 - side.z * 0.1, yaw, -0.6);
+      put(armL, i, x + fx * 0.28 * k + side.x * 0.22 * k, y + 0.86 * k, z + fz * 0.28 * k + side.z * 0.22 * k, yaw, Math.PI / 2 - 0.25, 0, k, k, k);
+      put(armR, i, x + fx * 0.28 * k - side.x * 0.22 * k, y + 0.86 * k, z + fz * 0.28 * k - side.z * 0.22 * k, yaw, Math.PI / 2 - 0.25, 0, k, k, k);
+      put(lamps, i, x + fx * (west ? 0.42 : 0.6) * k + side.x * 0.18 * k, y + (west ? 1.75 : 0.84) * k, z + fz * (west ? 0.42 : 0.6) * k + side.z * 0.18 * k, yaw, 0, 0, k, k, k);
+      put(mic, i, x + fx * 0.62 * k - side.x * 0.1 * k, y + 0.98 * k, z + fz * 0.62 * k - side.z * 0.1 * k, yaw, -0.6, 0, k, west ? 0.001 : k, k);
       const suit = col.set(SUITS[(m.face >> 3) % SUITS.length]);
       torso.setColorAt(i, suit);
       armL.setColorAt(i, suit);
       armR.setColorAt(i, suit);
-      tie.setColorAt(i, col.set(PARTY[m.party].color));
+      tie.setColorAt(i, col.set(m.color));
       head.setColorAt(i, col.set(SKIN[m.face % SKIN.length]));
       hair.setColorAt(i, col.set(HAIR[Math.floor(m.face / 7) % HAIR.length]));
       lamps.setColorAt(i, col.setRGB(0.15, 0.15, 0.15));

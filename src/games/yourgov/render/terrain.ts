@@ -9,7 +9,7 @@
  * web worker can run it off the main thread). Deterministic per seed.
  */
 import { createRng } from "../../engine/rng";
-import { MAP_H, MAP_W, fbm, landField, type Country } from "../map";
+import { MAP_H, MAP_W, fbm, landField, type Country, type Ground, type RealGround } from "../map";
 
 export interface TerrainQuality {
   /** Height samples per map unit. */
@@ -64,17 +64,21 @@ const smooth = (a: number, b: number, x: number) => {
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /** Height at a map point (world units). */
-export function heightAt(seed: number, x: number, y: number) {
-  const f = landField(seed, x, y);
+export function heightAt(g: Ground, x: number, y: number) {
+  if (g.kind === "real") return realHeight(g, x, y);
+  const f = landField(g, x, y);
   const c = f.coast;
+  const seed = g.seed;
   let h: number;
   if (c > 0) {
     const hills = fbm(x / 14, y / 14, seed + 81, 3);
-    const range = smooth(0.44, 0.64, fbm(x / 95, y / 95, seed + 61, 3));
+    // The mountains knob moves where ranges rise and how high.
+    const m = g.mountains;
+    const range = smooth(0.62 - m * 0.36, 0.82 - m * 0.36, fbm(x / 95, y / 95, seed + 61, 3));
     const r = 1 - Math.abs(2 * fbm(x / 30, y / 30, seed + 51, 5) - 1);
     const ridge = r * r * r;
     const inland = smooth(0.03, 0.22, c);
-    h = smooth(0, 0.05, c) * 0.35 + smooth(0, 0.4, c) * (1.4 + hills * 2.4) + range * (ridge * 15 + hills * 3) * inland;
+    h = smooth(0, 0.05, c) * 0.35 + smooth(0, 0.4, c) * (1.4 + hills * 2.4) + range * (ridge * (6 + m * 18) + hills * 3) * inland;
   } else {
     // A narrow shelf, then deep water.
     h = Math.max(-12, c * 26 + Math.min(0, c + 0.07) * 70);
@@ -82,6 +86,36 @@ export function heightAt(seed: number, x: number, y: number) {
   // Lakes cut down to a shallow bed.
   if (f.lake > 0) h = mix(h, -1.6, f.lake);
   return h;
+}
+
+/** Bilinear sample of a w × h grid laid over the map. */
+function gridAt(a: Float32Array, w: number, h: number, x: number, y: number) {
+  const gx = Math.min(w - 1.001, Math.max(0, x * (w / MAP_W) - 0.5));
+  const gy = Math.min(h - 1.001, Math.max(0, y * (h / MAP_H) - 0.5));
+  const x0 = gx | 0;
+  const y0 = gy | 0;
+  const fx = gx - x0;
+  const fy = gy - y0;
+  const i = y0 * w + x0;
+  return mix(mix(a[i], a[i + 1], fx), mix(a[i + w], a[i + w + 1], fx), fy);
+}
+
+/**
+ * A real country's ground: its real elevation (metres, squeezed so the Rockies and the Alps
+ * stand up without dwarfing the plains), with ridges added for detail the coarse grid lacks,
+ * meeting the sea exactly along the real coastline.
+ */
+function realHeight(g: RealGround, x: number, y: number) {
+  const sdf = gridAt(g.sdf, MAP_W, MAP_H, x, y);
+  const m = gridAt(g.dem, g.dw, g.dh, x, y);
+  if (sdf > 0) {
+    const base = 16 * Math.pow(Math.max(0, Math.min(7000, m)) / 4000, 0.78);
+    const r = 1 - Math.abs(2 * fbm(x / 6, y / 6, 51, 4) - 1);
+    const detail = (r * r - 0.3) * Math.min(3.2, base * 0.28) + (fbm(x / 9, y / 9, 81, 3) - 0.5) * 0.5 * smooth(0, 3, base);
+    return Math.max(0.05, smooth(0, 1.2, sdf) * (0.3 + base + detail));
+  }
+  // Under the sea: a shelf off the coast, deepening with the real sea floor.
+  return Math.max(-12, Math.min(-0.08, -0.08 + sdf * 0.5 + Math.min(0, m) / 260));
 }
 
 function hash(x: number, y: number, s: number) {
@@ -129,6 +163,7 @@ const C = {
 /** Build the terrain for a country. Around a second at high quality (run it in a worker). */
 export function buildTerrain(c: Country, q: TerrainQuality): Terrain {
   const seed = c.seed;
+  const ground = c.ground;
   const step = 1 / q.grid;
   const gw = Math.round(MAP_W * q.grid) + 1;
   const gh = Math.round(MAP_H * q.grid) + 1;
@@ -143,7 +178,7 @@ export function buildTerrain(c: Country, q: TerrainQuality): Terrain {
       const x = i * step;
       const y = j * step;
       const k = j * gw + i;
-      heights[k] = heightAt(seed, x, y);
+      heights[k] = heightAt(ground, x, y);
       moist[k] = fbm(x / 90, y / 90, seed + 71, 3) * 0.75 + fbm(x / 25, y / 25, seed + 73, 2) * 0.25;
       forestG[k] = fbm(x / 13, y / 13, seed + 91, 4);
       farmG[k] = fbm(x / 48, y / 48, seed + 43, 3);
@@ -204,6 +239,7 @@ export function buildTerrain(c: Country, q: TerrainQuality): Terrain {
   const farmH = Float32Array.from(c.sections, (s) => 0.8 + hash(s.id, 3, seed) * 0.9);
 
   const albedo = new Uint8ClampedArray(tw * th * 4);
+  const foreign = c.foreign;
   for (let py = 0; py < th; py++) {
     const y = (py + 0.5) / T;
     for (let px = 0; px < tw; px++) {
@@ -316,6 +352,13 @@ export function buildTerrain(c: Country, q: TerrainQuality): Terrain {
         r = vr * shade;
         g = vg * shade;
         b = vb * shade;
+        // Neighbouring countries: greyed back, so the country itself stands out.
+        if (foreign && foreign[Math.min(MAP_H - 1, y | 0) * MAP_W + Math.min(MAP_W - 1, x | 0)]) {
+          const l = (r + g + b) / 3;
+          r = mix(r, l, 0.55) * 0.8;
+          g = mix(g, l, 0.55) * 0.8;
+          b = mix(b, l, 0.55) * 0.82;
+        }
       }
       albedo[o] = r * grain;
       albedo[o + 1] = g * grain;

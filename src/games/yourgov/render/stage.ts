@@ -57,7 +57,7 @@ export class Stage3D {
     this.world.bakeEnvironment(this.renderer);
     this.chamber = new ChamberView(quality);
     this.chamber.bakeEnvironment(this.renderer);
-    loadTerrain(country.seed, quality).then((b) => {
+    loadTerrain(country, quality).then((b) => {
       if (this.disposed) return;
       this.world.setTerrain(b, this.renderer.capabilities.getMaxAnisotropy());
       this.events.onReady?.();

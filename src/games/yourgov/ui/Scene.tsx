@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PARTY, type PartyId } from "../data";
+import type { PartyId } from "../data";
 import type { Game } from "../game";
 import * as G from "../sim";
+import { roman } from "../render/chamber3d";
 import { Stage3D } from "../render/stage";
+import { flagUrl } from "./flags";
 import { Chamber } from "./Chamber";
 import { countyColors } from "./mapColors";
 import { MapView } from "./MapView";
@@ -32,15 +34,16 @@ export function Scene({ g }: { g: Game }) {
   const view = s.election ? "map" : g.ui.view;
 
   // Create the stage once per country and graphics level.
+  const country = G.country(s);
   useEffect(() => {
     if (!canvas.current) return;
     let st: Stage3D;
     try {
-      st = new Stage3D(canvas.current, G.country(s.seed), quality, labels.current, {
+      st = new Stage3D(canvas.current, country, quality, labels.current, {
         onReady: () => setReady(true),
         onPickCounty: (id) => {
           if (id < 0) return;
-          const c = G.country(g.s!.seed);
+          const c = G.country(g.s!);
           const state = c.sections[id].state;
           g.setUI({ state: g.ui.state === state ? null : state });
         },
@@ -58,7 +61,7 @@ export function Scene({ g }: { g: Game }) {
       stage.current = null;
       setReady(false);
     };
-  }, [s.seed, quality, g]);
+  }, [country, quality, g]);
 
   // The politics on the land: recoloured when the week, the mode or the count moves on.
   const countBucket = s.election ? Math.round(g.ui.count * 240) : -1;
@@ -80,12 +83,20 @@ export function Scene({ g }: { g: Game }) {
     if (!st) return;
     st.setActive(view);
     if (view === "chamber") {
+      const sy = G.sys(s);
+      st.chamber.setStyle({
+        names: { house: sy.lower.name, senate: sy.upper.name },
+        layout: sy.layout ?? "hemicycle",
+        seal: { title: s.sc.name, sub: sy.exec === "presidential" ? "Republic" : "Parliament", year: roman(s.sc.startYear) },
+        flag: flagUrl(s.sc.flag, s.sc.name),
+      });
       const ids = house === "house" ? s.house : s.senate;
       st.chamber.setMembers(
         house,
         ids.map((id) => {
           const p = G.pol(s, id)!;
-          return { id, party: p.party, face: p.face, you: p.you };
+          const pd = G.party(s, p.party);
+          return { id, party: p.party, color: pd.color, e: pd.pos.e, side: pd.noRun ? 0 : s.gov.parties.includes(p.party) ? 1 : -1, face: p.face, you: p.you };
         }),
       );
       const key = vote ? `${house}|${vote.key}` : `${house}|none`;
@@ -112,7 +123,7 @@ export function Scene({ g }: { g: Game }) {
       </div>
     );
 
-  const c = G.country(s.seed);
+  const c = country;
   const sec = hover && view === "map" && !s.election ? c.sections[hover.id] : null;
   const shares = sec ? G.sharesIn(s, sec.id) : null;
   return (
@@ -133,13 +144,13 @@ export function Scene({ g }: { g: Game }) {
           <span className="yg-muted">
             {c.states[sec.state].name} · {(sec.pop / 1000).toFixed(0)}k people
           </span>
-          {(G.PARTY_IDS.map((id, i) => [id, shares[i]]) as [PartyId, number][])
+          {(G.ids(s).map((id, i) => [id, shares[i]]) as [PartyId, number][])
             .sort((a, b) => b[1] - a[1])
             .slice(0, 3)
             .map(([id, v]) => (
               <span key={id} className="yg-tip-row">
-                <i style={{ background: PARTY[id].color }} />
-                {PARTY[id].name}
+                <i style={{ background: G.party(s, id).color }} />
+                {G.party(s, id).name}
                 <b>{Math.round(v * 100)}%</b>
               </span>
             ))}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { PARTY, PARTIES, type PartyId } from "../data";
+import type { PartyId } from "../data";
 import { MAP_H, MAP_W, type Country } from "../map";
 import * as G from "../sim";
 import type { MapMode } from "../game";
@@ -19,9 +19,9 @@ interface Raster {
   w: number;
   h: number;
 }
-const rasters = new Map<number, Raster>();
+const rasters = new Map<string, Raster>();
 function raster(c: Country): Raster {
-  let r = rasters.get(c.seed);
+  let r = rasters.get(c.key);
   if (r) return r;
   const w = MAP_W * K;
   const h = MAP_H * K;
@@ -42,7 +42,7 @@ function raster(c: Country): Raster {
       } else if (b < 0 || d < 0) edge[i] = 3;
     }
   r = { lab, edge, w, h };
-  rasters.set(c.seed, r);
+  rasters.set(c.key, r);
   return r;
 }
 
@@ -58,9 +58,9 @@ export interface MapProps {
 /** Colour per county for the current mode (or the election count). */
 function colours(props: MapProps): number[][] {
   const { s, mode, count } = props;
-  const c = G.country(s.seed);
-  const P = G.PARTY_IDS.length;
-  const pal = G.PARTY_IDS.map((id) => rgb(PARTY[id].color));
+  const c = G.country(s);
+  const P = G.partyDefs(s).length;
+  const pal = G.partyDefs(s).map((p) => rgb(p.color));
   const e = s.election;
   if (e && count !== null) {
     const n = e.order.length;
@@ -82,7 +82,7 @@ function colours(props: MapProps): number[][] {
   }
   if (mode === "states") return c.sections.map((sec) => rgb(PASTEL[sec.state % PASTEL.length]).map((v, i) => (props.selected === sec.state ? Math.round(v * 0.82) : v + 0 * i)));
   if (mode === "support") {
-    const me = G.PARTY_IDS.indexOf(s.party);
+    const me = G.pidx(s, s.party);
     return c.sections.map((sec) => {
       const sh = G.sharesIn(s, sec.id)[me];
       return mix([250, 250, 250], pal[me].every((v) => v > 230) ? [70, 70, 70] : pal[me], Math.min(1, sh * 2.4));
@@ -104,7 +104,7 @@ export function MapView(props: MapProps) {
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const [hover, setHover] = useState<{ x: number; y: number; sec: number } | null>(null);
   const [, setTick] = useState(0);
-  const c = G.country(props.s.seed);
+  const c = G.country(props.s);
 
   // Paint the counties into the offscreen map whenever the colours change.
   const key = `${props.mode}|${props.selected}|${props.count === null ? "x" : Math.round(props.count * 200)}|${props.s.week}|${props.s.election ? 1 : 0}`;
@@ -266,20 +266,20 @@ export function MapView(props: MapProps) {
           <div style={{ opacity: 0.75, fontWeight: 700 }}>
             {c.states[sec.state].name} · {(sec.pop / 1000).toFixed(0)}k people
           </div>
-          {(G.PARTY_IDS.map((id, i) => [id, shares[i]]) as [PartyId, number][])
+          {(G.ids(props.s).map((id, i) => [id, shares[i]]) as [PartyId, number][])
             .sort((a, b) => b[1] - a[1])
             .slice(0, 3)
             .map(([id, v]) => (
               <div key={id} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span className="yg-sw" style={{ background: PARTY[id].color }} />
-                {PARTY[id].short} <span style={{ marginLeft: "auto" }}>{Math.round(v * 100)}%</span>
+                <span className="yg-sw" style={{ background: G.party(props.s, id).color }} />
+                {G.party(props.s, id).short} <span style={{ marginLeft: "auto" }}>{Math.round(v * 100)}%</span>
               </div>
             ))}
         </div>
       )}
       {props.count === null && props.mode === "politics" && (
         <div className="yg-legend">
-          {PARTIES.map((p) => (
+          {G.partyDefs(props.s).filter((p) => !p.noRun).map((p) => (
             <span key={p.id} style={{ display: "flex", gap: 5, alignItems: "center" }}>
               <span className="yg-sw" style={{ background: p.color }} /> {p.short}
             </span>

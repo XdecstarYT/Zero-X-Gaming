@@ -1,19 +1,25 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createRng } from "../../engine/rng";
-import { COMMITTEES, EVENTS, EVENT, LAW_GROUPS, PARTIES, PARTY, type LawDef, type PartyId } from "../data";
+import { COMMITTEES, EVENTS, EVENT, LAW_GROUPS, type LawDef, type PartyId } from "../data";
 import type { Game, Tab } from "../game";
+import { EXEC_KINDS, LOWER_SYSTEMS, UPPER_KINDS } from "../scenario";
 import * as G from "../sim";
-import { Stage3D } from "../render/stage";
 import { Portrait } from "./Chamber";
 import { Hemicycle, PollChart, Trend } from "./charts";
+import { flagUrl } from "./flags";
 import { GlassDefs, canRefract, trackSheen } from "./glass";
 import { Icon } from "./icons";
 import { LawStudio } from "./LawStudio";
 import type { MapMode } from "./mapColors";
 import { Scene } from "./Scene";
+import { Title } from "./Title";
 
-const money = (m: number) => `$${m >= 1000 ? (m / 1000).toFixed(2) + " B" : m.toFixed(1) + " M"}`;
+/** Party money, in millions of the country's currency. */
+const money = (s: G.GameState, m: number) => `${s.sc.economy.cur}${m >= 1000 ? (m / 1000).toFixed(2) + " B" : m.toFixed(1) + " M"}`;
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+/** A big amount in billions of the country's currency (trillions above a thousand). */
+const big = (s: G.GameState, bn: number) => `${s.sc.economy.cur}${Math.abs(bn) >= 1000 ? (Math.abs(bn) / 1000).toFixed(Math.abs(bn) >= 100000 ? 0 : 1) + " T" : Math.abs(bn).toFixed(0) + " B"}`;
 
 function useGame(g: Game) {
   useSyncExternalStore(g.subscribe, g.getVersion, g.getVersion);
@@ -76,12 +82,9 @@ const Bar = ({ v, color }: { v: number; color: string }) => (
 
 const Sw = ({ c }: { c: string }) => <span className="yg-sw" style={{ background: c }} />;
 
-const Flag = ({ size = 22 }: { size?: number }) => (
-  <svg width={size * 1.45} height={size} viewBox="0 0 29 20" aria-label="Flag of Avalon" style={{ borderRadius: 4, flex: "none", boxShadow: "0 0 0 1px rgba(255,255,255,.25)" }}>
-    <rect width="29" height="20" fill="#24408e" />
-    <rect y="7" width="29" height="6" fill="#f4f4f4" />
-    <circle cx="14.5" cy="10" r="3.4" fill="#d6a520" />
-  </svg>
+export const Flag = ({ code, name, size = 22 }: { code?: string; name: string; size?: number }) => (
+  // eslint-disable-next-line @next/next/no-img-element
+  <img src={flagUrl(code, name)} alt={`Flag of ${name}`} width={Math.round(size * 1.5)} height={size} style={{ borderRadius: 4, flex: "none", objectFit: "cover", boxShadow: "0 0 0 1px rgba(255,255,255,.25)" }} />
 );
 
 function Seg<T extends string>({ value, options, onChange, label, testId }: { value: T; options: { id: T; label: ReactNode; title?: string }[]; onChange: (v: T) => void; label: string; testId?: string }) {
@@ -96,11 +99,11 @@ function Seg<T extends string>({ value, options, onChange, label, testId }: { va
   );
 }
 
-function fxText(fx: { happiness?: number; growth?: number; budget?: number; unemployment?: number }) {
+function fxText(s: G.GameState, fx: { happiness?: number; growth?: number; budget?: number; unemployment?: number }) {
   const out: string[] = [];
   if (fx.happiness) out.push(`happiness ${fx.happiness > 0 ? "+" : ""}${fx.happiness.toFixed(1)}`);
   if (fx.growth) out.push(`growth ${fx.growth > 0 ? "+" : ""}${fx.growth.toFixed(2)}%`);
-  if (fx.budget) out.push(`budget ${fx.budget > 0 ? "+" : ""}$${Math.round(fx.budget)} B`);
+  if (fx.budget) out.push(`budget ${fx.budget > 0 ? "+" : "–"}${big(s, fx.budget * (s.sc.economy.gdp / 18))}`);
   if (fx.unemployment) out.push(`jobless ${fx.unemployment > 0 ? "+" : ""}${fx.unemployment.toFixed(1)}%`);
   return out.join(" · ");
 }
@@ -128,11 +131,11 @@ function Career({ g }: { g: Game }) {
   return (
     <Sheet title="Your career" eyebrow={G.youHold(s).join(" · ")} onClose={() => g.setUI({ tab: null })} testId="yg-p-missions">
       <div className="yg-profile">
-        <Portrait p={you} size={52} />
+        <Portrait s={s} p={you} size={52} />
         <div>
           <b>{G.fullName(you)}</b>
           <span className="yg-muted">
-            {PARTY[s.party].name} · age {you.age + G.yearOf(s.week) - 2046}
+            {G.party(s, s.party).name} · age {you.age + G.yearOf(s) - s.sc.startYear}
           </span>
         </div>
       </div>
@@ -177,8 +180,8 @@ function Career({ g }: { g: Game }) {
 }
 
 /** Who would vote to move a law from today's option to another (by where the parties stand). */
-function backersOf(l: LawDef, from: number, to: number) {
-  return PARTIES.filter((p) => posDist(l.options[from].pos, p.pos) - posDist(l.options[to].pos, p.pos) > 0.05);
+function backersOf(s: G.GameState, l: LawDef, from: number, to: number) {
+  return G.partyDefs(s).filter((p) => !p.noRun && posDist(l.options[from].pos, p.pos) - posDist(l.options[to].pos, p.pos) > 0.05);
 }
 
 function WriteBill({ g }: { g: Game }) {
@@ -225,7 +228,7 @@ function WriteBill({ g }: { g: Game }) {
   }
   const cur = s.laws[sel.id];
   const pending = s.bills.some((b) => b.law === sel.id && live(b));
-  const me = PARTY[s.party].pos;
+  const me = G.party(s, s.party).pos;
   const want = (o: number) => posDist(sel.options[o].pos, me) < posDist(sel.options[cur].pos, me);
   return (
     <Sheet
@@ -254,7 +257,7 @@ function WriteBill({ g }: { g: Game }) {
         </Row>
         <Row>
           <span className="grow">Cost of a bill</span>
-          <span className="r">{money(G.BILL_COST)}</span>
+          <span className="r">{money(s, G.BILL_COST)}</span>
         </Row>
       </Group>
       <Group label="Options">
@@ -273,16 +276,16 @@ function WriteBill({ g }: { g: Game }) {
                 </button>
               )}
             </div>
-            <p className="yg-muted small">{fxText(o.fx) || "No change to the numbers"}</p>
+            <p className="yg-muted small">{fxText(s, o.fx) || "No change to the numbers"}</p>
             {i !== cur && (
               <p className="yg-backline">
-                {backersOf(sel, cur, i).map((p) => (
+                {backersOf(s, sel, cur, i).map((p) => (
                   <span key={p.id} className="yg-chip" style={{ ["--c" as string]: p.color }}>
                     <i />
                     {p.short}
                   </span>
                 ))}
-                {!backersOf(sel, cur, i).length && <span className="yg-muted small">No party wants this change</span>}
+                {!backersOf(s, sel, cur, i).length && <span className="yg-muted small">No party wants this change</span>}
               </p>
             )}
           </div>
@@ -305,9 +308,9 @@ function Bills({ g }: { g: Game }) {
             const toVote = live(x) && G.youVoteOn(s, x) && x.yourVote === null;
             return (
               <Row key={x.id} onClick={() => g.setUI({ bill: x.id })} testId={`yg-bill-${x.id}`}>
-                <Sw c={PARTY[x.party].color} />
+                <Sw c={G.party(s, x.party).color} />
                 <span className="grow">{billName(s, x)}</span>
-                <span className={`yg-tag ${x.stage === "passed" ? "good" : x.stage === "failed" ? "bad" : toVote ? "warn" : ""}`}>{toVote ? "Your vote" : G.stageName(x.stage)}</span>
+                <span className={`yg-tag ${x.stage === "passed" ? "good" : x.stage === "failed" ? "bad" : toVote ? "warn" : ""}`}>{toVote ? "Your vote" : G.stageName(s, x.stage)}</span>
               </Row>
             );
           })}
@@ -320,7 +323,8 @@ function Bills({ g }: { g: Game }) {
   const lawmaker = G.pol(s, b.proposer);
   const mine = G.youVoteOn(s, b) && isLive;
   const l = G.lawOf(s, b.law);
-  const instit = b.stage === "committee" ? `Committee ${COMMITTEES[(l?.committee ?? 1) - 1]}` : b.stage === "house" ? "House of Representatives" : b.stage === "senate" ? "Senate" : b.stage === "president" ? "The President" : G.stageName(b.stage);
+  const sy = G.sys(s);
+  const instit = b.stage === "committee" ? `Committee ${COMMITTEES[(l?.committee ?? 1) - 1]}` : b.stage === "house" ? `${sy.lower.name}${b.insist ? " (overriding the " + sy.upper.short + ")" : ""}` : b.stage === "senate" ? sy.upper.name : b.stage === "president" ? `The ${G.titles(s).president}` : b.stage === "override" ? "Both houses: veto override" : G.stageName(s, b.stage);
   const total = Math.max(1, (proj?.yes ?? 0) + (proj?.no ?? 0) + (proj?.abstain ?? 0));
   const btn = (v: -1 | 0 | 1, label: string, n: number | undefined, cls: string) => (
     <button type="button" className={`yg-vote ${cls}${b.yourVote === v ? " chosen" : ""}`} disabled={!mine} onClick={() => g.vote(b.id, v)} data-testid={`yg-vote-${label.toLowerCase()}`}>
@@ -331,10 +335,10 @@ function Bills({ g }: { g: Game }) {
   return (
     <Sheet title={isLive ? "Vote to approve new bill" : "Bill"} eyebrow={instit} onBack={() => g.setUI({ bill: null })} onClose={() => g.setUI({ tab: null, bill: null })} testId="yg-p-vote">
       <div className="yg-billcard">
-        <Portrait p={lawmaker} size={40} />
+        <Portrait s={s} p={lawmaker} size={40} />
         <div className="grow">
           <span className="yg-muted small">
-            {lawmaker ? G.fullName(lawmaker) : "—"} · {PARTY[b.party].short}
+            {lawmaker ? G.fullName(lawmaker) : "—"} · {G.party(s, b.party).short}
           </span>
           <b>{billName(s, b)}</b>
         </div>
@@ -354,7 +358,7 @@ function Bills({ g }: { g: Game }) {
             </Row>
             <Row>
               <span className="grow">Required votes</span>
-              <span className="r">{b.stage === "president" ? "Signature" : `${need} (${b.budget || !l?.constitutional ? "ordinary" : "two thirds"})`}</span>
+              <span className="r">{b.stage === "president" ? "Signature" : `${need} (${G.required(s, b) > 0.6 ? "two thirds" : "majority"})`}</span>
             </Row>
             <Row>
               <span className="grow">Vote in</span>
@@ -374,8 +378,10 @@ function Bills({ g }: { g: Game }) {
             {btn(0, "Abstain", proj?.abstain, "")}
             {btn(-1, "Decline", proj?.no, "bad")}
           </div>
-          <Group label={`Lobby the parties (${money(G.LOBBY_COST)} each)`}>
-            {PARTIES.filter((p) => p.id !== s.party).map((p) => (
+          <Group label={`Lobby the parties (${money(s, G.LOBBY_COST)} each)`}>
+            {G.partyDefs(s)
+              .filter((p) => p.id !== s.party && G.voters(s, b).some((id) => G.pol(s, id)?.party === p.id))
+              .map((p) => (
               <Row key={p.id}>
                 <Sw c={p.color} />
                 <span className="grow">{p.name}</span>
@@ -383,12 +389,12 @@ function Bills({ g }: { g: Game }) {
                   {b.lobbied.includes(p.id) ? "Lobbied" : "Lobby"}
                 </button>
               </Row>
-            ))}
+              ))}
           </Group>
         </>
       )}
       {b.last && (
-        <Group label={`Result in the ${G.stageName(b.last.stage)}`}>
+        <Group label={`Result in the ${G.stageName(s, b.last.stage)}`}>
           <Row>
             <span className={`yg-dot ${b.last.passed ? "good" : "bad"}`} />
             <span className="grow">{b.last.passed ? "Passed" : "Rejected"}</span>
@@ -412,12 +418,12 @@ function Bills({ g }: { g: Game }) {
 function Events({ g }: { g: Game }) {
   const s = g.s!;
   const sel = g.ui.event ? EVENT[g.ui.event] : null;
-  const c = G.country(s.seed);
+  const c = G.country(s);
   const st = g.ui.state ?? s.homeState;
   const funds = s.parties[s.party].funds;
   const poll = s.polled[st] !== undefined ? G.statePoll(s, st) : null;
   return (
-    <Sheet title="Create new event" eyebrow={`Funds ${money(funds)}`} onClose={() => g.setUI({ tab: null, event: null })} testId="yg-p-events">
+    <Sheet title="Create new event" eyebrow={`Funds ${money(s, funds)}`} onClose={() => g.setUI({ tab: null, event: null })} testId="yg-p-events">
       <div className="yg-grid">
         {EVENTS.map((e) => (
           <button key={e.id} type="button" className="yg-tile" title={e.name} aria-label={e.name} aria-pressed={g.ui.event === e.id} disabled={s.usedEvents.includes(e.id)} onClick={() => g.setUI({ event: e.id })} data-testid={`yg-ev-${e.id}`}>
@@ -433,7 +439,7 @@ function Events({ g }: { g: Game }) {
           <Group>
             <Row>
               <span className="grow">Cost</span>
-              <span className="r">{money(sel.cost)}</span>
+              <span className="r">{money(s, sel.cost)}</span>
             </Row>
             <Row>
               <span className="grow">Where</span>
@@ -448,7 +454,7 @@ function Events({ g }: { g: Game }) {
           </Group>
           {sel.scope === "state" && (
             <p className="yg-muted small">
-              <Icon name="pin" size={13} /> Click a state on the map to choose where.
+              <Icon name="pin" size={13} /> Click a {G.titles(s).region} on the map to choose where.
             </p>
           )}
           <button type="button" className="yg-btn primary wide" disabled={funds < sel.cost || s.usedEvents.includes(sel.id)} onClick={() => g.holdEvent(sel.id, st)} data-testid="yg-hold">
@@ -457,14 +463,15 @@ function Events({ g }: { g: Game }) {
         </div>
       )}
       {poll && (
-        <Group label={`Poll: ${c.states[st].name} (${G.dateLabel(s.polled[st])})`}>
+        <Group label={`Poll: ${c.states[st].name} (${G.dateLabel(s, s.polled[st])})`}>
           {(Object.entries(poll) as [PartyId, number][])
+            .filter(([, v]) => v > 0.001)
             .sort((a, b) => b[1] - a[1])
             .map(([id, v]) => (
               <Row key={id}>
-                <Sw c={PARTY[id].color} />
-                <span style={{ width: 30 }}>{PARTY[id].short}</span>
-                <Bar v={v * 2} color={PARTY[id].color} />
+                <Sw c={G.party(s, id).color} />
+                <span style={{ width: 52 }}>{G.party(s, id).short}</span>
+                <Bar v={v * 2} color={G.party(s, id).color} />
                 <span className="r" style={{ width: 48 }}>
                   {pct(v)}
                 </span>
@@ -478,60 +485,116 @@ function Events({ g }: { g: Game }) {
 
 function Parliament({ g }: { g: Game }) {
   const s = g.s!;
-  const which = g.ui.house;
+  const sy = G.sys(s);
+  const t = G.titles(s);
+  const hasUpper = sy.upper.kind !== "none";
+  const which = hasUpper ? g.ui.house : "house";
   const seats = which === "house" ? G.houseBy(s) : G.senateBy(s);
+  const total = which === "house" ? s.house.length : s.senate.length;
+  const head = G.pol(s, s.gov.head);
   const pres = G.pol(s, s.president);
-  const c = G.country(s.seed);
+  const c = G.country(s);
+  const govSeats = s.gov.parties.reduce((a, p) => a + (G.houseBy(s)[p] ?? 0), 0);
+  const parl = sy.exec !== "presidential";
+  const chamber = which === "house" ? sy.lower : sy.upper;
+  const how = which === "house" ? LOWER_SYSTEMS.find((x) => x.id === G.lowerSystem(s))?.name : UPPER_KINDS.find((x) => x.id === sy.upper.kind)?.name;
   return (
-    <Sheet title={which === "house" ? "House of Representatives" : "Senate"} eyebrow="Parliament" onClose={() => g.setUI({ tab: null })} testId="yg-p-chamber">
-      <Seg
-        value={which}
-        label="House"
-        onChange={(v) => g.setUI({ house: v })}
-        options={[
-          { id: "house", label: "House" },
-          { id: "senate", label: "Senate" },
-        ]}
-        testId="yg-house"
-      />
+    <Sheet title={chamber.name} eyebrow={`${how ?? ""} · ${total} seats`} onClose={() => g.setUI({ tab: null })} testId="yg-p-chamber">
+      {hasUpper && (
+        <Seg
+          value={which}
+          label="House"
+          onChange={(v) => g.setUI({ house: v })}
+          options={[
+            { id: "house", label: sy.lower.short },
+            { id: "senate", label: sy.upper.short },
+          ]}
+          testId="yg-house"
+        />
+      )}
       <div className="yg-hemi">
-        <Hemicycle seats={seats} highlight={s.party} />
+        <Hemicycle seats={seats} parties={G.partyDefs(s)} highlight={s.party} />
       </div>
       <Group>
         {(Object.entries(seats) as [PartyId, number][])
+          .filter(([, n]) => n > 0)
           .sort((a, b) => b[1] - a[1])
           .map(([id, n]) => (
             <Row key={id}>
-              <Sw c={PARTY[id].color} />
-              <span className="grow">{PARTY[id].name}</span>
+              <Sw c={G.party(s, id).color} />
+              <span className="grow">
+                {G.party(s, id).name}
+                {s.gov.parties.includes(id) && <span className="yg-tag good">Gov</span>}
+              </span>
               <span className="r">{n}</span>
             </Row>
           ))}
         <Row>
           <span className="grow muted">Majority</span>
-          <span className="r">{Math.floor((which === "house" ? G.HOUSE_SEATS : s.senate.length) / 2) + 1}</span>
+          <span className="r">{Math.floor(total / 2) + 1}</span>
         </Row>
       </Group>
       <Row onClick={() => g.setUI({ view: "chamber" })}>
         <Icon name="chamber" size={18} />
-        <span className="grow">See the {which === "house" ? "House" : "Senate"} in session</span>
+        <span className="grow">See the {chamber.short} in session</span>
         <Icon name="chevron" size={16} className="yg-faint" />
       </Row>
-      <Group label="The President">
+      <Group label="The government">
         <Row>
-          <Portrait p={pres} size={30} />
-          <span className="grow">{pres ? G.fullName(pres) : "—"}</span>
-          <span className="r">{pres ? PARTY[pres.party].short : ""}</span>
+          <Portrait s={s} p={head} size={30} />
+          <span className="grow">
+            {head ? G.fullName(head) : "—"}
+            <span className="yg-muted small"> · {t.head}</span>
+          </span>
+          <span className="r">{head ? G.party(s, head.party).short : ""}</span>
+        </Row>
+        {sy.exec === "semi" && pres && (
+          <Row>
+            <Portrait s={s} p={pres} size={30} />
+            <span className="grow">
+              {G.fullName(pres)}
+              <span className="yg-muted small"> · {t.president}</span>
+            </span>
+            <span className="r">{G.party(s, pres.party).short}</span>
+          </Row>
+        )}
+        <Row>
+          <span className="grow">{s.gov.parties.length > 1 ? "Coalition" : "Governing party"}</span>
+          <span className="r">{s.gov.parties.map((p) => G.party(s, p).short).join(" + ")}</span>
+        </Row>
+        {parl && (
+          <Row>
+            <span className="grow">Seats behind it</span>
+            <span className={`r ${govSeats * 2 > s.house.length ? "" : "muted"}`}>
+              {govSeats}/{s.house.length} {govSeats * 2 > s.house.length ? "" : "(minority)"}
+            </span>
+          </Row>
+        )}
+        <Row>
+          <span className="grow">Next election</span>
+          <span className="r">
+            {G.nextElection(s).title} · {G.dateLabel(s, G.nextElection(s).week)}
+          </span>
         </Row>
       </Group>
-      <Group label="Governors">
-        {(Object.entries(Object.fromEntries(G.PARTY_IDS.map((id) => [id, s.governors.filter((x) => G.pol(s, x)?.party === id).length]))) as [PartyId, number][])
+      {parl && s.gov.head === s.you && (
+        <button type="button" className="yg-btn wide" style={{ marginTop: 8 }} onClick={() => window.confirm("Call an early election? The country votes in six weeks.") && g.callElection()} data-testid="yg-call-election">
+          <Icon name="vote" size={16} /> Call an early election
+        </button>
+      )}
+      {parl && !G.inGovernment(s) && (
+        <button type="button" className="yg-btn wide" style={{ marginTop: 8 }} disabled={s.parties[s.party].funds < G.MOTION_COST || s.week - s.lastMotion < 26} onClick={() => g.noConfidence()} data-testid="yg-no-confidence">
+          <Icon name="bills" size={16} /> Motion of no confidence ({money(s, G.MOTION_COST)})
+        </button>
+      )}
+      <Group label={`${cap(t.regions)}: ${t.regionHead.toLowerCase()}s`}>
+        {(Object.entries(Object.fromEntries(G.ids(s).map((id) => [id, s.governors.filter((x) => G.pol(s, x)?.party === id).length]))) as [PartyId, number][])
           .filter(([, n]) => n > 0)
           .sort((a, b) => b[1] - a[1])
           .map(([id, n]) => (
             <Row key={id}>
-              <Sw c={PARTY[id].color} />
-              <span className="grow">{PARTY[id].name}</span>
+              <Sw c={G.party(s, id).color} />
+              <span className="grow">{G.party(s, id).name}</span>
               <span className="r">
                 {n}/{c.states.length}
               </span>
@@ -553,27 +616,32 @@ function Parties({ g }: { g: Game }) {
   const s = g.s!;
   const poll = G.nationalPoll(s);
   const house = G.houseBy(s);
+  const list = [...G.partyDefs(s)].sort((a, b) => (poll[b.id] ?? 0) - (poll[a.id] ?? 0) || (house[b.id] ?? 0) - (house[a.id] ?? 0));
   return (
     <Sheet title="Parties" eyebrow="National polls" onClose={() => g.setUI({ tab: null })} testId="yg-p-parties">
       <PollChart s={s} />
-      {PARTIES.map((p) => {
+      {list.map((p) => {
         const ps = s.parties[p.id];
         const leader = G.pol(s, ps.leader);
         return (
           <div key={p.id} className={`yg-partycard${p.id === s.party ? " mine" : ""}`} style={{ ["--c" as string]: p.color }}>
             <div className="yg-partycard-top">
               <Sw c={p.color} />
-              <b className="grow">{p.name}</b>
-              <b>{pct(poll[p.id])}</b>
+              <b className="grow">
+                {p.name}
+                {s.gov.parties.includes(p.id) && <span className="yg-tag good">Gov</span>}
+              </b>
+              <b>{p.noRun ? "—" : pct(poll[p.id])}</b>
             </div>
             <div className="yg-partycard-mid">
-              <Portrait p={leader} size={26} />
+              {!p.noRun && <Portrait s={s} p={leader} size={26} />}
               <span className="grow small">
-                {leader ? G.fullName(leader) : ""} · {p.ideology}
+                {p.noRun ? "Doesn't stand in elections" : `${leader ? G.fullName(leader) : ""} · ${p.ideology}`}
+                {p.only && ` · ${p.only.length === 1 ? (G.country(s).states.find((x) => x.key === p.only![0])?.name ?? "") + " only" : "regional"}`}
               </span>
               <span className="small">{house[p.id]} seats</span>
             </div>
-            {p.id !== s.party && (
+            {p.id !== s.party && !p.noRun && (
               <div className="yg-partycard-rel small">
                 <span>Relations with you</span>
                 <Bar v={(ps.relations[s.party] + 100) / 200} color={ps.relations[s.party] >= 0 ? "#30d158" : "#ff453a"} />
@@ -605,36 +673,41 @@ function Compass({ s }: { s: G.GameState }) {
       <text x="115" y="62" fontSize="6" textAnchor="middle" fill="rgba(245,247,251,.6)" transform="rotate(90 115 62)">
         Right
       </text>
-      {PARTIES.map((p) => (
+      {G.partyDefs(s)
+        .filter((p) => !p.noRun)
+        .map((p) => (
         <g key={p.id}>
           <circle cx={60 + p.pos.e * 48} cy={60 - p.pos.s * 48} r={p.id === s.party ? 6 : 4.5} fill={p.color} stroke={p.id === s.party ? "#fff" : "rgba(0,0,0,.5)"} strokeWidth={p.id === s.party ? 1.4 : 0.6} />
           <text x={60 + p.pos.e * 48} y={60 - p.pos.s * 48 - 7.5} fontSize="5.5" textAnchor="middle" fontWeight="800" fill="rgba(245,247,251,.95)">
             {p.short}
           </text>
         </g>
-      ))}
+        ))}
     </svg>
   );
 }
 
 function MyParty({ g }: { g: Game }) {
   const s = g.s!;
-  const p = PARTY[s.party];
+  const p = G.party(s, s.party);
   const ps = s.parties[s.party];
-  const house = G.houseBy(s)[s.party];
-  const senate = G.senateBy(s)[s.party];
+  const sy = G.sys(s);
+  const t = G.titles(s);
+  const house = G.houseBy(s)[s.party] ?? 0;
+  const senate = G.senateBy(s)[s.party] ?? 0;
   const govs = s.governors.filter((x) => G.pol(s, x)?.party === s.party).length;
   const mayors = s.mayors.filter((m) => G.pol(s, m.holder)?.party === s.party).length;
-  const c = G.country(s.seed);
+  const c = G.country(s);
   const line = (label: string, v: number, of: number) => (
     <Row>
-      <span style={{ width: 82 }}>{label}</span>
+      <span style={{ width: 96 }}>{label}</span>
       <Bar v={v / Math.max(1, of)} color={p.color} />
-      <span className="r" style={{ width: 52 }}>
+      <span className="r" style={{ width: 62 }}>
         {v}/{of}
       </span>
     </Row>
   );
+  const role = s.gov.parties[0] === s.party ? `Leading the government` : G.inGovernment(s) ? "Junior partner in government" : "Opposition";
   return (
     <Sheet title={p.name} eyebrow={`${p.ideology} · ${p.short}`} onClose={() => g.setUI({ tab: null })} testId="yg-p-party">
       <div className="yg-tiles">
@@ -644,7 +717,7 @@ function MyParty({ g }: { g: Game }) {
         </div>
         <div className="yg-tile-stat">
           <span>Funds</span>
-          <b>{money(ps.funds)}</b>
+          <b>{money(s, ps.funds)}</b>
         </div>
         <div className="yg-tile-stat">
           <span>Unity</span>
@@ -653,7 +726,7 @@ function MyParty({ g }: { g: Game }) {
       </div>
       <Group>
         <Row>
-          <span className="grow">Secretary</span>
+          <span className="grow">{t.leader}</span>
           <span className="r">{G.fullName(G.pol(s, s.you)!)}</span>
         </Row>
         <Row>
@@ -662,13 +735,24 @@ function MyParty({ g }: { g: Game }) {
         </Row>
         <Row>
           <span className="grow">Government</span>
-          <span className="r">{G.pol(s, s.president)?.party === s.party ? "In government" : "Opposition"}</span>
+          <span className="r">{role}</span>
         </Row>
+        {p.bloc && (
+          <Row>
+            <span className="grow">Alliance</span>
+            <span className="r">
+              {G.partyDefs(s)
+                .filter((x) => x.bloc === p.bloc)
+                .map((x) => x.short)
+                .join(" + ")}
+            </span>
+          </Row>
+        )}
       </Group>
       <Group label="Offices held">
-        {line("House", house, G.HOUSE_SEATS)}
-        {line("Senate", senate, s.senate.length)}
-        {line("Governors", govs, c.states.length)}
+        {line(sy.lower.short, house, s.house.length)}
+        {sy.upper.kind !== "none" && line(sy.upper.short, senate, s.senate.length)}
+        {line(cap(t.regionHead) + "s", govs, c.states.length)}
         {line("Mayors", mayors, s.mayors.length)}
       </Group>
       <p className="yg-label">Where the parties stand</p>
@@ -681,47 +765,72 @@ function MyParty({ g }: { g: Game }) {
 
 function Country({ g }: { g: Game }) {
   const s = g.s!;
-  const c = G.country(s.seed);
+  const c = G.country(s);
   const st = s.stats;
+  const sy = G.sys(s);
+  const t = G.titles(s);
+  const head = G.pol(s, s.gov.head);
   const pres = G.pol(s, s.president);
+  const cur = s.sc.economy.cur;
   return (
-    <Sheet title="Federation of Avalon" eyebrow="Presidential republic · federation" onClose={() => g.setUI({ tab: null })} testId="yg-p-country">
+    <Sheet title={s.sc.name} eyebrow={EXEC_KINDS.find((x) => x.id === sy.exec)?.name ?? ""} onClose={() => g.setUI({ tab: null })} testId="yg-p-country">
       <div className="yg-tiles">
         <div className="yg-tile-stat">
           <span>Population</span>
-          <b>{(c.pop / 1e6).toFixed(1)} M</b>
+          <b>{c.pop >= 1e9 ? `${(c.pop / 1e9).toFixed(2)} B` : `${(c.pop / 1e6).toFixed(1)} M`}</b>
         </div>
         <div className="yg-tile-stat">
           <span>GDP</span>
-          <b>${st.gdp.toFixed(2)} T</b>
+          <b>
+            {cur}
+            {st.gdp.toFixed(st.gdp >= 100 ? 0 : 2)} T
+          </b>
         </div>
         <div className="yg-tile-stat">
           <span>Debt</span>
-          <b>${(st.debt / 1000).toFixed(1)} T</b>
+          <b>{big(s, st.debt)}</b>
         </div>
       </div>
       <Trend s={s} pick={(p) => p.approval} label="Government approval" unit="%" color="#64d2ff" digits={0} />
       <Trend s={s} pick={(p) => p.happiness} label="Happiness" unit="" color="#30d158" />
       <Trend s={s} pick={(p) => p.growth} label="Growth" unit="%" color="#ffd60a" digits={2} />
       <Trend s={s} pick={(p) => p.unemployment} label="Unemployment" unit="%" color="#ff9f0a" />
-      <Group>
+      <Group label="How it's governed">
+        <Row>
+          <span className="grow">{t.head}</span>
+          <span className="r">{head ? `${G.fullName(head)} (${G.party(s, head.party).short})` : "—"}</span>
+        </Row>
+        {sy.exec === "semi" && (
+          <Row>
+            <span className="grow">{t.president}</span>
+            <span className="r">{pres ? `${G.fullName(pres)} (${G.party(s, pres.party).short})` : "—"}</span>
+          </Row>
+        )}
+        <Row>
+          <span className="grow">{sy.lower.name}</span>
+          <span className="r muted small">
+            {sy.lower.seats} · {LOWER_SYSTEMS.find((x) => x.id === G.lowerSystem(s))?.name}
+          </span>
+        </Row>
+        {sy.upper.kind !== "none" && (
+          <Row>
+            <span className="grow">{sy.upper.name}</span>
+            <span className="r muted small">
+              {s.senate.length} · {UPPER_KINDS.find((x) => x.id === sy.upper.kind)?.name}
+              {sy.upper.power === "weak" ? ", can be overruled" : ""}
+            </span>
+          </Row>
+        )}
         <Row>
           <span className="grow">Capital</span>
           <span className="r">{c.sections[c.capital].town}</span>
         </Row>
         <Row>
-          <span className="grow">President</span>
-          <span className="r">{pres ? G.fullName(pres) : "—"}</span>
-        </Row>
-        <Row>
           <span className="grow">Budget</span>
           <span className="r">
-            {st.budget >= 0 ? "+" : "–"}${Math.abs(st.budget).toFixed(0)} B / yr
+            {st.budget >= 0 ? "+" : "–"}
+            {big(s, st.budget)} / yr
           </span>
-        </Row>
-        <Row>
-          <span className="grow">GDP per person</span>
-          <span className="r">${((st.gdp * 1e12) / c.pop / 1000).toFixed(1)} K</span>
         </Row>
       </Group>
       <Group label="Laws in force">
@@ -735,13 +844,17 @@ function Country({ g }: { g: Game }) {
           </Row>
         ))}
       </Group>
-      <Group label="States">
-        {c.states.map((x) => (
-          <Row key={x.id} on={g.ui.state === x.id} onClick={() => g.setUI({ state: g.ui.state === x.id ? null : x.id })}>
-            <span className="grow">{x.name}</span>
-            <span className="r muted">{(x.pop / 1e6).toFixed(1)} M</span>
-          </Row>
-        ))}
+      <Group label={cap(t.regions)}>
+        {c.states.map((x) => {
+          const gov = G.pol(s, s.governors[x.id]);
+          return (
+            <Row key={x.id} on={g.ui.state === x.id} onClick={() => g.setUI({ state: g.ui.state === x.id ? null : x.id })}>
+              {gov && <Sw c={G.party(s, gov.party).color} />}
+              <span className="grow">{x.name}</span>
+              <span className="r muted">{x.pop >= 1e6 ? `${(x.pop / 1e6).toFixed(1)} M` : `${(x.pop / 1e3).toFixed(0)} k`}</span>
+            </Row>
+          );
+        })}
       </Group>
     </Sheet>
   );
@@ -750,11 +863,11 @@ function Country({ g }: { g: Game }) {
 function News({ g }: { g: Game }) {
   const s = g.s!;
   return (
-    <Sheet title="News" eyebrow="The Avalon Herald" onClose={() => g.setUI({ tab: null })} testId="yg-p-news">
+    <Sheet title="News" eyebrow={`${s.sc.name} today`} onClose={() => g.setUI({ tab: null })} testId="yg-p-news">
       {s.news.map((n, i) => (
         <article key={i} className={`yg-news ${n.tone > 0 ? "good" : n.tone < 0 ? "bad" : ""}`}>
           <span className="yg-muted small">
-            {G.dateLabel(n.week)} · {n.kind}
+            {G.dateLabel(s, n.week)} · {n.kind}
           </span>
           <p>{n.text}</p>
         </article>
@@ -829,12 +942,13 @@ function Settings({ g }: { g: Game }) {
 function ElectionCard({ g }: { g: Game }) {
   const s = g.s!;
   const e = s.election!;
-  const c = G.country(s.seed);
-  const P = G.PARTY_IDS.length;
+  const c = G.country(s);
+  const ids = G.ids(s);
+  const P = ids.length;
   const k = g.ui.count;
   const counted = Math.floor(Math.min(1, k / 0.45) * e.order.length);
   const reported = Math.floor(Math.max(0, (k - 0.45) / 0.55) * e.order.length);
-  const tot = G.PARTY_IDS.map(() => 0);
+  const tot = ids.map(() => 0);
   let voters = 0;
   for (let i = 0; i < reported; i++) {
     const id = e.order[i];
@@ -851,11 +965,25 @@ function ElectionCard({ g }: { g: Game }) {
   }
   const sum = tot.reduce((a, b) => a + b, 0) || 1;
   const done = k >= 1;
-  const rows = G.PARTY_IDS.map((id, i) => ({ id, share: tot[i] / sum })).sort((a, b) => (done ? e.houseSeats[b.id] - e.houseSeats[a.id] : b.share - a.share));
+  // Show the house that was elected (the lower, or the upper in its own election).
+  const upperOnly = !e.contests.lower && e.contests.upper && !!e.upper;
+  const seats = upperOnly ? e.senateSeats : e.houseSeats;
+  const prev = upperOnly ? e.prevSenate : e.prevHouse;
+  const showSeats = done && (e.contests.lower || upperOnly);
+  const rows = ids
+    .map((id, i) => ({ id, share: tot[i] / sum }))
+    .filter((r) => !G.party(s, r.id).noRun && (r.share > 0.002 || (seats[r.id] ?? 0) > 0 || reported === 0))
+    .sort((a, b) => (showSeats ? (seats[b.id] ?? 0) - (seats[a.id] ?? 0) || b.share - a.share : b.share - a.share));
+  const t = G.titles(s);
+  const sy = G.sys(s);
+  const voterCount = (voters || turnoutAcc) / 1e6;
   return (
     <section className="yg-glass yg-election" data-testid="yg-p-election" aria-label="Election night">
-      <p className="yg-eyebrow">Election night · {G.yearOf(e.week)}</p>
-      <h2>{e.kind === "general" ? "General election" : "Midterm elections"}</h2>
+      <p className="yg-eyebrow">
+        Election night · {G.yearOf(s, e.week)}
+        {showSeats ? ` · ${upperOnly ? sy.upper.short : sy.lower.short}` : ""}
+      </p>
+      <h2>{e.title}</h2>
       <div className="yg-progress" aria-label="Counted">
         <i style={{ width: `${Math.min(1, k) * 100}%` }} />
       </div>
@@ -872,27 +1000,27 @@ function ElectionCard({ g }: { g: Game }) {
         </div>
         <div className="yg-tile-stat">
           <span>Voters</span>
-          <b>{((voters || turnoutAcc) / 1e6).toFixed(1)} M</b>
+          <b>{voterCount >= 1000 ? `${(voterCount / 1000).toFixed(1)} B` : `${voterCount.toFixed(1)} M`}</b>
         </div>
       </div>
-      {done && (
+      {showSeats && (
         <div className="yg-center">
-          <Hemicycle seats={e.houseSeats} size={250} highlight={s.party} />
+          <Hemicycle seats={seats} parties={G.partyDefs(s)} size={250} highlight={s.party} />
         </div>
       )}
       <div className="yg-results">
         {rows.map((r) => (
           <div key={r.id} className={`yg-result${r.id === s.party ? " mine" : ""}`}>
-            <Sw c={PARTY[r.id].color} />
-            <span className="name">{PARTY[r.id].short}</span>
-            <Bar v={r.share * 2} color={PARTY[r.id].color} />
+            <Sw c={G.party(s, r.id).color} />
+            <span className="name">{G.party(s, r.id).short}</span>
+            <Bar v={r.share * 2} color={G.party(s, r.id).color} />
             <span className="pc">{reported > 0 ? pct(r.share) : "—"}</span>
-            {done && (
+            {showSeats && (
               <span className="seats">
-                {e.houseSeats[r.id]}
-                <em className={e.houseSeats[r.id] >= e.prevHouse[r.id] ? "up" : "down"}>
-                  {e.houseSeats[r.id] >= e.prevHouse[r.id] ? "▲" : "▼"}
-                  {Math.abs(e.houseSeats[r.id] - e.prevHouse[r.id])}
+                {seats[r.id] ?? 0}
+                <em className={(seats[r.id] ?? 0) >= (prev[r.id] ?? 0) ? "up" : "down"}>
+                  {(seats[r.id] ?? 0) >= (prev[r.id] ?? 0) ? "▲" : "▼"}
+                  {Math.abs((seats[r.id] ?? 0) - (prev[r.id] ?? 0))}
                 </em>
               </span>
             )}
@@ -900,20 +1028,76 @@ function ElectionCard({ g }: { g: Game }) {
         ))}
       </div>
       {done && e.president && (
-        <div className={`yg-winner${e.president.party === s.party ? " mine" : ""}`} style={{ ["--c" as string]: PARTY[e.president.party].color }}>
-          <span className="yg-muted small">President-elect</span>
+        <div className={`yg-winner${e.president.party === s.party ? " mine" : ""}`} style={{ ["--c" as string]: G.party(s, e.president.party).color }}>
+          <span className="yg-muted small">{t.president}-elect</span>
           <b>
-            {e.president.name} ({PARTY[e.president.party].short})
+            {e.president.name} ({G.party(s, e.president.party).short})
           </b>
           <span className="small">
+            {e.president.college ? `${e.president.college[e.president.party] ?? 0} of ${Object.values(e.president.college).reduce((a, b) => a + b, 0)} electoral votes · ` : ""}
             {Math.round(e.president.share * 100)}%{e.president.runoff ? " in the run-off" : ""}
           </span>
         </div>
       )}
+      {done && e.contests.lower && sy.exec !== "presidential" && <p className="yg-muted small">Coalition talks follow the count.</p>}
       <button type="button" className={`yg-btn wide ${done ? "primary" : ""}`} onClick={() => (done ? g.closeElection() : g.setUI({ count: 1 }))} data-testid={done ? "yg-election-continue" : "yg-election-skip"}>
         {done ? "Continue" : "Skip the count"}
       </button>
     </section>
+  );
+}
+
+/** Coalition talks: you're invited into a government, or you're forming one. */
+function Talks({ g }: { g: Game }) {
+  const s = g.s!;
+  const t = s.talks!;
+  const by = G.houseBy(s);
+  const total = s.house.length;
+  const seatsOf = (o: PartyId[]) => o.reduce((a, p) => a + (by[p] ?? 0), 0);
+  const head = G.titles(s).head;
+  return (
+    <div className="yg-modal-back" data-testid="yg-talks">
+      <section className="yg-glass yg-modal small" role="dialog" aria-modal="true" aria-label="Coalition talks">
+        <header className="yg-modal-head">
+          <div>
+            <p className="yg-eyebrow">Coalition talks · {G.sys(s).lower.name}</p>
+            <h2>{t.kind === "invited" ? `The ${G.party(s, t.options[0][0]).short} want you in government` : "Form a government"}</h2>
+          </div>
+        </header>
+        <div className="yg-modal-body">
+          <p className="yg-muted">
+            {t.kind === "invited"
+              ? `${G.party(s, t.options[0][0]).name} would lead, with their leader as ${head}. Join as a partner and your party shares power (and the blame).`
+              : `Your party is the biggest that can lead. Pick partners for a majority of ${Math.floor(total / 2) + 1}, or try to govern alone.`}
+          </p>
+          {t.options.map((o, i) => (
+            <button key={i} type="button" className="yg-row btn" style={{ borderRadius: 14, background: "rgba(255,255,255,.07)", marginTop: 8 }} onClick={() => g.chooseGovernment(i)} data-testid={`yg-talks-${i}`}>
+              <span className="grow">
+                {o.map((p) => (
+                  <span key={p} className="yg-chip" style={{ ["--c" as string]: G.party(s, p).color, marginRight: 4 }}>
+                    <i />
+                    {G.party(s, p).short}
+                  </span>
+                ))}
+              </span>
+              <span className="r">
+                {seatsOf(o)}/{total}
+              </span>
+            </button>
+          ))}
+        </div>
+        <footer className="yg-modal-foot">
+          <button type="button" className="yg-btn" onClick={() => g.chooseGovernment(-1)} data-testid="yg-talks-decline">
+            {t.kind === "invited" ? "Stay in opposition" : "Govern alone (minority)"}
+          </button>
+          {t.kind === "invited" && (
+            <button type="button" className="yg-btn primary" onClick={() => g.chooseGovernment(0)} data-testid="yg-talks-accept">
+              <Icon name="check" size={16} /> Join the government
+            </button>
+          )}
+        </footer>
+      </section>
+    </div>
   );
 }
 
@@ -932,17 +1116,17 @@ function TopBar({ g }: { g: Game }) {
   return (
     <header className="yg-top">
       <div className="yg-glass yg-capsule yg-brand">
-        <Flag />
-        <span className="yg-brand-name">Avalon</span>
+        <Flag code={s.sc.flag} name={s.sc.name} />
+        <span className="yg-brand-name">{s.sc.name}</span>
       </div>
       <div className="yg-glass yg-capsule yg-stats" aria-label="The country and your party">
         {stat("smile", s.stats.happiness.toFixed(1), "Happiness")}
         {stat("thumb", `${s.stats.approval.toFixed(0)}%`, "Approval")}
         {stat("growth", `${s.stats.growth.toFixed(1)}%`, "Growth", "opt")}
-        {stat("coins", money(ps.funds), "Funds", "", "yg-funds")}
+        {stat("coins", money(s, ps.funds), "Funds", "", "yg-funds")}
         {stat("people", `${(ps.members / 1000).toFixed(0)}k`, "Members", "opt")}
         {stat("handshake", String(Math.round(ps.unity)), "Unity", "opt2")}
-        {stat("seats", String(G.houseBy(s)[s.party]), "Seats", "opt3")}
+        {stat("seats", String(G.houseBy(s)[s.party] ?? 0), "Seats", "opt3")}
       </div>
       <span className="grow" />
       {g.ui.view === "map" && !s.election && (
@@ -954,7 +1138,7 @@ function TopBar({ g }: { g: Game }) {
             options={[
               { id: "politics", label: "Politics", title: "Who leads each county" },
               { id: "support", label: "Support", title: "Your party's support" },
-              { id: "states", label: "States", title: "The sixteen states" },
+              { id: "states", label: cap(G.titles(s).regions.split(" ")[0]), title: `The ${G.titles(s).regions}` },
               { id: "terrain", label: "Land", title: "Just the land" },
             ]}
             testId="yg-mapmode"
@@ -1022,8 +1206,8 @@ function Timeline({ g }: { g: Game }) {
   const s = g.s!;
   const span = 26;
   const marks: { w: number; icon: string; title: string; cls: string }[] = [];
-  const el = G.nextElectionWeek(s);
-  if (el - s.week < span) marks.push({ w: el, icon: "vote", title: `${G.electionKind(el + 1) === "general" ? "General" : "Midterm"} election`, cls: "accent" });
+  const el = G.nextElection(s);
+  if (el.week - s.week < span) marks.push({ w: el.week, icon: "vote", title: el.title, cls: "accent" });
   for (let w = s.week; w < s.week + span; w++) if (G.weekOf(w) === 40) marks.push({ w, icon: "coins", title: "Budget", cls: "" });
   for (const b of s.bills) if (live(b)) marks.push({ w: b.voteAt, icon: G.youVoteOn(s, b) ? "vote" : "bills", title: billName(s, b), cls: G.youVoteOn(s, b) ? "warn" : "" });
   for (const m of s.missions) if (!m.done && !m.failed && m.deadline - s.week < span) marks.push({ w: m.deadline, icon: "career", title: G.missionText(m, s), cls: "" });
@@ -1033,7 +1217,7 @@ function Timeline({ g }: { g: Game }) {
         <span key={i} className={`yg-tick${G.weekOf(s.week + i) === 1 ? " year" : ""}`} style={{ left: `${(i / span) * 100}%` }} />
       ))}
       {marks.map((m, i) => (
-        <span key={i} className={`yg-mark ${m.cls}`} title={`${G.dateLabel(m.w)} · ${m.title}`} style={{ left: `${((m.w - s.week + 0.5) / span) * 100}%` }}>
+        <span key={i} className={`yg-mark ${m.cls}`} title={`${G.dateLabel(s, m.w)} · ${m.title}`} style={{ left: `${((m.w - s.week + 0.5) / span) * 100}%` }}>
           <Icon name={m.icon} size={12} stroke={2.2} />
         </span>
       ))}
@@ -1062,25 +1246,25 @@ function BottomBar({ g }: { g: Game }) {
         <button type="button" className="yg-sr" onClick={() => g.setUI({ view: "chamber" })} data-testid="yg-view-chamber">
           Chamber
         </button>
-        {g.ui.view === "chamber" && !s.election && (
+        {g.ui.view === "chamber" && !s.election && G.sys(s).upper.kind !== "none" && (
           <Seg
             value={g.ui.house}
             label="House"
             onChange={(v) => g.setUI({ house: v })}
             options={[
-              { id: "house", label: "House" },
-              { id: "senate", label: "Senate" },
+              { id: "house", label: G.sys(s).lower.short },
+              { id: "senate", label: G.sys(s).upper.short },
             ]}
           />
         )}
       </div>
       <div className="yg-glass yg-capsule yg-timebar">
         <span className="yg-date" data-testid="yg-date">
-          {G.dateLabel(s.week)}
+          {G.dateLabel(s)}
         </span>
         <Timeline g={g} />
       </div>
-      <button type="button" className="yg-endturn" title="End the week (Enter)" disabled={!!s.election || s.over} onClick={() => g.endTurn()} data-testid="yg-end-turn">
+      <button type="button" className="yg-endturn" title="End the week (Enter)" disabled={!!s.election || !!s.talks || s.over} onClick={() => g.endTurn()} data-testid="yg-end-turn">
         <Icon name="hourglass" size={20} stroke={2} />
         <span>End week</span>
       </button>
@@ -1103,62 +1287,6 @@ function Toasts({ g }: { g: Game }) {
 
 // ------------------------------------------------------------------ title and game over
 
-/** The title: your country, slowly turning in the sun, behind the party picker. */
-function Title({ g }: { g: Game }) {
-  const [party, setParty] = useState<PartyId>("ctr");
-  const [seed] = useState(() => Math.floor(Math.random() * 1e6) + 1);
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const quality = g.quality;
-  useEffect(() => {
-    if (!canvas.current) return;
-    let st: Stage3D | null = null;
-    try {
-      st = new Stage3D(canvas.current, G.country(seed), quality, null, {});
-      st.spin = 0.035;
-      st.isPaused = () => g.paused;
-      st.world.rig.jump({ target: st.world.rig.goal.target.clone().set(0, 0, 10), dist: 330, yaw: 0.5, pitch: 0.62 });
-      st.world.setOverlay({ colors: new Uint8Array(4096), selectedState: -1, hoverCounty: -1 }, 0);
-      st.world.bordersOn = false;
-      st.labels = { selected: -1, hidden: true };
-    } catch {
-      st = null;
-    }
-    return () => st?.dispose();
-  }, [seed, quality, g]);
-  const p = PARTY[party];
-  return (
-    <div className="yg-title" data-testid="yg-title">
-      <canvas ref={canvas} className="yg-canvas" aria-hidden />
-      <div className="yg-title-shade" />
-      <div className="yg-glass yg-title-card">
-        <div className="yg-title-head">
-          <Flag size={26} />
-          <div>
-            <h1>YourGov</h1>
-            <p>Lead a party. Write the laws. Win the country, county by county.</p>
-          </div>
-        </div>
-        <p className="yg-label">Choose your party</p>
-        <div className="yg-parties">
-          {PARTIES.map((x) => (
-            <button key={x.id} type="button" className={`yg-partypick${party === x.id ? " on" : ""}`} style={{ ["--c" as string]: x.color }} onClick={() => setParty(x.id)} aria-pressed={party === x.id} data-testid={`yg-party-${x.id}`}>
-              <i />
-              <b>{x.name}</b>
-              <small>{x.ideology}</small>
-            </button>
-          ))}
-        </div>
-        <p className="yg-muted small yg-title-blurb">
-          You start as the {p.name} secretary in the Federation of Avalon: sixteen states, hundreds of counties, a House, a Senate and a President. Each week, hold events, write and vote on bills (and draft laws of your own), and keep your promises. Every two years the country votes. Your score grows with every law, seat and promise over a twenty-year career.
-        </p>
-        <button type="button" className="yg-btn primary wide big" onClick={() => g.newGame(party, seed)} data-testid="yg-start">
-          <Icon name="play" size={16} /> Begin your career
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function GameOver({ g }: { g: Game }) {
   const s = g.s!;
   return (
@@ -1167,7 +1295,7 @@ function GameOver({ g }: { g: Game }) {
         <header className="yg-modal-head">
           <div>
             <p className="yg-eyebrow">
-              {G.fullName(G.pol(s, s.you)!)} · {PARTY[s.party].name}
+              {G.fullName(G.pol(s, s.you)!)} · {G.party(s, s.party).name} · {s.sc.name}
             </p>
             <h2>Career over</h2>
           </div>
@@ -1183,7 +1311,7 @@ function GameOver({ g }: { g: Game }) {
               <b>{s.lawsPassed}</b>
             </div>
             <div className="yg-tile-stat">
-              <span>Presidencies</span>
+              <span>Elections won</span>
               <b>{s.electionsWon}</b>
             </div>
           </div>
@@ -1249,7 +1377,13 @@ export function App({ game }: { game: Game }) {
     return (
       <div className={cls} ref={root}>
         <GlassDefs />
-        <Title g={g} />
+        {g.loadingSave ? (
+          <div className="yg-glass yg-loading" role="status" data-testid="yg-loading-save">
+            <span className="yg-spin" /> Loading the map…
+          </div>
+        ) : (
+          <Title g={g} />
+        )}
       </div>
     );
   const tab = s.election ? null : g.ui.tab;
@@ -1286,7 +1420,7 @@ export function App({ game }: { game: Game }) {
       {!s.election && !panel && g.ui.view === "map" && <Missions g={g} />}
       {!s.election && g.ui.view === "map" && g.ui.state !== null && (
         <div className="yg-glass yg-capsule yg-statepill">
-          <Icon name="pin" size={15} /> {G.country(s.seed).states[g.ui.state].name}
+          <Icon name="pin" size={15} /> {G.country(s).states[g.ui.state].name}
           <button type="button" className="yg-btn icon tiny" aria-label="Clear the selected state" onClick={() => g.setUI({ state: null })}>
             <Icon name="close" size={13} />
           </button>
@@ -1295,6 +1429,7 @@ export function App({ game }: { game: Game }) {
       <BottomBar g={g} />
       <Toasts g={g} />
       {s.election && <ElectionCard g={g} />}
+      {s.talks && !s.election && <Talks g={g} />}
       {g.ui.studio && <LawStudio g={g} />}
       {s.over && <GameOver g={g} />}
     </div>

@@ -1,13 +1,14 @@
 import { useRef, useState } from "react";
-import { PARTY, type PartyId } from "../data";
+import type { PartyId } from "../data";
+import type { PartyDef } from "../scenario";
 import * as G from "../sim";
 
 const W = 320;
 
 /** Years along the bottom: a tick at each new year in the range. */
-function yearTicks(h: G.HistoryPoint[], x: (i: number) => number) {
+function yearTicks(s: G.GameState, h: G.HistoryPoint[], x: (i: number) => number) {
   const out: { x: number; label: string }[] = [];
-  for (let i = 1; i < h.length; i++) if (G.yearOf(h[i].w) !== G.yearOf(h[i - 1].w)) out.push({ x: x(i), label: String(G.yearOf(h[i].w)) });
+  for (let i = 1; i < h.length; i++) if (G.yearOf(s, h[i].w) !== G.yearOf(s, h[i - 1].w)) out.push({ x: x(i), label: String(G.yearOf(s, h[i].w)) });
   return out.length > 6 ? out.filter((_, k) => k % Math.ceil(out.length / 6) === 0) : out;
 }
 
@@ -27,7 +28,10 @@ export function PollChart({ s, height = 150 }: { s: G.GameState; height?: number
   const max = Math.min(1, Math.ceil(Math.max(...h.flatMap((p) => p.poll)) * 10 + 0.5) / 10);
   const x = (i: number) => L + ((W - L - R) * i) / (h.length - 1);
   const y = (v: number) => T + (height - T - B) * (1 - v / max);
-  const order = [...G.PARTY_IDS].sort((a, b) => h[h.length - 1].poll[G.PARTY_IDS.indexOf(b)] - h[h.length - 1].poll[G.PARTY_IDS.indexOf(a)]);
+  const ids = G.ids(s);
+  // Parties that don't stand (crossbenchers) have no line.
+  const shown = ids.filter((id) => !G.party(s, id).noRun);
+  const order = [...shown].sort((a, b) => h[h.length - 1].poll[ids.indexOf(b)] - h[h.length - 1].poll[ids.indexOf(a)]);
   const grid = [0, max / 2, max];
   const hi = hover ?? h.length - 1;
   const onMove = (e: React.PointerEvent) => {
@@ -40,8 +44,8 @@ export function PollChart({ s, height = 150 }: { s: G.GameState; height?: number
       <div className="yg-legend-row">
         {order.map((id) => (
           <span key={id} className="yg-legend-item">
-            <i style={{ background: PARTY[id].color }} />
-            {PARTY[id].short} <b>{(h[hi].poll[G.PARTY_IDS.indexOf(id)] * 100).toFixed(1)}%</b>
+            <i style={{ background: G.party(s, id).color }} />
+            {G.party(s, id).short} <b>{((h[hi].poll[ids.indexOf(id)] ?? 0) * 100).toFixed(1)}%</b>
           </span>
         ))}
       </div>
@@ -54,22 +58,22 @@ export function PollChart({ s, height = 150 }: { s: G.GameState; height?: number
             </text>
           </g>
         ))}
-        {yearTicks(h, x).map((t) => (
+        {yearTicks(s, h, x).map((t) => (
           <text key={t.label} x={t.x} y={height - 4} fontSize="9" textAnchor="middle" fill="rgba(245,247,251,.55)">
             {t.label}
           </text>
         ))}
-        {[...G.PARTY_IDS].reverse().map((id) => {
-          const k = G.PARTY_IDS.indexOf(id);
+        {[...shown].reverse().map((id) => {
+          const k = ids.indexOf(id);
           const d = h.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.poll[k]).toFixed(1)}`).join("");
-          return <path key={id} d={d} fill="none" stroke={PARTY[id].color} strokeWidth={id === s.party ? 2.6 : 2} strokeLinejoin="round" strokeLinecap="round" opacity={id === s.party ? 1 : 0.88} />;
+          return <path key={id} d={d} fill="none" stroke={G.party(s, id).color} strokeWidth={id === s.party ? 2.6 : 2} strokeLinejoin="round" strokeLinecap="round" opacity={id === s.party ? 1 : 0.88} />;
         })}
         <line x1={x(hi)} x2={x(hi)} y1={T} y2={height - B} stroke="rgba(255,255,255,.4)" strokeDasharray="3 3" />
-        {G.PARTY_IDS.map((id, k) => (
-          <circle key={id} cx={x(hi)} cy={y(h[hi].poll[k])} r={3.2} fill={PARTY[id].color} stroke="rgba(10,14,22,.9)" strokeWidth={1.5} />
+        {shown.map((id) => (
+          <circle key={id} cx={x(hi)} cy={y(h[hi].poll[ids.indexOf(id)] ?? 0)} r={3.2} fill={G.party(s, id).color} stroke="rgba(10,14,22,.9)" strokeWidth={1.5} />
         ))}
       </svg>
-      <p className="yg-chart-note">{G.dateLabel(h[hi].w)}</p>
+      <p className="yg-chart-note">{G.dateLabel(s, h[hi].w)}</p>
     </div>
   );
 }
@@ -126,12 +130,12 @@ export function Trend({ s, pick, label, unit, color = "#64d2ff", digits = 1 }: {
 }
 
 /** The half-circle seat chart. */
-export function Hemicycle({ seats, size = 240, highlight }: { seats: Record<string, number>; size?: number; highlight?: PartyId }) {
-  const order = [...G.PARTY_IDS].sort((a, b) => PARTY[a].pos.e - PARTY[b].pos.e);
+export function Hemicycle({ seats, parties, size = 240, highlight }: { seats: Record<string, number>; parties: PartyDef[]; size?: number; highlight?: PartyId }) {
+  const order = [...parties].sort((a, b) => a.pos.e - b.pos.e);
   const list: { c: string; id: PartyId }[] = [];
-  for (const id of order) for (let i = 0; i < (seats[id] ?? 0); i++) list.push({ c: PARTY[id].color, id });
+  for (const p of order) for (let i = 0; i < (seats[p.id] ?? 0); i++) list.push({ c: p.color, id: p.id });
   const n = list.length;
-  const rows = n > 60 ? 6 : 4;
+  const rows = n > 400 ? 12 : n > 200 ? 9 : n > 60 ? 6 : 4;
   const dots: { x: number; y: number; a: number }[] = [];
   const lens = Array.from({ length: rows }, (_, k) => 0.45 + (0.55 * k) / (rows - 1));
   const tot = lens.reduce((a, b) => a + b, 0);
@@ -148,7 +152,7 @@ export function Hemicycle({ seats, size = 240, highlight }: { seats: Record<stri
   return (
     <svg width={size} height={size * 0.56} viewBox="0 0 100 56" role="img" aria-label={`${n} seats`}>
       {dots.map((d, i) => (
-        <circle key={i} cx={d.x} cy={d.y} r={n > 60 ? 2.1 : 3.3} fill={list[i]?.c} stroke={highlight && list[i]?.id === highlight ? "#fff" : "rgba(0,0,0,.35)"} strokeWidth={highlight && list[i]?.id === highlight ? 0.6 : 0.35} />
+        <circle key={i} cx={d.x} cy={d.y} r={n > 400 ? 1.05 : n > 200 ? 1.4 : n > 60 ? 2.1 : 3.3} fill={list[i]?.c} stroke={highlight && list[i]?.id === highlight ? "#fff" : "rgba(0,0,0,.35)"} strokeWidth={highlight && list[i]?.id === highlight ? 0.6 : 0.35} />
       ))}
       <text x="50" y="53" textAnchor="middle" fontSize="9" fontWeight="800" fill="rgba(245,247,251,.9)">
         {n}

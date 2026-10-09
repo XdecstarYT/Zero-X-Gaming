@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { PARTY } from "../data";
 import * as G from "../sim";
 
 const SKIN = ["#f1d0b5", "#e0b08e", "#c58c62", "#a26a43", "#7a4b2e", "#f6dcc8"];
@@ -10,10 +9,10 @@ export function looks(face: number) {
 }
 
 /** A small head-and-shoulders portrait. */
-export function Portrait({ p, size = 28 }: { p: G.Politician | undefined; size?: number }) {
+export function Portrait({ s, p, size = 28 }: { s: G.GameState; p: G.Politician | undefined; size?: number }) {
   if (!p) return <span style={{ width: size, height: size, display: "inline-block" }} />;
   const l = looks(p.face);
-  const col = PARTY[p.party].color;
+  const col = G.party(s, p.party).color;
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden style={{ flex: "none", borderRadius: 6, background: "#cfcfcf" }}>
       <path d="M4 32c1-8 6-11 12-11s11 3 12 11z" fill="#2d3340" />
@@ -55,14 +54,14 @@ export function Chamber({ s, house, votes }: Props) {
     g.fillRect(0, 0, W, H);
     // Seat everyone by party, left to right round the horseshoe (closest parties together).
     const members = (house === "house" ? s.house : s.senate).map((id) => G.pol(s, id)!).filter(Boolean);
-    const order = [...G.PARTY_IDS].sort((a, b) => PARTY[a].pos.e - PARTY[b].pos.e);
+    const order = [...G.ids(s)].sort((a, b) => G.party(s, a).pos.e - G.party(s, b).pos.e);
     members.sort((a, b) => order.indexOf(a.party) - order.indexOf(b.party) || a.id - b.id);
-    const rows = house === "house" ? 5 : 3;
+    const rows = Math.max(3, Math.min(9, Math.round(Math.sqrt(members.length / 11))));
     const cx = W / 2;
     const cy = H * 0.9;
     // Fit the outer row inside the canvas (the seats sit on an ellipse 1.5 wide by 0.78 tall).
     const outer = 150 + (rows - 1) * 62;
-    const scale = Math.min((W / 2 - 24) / (outer * 1.5), (cy - 50) / (outer * 0.78), house === "house" ? 1.4 : 1.8);
+    const scale = Math.min((W / 2 - 24) / (outer * 1.5), (cy - 50) / (outer * 0.78), members.length > 150 ? 1.4 : 1.8);
     const r0 = 150 * scale;
     const gap = 62 * scale;
     // Seats per row in proportion to its length.
@@ -99,7 +98,7 @@ export function Chamber({ s, house, votes }: Props) {
       g.beginPath();
       g.ellipse(st.x, st.y - 10 * k, 9 * k, 10 * k, 0, Math.PI, 0);
       g.fill();
-      g.fillStyle = PARTY[st.m.party].color;
+      g.fillStyle = G.party(s, st.m.party).color;
       g.fillRect(st.x - 1.6 * k, st.y - 18 * k, 3.2 * k, 9 * k);
       if (l.long) {
         g.fillStyle = l.hair;
@@ -169,36 +168,4 @@ export function Chamber({ s, house, votes }: Props) {
     g.strokeRect(cx - bw / 2 - 10, cy + 2 * scale, bw + 20, 22 * scale);
   });
   return <canvas ref={ref} data-testid="yg-chamber" style={{ background: "#e6e6e6" }} />;
-}
-
-/** The half-circle seat chart (like a parliament diagram). */
-export function Hemicycle({ seats, size = 220 }: { seats: Record<string, number>; size?: number }) {
-  const order = [...G.PARTY_IDS].sort((a, b) => PARTY[a].pos.e - PARTY[b].pos.e);
-  const list: string[] = [];
-  for (const id of order) for (let i = 0; i < (seats[id] ?? 0); i++) list.push(PARTY[id].color);
-  const n = list.length;
-  const rows = n > 60 ? 6 : 4;
-  const dots: { x: number; y: number; a: number }[] = [];
-  const lens = Array.from({ length: rows }, (_, k) => 0.45 + (0.55 * k) / (rows - 1));
-  const tot = lens.reduce((a, b) => a + b, 0);
-  let left = n;
-  lens.forEach((l, k) => {
-    const m = k === rows - 1 ? left : Math.round((n * l) / tot);
-    left -= m;
-    for (let j = 0; j < m; j++) {
-      const a = Math.PI * (1 - (j + 0.5) / m);
-      dots.push({ x: 50 + Math.cos(a) * l * 46, y: 52 - Math.sin(a) * l * 46, a });
-    }
-  });
-  dots.sort((p, q) => q.a - p.a);
-  return (
-    <svg width={size} height={size * 0.56} viewBox="0 0 100 56" aria-label="Seats">
-      {dots.map((d, i) => (
-        <circle key={i} cx={d.x} cy={d.y} r={n > 60 ? 2.2 : 3.4} fill={list[i]} stroke="#0003" strokeWidth={0.4} />
-      ))}
-      <text x="50" y="54" textAnchor="middle" fontSize="8" fontWeight="900" fill="#444">
-        {n}
-      </text>
-    </svg>
-  );
 }

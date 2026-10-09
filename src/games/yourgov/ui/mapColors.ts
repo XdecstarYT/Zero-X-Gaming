@@ -2,7 +2,7 @@
  * What colour each county is on the map, for the current map mode or the election count:
  * r, g, b (sRGB) and how strongly to paint it over the land (0 leaves the land as it is).
  */
-import { PARTY } from "../data";
+import { PAL } from "../render/world3d";
 import * as G from "../sim";
 
 export type MapMode = "politics" | "states" | "support" | "terrain";
@@ -13,17 +13,17 @@ export const STATE_TINTS = ["#e8836f", "#6f9fe8", "#7fcf8a", "#e8c26f", "#b28be8
 const COUNTED = [52, 199, 89];
 
 export function countyColors(s: G.GameState, mode: MapMode, count: number | null): Uint8Array {
-  const c = G.country(s.seed);
+  const c = G.country(s);
   const n = c.sections.length;
-  const out = new Uint8Array(1024 * 4);
+  const out = new Uint8Array(PAL * 4);
   const set = (id: number, col: number[], a: number) => {
     out[id * 4] = col[0];
     out[id * 4 + 1] = col[1];
     out[id * 4 + 2] = col[2];
     out[id * 4 + 3] = Math.max(0, Math.min(255, Math.round(a * 255)));
   };
-  const P = G.PARTY_IDS.length;
-  const pal = G.PARTY_IDS.map((id) => rgb(PARTY[id].color));
+  const P = G.partyDefs(s).length;
+  const pal = G.partyDefs(s).map((p) => rgb(p.color));
   const e = s.election;
   if (e && count !== null) {
     // First the counties report in (green), then the results come up in the same order.
@@ -46,7 +46,7 @@ export function countyColors(s: G.GameState, mode: MapMode, count: number | null
     return out;
   }
   if (mode === "support") {
-    const me = G.PARTY_IDS.indexOf(s.party);
+    const me = G.pidx(s, s.party);
     const col = pal[me].every((v) => v > 230) ? [40, 40, 48] : pal[me];
     for (const sec of c.sections) set(sec.id, col, Math.min(0.95, G.sharesIn(s, sec.id)[me] * 2.4));
     return out;

@@ -298,6 +298,51 @@ select.yg-input option{background:#151a24;color:#fff}
 .yg-partypick:hover{transform:translateY(-1px);background:rgba(255,255,255,.12)}
 .yg-partypick.on{background:rgba(255,255,255,.18);box-shadow:inset 0 0 0 2px var(--c),0 8px 22px -12px var(--c)}
 .yg-title-blurb{margin:12px 2px 14px}
+.yg-title-card.wide{width:min(720px,100%)}
+.yg-flagimg{flex:none;border-radius:4px;object-fit:cover;box-shadow:0 0 0 1px rgba(255,255,255,.25),0 2px 6px rgba(0,0,0,.35)}
+.yg-title-tabs{margin:14px 0 8px}
+.yg-countries{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px;max-height:min(46vh,330px);overflow:auto;padding:2px;scrollbar-width:thin}
+.yg-country{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:14px;text-align:left;background:rgba(255,255,255,.07);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);transition:transform .25s cubic-bezier(.3,1.6,.5,1),background .2s,box-shadow .2s;min-width:0}
+.yg-country b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.yg-country small{display:block;color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.yg-country:hover{background:rgba(255,255,255,.12)}
+.yg-country.on{background:rgba(10,132,255,.32);box-shadow:inset 0 0 0 2px rgba(120,180,255,.9)}
+.yg-country.row{flex-wrap:wrap;margin-top:6px}
+.yg-country.row>button.grow{display:flex;align-items:center;gap:10px;text-align:left;min-width:0}
+.yg-country.row>button.grow>span{min-width:0}
+.yg-mine{display:grid;gap:6px;max-height:min(46vh,330px);overflow:auto;padding:2px}
+.yg-import{display:grid;gap:6px}
+.yg-input.share{flex-basis:100%;font-size:11px;font-family:ui-monospace,monospace}
+.yg-pickinfo{margin:12px 2px 6px}
+.yg-pickinfo b{font-size:15px}
+.yg-title-actions{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.yg-title-actions .grow{flex:1}
+
+/* ---- the scenario studio ---- */
+.yg-modal.huge{width:min(1000px,100%);height:760px;max-height:100%}
+.yg-studio-tabs{padding:0 20px 8px}
+.yg-studio-box{border-radius:16px;background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);padding:4px 12px 12px;display:grid;gap:10px}
+.yg-studio-box>.yg-label{margin:8px 0 0}
+.yg-num{display:grid;gap:2px}
+.yg-num span{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);font-weight:650}
+.yg-num b{color:var(--text);font-variant-numeric:tabular-nums}
+.yg-num input{accent-color:var(--accent);width:100%}
+.yg-mappreview{border-radius:16px;overflow:hidden;background:#1c3a60;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+.yg-mappreview canvas{display:block;width:100%;aspect-ratio:3/2;image-rendering:auto}
+.yg-regionnames{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px;max-height:220px;overflow:auto}
+.yg-regionnames .yg-input{min-height:32px;padding:5px 9px;font-size:12px}
+.yg-partylist{border-radius:var(--rs);background:rgba(255,255,255,.06);overflow:hidden;max-height:340px;overflow-y:auto}
+.yg-partylist .yg-row+.yg-row{box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+.yg-partyedit{display:grid;gap:10px}
+.yg-two{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
+.yg-color{width:100%;height:38px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.28);padding:3px;cursor:pointer}
+.yg-chipbtn{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.08);font-size:11.5px;font-weight:650;color:var(--muted);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+.yg-chipbtn i{width:9px;height:9px;border-radius:50%}
+.yg-chipbtn.on{background:rgba(10,132,255,.35);color:#fff}
+.yg-chipbtn.on.bad{background:rgba(255,69,58,.35)}
+.yg-lawlist{display:grid;max-height:440px;overflow:auto}
+.yg-lawlist .yg-row{min-height:36px;padding:3px 2px;font-size:12.5px}
+.yg-input.small{min-height:30px;padding:3px 8px;width:auto;max-width:190px;font-size:12px}
 
 /* ---- small stages ---- */
 @container (max-width:980px){.yg-stat small{display:none}.yg-stat.opt2{display:none}}
@@ -307,6 +352,8 @@ select.yg-input option{background:#151a24;color:#fff}
   .yg-sheet{left:64px;width:calc(100% - 76px)}
   .yg-dock{padding:4px}.yg-dock-btn{width:38px;height:38px}
   .yg-studio{grid-template-columns:1fr}
+  .yg-two{grid-template-columns:1fr}
+  .yg-countries{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
   .yg-election{left:12px;width:auto}
   .yg-endturn span{display:none}.yg-endturn{padding:0 14px}
 }

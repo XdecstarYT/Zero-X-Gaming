@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { COMMITTEES, GROUP_COMMITTEE, LAW_GROUPS, PARTIES, type Effects, type LawGroup, type Pos } from "../data";
+import { COMMITTEES, GROUP_COMMITTEE, LAW_GROUPS, type Effects, type LawGroup, type Pos } from "../data";
+import type { PartyDef } from "../scenario";
 import type { Game } from "../game";
 import * as G from "../sim";
 import { Icon } from "./icons";
@@ -56,8 +57,8 @@ const FX: { k: keyof Effects; label: string; step: number; unit: string; digits:
 
 const clone = (o: Opt[]): Opt[] => o.map((x) => ({ label: x.label, pos: { ...x.pos }, fx: { ...x.fx } }));
 
-/** A small political compass: click or drag to place an option. */
-function CompassPad({ value, onChange, testId }: { value: Pos; onChange: (p: Pos) => void; testId?: string }) {
+/** A small political compass: click or drag to place a point (the parties shown faintly). */
+export function CompassPad({ value, onChange, testId, parties = [], label = "Where this option sits: left to right, liberal to conservative", color = "#fff" }: { value: Pos; onChange: (p: Pos) => void; testId?: string; parties?: PartyDef[]; label?: string; color?: string }) {
   const ref = useRef<SVGSVGElement>(null);
   const set = (e: React.PointerEvent) => {
     const r = ref.current!.getBoundingClientRect();
@@ -71,7 +72,7 @@ function CompassPad({ value, onChange, testId }: { value: Pos; onChange: (p: Pos
       className="yg-pad"
       viewBox="-1.1 -1.1 2.2 2.2"
       role="slider"
-      aria-label="Where this option sits: left to right, liberal to conservative"
+      aria-label={label}
       aria-valuetext={`economy ${value.e.toFixed(2)}, society ${value.s.toFixed(2)}`}
       data-testid={testId}
       onPointerDown={(e) => {
@@ -95,10 +96,10 @@ function CompassPad({ value, onChange, testId }: { value: Pos; onChange: (p: Pos
       <text x="0.97" y="0.05" fontSize="0.13" textAnchor="end" fill="rgba(245,247,251,.5)">
         right
       </text>
-      {PARTIES.map((p) => (
+      {parties.map((p) => (
         <circle key={p.id} cx={p.pos.e} cy={-p.pos.s} r={0.055} fill={p.color} opacity={0.55} />
       ))}
-      <circle cx={value.e} cy={-value.s} r={0.09} fill="#fff" stroke="#0a84ff" strokeWidth={0.04} />
+      <circle cx={value.e} cy={-value.s} r={0.09} fill={color} stroke="#0a84ff" strokeWidth={0.04} />
     </svg>
   );
 }
@@ -129,7 +130,7 @@ export function LawStudio({ g }: { g: Game }) {
   const check = G.checkDraft(s, draft(), editing?.id);
   // Who would vote to move the law from today's option to each other option?
   const backers = (i: number) =>
-    PARTIES.filter((p) => {
+    G.partyDefs(s).filter((p) => {
       const d = (a: Pos) => Math.hypot(a.e - p.pos.e, a.s - p.pos.s);
       return d(options[start].pos) - d(options[i].pos) > 0.05;
     });
@@ -256,7 +257,7 @@ export function LawStudio({ g }: { g: Game }) {
                 </div>
                 {open === i && (
                   <div className="yg-opt-body">
-                    <CompassPad value={o.pos} onChange={(p) => upd(i, (x) => (x.pos = p))} testId={`yg-opt-pad-${i}`} />
+                    <CompassPad value={o.pos} onChange={(p) => upd(i, (x) => (x.pos = p))} testId={`yg-opt-pad-${i}`} parties={G.partyDefs(s)} />
                     <div className="yg-fx">
                       {FX.map((f) => {
                         const lim = G.FX_LIMITS[f.k];

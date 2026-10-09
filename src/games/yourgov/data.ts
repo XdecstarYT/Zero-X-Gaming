@@ -1,6 +1,7 @@
 /**
- * YourGov's fixed data: the parties, the laws (each with options and where they sit on the
- * political compass), the events you can hold, and the name pools. Everything is original.
+ * YourGov's fixed data: the laws (each with options and where they sit on the political
+ * compass), the committees, the events you can hold, and the name pools. The parties belong
+ * to each scenario (scenario.ts, countries.ts).
  */
 
 export const GAME_SLUG = "yourgov";
@@ -14,31 +15,14 @@ export interface Pos {
   s: number;
 }
 
-export type PartyId = "lab" | "com" | "ctr" | "lib" | "her" | "grn";
-export interface PartyDef {
-  id: PartyId;
-  name: string;
-  short: string;
-  color: string;
-  pos: Pos;
-  ideology: string;
-}
-
-export const PARTIES: PartyDef[] = [
-  { id: "lab", name: "People's Labour", short: "PL", color: "#e0453a", pos: { e: -0.65, s: -0.1 }, ideology: "Socialism" },
-  { id: "com", name: "Commonwealth Party", short: "CP", color: "#3d6fd8", pos: { e: -0.25, s: -0.35 }, ideology: "Social democracy" },
-  { id: "ctr", name: "Centre Forward", short: "CF", color: "#f2f2f2", pos: { e: 0.05, s: 0 }, ideology: "Centrism" },
-  { id: "lib", name: "Liberty Alliance", short: "LA", color: "#f0b429", pos: { e: 0.6, s: -0.45 }, ideology: "Libertarianism" },
-  { id: "her", name: "Heritage Union", short: "HU", color: "#9b4fd6", pos: { e: 0.45, s: 0.6 }, ideology: "Conservatism" },
-  { id: "grn", name: "Green Front", short: "GF", color: "#34b25a", pos: { e: -0.4, s: -0.65 }, ideology: "Environmentalism" },
-];
-export const PARTY: Record<PartyId, PartyDef> = Object.fromEntries(PARTIES.map((p) => [p.id, p])) as Record<PartyId, PartyDef>;
+/** A party's id (each scenario has its own parties: see scenario.ts). */
+export type PartyId = string;
 
 /** What a law option does to the country, per year in force. */
 export interface Effects {
   happiness?: number;
   growth?: number;
-  /** Budget change, $ billions a year (+ is income). */
+  /** Budget change, billions a year (+ is income), for an economy Avalon's size (scaled to the country's). */
   budget?: number;
   unemployment?: number;
 }
@@ -117,8 +101,8 @@ export const LAWS: LawDef[] = [
   { id: "military", name: "Military budget", group: "Security", committee: 7, start: 1, options: opts(["Minimal", -0.5, -0.5, { budget: 30 }], ["Standard", 0, 0, {}], ["Superpower", 0.4, 0.7, { budget: -45, growth: 0.05, unemployment: -0.2 }]) },
   { id: "police", name: "Police funding", group: "Security", committee: 5, start: 1, options: opts(["Cut", -0.3, -0.6, { budget: 8, happiness: -0.5 }], ["Standard", 0, 0, {}], ["Expanded", 0.2, 0.6, { budget: -9, happiness: 0.5 }]) },
   { id: "votingAge", name: "Voting age", group: "Government", committee: 8, start: 1, constitutional: true, options: opts(["16", 0, -0.6, {}], ["18", 0, 0, {}], ["21", 0, 0.6, {}]) },
-  { id: "electoralSystem", name: "Election system", group: "Government", committee: 8, start: 0, constitutional: true, options: opts(["Majoritarian", 0.1, 0.3, {}], ["Proportional", -0.1, -0.3, {}]) },
-  { id: "termLimits", name: "Presidential term limits", group: "Government", committee: 8, start: 1, constitutional: true, options: opts(["One term", 0, -0.2, {}], ["Two terms", 0, 0, {}], ["No limit", 0, 0.5, { happiness: -1 }]) },
+  { id: "electoralSystem", name: "Election system", group: "Government", committee: 8, start: 0, constitutional: true, options: opts(["First past the post", 0.1, 0.35, {}], ["Two-round", 0.05, 0.2, {}], ["Preferential", 0, 0.05, {}], ["Parallel", 0, 0, {}], ["Mixed-member proportional", -0.05, -0.2, {}], ["Proportional", -0.1, -0.35, {}]) },
+  { id: "termLimits", name: "Term limits", group: "Government", committee: 8, start: 1, constitutional: true, options: opts(["One term", 0, -0.2, {}], ["Two terms", 0, 0, {}], ["No limit", 0, 0.5, { happiness: -1 }]) },
   { id: "campaignFinance", name: "Campaign finance", group: "Government", committee: 8, start: 1, options: opts(["Public funding only", -0.5, -0.3, { budget: -2 }], ["Capped donations", 0, 0, {}], ["Unlimited donations", 0.7, 0.2, {}]) },
   { id: "unions", name: "Trade unions", group: "Economy", committee: 5, start: 1, options: opts(["Restricted", 0.7, 0.3, { growth: 0.1, happiness: -1 }], ["Recognised", 0, 0, {}], ["Strong rights", -0.7, -0.1, { growth: -0.1, happiness: 1.5 }]) },
   { id: "welfare", name: "Unemployment benefits", group: "Services", committee: 3, start: 1, options: opts(["None", 0.8, 0.3, { budget: 12, happiness: -3 }], ["Basic", 0, 0, {}], ["Universal basic income", -0.9, -0.2, { budget: -60, happiness: 6, unemployment: 0.5 }]) },

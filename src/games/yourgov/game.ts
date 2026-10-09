@@ -1,12 +1,19 @@
 /**
  * The controller between the rules (sim.ts) and the React UI: holds the game, applies the
- * player's actions, saves after each one, plays the sounds, keeps the player's settings, and
- * tells the UI (and the platform's score) when something changes.
+ * player's actions, saves after each one, plays the sounds, keeps the player's settings and
+ * their library of custom scenarios, and tells the UI (and the platform's score) when
+ * something changes.
  */
 import { SAVE_KEY, type PartyId } from "./data";
+import { mapReady, prepareMap } from "./map";
+import { checkScenario, readCode, type Scenario } from "./scenario";
 import * as G from "./sim";
 import { Sound } from "./audio";
 import type { MapMode } from "./ui/mapColors";
+
+const LIBRARY_KEY = "zx-yourgov-scenarios";
+/** Most custom scenarios kept. */
+export const LIBRARY_MAX = 24;
 
 export type Tab = "bills" | "write" | "events" | "chamber" | "parties" | "party" | "country" | "news" | "missions" | "settings" | null;
 export type View = "map" | "chamber";
@@ -58,12 +65,39 @@ export class Game {
   private startedAt = performance.now();
   private toastId = 1;
   paused = false;
+  /** Waiting for a saved real country's map data to load. */
+  loadingSave = false;
+  /** The player's own scenarios. */
+  library: Scenario[] = [];
 
   constructor(private scorer: Scorer) {
     try {
       this.s = G.load(localStorage.getItem(SAVE_KEY));
     } catch {
       this.s = null;
+    }
+    // A saved real country needs its map before anything can be drawn.
+    if (this.s && !mapReady(this.s.sc.map)) {
+      const s = this.s;
+      this.s = null;
+      this.loadingSave = true;
+      prepareMap(s.sc.map)
+        .then(() => {
+          this.s = s;
+        })
+        .catch(() => {
+          this.s = null;
+        })
+        .finally(() => {
+          this.loadingSave = false;
+          this.changed(false);
+        });
+    }
+    try {
+      const raw = JSON.parse(localStorage.getItem(LIBRARY_KEY) ?? "[]") as unknown[];
+      this.library = (Array.isArray(raw) ? raw : []).map((x) => checkScenario(x)).filter((x): x is Scenario => typeof x !== "string");
+    } catch {
+      this.library = [];
     }
     try {
       this.prefs = { ...DEFAULT_PREFS, ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as Partial<Prefs>) };
@@ -125,12 +159,60 @@ export class Game {
 
   // ------------------------------------------------------------------ lifecycle
 
-  newGame(party: PartyId, seed = Math.floor(Math.random() * 1e6) + 1) {
-    this.s = G.newGame(seed, party);
+  /** Start a career (the scenario's map must be loaded: see `prepare`). */
+  newGame(party: PartyId, seed = Math.floor(Math.random() * 1e6) + 1, scenario?: Scenario) {
+    this.s = G.newGame(seed, party, scenario ? { scenario: structuredClone(scenario) } : {});
     this.startedAt = performance.now();
     this.ui = { ...this.ui, tab: "missions", view: "map", state: null, bill: null, law: null, event: null, studio: null, count: 0 };
     this.sound.play("start");
     this.changed();
+  }
+
+  /** Load what a scenario's map needs (real countries' outlines and elevation). */
+  async prepare(sc: Scenario) {
+    if (mapReady(sc.map)) return;
+    await prepareMap(sc.map);
+    this.changed(false);
+  }
+
+  // ------------------------------------------------------------------ custom scenarios
+
+  private saveLibrary() {
+    try {
+      localStorage.setItem(LIBRARY_KEY, JSON.stringify(this.library));
+    } catch {
+      /* storage full or blocked */
+    }
+    this.changed(false);
+  }
+
+  /** Keep a scenario in the library (replacing one with the same id). Returns an error, or null. */
+  saveScenario(raw: Scenario): string | null {
+    const sc = checkScenario(raw);
+    if (typeof sc === "string") return sc;
+    if (!sc.id.startsWith("custom-")) sc.id = `custom-${Date.now().toString(36)}`;
+    const i = this.library.findIndex((x) => x.id === sc.id);
+    if (i >= 0) this.library[i] = sc;
+    else {
+      if (this.library.length >= LIBRARY_MAX) return `You can keep ${LIBRARY_MAX} scenarios. Delete one first.`;
+      this.library = [...this.library, sc];
+    }
+    this.saveLibrary();
+    return null;
+  }
+
+  deleteScenario(id: string) {
+    this.library = this.library.filter((x) => x.id !== id);
+    this.saveLibrary();
+  }
+
+  /** Add a scenario someone shared as a code. Returns it, or why it couldn't be read. */
+  importScenario(code: string): Scenario | string {
+    const sc = readCode(code);
+    if (typeof sc === "string") return sc;
+    sc.id = `custom-${Date.now().toString(36)}`;
+    const err = this.saveScenario(sc);
+    return err ?? this.library[this.library.length - 1];
   }
 
   quit() {
@@ -164,7 +246,7 @@ export class Game {
 
   endTurn() {
     const s = this.s;
-    if (!s || s.over || s.election) return;
+    if (!s || s.over || s.election || s.talks) return;
     const before = s.news[0] ?? null;
     const lawsBefore = s.lawsPassed;
     G.endTurn(s);
@@ -176,7 +258,8 @@ export class Game {
     if (s.election) {
       this.setUI({ count: 0, tab: null, view: "map", studio: null });
       this.sound.play("count");
-    } else if (s.lawsPassed > lawsBefore) this.sound.play("gavel");
+    } else if (s.talks) this.sound.play("paper");
+    else if (s.lawsPassed > lawsBefore) this.sound.play("gavel");
     else this.sound.play("turn");
     // The two biggest stories of the week.
     for (const n of fresh.filter((x) => x.tone !== 0).slice(0, 2)) this.toast(n.text, n.tone);
@@ -189,7 +272,7 @@ export class Game {
   closeElection() {
     const s = this.s;
     if (!s?.election) return;
-    const won = s.election.president?.party === s.party || s.election.houseSeats[s.party] > s.election.prevHouse[s.party];
+    const won = s.election.president?.party === s.party || (s.election.houseSeats[s.party] ?? 0) > (s.election.prevHouse[s.party] ?? 0);
     G.closeElection(s);
     this.sound.play(won ? "win" : "lose");
     this.setUI({ tab: "chamber", view: "chamber", house: "house" });
@@ -245,6 +328,32 @@ export class Game {
     this.setUI({ studio: null, tab: "write", law: r.id });
     this.changed();
     return null;
+  }
+
+  /** Answer coalition talks: an option's index, or -1 (decline, or govern alone). */
+  chooseGovernment(i: number) {
+    if (!this.s || !G.chooseGovernment(this.s, i)) return;
+    this.sound.play(G.inGovernment(this.s) ? "cheer" : "click");
+    this.changed();
+  }
+
+  /** As head of government, call an early election. */
+  callElection() {
+    if (!this.s) return;
+    if (!G.callElection(this.s)) return this.toast("You can't call an election now", -1);
+    this.sound.play("paper");
+    this.toast(`An election is called for ${G.dateLabel(this.s, this.s.cal.lower)}`, 1);
+    this.changed();
+  }
+
+  /** In opposition, table a motion of no confidence. */
+  noConfidence() {
+    if (!this.s) return;
+    const r = G.noConfidence(this.s);
+    if (!r.ok) return this.toast("You can't table a motion now", -1);
+    this.sound.play(r.passed ? "gavel" : "bad");
+    this.toast(r.passed ? "The motion carries: the government falls" : `The motion is defeated, ${r.tally!.yes} to ${r.tally!.no}`, r.passed ? 1 : -1);
+    this.changed();
   }
 
   repealLaw(id: string) {
