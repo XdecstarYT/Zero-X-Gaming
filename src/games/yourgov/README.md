@@ -73,8 +73,54 @@ its political system, its economy and the laws in force. Three kinds:
   place on the compass and effects. They work like any built-in law.
 - **Elections** count county by county on the map; then the seats change hands seat by seat
   (`electLower`, `electUpper`, `electPresident`), the government forms, and missions resolve.
+- **Events** (`data.ts`, `holdEvent`): 38 of them in four kinds (campaigning, winning over voter
+  groups, raising money, the party). Each can be held twice a week (the second time does 60%).
+  Fundraisers can always be held, even with an empty bank: they pay for themselves, but donors
+  tire (`donors`, `donorFactor`) if you ask every week. Lobbying works twice per party per stage.
 - Saves are version 3 (`GameState.sc` carries the scenario); version 1 and 2 saves load as
-  Avalon games.
+  Avalon games. Anything a save lacks from the wider politics is filled in by `initPolitics`.
+
+## The wider politics (`politics.ts`)
+
+Everything here works on the same state and the same seeded stream as `sim.ts`, and is called
+from it each week (`politicsWeek`, `settlePending` at the start of `endTurn`, `runPlan` once the
+date moves on, `afterElection`, `lawChanged` when a bill becomes law).
+
+- **The diary** (`schedule`, `runPlan`): book any event up to 16 weeks ahead, in any region; it's
+  held and paid for when its week comes (called off if the party can't pay).
+- **Voter groups** (`GROUPS`): young voters, retirees, working families, business owners, rural
+  voters, urban professionals, religious voters and environmentalists, each a share of every
+  county (more of some in cities, others in the country: `groupMix`). Your goodwill with each
+  (events aimed at it, the laws you pass, crises and executive actions) adds to your party's pull
+  where they live (`playerBonus`); it fades without attention, and courting one side of a divide
+  (workers or business, faith or the young, green or rural) costs a little with the other.
+- **Interest groups** speak for each voter group: friendly ones give money every week and
+  endorse you two weeks before a national election.
+- **The press** (four outlets): press conferences, interviews and good debates win coverage;
+  backfires and ministers' scandals cost it. What counts is coverage better or worse than an
+  outlet would usually give your politics (`pressLift`).
+- **Factions**: your party's progressive wing, moderates and traditionalists, each with a share
+  and a mood. They judge the laws you pass by their own politics, want their share of your
+  party's ministers, react to election results, and like congresses. Their moods drive unity;
+  eight weeks of low unity bring a **leadership challenge** (face the vote, call a congress
+  first, or make concessions). Lose and the career ends (`ousted`).
+- **TV debates** three weeks before each national election against the leading rival: three
+  questions, three ways to answer each (the facts, attack, from the heart).
+- **The cabinet** (`PORTFOLIOS`): eight posts filled from the governing parties' lawmakers,
+  shared out by seats. Each minister has a skill; a good finance minister lifts growth and the
+  budget, health happiness, and so on (`cabinetFx`, folded into the economy). As head of
+  government you appoint and reshuffle; scandals bring resignations; empty posts get acting
+  ministers after a few weeks.
+- **Coalition deals**: each junior partner wants one law moved within a year; keep it and they're
+  loyal, break it (or starve them of posts) and they walk out. As a junior partner you get a
+  promise of your own, and can leave.
+- **Crises** (18, every 9–19 weeks): floods, strikes, bank collapses, a pandemic, diplomatic rows.
+  As head of government you decide; otherwise you back or attack the government's response.
+- **Executive actions** (10, with cooldowns; courts may block some in a presidential system),
+  **referendums** (once a year: the people vote on a change to any law, by where the parties'
+  voters stand and the groups that care), and **foreign relations** with each country's real
+  neighbours and partners (state visits, trade deals that add growth, public rebukes).
+- AI parties change leader after a bad election.
 
 ## Maps (`map.ts`)
 
@@ -106,6 +152,14 @@ pinch to zoom, right-drag or two-finger twist to turn).
   names of its houses on the vote boards.
 - If WebGL isn't available, the flat map (`ui/MapView.tsx`) and drawn chamber stand in.
 
+## Phones
+
+The layout is built for phones first, in either orientation. Held sideways, the dock runs in two
+columns down the left; held upright, it runs along the bottom and panels take the full width.
+Every list scrolls by touch (panels, cards and the title screen centre with flexbox so their
+height is capped by the screen). Regions can be picked from a dropdown as well as on the map,
+and the week strip picks when an event happens; tapping the timeline opens it at that week.
+
 ## Layout
 
 | File | What it does |
@@ -116,10 +170,13 @@ pinch to zoom, right-drag or two-finger twist to turn).
 | `data.ts` | Laws and their options, committees, events |
 | `map.ts` | Generated and real maps |
 | `sim.ts` | Game state and every rule |
+| `politics.ts` | Voter groups, interest groups, the press, factions, debates, the diary, the cabinet, coalition deals, crises, executive actions, referendums, foreign relations |
 | `game.ts` | The controller: actions, settings, the scenario library, sound, saving, score |
 | `geo/` | Real countries' map data (generated; see above) |
 | `render/` | The 3D country, chamber, camera rig, terrain builder and its worker |
 | `ui/App.tsx` | The Liquid Glass HUD: bars, dock, sheets, election night, coalition talks |
+| `ui/Politics.tsx` | Events and the diary, voters and the press, the government, factions; crisis, debate and challenge cards |
+| `ui/kit.tsx` | The building blocks every panel uses |
 | `ui/Title.tsx` | Picking a country and a party; your scenarios; share codes |
 | `ui/ScenarioStudio.tsx` | Making a country: map, parties, system, economy and laws |
 | `ui/LawStudio.tsx` | Drafting and editing your own laws |

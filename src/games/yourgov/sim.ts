@@ -10,10 +10,11 @@
  * Pure and deterministic: all randomness comes from the state's own seeded stream.
  */
 import { createRng } from "../engine/rng";
-import { COMMITTEES, EVENT, GROUP_COMMITTEE, LAW, LAW_GROUPS, LAWS, WEEKS, type Effects, type LawDef, type LawGroup, type PartyId, type Pos } from "./data";
+import { COMMITTEES, EVENT, EVENT_MAX, GROUP_COMMITTEE, LAW, LAW_GROUPS, LAWS, WEEKS, type Effects, type LawDef, type LawGroup, type PartyId, type Pos } from "./data";
 import { buildCountry, geoOf, type Country, type MapSpec } from "./map";
 import { NAMES } from "./names";
 import { avalon, LOWER_SYSTEMS, type LowerSystem, type PartyDef, type Scenario, type SystemDef, type Titles } from "./scenario";
+import { afterElection, cabinetFx, courtGroup, initPolitics, lawChanged, newGovernment, playerBonus, politicsWeek, pressEvent, runPlan, settlePending, type CrisisState, type DebateState, type Deal, type Faction, type Foreign, type PlanItem } from "./politics";
 
 export const COMMITTEE_SIZE = 9;
 /** Weeks a bill spends at each stage. */
@@ -226,7 +227,7 @@ export interface GameState {
   lawsPassed: number;
   electionsWon: number;
   score: number;
-  /** Events you've held this turn (each at most once a turn). */
+  /** Events you've held this turn (each at most EVENT_MAX times a turn). */
   usedEvents: string[];
   /** Week you last tried a vote of no confidence. */
   lastMotion: number;
@@ -236,6 +237,42 @@ export interface GameState {
   nextLaw: number;
   /** Weekly snapshots, newest last (capped). */
   history: HistoryPoint[];
+
+  // The wider politics (politics.ts).
+  /** Events booked for later weeks. */
+  plan: PlanItem[];
+  nextPlan: number;
+  /** How each voter group feels about your party (-40 … 60). */
+  goodwill: Record<string, number>;
+  /** How each interest group gets on with your party (-50 … 100). */
+  lobbies: Record<string, number>;
+  /** Your party's factions. */
+  factions: Faction[];
+  /** Weeks of low unity in a row (a challenge comes after eight). */
+  lowUnity: number;
+  challenge: { week: number; faction: string } | null;
+  /** The cabinet: portfolio → politician. */
+  cabinet: Record<string, number>;
+  /** Coalition partners' moods (0–100). */
+  partners: Record<PartyId, number>;
+  deals: Deal[];
+  crisis: CrisisState | null;
+  nextCrisis: number;
+  /** Executive actions: id → week it's ready again. */
+  orders: Record<string, number>;
+  foreign: Foreign[];
+  /** How each outlet covers you (-50 … 50). */
+  press: Record<string, number>;
+  debate: DebateState | null;
+  lastReferendum: number;
+  /** Temporary pushes to growth and happiness (they fade). */
+  boosts: { growth: number; happiness: number };
+  /** Growth from trade deals. */
+  tradeGrowth: number;
+  /** Donor fatigue: each fundraiser raises less if the last was recent. */
+  donors: number;
+  /** Your party removed you as leader. */
+  ousted?: boolean;
 }
 
 // ------------------------------------------------------------------ the scenario
@@ -279,7 +316,7 @@ export const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > h
 const dist = (a: Pos, b: Pos) => Math.hypot(a.e - b.e, a.s - b.s);
 
 /** A fresh random stream for this roll (the state remembers how many it has used). */
-function roll(s: GameState) {
+export function roll(s: GameState) {
   return createRng(s.seed * 7919 + ++s.rolls * 104729);
 }
 
@@ -305,7 +342,7 @@ export const lawOf = (s: GameState, id: string): LawDef | undefined => LAW[id] ?
 /** Every law on the books, built-in first. */
 export const allLaws = (s: GameState): LawDef[] => (s.custom.length ? [...LAWS, ...s.custom] : LAWS);
 
-function newPolitician(s: GameState, partyId: PartyId, state: number, r = roll(s)): Politician {
+export function newPolitician(s: GameState, partyId: PartyId, state: number, r = roll(s)): Politician {
   const pool = NAMES[s.sc.culture] ?? NAMES.en;
   const p: Politician = { id: s.nextId++, first: r.pick(pool.first), last: r.pick(pool.last), party: partyId, age: r.int(32, 70), face: Math.floor(r.next() * 1e6), state, charisma: r.int(3, 9) };
   s.politicians.push(p);
@@ -410,7 +447,10 @@ function standing(s: GameState) {
     const c = country(s);
     const ps = partyDefs(s);
     st = new Uint8Array(c.states.length * ps.length);
-    c.states.forEach((r, k) => ps.forEach((p, i) => (st![k * ps.length + i] = !p.noRun && (!p.only || p.only.includes(r.key)) ? 1 : 0)));
+    // A regional party whose regions aren't on this map stands everywhere rather than nowhere.
+    const keys = new Set(c.states.map((r) => r.key));
+    const only = ps.map((p) => (p.only?.some((k) => keys.has(k)) ? p.only : undefined));
+    c.states.forEach((r, k) => ps.forEach((p, i) => (st![k * ps.length + i] = !p.noRun && (!only[i] || only[i]!.includes(r.key)) ? 1 : 0)));
     standCache.set(s.sc, st);
   }
   return st;
@@ -433,6 +473,8 @@ export function utilities(s: GameState, section: number) {
     let u = -2.4 * dist(sec.lean, p.pos) + (s.calib[k * P + i] ?? 0) + q.swing + (s.campaign[p.id]?.[k] ?? 0) * 0.06 + Math.log(1 + q.members / 200_000) * 0.15;
     const w = inc[p.id];
     if (w) u += appr * w;
+    // The voter groups you've won over, and how the press treats you.
+    if (p.id === s.party) u += playerBonus(s, section);
     return u;
   });
 }
@@ -601,6 +643,8 @@ export function newGame(seed: number, partyId: PartyId, opts: NewGameOptions = {
     custom: [],
     nextLaw: 1,
     history: [],
+    // Filled in by initPolitics once the offices are.
+    ...({} as Pick<GameState, "plan" | "nextPlan" | "goodwill" | "lobbies" | "factions" | "lowUnity" | "challenge" | "cabinet" | "partners" | "deals" | "crisis" | "nextCrisis" | "orders" | "foreign" | "press" | "debate" | "lastReferendum" | "boosts" | "tradeGrowth" | "donors">),
   };
   s.fx0 = lawEffects(s);
   calibrate(s);
@@ -637,6 +681,7 @@ export function newGame(seed: number, partyId: PartyId, opts: NewGameOptions = {
   applyElection(s, run, true);
   s.lastElection = run;
   s.week = 1;
+  initPolitics(s);
   s.missions = [];
   addMission(s, { kind: "election", deadline: electionDeadline(s), reward: 400 });
   addPromise(s);
@@ -1181,8 +1226,11 @@ export function applyElection(s: GameState, e: ElectionRun, quiet = false) {
     }
   }
   // The government.
-  if (sy.exec === "presidential") s.gov = { parties: [pol(s, s.president)?.party ?? ps[0].id], head: s.president, since: e.week };
-  else if (e.lower) {
+  if (sy.exec === "presidential") {
+    const head = s.gov.head;
+    s.gov = { parties: [pol(s, s.president)?.party ?? ps[0].id], head: s.president, since: head === s.president ? s.gov.since : e.week };
+    if (!quiet && head !== s.president) newGovernment(s);
+  } else if (e.lower) {
     const start = quiet ? s.sc.start?.gov : undefined;
     if (start?.length) setGovernment(s, start, true);
     else formGovernment(s, quiet);
@@ -1219,6 +1267,7 @@ export function applyElection(s: GameState, e: ElectionRun, quiet = false) {
     if (!s.missions.some((m) => m.kind === "seats" && !m.done && !m.failed)) addMission(s, { kind: "seats", target: Math.min(Math.round(seats * 0.6), mine + Math.max(2, Math.round(seats * 0.06))), deadline: s.cal.lower, reward: 150 });
   }
   if (!s.missions.some((m) => m.kind === "election" && !m.done && !m.failed) && !s.talks) addMission(s, { kind: "election", deadline: electionDeadline(s), reward: 400 });
+  afterElection(s, e);
   prune(s);
 }
 
@@ -1305,6 +1354,7 @@ function prune(s: GameState) {
     for (const m of b.committee) keep.add(m);
   }
   for (const id of Object.keys(s.presTerms)) keep.add(Number(id));
+  for (const id of Object.values(s.cabinet ?? {})) keep.add(id);
   if (s.politicians.length > keep.size * 1.3) s.politicians = s.politicians.filter((p) => keep.has(p.id));
 }
 
@@ -1381,6 +1431,7 @@ export function setGovernment(s: GameState, parties: PartyId[], quiet = false) {
   const before = s.gov.parties[0];
   s.gov = { parties, head, since: s.week };
   s.talks = null;
+  if (s.cabinet) newGovernment(s);
   if (quiet) return;
   const t = titles(s);
   const names = parties.map((p) => party(s, p).short).join("–");
@@ -1536,7 +1587,8 @@ export function partyStance(s: GameState, partyId: PartyId, b: Bill) {
   if (partyId === b.party) u += 0.3;
   // Government parties back the government's bills.
   if (s.gov.parties.includes(partyId) && s.gov.parties.includes(b.party)) u += 0.15;
-  if (b.lobbied.includes(partyId)) u += 0.3;
+  const n = timesLobbied(b, partyId);
+  if (n) u += n > 1 ? 0.5 : 0.3;
   return u;
 }
 
@@ -1636,11 +1688,15 @@ export function castVote(s: GameState, billId: number, v: -1 | 0 | 1) {
   return true;
 }
 
-/** Spend party money to win a party round on a bill at its current stage. */
+/** How many times a party can be lobbied on a bill at one stage. */
+export const LOBBY_MAX = 2;
+export const timesLobbied = (b: Bill, partyId: PartyId) => b.lobbied.reduce((n, p) => n + (p === partyId ? 1 : 0), 0);
+
+/** Spend party money to win a party round on a bill at its current stage (twice at most). */
 export function lobby(s: GameState, billId: number, partyId: PartyId) {
   const b = s.bills.find((x) => x.id === billId);
   const ps = s.parties[s.party];
-  if (!b || b.lobbied.includes(partyId) || ps.funds < LOBBY_COST || partyId === s.party || !s.parties[partyId]) return false;
+  if (!b || timesLobbied(b, partyId) >= LOBBY_MAX || ps.funds < LOBBY_COST || partyId === s.party || !s.parties[partyId]) return false;
   ps.funds -= LOBBY_COST;
   b.lobbied.push(partyId);
   s.parties[partyId].relations[s.party] = clamp(s.parties[partyId].relations[s.party] + 2, -100, 100);
@@ -1708,7 +1764,9 @@ function advanceBill(s: GameState, b: Bill) {
       news(s, "budget", `The ${sy.lower.short} approves the budget, ${t.yes} to ${t.no}`, 1);
       return;
     }
+    const from = s.laws[b.law];
     s.laws[b.law] = b.option;
+    lawChanged(s, b.law, from, b.option, mine, s.gov.head === s.you);
     const l = lawOf(s, b.law)!;
     news(s, "law", `${l.name} becomes law${sy.exec === "presidential" ? "" : ` with ${titles(s).assent}`}: ${l.options[b.option].label}`, mine ? 1 : 0);
     if (mine) {
@@ -1733,32 +1791,77 @@ export interface EventResult {
   boost: number;
   backfired: boolean;
   poll?: Record<PartyId, number>;
+  /** Money raised (fundraisers), after costs. */
+  raised?: number;
+  /** Why it couldn't be held. */
+  why?: string;
 }
 
-/** Hold an event (a rally, an advert, a fundraiser…), in a state where it needs one. */
+/** How much a fundraiser raises now compared with fresh donors (1). */
+export const donorFactor = (s: GameState) => 1 / (1 + 0.25 * (s.donors ?? 0));
+
+/** How many times you've held an event this week. */
+export const eventUses = (s: GameState, id: string) => s.usedEvents.reduce((n, x) => n + (x === id ? 1 : 0), 0);
+
+/** Why an event can't be held now (or null if it can). Fundraisers can always be held: they pay for themselves. */
+export function eventBlocked(s: GameState, id: string): string | null {
+  const ev = EVENT[id];
+  if (!ev) return "Unknown event.";
+  if (s.over) return "Your career is over.";
+  if (eventUses(s, id) >= EVENT_MAX) return `Already held ${EVENT_MAX === 2 ? "twice" : `${EVENT_MAX} times`} this week.`;
+  if (!ev.fund && s.parties[s.party].funds < ev.cost) return "Not enough party funds.";
+  return null;
+}
+
+/** Events that bring the press round (a good one wins coverage; a bad one costs it). */
+const PRESS_EVENTS: Record<string, number> = { pressConf: 4, interview: 4, debate: 3, manifesto: 2, endorse: 2, charity: 2 };
+
+/** Hold an event (a rally, an advert, a fundraiser…), in a state where it needs one. Twice a week at most; the second time does a little less. */
 export function holdEvent(s: GameState, id: string, state = s.homeState, target?: PartyId): EventResult {
   const ev = EVENT[id];
   const ps = s.parties[s.party];
-  if (!ev || ps.funds < ev.cost || s.usedEvents.includes(id) || s.over) return { ok: false, boost: 0, backfired: false };
+  const why = eventBlocked(s, id);
+  if (!ev || why) return { ok: false, boost: 0, backfired: false, why: why ?? "Unknown event." };
+  const again = eventUses(s, id) > 0 ? 0.6 : 1;
   const r = roll(s);
   ps.funds -= ev.cost;
   s.usedEvents.push(id);
   const you = pol(s, s.you)!;
   const backfired = !!ev.risk && r.next() < ev.risk;
-  const k = (backfired ? -0.8 : 1) * (0.7 + you.charisma / 15);
+  const k = (backfired ? -0.8 : 1) * (0.7 + you.charisma / 15) * again;
   const boost = ev.boost * k;
   const camp = s.campaign[s.party];
   if (ev.scope === "state") camp[state] = clamp(camp[state] + boost, -20, 40);
   else if (ev.scope === "national") for (let i = 0; i < camp.length; i++) camp[i] = clamp(camp[i] + boost * 0.6, -20, 40);
-  if (ev.money) ps.funds += ev.money * (0.8 + r.next() * 0.4);
-  if (ev.members) ps.members += Math.round(ev.members * (0.7 + r.next() * 0.6));
-  if (ev.unity) ps.unity = clamp(ps.unity + ev.unity, 0, 100);
+  let raised: number | undefined;
+  if (ev.money) {
+    // Donors give less when the party is in trouble, and a scandal at a gala scares some off.
+    let takings = ev.money * (0.8 + r.next() * 0.4) * again * (backfired ? 0.5 : 1) * (0.85 + ps.unity / 400);
+    if (ev.fund) {
+      takings *= donorFactor(s);
+      s.donors += 1;
+    }
+    ps.funds += takings;
+    raised = Math.round((takings - ev.cost) * 100) / 100;
+  }
+  if (ev.members) ps.members += Math.round(ev.members * (0.7 + r.next() * 0.6) * again);
+  if (ev.unity) ps.unity = clamp(ps.unity + ev.unity * again, 0, 100);
+  // The voter group it's aimed at (and the interest group that speaks for it).
+  if (ev.group && ev.goodwill) courtGroup(s, ev.group, ev.goodwill * again * (backfired ? -0.5 : 1));
+  // The party's factions.
+  if (id === "congress") for (const f of s.factions) f.mood = clamp(f.mood + 8 * again, 0, 100);
+  else if (id === "caucus") for (const f of s.factions) f.mood = clamp(f.mood + 3 * again, 0, 100);
+  else if (id === "manifesto") for (const f of s.factions) f.mood = clamp(f.mood + (f.id === "centre" ? 4 : -1), 0, 100);
+  else if (id === "donorRetreat") for (const f of s.factions) f.mood = clamp(f.mood + (f.id === "left" ? -5 : 1), 0, 100);
+  // The press.
+  if (backfired) pressEvent(s, -3);
+  else if (PRESS_EVENTS[id]) pressEvent(s, PRESS_EVENTS[id] * again);
   if (ev.attack) {
     // Hit the strongest rival (or the one you chose).
     const poll = nationalPoll(s);
     const rival = target ?? running(s).filter((p) => p !== s.party).sort((a, b) => poll[b] - poll[a])[0];
     if (backfired) s.parties[s.party].swing -= 0.05;
-    else s.parties[rival].swing -= ev.attack * 0.02;
+    else s.parties[rival].swing -= ev.attack * 0.02 * again;
     s.parties[rival].relations[s.party] = clamp(s.parties[rival].relations[s.party] - 8, -100, 100);
     news(s, "scandal", backfired ? `The ${party(s, s.party).name}'s attack on the ${party(s, rival).name} backfires` : `The ${party(s, rival).name} reel from ${party(s, s.party).short} attacks`, backfired ? -1 : 1);
   }
@@ -1767,13 +1870,16 @@ export function holdEvent(s: GameState, id: string, state = s.homeState, target?
     s.polled[state] = s.week;
     poll = statePoll(s, state);
   }
-  if (backfired && !ev.attack) news(s, "event", `${ev.name} goes badly for ${fullName(you)}`, -1);
-  return { ok: true, boost, backfired, poll };
+  if (backfired && !ev.attack) {
+    if (ev.fund) s.parties[s.party].swing -= 0.015;
+    news(s, "event", ev.fund ? `${ev.name}: questions over who paid for access to ${fullName(you)}` : `${ev.name} goes badly for ${fullName(you)}`, -1);
+  }
+  return { ok: true, boost, backfired, poll, raised };
 }
 
 // ------------------------------------------------------------------ the turn
 
-function news(s: GameState, kind: NewsItem["kind"], text: string, tone: 1 | 0 | -1) {
+export function news(s: GameState, kind: NewsItem["kind"], text: string, tone: 1 | 0 | -1) {
   s.news.unshift({ week: s.week, kind, text, tone });
   if (s.news.length > 80) s.news.length = 80;
 }
@@ -1830,17 +1936,20 @@ function economy(s: GameState) {
   const fx = { happiness: now.happiness - s.fx0.happiness, growth: now.growth - s.fx0.growth, budget: (now.budget - s.fx0.budget) * k, unemployment: now.unemployment - s.fx0.unemployment };
   const st = s.stats;
   const r = roll(s);
-  const targetHappy = e.happiness + fx.happiness - Math.max(0, st.unemployment - e.unemployment - 1) * 0.8 + (st.growth - e.growth) * 1.5;
+  // The cabinet (good ministers help), temporary boosts (crisis decisions, executive actions) and trade deals.
+  const cab = cabinetFx(s);
+  const extra = { growth: cab.growth + (s.boosts?.growth ?? 0) + (s.tradeGrowth ?? 0), happiness: cab.happiness + (s.boosts?.happiness ?? 0) };
+  const targetHappy = e.happiness + fx.happiness + extra.happiness - Math.max(0, st.unemployment - e.unemployment - 1) * 0.8 + (st.growth - e.growth) * 1.5;
   st.happiness += (targetHappy - st.happiness) * 0.05 + (r.next() - 0.5) * 0.3;
   const debtNorm = e.debt / (e.gdp * 1000);
-  const targetGrowth = e.growth + fx.growth - Math.max(0, st.debt / (st.gdp * 1000) - debtNorm - 0.2) * 1.5;
+  const targetGrowth = e.growth + fx.growth + extra.growth - Math.max(0, st.debt / (st.gdp * 1000) - debtNorm - 0.2) * 1.5;
   st.growth += (targetGrowth - st.growth) * 0.04 + (r.next() - 0.5) * 0.08;
   st.unemployment = clamp(st.unemployment + (e.unemployment + fx.unemployment - (st.growth - e.growth) * 0.6 - st.unemployment) * 0.04, 1, 30);
-  st.budget = e.budget + fx.budget + (st.growth - e.growth) * 25 * k;
+  st.budget = e.budget + fx.budget + cab.budget * k + (st.growth - e.growth) * 25 * k;
   st.debt = Math.max(0, st.debt - st.budget / WEEKS);
   st.gdp *= 1 + st.growth / 100 / WEEKS;
   // The government's approval follows how people feel.
-  const targetApproval = e.approval + (st.happiness - e.happiness) * 1.6 + (st.growth - e.growth) * 4;
+  const targetApproval = e.approval + (st.happiness - e.happiness) * 1.6 + (st.growth - e.growth) * 4 + cab.approval;
   st.approval = clamp(st.approval + (targetApproval - st.approval) * 0.03 + (r.next() - 0.5) * 0.6, 5, 95);
   st.happiness = clamp(st.happiness, -50, 60);
 }
@@ -1943,6 +2052,9 @@ function finances(s: GameState) {
 /** End the week: votes fall due, the world moves, elections when they come. */
 export function endTurn(s: GameState) {
   if (s.over || s.election || s.talks) return s;
+  // Whatever the player left unanswered (a crisis, a debate, a challenge) is settled.
+  settlePending(s);
+  if (s.over) return s;
   // Votes due this week.
   for (const b of s.bills) if (b.stage !== "passed" && b.stage !== "failed" && b.voteAt <= s.week) advanceBill(s, b);
   s.bills = s.bills.filter((b) => (b.stage !== "passed" && b.stage !== "failed") || s.week - b.voteAt < 4);
@@ -1973,8 +2085,11 @@ export function endTurn(s: GameState) {
   if (!s.missions.some((m) => m.kind === "laws" && !m.done && !m.failed)) addMission(s, { kind: "laws", target: s.lawsPassed + 2, deadline: s.week + 52, reward: 120 });
   for (const m of s.missions) if (m.kind === "election" && !m.done && !m.failed) m.deadline = electionDeadline(s);
   s.missions = s.missions.filter((m) => (!m.done && !m.failed) || s.week - m.deadline < 6);
+  politicsWeek(s);
   s.usedEvents = [];
   s.week++;
+  // What's in the diary for the new week.
+  runPlan(s);
   // Election day.
   const contests = { lower: s.cal.lower === s.week, upper: s.cal.upper === s.week, pres: s.cal.pres === s.week };
   if (contests.lower || contests.upper || contests.pres) {
@@ -2106,7 +2221,11 @@ export function load(json: string | null): GameState | null {
   try {
     const raw = JSON.parse(json) as Record<string, unknown> & { v: number };
     if (![1, 2, 3].includes(raw.v) || !raw.parties || !raw.laws) return null;
-    if (raw.v === 3) return raw as unknown as GameState;
+    if (raw.v === 3) {
+      const s = raw as unknown as GameState;
+      initPolitics(s);
+      return s;
+    }
     // Version 1 and 2: Avalon, before scenarios.
     const s = raw as unknown as GameState & { v: number };
     const sc = avalon(s.seed);
@@ -2145,6 +2264,7 @@ export function load(json: string | null): GameState | null {
     s.election = null;
     s.lastElection = null;
     s.v = 3;
+    initPolitics(s);
     return s as GameState;
   } catch {
     return null;

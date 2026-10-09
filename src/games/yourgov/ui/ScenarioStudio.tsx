@@ -211,6 +211,11 @@ export function ScenarioStudio({ g, initial, onClose, onSaved }: { g: Game; init
                     onChange={(e) => {
                       const v = e.target.value;
                       up((x) => {
+                        // Regional parties and regional shares belong to the old map's regions.
+                        for (const p of x.parties) {
+                          p.only = undefined;
+                          p.regional = undefined;
+                        }
                         if (v === "gen") x.map = { kind: "gen", seed: Math.floor(Math.random() * 1e6) + 1, name: x.name, shape: "continent", regions: 12, counties: 900, mountains: 0.5, lakes: 0.4, cities: 20 };
                         else {
                           const real = realCountry(v)!;

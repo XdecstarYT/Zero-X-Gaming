@@ -37,6 +37,13 @@ const P: Record<string, string> = {
   seats: "M4 20v-4a8 8 0 0116 0v4M8 20v-3a4 4 0 018 0v3",
   globe: "M12 3a9 9 0 100 18 9 9 0 000-18zM3 12h18M12 3c2.5 2.6 3.7 5.6 3.7 9s-1.2 6.4-3.7 9c-2.5-2.6-3.7-5.6-3.7-9S9.5 5.6 12 3z",
   play: "M8 5l11 7-11 7z",
+  cabinet: "M4 8h16v11a1 1 0 01-1 1H5a1 1 0 01-1-1zM9 8V5.5A1.5 1.5 0 0110.5 4h3A1.5 1.5 0 0115 5.5V8M4 13h16M11 13v2h2v-2",
+  calendar: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4M8 14h2M12 14h2M8 17h2",
+  target: "M12 3a9 9 0 100 18 9 9 0 000-18zM12 7a5 5 0 100 10 5 5 0 000-10zM12 11a1 1 0 100 2 1 1 0 000-2z",
+  alert: "M12 3.5l9 16H3zM12 10v4.5M12 17.2v.3",
+  mic: "M12 3a3 3 0 013 3v5a3 3 0 01-6 0V6a3 3 0 013-3zM6 11a6 6 0 0012 0M12 17v4M8.5 21h7",
+  bolt: "M13 3L5 13.5h6L10 21l8-10.5h-6z",
+  crown: "M3 18h18M4 16L3 7l5 4 4-6 4 6 5-4-1 9z",
 };
 
 export type IconName = keyof typeof P;

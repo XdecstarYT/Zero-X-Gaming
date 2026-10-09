@@ -1,111 +1,23 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createRng } from "../../engine/rng";
-import { COMMITTEES, EVENTS, EVENT, LAW_GROUPS, type LawDef, type PartyId } from "../data";
+import { COMMITTEES, LAW_GROUPS, type LawDef, type PartyId } from "../data";
 import type { Game, Tab } from "../game";
 import { EXEC_KINDS, LOWER_SYSTEMS, UPPER_KINDS } from "../scenario";
 import * as G from "../sim";
 import { Portrait } from "./Chamber";
 import { Hemicycle, PollChart, Trend } from "./charts";
-import { flagUrl } from "./flags";
 import { GlassDefs, canRefract, trackSheen } from "./glass";
 import { Icon } from "./icons";
+import { Bar, big, cap, Flag, fxText, Group, money, pct, Row, Seg, Sheet, Sw } from "./kit";
+import { Confetti, Decisions, Events, Factions, Government, govAlert, ReferendumButton, Voters } from "./Politics";
 import { LawStudio } from "./LawStudio";
 import type { MapMode } from "./mapColors";
 import { Scene } from "./Scene";
 import { Title } from "./Title";
 
-/** Party money, in millions of the country's currency. */
-const money = (s: G.GameState, m: number) => `${s.sc.economy.cur}${m >= 1000 ? (m / 1000).toFixed(2) + " B" : m.toFixed(1) + " M"}`;
-const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
-const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
-/** A big amount in billions of the country's currency (trillions above a thousand). */
-const big = (s: G.GameState, bn: number) => `${s.sc.economy.cur}${Math.abs(bn) >= 1000 ? (Math.abs(bn) / 1000).toFixed(Math.abs(bn) >= 100000 ? 0 : 1) + " T" : Math.abs(bn).toFixed(0) + " B"}`;
-
 function useGame(g: Game) {
   useSyncExternalStore(g.subscribe, g.getVersion, g.getVersion);
   return g;
-}
-
-// ------------------------------------------------------------------ building blocks
-
-function Sheet({ title, eyebrow, onClose, onBack, children, testId, actions }: { title: string; eyebrow?: string; onClose?: () => void; onBack?: () => void; children: ReactNode; testId?: string; actions?: ReactNode }) {
-  return (
-    <section className="yg-glass yg-sheet" data-testid={testId} aria-label={title}>
-      <header className="yg-sheet-head">
-        {onBack && (
-          <button type="button" className="yg-btn icon small" onClick={onBack} aria-label="Back">
-            <Icon name="back" size={18} />
-          </button>
-        )}
-        <div className="yg-sheet-title">
-          {eyebrow && <p className="yg-eyebrow">{eyebrow}</p>}
-          <h2>{title}</h2>
-        </div>
-        {actions}
-        {onClose && (
-          <button type="button" className="yg-btn icon small" onClick={onClose} aria-label="Close">
-            <Icon name="close" size={18} />
-          </button>
-        )}
-      </header>
-      <div className="yg-sheet-body">{children}</div>
-    </section>
-  );
-}
-
-function Row({ children, on, onClick, testId, className = "" }: { children: ReactNode; on?: boolean; onClick?: () => void; testId?: string; className?: string }) {
-  if (onClick)
-    return (
-      <button type="button" className={`yg-row btn${on ? " on" : ""} ${className}`} onClick={onClick} data-testid={testId}>
-        {children}
-      </button>
-    );
-  return (
-    <div className={`yg-row${on ? " on" : ""} ${className}`} data-testid={testId}>
-      {children}
-    </div>
-  );
-}
-
-const Group = ({ label, children }: { label?: string; children: ReactNode }) => (
-  <div className="yg-group">
-    {label && <p className="yg-label">{label}</p>}
-    <div className="yg-group-box">{children}</div>
-  </div>
-);
-
-const Bar = ({ v, color }: { v: number; color: string }) => (
-  <span className="yg-bar">
-    <i style={{ width: `${Math.max(0, Math.min(1, v)) * 100}%`, background: color }} />
-  </span>
-);
-
-const Sw = ({ c }: { c: string }) => <span className="yg-sw" style={{ background: c }} />;
-
-export const Flag = ({ code, name, size = 22 }: { code?: string; name: string; size?: number }) => (
-  // eslint-disable-next-line @next/next/no-img-element
-  <img src={flagUrl(code, name)} alt={`Flag of ${name}`} width={Math.round(size * 1.5)} height={size} style={{ borderRadius: 4, flex: "none", objectFit: "cover", boxShadow: "0 0 0 1px rgba(255,255,255,.25)" }} />
-);
-
-function Seg<T extends string>({ value, options, onChange, label, testId }: { value: T; options: { id: T; label: ReactNode; title?: string }[]; onChange: (v: T) => void; label: string; testId?: string }) {
-  return (
-    <div className="yg-seg" role="radiogroup" aria-label={label} data-testid={testId}>
-      {options.map((o) => (
-        <button key={o.id} type="button" role="radio" aria-checked={value === o.id} title={o.title} onClick={() => onChange(o.id)} data-testid={testId ? `${testId}-${o.id}` : undefined}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function fxText(s: G.GameState, fx: { happiness?: number; growth?: number; budget?: number; unemployment?: number }) {
-  const out: string[] = [];
-  if (fx.happiness) out.push(`happiness ${fx.happiness > 0 ? "+" : ""}${fx.happiness.toFixed(1)}`);
-  if (fx.growth) out.push(`growth ${fx.growth > 0 ? "+" : ""}${fx.growth.toFixed(2)}%`);
-  if (fx.budget) out.push(`budget ${fx.budget > 0 ? "+" : "–"}${big(s, fx.budget * (s.sc.economy.gdp / 18))}`);
-  if (fx.unemployment) out.push(`jobless ${fx.unemployment > 0 ? "+" : ""}${fx.unemployment.toFixed(1)}%`);
-  return out.join(" · ");
 }
 
 function billName(s: G.GameState, b: G.Bill) {
@@ -271,9 +183,12 @@ function WriteBill({ g }: { g: Game }) {
               {i === cur ? (
                 <span className="yg-tag good">In force</span>
               ) : (
-                <button type="button" className="yg-btn small primary" disabled={pending || s.parties[s.party].funds < G.BILL_COST} onClick={() => g.writeBill(sel.id, i)} data-testid={`yg-propose-${i}`}>
-                  Propose
-                </button>
+                <span className="yg-optbtns">
+                  {!pending && <ReferendumButton g={g} law={sel.id} option={i} />}
+                  <button type="button" className="yg-btn small primary" disabled={pending || s.parties[s.party].funds < G.BILL_COST} onClick={() => g.writeBill(sel.id, i)} data-testid={`yg-propose-${i}`}>
+                    Propose
+                  </button>
+                </span>
               )}
             </div>
             <p className="yg-muted small">{fxText(s, o.fx) || "No change to the numbers"}</p>
@@ -378,15 +293,15 @@ function Bills({ g }: { g: Game }) {
             {btn(0, "Abstain", proj?.abstain, "")}
             {btn(-1, "Decline", proj?.no, "bad")}
           </div>
-          <Group label={`Lobby the parties (${money(s, G.LOBBY_COST)} each)`}>
+          <Group label={`Lobby the parties (${money(s, G.LOBBY_COST)} a go, twice each)`}>
             {G.partyDefs(s)
               .filter((p) => p.id !== s.party && G.voters(s, b).some((id) => G.pol(s, id)?.party === p.id))
               .map((p) => (
               <Row key={p.id}>
                 <Sw c={p.color} />
                 <span className="grow">{p.name}</span>
-                <button type="button" className="yg-btn small" disabled={b.lobbied.includes(p.id) || s.parties[s.party].funds < G.LOBBY_COST} onClick={() => g.lobby(b.id, p.id)} data-testid={`yg-lobby-${p.id}`}>
-                  {b.lobbied.includes(p.id) ? "Lobbied" : "Lobby"}
+                <button type="button" className="yg-btn small" disabled={G.timesLobbied(b, p.id) >= G.LOBBY_MAX || s.parties[s.party].funds < G.LOBBY_COST} onClick={() => g.lobby(b.id, p.id)} data-testid={`yg-lobby-${p.id}`}>
+                  {G.timesLobbied(b, p.id) >= G.LOBBY_MAX ? "Lobbied twice" : G.timesLobbied(b, p.id) ? "Lobby again" : "Lobby"}
                 </button>
               </Row>
               ))}
@@ -409,74 +324,6 @@ function Bills({ g }: { g: Game }) {
               <Icon name="chevron" size={16} className="yg-faint" />
             </Row>
           )}
-        </Group>
-      )}
-    </Sheet>
-  );
-}
-
-function Events({ g }: { g: Game }) {
-  const s = g.s!;
-  const sel = g.ui.event ? EVENT[g.ui.event] : null;
-  const c = G.country(s);
-  const st = g.ui.state ?? s.homeState;
-  const funds = s.parties[s.party].funds;
-  const poll = s.polled[st] !== undefined ? G.statePoll(s, st) : null;
-  return (
-    <Sheet title="Create new event" eyebrow={`Funds ${money(s, funds)}`} onClose={() => g.setUI({ tab: null, event: null })} testId="yg-p-events">
-      <div className="yg-grid">
-        {EVENTS.map((e) => (
-          <button key={e.id} type="button" className="yg-tile" title={e.name} aria-label={e.name} aria-pressed={g.ui.event === e.id} disabled={s.usedEvents.includes(e.id)} onClick={() => g.setUI({ event: e.id })} data-testid={`yg-ev-${e.id}`}>
-            <span className="yg-tile-ico">{e.icon}</span>
-            <span className="yg-tile-name">{e.name}</span>
-          </button>
-        ))}
-      </div>
-      {sel && (
-        <div className="yg-evcard">
-          <b>{sel.name}</b>
-          <p className="yg-muted">{sel.desc}</p>
-          <Group>
-            <Row>
-              <span className="grow">Cost</span>
-              <span className="r">{money(s, sel.cost)}</span>
-            </Row>
-            <Row>
-              <span className="grow">Where</span>
-              <span className="r">{sel.scope === "state" ? c.states[st].name : sel.scope === "national" ? "Nationwide" : "The party"}</span>
-            </Row>
-            {sel.risk ? (
-              <Row>
-                <span className="grow">Risk</span>
-                <span className="r">{Math.round(sel.risk * 100)}%</span>
-              </Row>
-            ) : null}
-          </Group>
-          {sel.scope === "state" && (
-            <p className="yg-muted small">
-              <Icon name="pin" size={13} /> Click a {G.titles(s).region} on the map to choose where.
-            </p>
-          )}
-          <button type="button" className="yg-btn primary wide" disabled={funds < sel.cost || s.usedEvents.includes(sel.id)} onClick={() => g.holdEvent(sel.id, st)} data-testid="yg-hold">
-            {s.usedEvents.includes(sel.id) ? "Held this week" : "Hold the event"}
-          </button>
-        </div>
-      )}
-      {poll && (
-        <Group label={`Poll: ${c.states[st].name} (${G.dateLabel(s, s.polled[st])})`}>
-          {(Object.entries(poll) as [PartyId, number][])
-            .filter(([, v]) => v > 0.001)
-            .sort((a, b) => b[1] - a[1])
-            .map(([id, v]) => (
-              <Row key={id}>
-                <Sw c={G.party(s, id).color} />
-                <span style={{ width: 52 }}>{G.party(s, id).short}</span>
-                <Bar v={v * 2} color={G.party(s, id).color} />
-                <span className="r" style={{ width: 48 }}>
-                  {pct(v)}
-                </span>
-              </Row>
-            ))}
         </Group>
       )}
     </Sheet>
@@ -755,6 +602,7 @@ function MyParty({ g }: { g: Game }) {
         {line(cap(t.regionHead) + "s", govs, c.states.length)}
         {line("Mayors", mayors, s.mayors.length)}
       </Group>
+      <Factions g={g} />
       <p className="yg-label">Where the parties stand</p>
       <div className="yg-center">
         <Compass s={s} />
@@ -1040,6 +888,7 @@ function ElectionCard({ g }: { g: Game }) {
         </div>
       )}
       {done && e.contests.lower && sy.exec !== "presidential" && <p className="yg-muted small">Coalition talks follow the count.</p>}
+      {done && (e.president?.party === s.party || (!e.president && seats[s.party] === Math.max(...Object.values(seats)))) && <Confetti colors={[G.party(s, s.party).color, "#ffffff", "#ffd60a"]} />}
       <button type="button" className={`yg-btn wide ${done ? "primary" : ""}`} onClick={() => (done ? g.closeElection() : g.setUI({ count: 1 }))} data-testid={done ? "yg-election-continue" : "yg-election-skip"}>
         {done ? "Continue" : "Skip the count"}
       </button>
@@ -1106,13 +955,23 @@ function Talks({ g }: { g: Game }) {
 function TopBar({ g }: { g: Game }) {
   const s = g.s!;
   const ps = s.parties[s.party];
-  const stat = (icon: string, value: string, label: string, cls = "", testId?: string) => (
-    <span className={`yg-stat ${cls}`} title={label} data-testid={testId}>
-      <Icon name={icon} size={16} />
-      <b>{value}</b>
-      <small>{label}</small>
-    </span>
-  );
+  const stat = (icon: string, value: string, label: string, cls = "", testId?: string, onClick?: () => void) =>
+    onClick ? (
+      <button type="button" className={`yg-stat btn ${cls}`} title={label} data-testid={testId} onClick={onClick}>
+        <Icon name={icon} size={16} />
+        <b>{value}</b>
+        <small>{label}</small>
+        <span className="yg-stat-plus" aria-hidden>
+          +
+        </span>
+      </button>
+    ) : (
+      <span className={`yg-stat ${cls}`} title={label} data-testid={testId}>
+        <Icon name={icon} size={16} />
+        <b>{value}</b>
+        <small>{label}</small>
+      </span>
+    );
   return (
     <header className="yg-top">
       <div className="yg-glass yg-capsule yg-brand">
@@ -1123,7 +982,7 @@ function TopBar({ g }: { g: Game }) {
         {stat("smile", s.stats.happiness.toFixed(1), "Happiness")}
         {stat("thumb", `${s.stats.approval.toFixed(0)}%`, "Approval")}
         {stat("growth", `${s.stats.growth.toFixed(1)}%`, "Growth", "opt")}
-        {stat("coins", money(s, ps.funds), "Funds", "", "yg-funds")}
+        {stat("coins", money(s, ps.funds), "Funds", "", "yg-funds", () => g.setUI({ tab: "events", evKind: "money", event: "fundraiser", evWeek: null }))}
         {stat("people", `${(ps.members / 1000).toFixed(0)}k`, "Members", "opt")}
         {stat("handshake", String(Math.round(ps.unity)), "Unity", "opt2")}
         {stat("seats", String(G.houseBy(s)[s.party] ?? 0), "Seats", "opt3")}
@@ -1156,10 +1015,12 @@ const TABS: { id: Exclude<Tab, null | "settings">; icon: string; label: string }
   { id: "missions", icon: "career", label: "Your career" },
   { id: "write", icon: "write", label: "Write a bill" },
   { id: "bills", icon: "bills", label: "Bills and votes" },
-  { id: "events", icon: "events", label: "Create an event" },
+  { id: "events", icon: "events", label: "Events and the diary" },
+  { id: "voters", icon: "target", label: "Voters and the press" },
   { id: "chamber", icon: "parliament", label: "Parliament" },
   { id: "parties", icon: "parties", label: "Parties and polls" },
   { id: "party", icon: "party", label: "Your party" },
+  { id: "gov", icon: "cabinet", label: "Government" },
   { id: "country", icon: "country", label: "The country" },
   { id: "news", icon: "news", label: "News" },
 ];
@@ -1171,9 +1032,9 @@ function Dock({ g }: { g: Game }) {
   return (
     <nav className="yg-glass yg-dock" aria-label="Panels">
       {TABS.map((t) => (
-        <button key={t.id} type="button" className="yg-dock-btn" title={t.label} aria-label={t.label} aria-pressed={g.ui.tab === t.id} disabled={!!s.election} onClick={() => g.setUI({ tab: g.ui.tab === t.id ? null : t.id, bill: null, law: null })} data-testid={`yg-tab-${t.id}`}>
+        <button key={t.id} type="button" className="yg-dock-btn" title={t.label} aria-label={t.label} aria-pressed={g.ui.tab === t.id} disabled={!!s.election} onClick={() => g.setUI({ tab: g.ui.tab === t.id ? null : t.id, bill: null, law: null, appoint: null })} data-testid={`yg-tab-${t.id}`}>
           <Icon name={t.icon} size={21} />
-          {((t.id === "bills" && toVote) || (t.id === "news" && freshNews)) && <span className="yg-badge" />}
+          {((t.id === "bills" && toVote) || (t.id === "news" && freshNews) || (t.id === "gov" && govAlert(s)) || (t.id === "party" && (s.lowUnity >= 3 || !!s.challenge))) && <span className="yg-badge" />}
         </button>
       ))}
     </nav>
@@ -1211,8 +1072,15 @@ function Timeline({ g }: { g: Game }) {
   for (let w = s.week; w < s.week + span; w++) if (G.weekOf(w) === 40) marks.push({ w, icon: "coins", title: "Budget", cls: "" });
   for (const b of s.bills) if (live(b)) marks.push({ w: b.voteAt, icon: G.youVoteOn(s, b) ? "vote" : "bills", title: billName(s, b), cls: G.youVoteOn(s, b) ? "warn" : "" });
   for (const m of s.missions) if (!m.done && !m.failed && m.deadline - s.week < span) marks.push({ w: m.deadline, icon: "career", title: G.missionText(m, s), cls: "" });
+  for (const w of new Set(s.plan.map((p) => p.week))) if (w - s.week < span) marks.push({ w, icon: "calendar", title: `${s.plan.filter((p) => p.week === w).length} planned`, cls: "plan" });
+  // Tap a week to plan something for it.
+  const pick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const w = s.week + Math.max(0, Math.min(span - 1, Math.floor(((e.clientX - r.left) / r.width) * span)));
+    g.setUI({ tab: "events", evKind: w > s.week ? "campaign" : "diary", evWeek: w > s.week && w - s.week <= 16 ? w : null, event: null });
+  };
   return (
-    <div className="yg-timeline" aria-label="Coming up">
+    <div className="yg-timeline" aria-label="Coming up: tap a week to plan for it" role="button" tabIndex={-1} onClick={pick} data-testid="yg-timeline">
       {Array.from({ length: span }, (_, i) => (
         <span key={i} className={`yg-tick${G.weekOf(s.week + i) === 1 ? " year" : ""}`} style={{ left: `${(i / span) * 100}%` }} />
       ))}
@@ -1272,6 +1140,27 @@ function BottomBar({ g }: { g: Game }) {
   );
 }
 
+/** The latest headlines, rolling past (wide screens). */
+function Ticker({ g }: { g: Game }) {
+  const s = g.s!;
+  const items = s.news.slice(0, 8);
+  if (!items.length) return null;
+  return (
+    <div className="yg-glass yg-capsule yg-ticker" aria-hidden>
+      <b>News</b>
+      <div className="yg-ticker-track">
+        <div className="yg-ticker-run" key={s.week}>
+          {items.map((n, i) => (
+            <span key={i} className={n.tone > 0 ? "good" : n.tone < 0 ? "bad" : ""}>
+              {n.text}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Toasts({ g }: { g: Game }) {
   return (
     <div className="yg-toasts" aria-live="polite">
@@ -1297,7 +1186,7 @@ function GameOver({ g }: { g: Game }) {
             <p className="yg-eyebrow">
               {G.fullName(G.pol(s, s.you)!)} · {G.party(s, s.party).name} · {s.sc.name}
             </p>
-            <h2>Career over</h2>
+            <h2>{s.ousted ? "Ousted by your party" : "Career over"}</h2>
           </div>
         </header>
         <div className="yg-modal-body">
@@ -1406,11 +1295,15 @@ export function App({ game }: { game: Game }) {
       <Country g={g} />
     ) : tab === "news" ? (
       <News g={g} />
+    ) : tab === "voters" ? (
+      <Voters g={g} />
+    ) : tab === "gov" ? (
+      <Government g={g} />
     ) : tab === "settings" ? (
       <Settings g={g} />
     ) : null;
   return (
-    <div className={cls} ref={root} data-testid="yourgov">
+    <div className={cls} ref={root} data-testid="yourgov" style={{ ["--pc" as string]: G.party(s, s.party).color }}>
       <GlassDefs />
       <Scene g={g} />
       <div className="yg-vignette" aria-hidden />
@@ -1426,12 +1319,14 @@ export function App({ game }: { game: Game }) {
           </button>
         </div>
       )}
+      {!s.election && !panel && <Ticker g={g} />}
       <BottomBar g={g} />
       <Toasts g={g} />
       {s.election && <ElectionCard g={g} />}
       {s.talks && !s.election && <Talks g={g} />}
       {g.ui.studio && <LawStudio g={g} />}
-      {s.over && <GameOver g={g} />}
+      <Decisions g={g} />
+      {s.over && !g.ui.result && <GameOver g={g} />}
     </div>
   );
 }

@@ -139,34 +139,61 @@ export interface EventDef {
   /** Chance it backfires (negative boost). */
   risk?: number;
   desc: string;
+  /** Which tab of the events panel it's in. */
+  kind: "campaign" | "voters" | "money" | "party";
+  /** Goodwill it wins with a voter group (and its interest group). */
+  group?: string;
+  goodwill?: number;
+  /** A fundraiser: it can be held even when the party is short (the cost comes out of the takings). */
+  fund?: boolean;
 }
+
+/** How many times an event can be held in a week (the second one does a little less). */
+export const EVENT_MAX = 2;
 
 /** $ in millions. */
 export const EVENTS: EventDef[] = [
-  { id: "speech", name: "Public speech", icon: "💬", cost: 0.2, scope: "state", boost: 1.5, desc: "Speak in a town square. Cheap and local." },
-  { id: "rally", name: "Rally", icon: "📣", cost: 1.5, scope: "state", boost: 5, risk: 0.05, desc: "A big rally in one state." },
-  { id: "townHall", name: "Town hall", icon: "🏛️", cost: 0.6, scope: "state", boost: 3, desc: "Take questions from voters." },
-  { id: "doorToDoor", name: "Door to door", icon: "🚪", cost: 0.4, scope: "state", boost: 2.5, members: 300, desc: "Volunteers knock on doors." },
-  { id: "tvAd", name: "TV advert", icon: "📺", cost: 6, scope: "national", boost: 2.5, desc: "A national TV spot." },
-  { id: "onlineAds", name: "Online ads", icon: "📱", cost: 2, scope: "national", boost: 1.2, members: 500, desc: "Targeted ads everywhere." },
-  { id: "interview", name: "TV interview", icon: "🎙️", cost: 0.3, scope: "national", boost: 1.5, risk: 0.15, desc: "Prime-time interview. Could go badly." },
-  { id: "pressConf", name: "Press conference", icon: "📰", cost: 0.2, scope: "national", boost: 1, risk: 0.1, desc: "Set the news agenda." },
-  { id: "debate", name: "Challenge to debate", icon: "⚖️", cost: 0.5, scope: "national", boost: 2.5, risk: 0.3, desc: "High risk, high reward." },
-  { id: "attackAd", name: "Attack advert", icon: "⚔️", cost: 3, scope: "national", boost: 0, attack: 3, risk: 0.15, desc: "Hit the leading rival." },
-  { id: "scandal", name: "Dig up a scandal", icon: "🔎", cost: 2.5, scope: "national", boost: 0, attack: 5, risk: 0.3, desc: "Investigate a rival. May backfire." },
-  { id: "fundraiser", name: "Fundraising dinner", icon: "🍽️", cost: 0.3, scope: "self", boost: 0, money: 4, desc: "Raise money from donors." },
-  { id: "crowdfund", name: "Crowdfunding", icon: "💰", cost: 0, scope: "self", boost: 0, money: 1.5, members: 200, desc: "Small donations from members." },
-  { id: "recruit", name: "Membership drive", icon: "🤝", cost: 0.8, scope: "self", boost: 0, members: 4000, desc: "Grow the party." },
-  { id: "congress", name: "Party congress", icon: "🎪", cost: 3, scope: "self", boost: 1, unity: 15, desc: "Rally the party behind you." },
-  { id: "poll", name: "Commission a poll", icon: "📊", cost: 0.4, scope: "state", boost: 0, poll: true, desc: "Find out where you stand in a state." },
-  { id: "charity", name: "Charity event", icon: "🎗️", cost: 1, scope: "state", boost: 2, desc: "Good works, good press." },
-  { id: "factory", name: "Factory visit", icon: "🏭", cost: 0.5, scope: "state", boost: 2.5, desc: "Meet workers on the shop floor." },
-  { id: "farm", name: "Farm tour", icon: "🚜", cost: 0.5, scope: "state", boost: 2.5, desc: "Win over the countryside." },
-  { id: "concert", name: "Campaign concert", icon: "🎸", cost: 2.5, scope: "state", boost: 5.5, members: 800, desc: "A star-studded night." },
-  { id: "endorse", name: "Celebrity endorsement", icon: "⭐", cost: 4, scope: "national", boost: 3, desc: "A famous face backs you." },
-  { id: "protest", name: "Lead a protest", icon: "✊", cost: 0.5, scope: "state", boost: 3, risk: 0.2, desc: "Take to the streets." },
-  { id: "manifesto", name: "Publish manifesto", icon: "📜", cost: 1, scope: "national", boost: 2, unity: 5, desc: "Set out your programme." },
-  { id: "flight", name: "Campaign tour", icon: "✈️", cost: 5, scope: "national", boost: 3.5, desc: "Fly across the country." },
+  // Campaigning.
+  { id: "speech", kind: "campaign", name: "Public speech", icon: "💬", cost: 0.2, scope: "state", boost: 1.5, desc: "Speak in a town square. Cheap and local." },
+  { id: "rally", kind: "campaign", name: "Rally", icon: "📣", cost: 1.5, scope: "state", boost: 5, risk: 0.05, desc: "A big rally in one region." },
+  { id: "townHall", kind: "campaign", name: "Town hall", icon: "🏛️", cost: 0.6, scope: "state", boost: 3, desc: "Take questions from voters." },
+  { id: "doorToDoor", kind: "campaign", name: "Door to door", icon: "🚪", cost: 0.4, scope: "state", boost: 2.5, members: 300, desc: "Volunteers knock on doors." },
+  { id: "concert", kind: "campaign", name: "Campaign concert", icon: "🎸", cost: 2.5, scope: "state", boost: 5.5, members: 800, desc: "A star-studded night." },
+  { id: "charity", kind: "campaign", name: "Charity event", icon: "🎗️", cost: 1, scope: "state", boost: 2, desc: "Good works, good press." },
+  { id: "protest", kind: "campaign", name: "Lead a protest", icon: "✊", cost: 0.5, scope: "state", boost: 3, risk: 0.2, desc: "Take to the streets." },
+  { id: "poll", kind: "campaign", name: "Commission a poll", icon: "📊", cost: 0.4, scope: "state", boost: 0, poll: true, desc: "Find out where you stand in a region." },
+  { id: "tvAd", kind: "campaign", name: "TV advert", icon: "📺", cost: 6, scope: "national", boost: 2.5, desc: "A national TV spot." },
+  { id: "onlineAds", kind: "campaign", name: "Online ads", icon: "📱", cost: 2, scope: "national", boost: 1.2, members: 500, desc: "Targeted ads everywhere." },
+  { id: "interview", kind: "campaign", name: "TV interview", icon: "🎙️", cost: 0.3, scope: "national", boost: 1.5, risk: 0.15, desc: "Prime-time interview. Could go badly." },
+  { id: "pressConf", kind: "campaign", name: "Press conference", icon: "📰", cost: 0.2, scope: "national", boost: 1, risk: 0.1, desc: "Set the news agenda." },
+  { id: "debate", kind: "campaign", name: "Challenge to debate", icon: "⚖️", cost: 0.5, scope: "national", boost: 2.5, risk: 0.3, desc: "High risk, high reward." },
+  { id: "attackAd", kind: "campaign", name: "Attack advert", icon: "⚔️", cost: 3, scope: "national", boost: 0, attack: 3, risk: 0.15, desc: "Hit the leading rival." },
+  { id: "scandal", kind: "campaign", name: "Dig up a scandal", icon: "🔎", cost: 2.5, scope: "national", boost: 0, attack: 5, risk: 0.3, desc: "Investigate a rival. May backfire." },
+  { id: "endorse", kind: "campaign", name: "Celebrity endorsement", icon: "⭐", cost: 4, scope: "national", boost: 3, desc: "A famous face backs you." },
+  { id: "flight", kind: "campaign", name: "Campaign tour", icon: "✈️", cost: 5, scope: "national", boost: 3.5, desc: "Fly across the country." },
+  // Winning over voter groups.
+  { id: "campus", kind: "voters", name: "Campus tour", icon: "🎓", cost: 0.5, scope: "state", boost: 1.5, group: "young", goodwill: 6, desc: "Students and young voters." },
+  { id: "unionHall", kind: "voters", name: "Union hall rally", icon: "🛠️", cost: 0.6, scope: "state", boost: 2, group: "workers", goodwill: 6, desc: "Working people and the unions." },
+  { id: "factory", kind: "voters", name: "Factory visit", icon: "🏭", cost: 0.5, scope: "state", boost: 2.5, group: "workers", goodwill: 3, desc: "Meet workers on the shop floor." },
+  { id: "bizBreakfast", kind: "voters", name: "Business breakfast", icon: "💼", cost: 0.4, scope: "self", boost: 0, money: 1.2, group: "business", goodwill: 6, desc: "Bosses, bankers and small firms." },
+  { id: "farm", kind: "voters", name: "Farm tour", icon: "🚜", cost: 0.5, scope: "state", boost: 2.5, group: "rural", goodwill: 5, desc: "Win over the countryside." },
+  { id: "seniors", kind: "voters", name: "Seniors' centre visit", icon: "🧓", cost: 0.3, scope: "state", boost: 1.5, group: "retirees", goodwill: 6, desc: "Pensions, health and bingo." },
+  { id: "techSummit", kind: "voters", name: "Tech summit keynote", icon: "💡", cost: 1, scope: "national", boost: 1, group: "professionals", goodwill: 6, desc: "Founders, coders and commuters." },
+  { id: "worship", kind: "voters", name: "Faith service visit", icon: "⛪", cost: 0.3, scope: "state", boost: 1.5, group: "faith", goodwill: 6, desc: "Churches, mosques and temples." },
+  { id: "cleanup", kind: "voters", name: "Clean-up day", icon: "🌿", cost: 0.3, scope: "state", boost: 1.5, group: "green", goodwill: 6, desc: "Litter-pick a beach with volunteers." },
+  // Money.
+  { id: "fundraiser", kind: "money", name: "Fundraising dinner", icon: "🍽️", cost: 0.3, scope: "self", boost: 0, money: 4, fund: true, desc: "Raise money from donors." },
+  { id: "crowdfund", kind: "money", name: "Crowdfunding", icon: "💰", cost: 0, scope: "self", boost: 0, money: 1.5, members: 200, fund: true, desc: "Small donations from members." },
+  { id: "smallDonors", kind: "money", name: "Small-donor appeal", icon: "✉️", cost: 0, scope: "self", boost: 0, money: 2.5, members: 300, fund: true, desc: "Email and text your supporters." },
+  { id: "merch", kind: "money", name: "Merchandise drop", icon: "🧢", cost: 0.5, scope: "national", boost: 0.5, money: 3, fund: true, desc: "Caps, mugs and tote bags." },
+  { id: "gala", kind: "money", name: "Gala ball", icon: "🥂", cost: 1, scope: "self", boost: 0, money: 9, risk: 0.1, group: "business", goodwill: 2, fund: true, desc: "Black tie, big cheques. A whiff of scandal." },
+  { id: "donorRetreat", kind: "money", name: "Donor retreat", icon: "🏝️", cost: 2, scope: "self", boost: 0, money: 16, risk: 0.15, unity: -3, fund: true, desc: "A weekend with the richest backers. The members grumble." },
+  // The party.
+  { id: "recruit", kind: "party", name: "Membership drive", icon: "🤝", cost: 0.8, scope: "self", boost: 0, members: 4000, desc: "Grow the party." },
+  { id: "congress", kind: "party", name: "Party congress", icon: "🎪", cost: 3, scope: "self", boost: 1, unity: 15, desc: "Rally the party behind you. Every faction is pleased." },
+  { id: "manifesto", kind: "party", name: "Publish manifesto", icon: "📜", cost: 1, scope: "national", boost: 2, unity: 5, desc: "Set out your programme." },
+  { id: "caucus", kind: "party", name: "Caucus dinner", icon: "🍷", cost: 0.4, scope: "self", boost: 0, unity: 6, desc: "Keep your lawmakers sweet." },
+  { id: "training", kind: "party", name: "Candidate school", icon: "🧑‍🏫", cost: 1.2, scope: "national", boost: 0.8, members: 600, desc: "Train the next generation of candidates." },
 ];
 export const EVENT: Record<string, EventDef> = Object.fromEntries(EVENTS.map((e) => [e.id, e]));
 

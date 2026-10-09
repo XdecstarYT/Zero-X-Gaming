@@ -4,9 +4,10 @@
  * their library of custom scenarios, and tells the UI (and the platform's score) when
  * something changes.
  */
-import { SAVE_KEY, type PartyId } from "./data";
+import { EVENT, SAVE_KEY, type PartyId } from "./data";
 import { mapReady, prepareMap } from "./map";
 import { checkScenario, readCode, type Scenario } from "./scenario";
+import * as P from "./politics";
 import * as G from "./sim";
 import { Sound } from "./audio";
 import type { MapMode } from "./ui/mapColors";
@@ -15,7 +16,17 @@ const LIBRARY_KEY = "zx-yourgov-scenarios";
 /** Most custom scenarios kept. */
 export const LIBRARY_MAX = 24;
 
-export type Tab = "bills" | "write" | "events" | "chamber" | "parties" | "party" | "country" | "news" | "missions" | "settings" | null;
+export type Tab = "bills" | "write" | "events" | "chamber" | "parties" | "party" | "country" | "news" | "missions" | "settings" | "voters" | "gov" | null;
+/** The sections of the events panel. */
+export type EventKind = "campaign" | "voters" | "money" | "party" | "diary";
+
+/** An outcome worth a card of its own (a debate, a referendum, a challenge). */
+export interface ResultCard {
+  icon: string;
+  title: string;
+  lines: string[];
+  tone: 1 | 0 | -1;
+}
 export type View = "map" | "chamber";
 export type { MapMode };
 
@@ -30,6 +41,15 @@ export interface UIState {
   bill: number | null;
   law: string | null;
   event: string | null;
+  /** Which section of the events panel is open. */
+  evKind: EventKind;
+  /** The week an event is for (the current week, or a later one to plan it). */
+  evWeek: number | null;
+  /** Portfolio whose minister is being picked. */
+  appoint: string | null;
+  /** Modals put off until next week (crisis, debate or challenge), by the week. */
+  later: Record<string, number>;
+  result: ResultCard | null;
   /** The law studio: drafting a new law (id null) or editing one of yours. */
   studio: { id: string | null } | null;
   toasts: { id: number; text: string; tone: 1 | 0 | -1 }[];
@@ -57,7 +77,7 @@ export interface Scorer {
 
 export class Game {
   s: G.GameState | null = null;
-  ui: UIState = { tab: "missions", view: "map", mapMode: "politics", house: "house", state: null, bill: null, law: null, event: null, studio: null, toasts: [], count: 0 };
+  ui: UIState = { tab: "missions", view: "map", mapMode: "politics", house: "house", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, studio: null, toasts: [], count: 0 };
   prefs: Prefs = { ...DEFAULT_PREFS };
   readonly sound = new Sound();
   private listeners = new Set<() => void>();
@@ -163,7 +183,7 @@ export class Game {
   newGame(party: PartyId, seed = Math.floor(Math.random() * 1e6) + 1, scenario?: Scenario) {
     this.s = G.newGame(seed, party, scenario ? { scenario: structuredClone(scenario) } : {});
     this.startedAt = performance.now();
-    this.ui = { ...this.ui, tab: "missions", view: "map", state: null, bill: null, law: null, event: null, studio: null, count: 0 };
+    this.ui = { ...this.ui, tab: "missions", view: "map", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, studio: null, count: 0 };
     this.sound.play("start");
     this.changed();
   }
@@ -264,6 +284,7 @@ export class Game {
     // The two biggest stories of the week.
     for (const n of fresh.filter((x) => x.tone !== 0).slice(0, 2)) this.toast(n.text, n.tone);
     if (!fresh.some((x) => x.tone !== 0) && fresh[0]) this.toast(fresh[0].text, 0);
+    if (s.ousted) this.setUI({ result: { icon: "👋", title: "Ousted", lines: [`Your party has removed you as ${G.titles(s).leader.toLowerCase()}.`], tone: -1 } });
     if (s.over) this.finish();
     this.changed();
   }
@@ -307,14 +328,125 @@ export class Game {
   holdEvent(id: string, state?: number) {
     if (!this.s) return;
     const r = G.holdEvent(this.s, id, state ?? this.ui.state ?? this.s.homeState);
-    if (!r.ok) return this.toast("You can't hold that now", -1);
+    if (!r.ok) return this.toast(r.why ?? "You can't hold that now", -1);
+    const again = G.eventUses(this.s, id) < 2;
     if (r.backfired) {
       this.sound.play("bad");
       this.toast("It didn't go well…", -1);
+    } else if (r.raised !== undefined) {
+      this.sound.play("coin");
+      this.toast(`Raised ${r.raised >= 0 ? "" : "–"}${this.s.sc.economy.cur}${Math.abs(r.raised).toFixed(1)} M${again ? ". You can hold it once more this week" : ""}`, 1);
     } else {
       this.sound.play(r.poll ? "click" : "cheer");
-      this.toast(r.poll ? "Poll results are in" : "Event held", 1);
+      this.toast(r.poll ? "Poll results are in" : again ? "Event held. You can hold it once more this week" : "Event held", 1);
     }
+    this.changed();
+  }
+
+  /** Book an event for a later week (it's held and paid for when the week comes). */
+  planEvent(id: string, week: number, state?: number) {
+    if (!this.s) return;
+    const r = P.schedule(this.s, id, week, state ?? this.ui.state ?? this.s.homeState);
+    if (typeof r === "string") return this.toast(r, -1);
+    this.sound.play("paper");
+    this.toast(`${EVENT[id].name} planned for ${G.dateLabel(this.s, week)}`, 1);
+    this.changed();
+  }
+
+  unplan(id: number) {
+    if (!this.s || !P.unschedule(this.s, id)) return;
+    this.sound.play("click");
+    this.changed();
+  }
+
+  // ------------------------------------------------------------------ the wider politics
+
+  /** Put a decision (crisis, debate, challenge) off to the end of the week. */
+  later(kind: "crisis" | "debate" | "challenge") {
+    if (!this.s) return;
+    this.setUI({ later: { ...this.ui.later, [kind]: this.s.week } });
+  }
+
+  debate(style: P.DebateStyle) {
+    const s = this.s;
+    if (!s?.debate) return;
+    const rival = G.party(s, s.debate.rival);
+    const topic = P.DEBATE_TOPICS.find((x) => x.id === s.debate!.topics[s.debate!.answers.length]);
+    const r = P.debateAnswer(s, style);
+    if (!r) return;
+    this.sound.play(r.points > 3 ? "cheer" : r.points < 0 ? "bad" : "click");
+    if (r.done) {
+      const d = r.done;
+      this.setUI({ result: { icon: "🎙️", title: d.won ? "You won the debate" : d.lost ? `The ${rival.short} won the debate` : "No clear winner", lines: [`Your answers scored ${d.total.toFixed(1)} points.`, d.won ? "The polls move your way, and the groups you spoke to remember it." : d.lost ? "Your rival gets a lift in the polls." : "The race is unchanged."], tone: d.won ? 1 : d.lost ? -1 : 0 } });
+    } else this.toast(`On ${topic?.name ?? "that"}: ${r.points >= 4 ? "a strong answer" : r.points >= 1 ? "a solid answer" : r.points >= -1 ? "a shaky answer" : "a bad moment"} (${r.points > 0 ? "+" : ""}${r.points.toFixed(1)})`, r.points > 1 ? 1 : r.points < -1 ? -1 : 0);
+    this.changed();
+  }
+
+  crisis(choice: number) {
+    const s = this.s;
+    if (!s || !P.answerCrisis(s, choice)) return;
+    this.sound.play("paper");
+    this.toast(s.news[0]?.text ?? "Decided", s.news[0]?.tone ?? 0);
+    this.changed();
+  }
+
+  challenge(a: P.ChallengeAnswer) {
+    const s = this.s;
+    if (!s?.challenge) return;
+    if (a === "congress" && s.parties[s.party].funds < P.CONGRESS_COST) return this.toast("Not enough party funds for a congress", -1);
+    const r = P.answerChallenge(s, a);
+    if (!r) return;
+    this.sound.play(r.survived ? "win" : "lose");
+    if (a !== "concede") this.setUI({ result: { icon: r.survived ? "👑" : "👋", title: r.survived ? "You survive the challenge" : "Ousted", lines: [`${Math.round(r.support * 100)}% of the party backed you.`, r.survived ? "The rebels fall into line, for now." : `Your career as ${G.titles(s).leader.toLowerCase()} is over.`], tone: r.survived ? 1 : -1 } });
+    if (s.over) this.finish();
+    this.changed();
+  }
+
+  appoint(portfolio: string, id: number) {
+    const s = this.s;
+    if (!s || !P.appoint(s, portfolio, id)) return this.toast("You can't appoint them", -1);
+    this.sound.play("paper");
+    this.toast(`${G.fullName(G.pol(s, id)!)} is the new ${P.ministerTitle(s, portfolio)}`, 1);
+    this.setUI({ appoint: null });
+    this.changed();
+  }
+
+  order(id: string) {
+    const s = this.s;
+    if (!s) return;
+    const r = P.issueOrder(s, id);
+    if (!r.ok) return this.toast(r.why ?? "You can't do that now", -1);
+    this.sound.play(r.blocked ? "bad" : "gavel");
+    this.toast(r.blocked ? "The courts block it" : `${P.ORDER[id].name}: done`, r.blocked ? -1 : 1);
+    this.changed();
+  }
+
+  referendum(law: string, option: number) {
+    const s = this.s;
+    if (!s) return;
+    const r = P.callReferendum(s, law, option);
+    if (typeof r === "string") return this.toast(r, -1);
+    const l = G.lawOf(s, law)!;
+    this.sound.play(r.passed ? "win" : "lose");
+    this.setUI({ result: { icon: "🗳️", title: r.passed ? "Yes wins" : "No wins", lines: [`Referendum on ${l.name.toLowerCase()} (${l.options[option].label}).`, `Yes ${Math.round(r.yes * 100)}% · No ${Math.round((1 - r.yes) * 100)}%`, r.passed ? "The law changes today." : "The law stays as it is, and your government takes a knock."], tone: r.passed ? 1 : -1 } });
+    this.changed();
+  }
+
+  diplomacy(name: string, a: P.ForeignAction) {
+    const s = this.s;
+    if (!s) return;
+    const r = P.diplomacy(s, name, a);
+    if (!r.ok) return this.toast(r.why ?? "You can't do that now", -1);
+    this.sound.play(r.success ? "cheer" : "bad");
+    this.toast(s.news[0]?.text ?? "Done", r.success ? 1 : -1);
+    this.changed();
+  }
+
+  leaveGovernment() {
+    const s = this.s;
+    if (!s || !P.leaveGovernment(s)) return;
+    this.sound.play("paper");
+    this.toast("Your party leaves the government", 0);
     this.changed();
   }
 

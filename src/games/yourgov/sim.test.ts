@@ -67,7 +67,7 @@ describe("YourGov", () => {
     expect(G.carries(s, b, { yes: 70, no: 30, abstain: 0, by: {} })).toBe(true);
   });
 
-  it("events cost money, move your numbers and can only be held once a turn", () => {
+  it("events cost money, move your numbers and can be held twice a turn", () => {
     const s = G.newGame(9, "grn");
     const before = s.campaign.grn[s.homeState];
     const funds = s.parties.grn.funds;
@@ -75,11 +75,43 @@ describe("YourGov", () => {
     expect(r.ok).toBe(true);
     expect(s.parties.grn.funds).toBeLessThan(funds);
     expect(s.campaign.grn[s.homeState]).not.toBe(before);
-    expect(G.holdEvent(s, "rally").ok).toBe(false);
+    const second = G.holdEvent(s, "rally");
+    expect(second.ok).toBe(true);
+    // The second time does a little less.
+    if (!r.backfired && !second.backfired) expect(Math.abs(second.boost)).toBeLessThan(Math.abs(r.boost));
+    const third = G.holdEvent(s, "rally");
+    expect(third.ok).toBe(false);
+    expect(third.why).toMatch(/twice/);
     const p = G.holdEvent(s, "poll", 2);
     expect(p.poll).toBeTruthy();
     G.endTurn(s);
     expect(G.holdEvent(s, "rally").ok).toBe(true);
+  });
+
+  it("a fundraiser can be held with an empty bank account", () => {
+    const s = G.newGame(9, "grn");
+    s.parties.grn.funds = 0;
+    expect(G.holdEvent(s, "rally").ok).toBe(false);
+    expect(G.eventBlocked(s, "fundraiser")).toBeNull();
+    const r = G.holdEvent(s, "fundraiser");
+    expect(r.ok).toBe(true);
+    expect(r.raised).toBeGreaterThan(0);
+    expect(s.parties.grn.funds).toBeGreaterThan(0);
+    expect(G.holdEvent(s, "fundraiser").ok).toBe(true);
+  });
+
+  it("a party can be lobbied twice on a bill", () => {
+    const s = G.newGame(9, "grn");
+    s.parties.grn.funds = 50;
+    const b = G.writeBill(s, "carbonTax", 1)!;
+    const other = G.running(s).find((p) => p !== "grn")!;
+    const st0 = G.partyStance(s, other, b);
+    expect(G.lobby(s, b.id, other)).toBe(true);
+    const st1 = G.partyStance(s, other, b);
+    expect(G.lobby(s, b.id, other)).toBe(true);
+    expect(G.partyStance(s, other, b)).toBeGreaterThan(st1);
+    expect(st1).toBeGreaterThan(st0);
+    expect(G.lobby(s, b.id, other)).toBe(false);
   });
 
   it("runs a whole career: elections on schedule, a budget every year, and it ends", () => {
