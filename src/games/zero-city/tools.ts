@@ -209,7 +209,8 @@ export class Tools {
         return;
       }
     }
-    this.downAt = { x: e.clientX, y: e.clientY, t: performance.now() };
+    // When the press happened (the event's own time, not when a busy frame got round to it).
+    this.downAt = { x: e.clientX, y: e.clientY, t: e.timeStamp || performance.now() };
     this.moved = false;
     if (e.button === 2 || e.button === 1) {
       this.orbiting = { x: e.clientX, y: e.clientY };
@@ -280,7 +281,8 @@ export class Tools {
         return;
       }
     }
-    const wasTap = this.downAt && !this.moved && performance.now() - this.downAt.t < 450;
+    // A tap is a short press measured between the two events, so a slow frame can't turn it into a hold.
+    const wasTap = this.downAt && !this.moved && (e.timeStamp || performance.now()) - this.downAt.t < 450;
     if (this.orbiting) {
       this.orbiting = null;
       this.downAt = null;
