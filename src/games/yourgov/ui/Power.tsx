@@ -97,9 +97,15 @@ export function MarketsPage({ g }: { g: Game }) {
           <b className={good ? "yg-good" : m.rating >= 7 ? "yg-warn" : ""}>{Mk.RATINGS[m.rating]}</b>
         </div>
       </div>
-      <Line values={h.map((p) => p.index)} label="Stock market" unit="" color="#64d2ff" digits={0} />
-      <Line values={h.map((p) => p.inflation)} label="Inflation" unit="%" color="#ff9f0a" digits={1} />
-      <Line values={h.map((p) => p.rate)} label="Interest rate" unit="%" color="#bf5af2" digits={2} />
+      {h.length >= 2 ? (
+        <>
+          <Line values={h.map((p) => p.index)} label="Stock market" unit="" color="#64d2ff" digits={0} />
+          <Line values={h.map((p) => p.inflation)} label="Inflation" unit="%" color="#ff9f0a" digits={1} />
+          <Line values={h.map((p) => p.rate)} label="Interest rate" unit="%" color="#bf5af2" digits={2} />
+        </>
+      ) : (
+        <p className="yg-note small">The charts fill in as the weeks go by. Stock market: {Math.round(m.index)}.</p>
+      )}
       <Group label="Who sets interest rates">
         <Row>
           <span className="grow small">{setter === 1 ? "An independent central bank, to keep inflation near 2%." : setter === 0 ? "The government (the central-bank law puts the bank under it)." : "Nobody: the central bank has been abolished, and prices drift."}</span>
