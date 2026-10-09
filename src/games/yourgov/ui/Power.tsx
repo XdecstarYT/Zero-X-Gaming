@@ -325,7 +325,7 @@ export function Social({ g }: { g: Game }) {
         </div>
         <div className="yg-tile-stat">
           <span>Reach</span>
-          <b>{Math.round((s.social.followers / Md.followerCap(s)) * 100)}%</b>
+          <b>{((s.social.followers / Md.followerCap(s)) * 100).toFixed(s.social.followers / Md.followerCap(s) < 0.1 ? 1 : 0)}%</b>
         </div>
       </div>
       <div className="yg-grid">
@@ -370,7 +370,8 @@ export function Social({ g }: { g: Game }) {
 export function FrontPage({ g }: { g: Game }) {
   const s = g.s!;
   const last = s.week - 1;
-  const items = s.news.filter((n) => n.week === last);
+  // Last week's stories (and, in the first week, the opening ones).
+  const items = s.news.filter((n) => n.week >= last);
   const rank = (n: G.NewsItem) => (n.kind === "election" ? 5 : n.kind === "government" ? 4 : n.kind === "scandal" ? 3 : n.kind === "law" || n.kind === "budget" ? 2 : 1) + Math.abs(n.tone);
   const sorted = [...items].sort((a, b) => rank(b) - rank(a));
   const lead = sorted[0];

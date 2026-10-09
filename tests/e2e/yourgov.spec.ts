@@ -13,7 +13,10 @@ type YG = {
     mrp: unknown;
     budgetDraft: { plan: Record<string, number> } | null;
     gov: { parties: string[]; head: number; since: number };
-    you: number; week: number; cal: { lower: number }; bills: { law: string; stage: string }[]; election: unknown; lastElection: unknown; talks: unknown; news: { text: string }[]; custom: { id: string; name: string; options: { label: string }[] }[]; laws: Record<string, number>; house: number[]; sc: { id: string; name: string } };
+    you: number;
+    mode: { difficulty: string; sandbox: boolean };
+    social: { posts: unknown[] };
+    timeline: unknown[]; week: number; cal: { lower: number }; bills: { law: string; stage: string }[]; election: unknown; lastElection: unknown; talks: unknown; news: { text: string }[]; custom: { id: string; name: string; options: { label: string }[] }[]; laws: Record<string, number>; house: number[]; sc: { id: string; name: string } };
   endTurn: () => void;
   setUI: (p: Record<string, unknown>) => void;
   quit: () => void;
@@ -23,7 +26,7 @@ const yg = <T,>(page: Page, f: (g: YG) => T) => page.evaluate(`(${f.toString()})
 
 /** Put off any decision card that has come up (Question Time, a scandal, a crisis…). */
 async function dismissCards(page: Page) {
-  for (const id of ["yg-qt-later", "yg-scandal-later", "yg-crisis-later", "yg-debate-later", "yg-budget-later"]) {
+  for (const id of ["yg-qt-later", "yg-scandal-later", "yg-crisis-later", "yg-debate-later", "yg-budget-later", "yg-conf-later", "yg-nominee-later", "yg-result-ok"]) {
     const b = page.getByTestId(id);
     if (await b.isVisible().catch(() => false)) await b.click();
   }
@@ -54,12 +57,14 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await expect(page.getByTestId("yg-title")).toBeVisible({ timeout: 120_000 });
 
-  // Avalon is picked to begin with; on to the parties.
+  // Avalon is picked to begin with; on to the parties, on easy.
   await page.getByTestId("yg-next").click();
   await page.getByTestId("yg-party-grn").click();
+  await page.getByTestId("yg-difficulty-easy").click();
   await page.getByTestId("yg-start").click();
   await expect(page.getByTestId("yourgov")).toBeVisible();
   await expect(page.getByTestId("yg-date")).toHaveText("2046.02");
+  expect(await yg(page, (g) => g.s.mode.difficulty)).toBe("easy");
   // The country comes up in 3D once its terrain is built.
   await expect(page.getByTestId("yg-map")).toBeVisible();
   await expect(page.getByTestId("yg-loading")).toHaveCount(0, { timeout: 120_000 });
@@ -142,6 +147,18 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   await page.getByTestId("yg-tab-hq").click();
   await page.getByTestId("yg-hire-manager-0").click();
   expect(await yg(page, (g) => !!g.s.staff.manager)).toBe(true);
+  // A post on social media.
+  await page.getByTestId("yg-hq-social").click();
+  await page.getByTestId("yg-post-policy").click();
+  expect(await yg(page, (g) => g.s.social.posts.length)).toBeGreaterThan(0);
+  // The markets, and the front page.
+  await page.getByTestId("yg-tab-country").click();
+  await page.getByTestId("yg-country-page-markets").click();
+  await expect(page.getByTestId("yg-markets")).toBeVisible();
+  await page.getByTestId("yg-tab-news").click();
+  await page.getByTestId("yg-open-paper").click();
+  await expect(page.getByTestId("yg-paper")).toBeVisible();
+  await page.getByTestId("yg-paper-close").click();
 
   // In charge, write a budget: more for health.
   await yg(page, (g) => {
@@ -162,6 +179,11 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   await dismissCards(page);
   // The planned town hall was held when its week came.
   expect(await yg(page, (g) => g.s.plan.length)).toBe(0);
+  // Skip ahead to the next thing that needs you.
+  const before = await yg(page, (g) => g.s.week);
+  await page.getByTestId("yg-ff").dispatchEvent("click");
+  await dismissCards(page);
+  expect(await yg(page, (g) => g.s.week)).toBeGreaterThanOrEqual(before);
 
   // The chamber view, the parliament, the polls and the settings.
   await page.getByTestId("yg-view-chamber").dispatchEvent("click");

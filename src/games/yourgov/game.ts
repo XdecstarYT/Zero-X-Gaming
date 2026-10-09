@@ -110,6 +110,8 @@ export class Game {
   hall: K.HallEntry[] = [];
   /** Where the last finished career placed in the hall of fame (-1: it didn't). */
   hallPlace = -1;
+  /** A finished career's score, held back until the player has seen their legacy (the site shows its own results over the game). */
+  private finalScore: number | null = null;
 
   constructor(private scorer: Scorer) {
     try {
@@ -215,6 +217,7 @@ export class Game {
   newGame(party: PartyId, seed = Math.floor(Math.random() * 1e6) + 1, scenario?: Scenario, mode?: K.Mode) {
     this.s = G.newGame(seed, party, { ...(scenario ? { scenario: structuredClone(scenario) } : {}), mode });
     this.hallPlace = -1;
+    this.finalScore = null;
     this.startedAt = performance.now();
     this.ui = { ...this.ui, tab: "missions", view: "map", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, poll: "parties", hq: "staff", budget: false, country: "overview", paper: false, studio: null, count: 0 };
     this.sound.play("start");
@@ -269,6 +272,7 @@ export class Game {
   }
 
   quit() {
+    this.submitFinal();
     this.s = null;
     try {
       localStorage.removeItem(SAVE_KEY);
@@ -286,9 +290,17 @@ export class Game {
     this.changed();
   }
 
+  /** Report a finished career's score to the site (once). */
+  submitFinal() {
+    if (this.finalScore === null) return;
+    const n = this.finalScore;
+    this.finalScore = null;
+    this.scorer.final(n);
+  }
+
   private finish() {
     if (!this.s) return;
-    this.scorer.final(this.s.score);
+    this.finalScore = this.s.score;
     // Into the hall of fame (sandbox careers don't count).
     if (this.s.mode?.sandbox) return;
     const { list, place } = K.addToHall(this.hall, K.hallEntry(this.s));

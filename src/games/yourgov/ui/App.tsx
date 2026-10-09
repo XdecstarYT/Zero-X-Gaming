@@ -1288,7 +1288,7 @@ function GameOver({ g }: { g: Game }) {
         </div>
         <footer className="yg-modal-foot">
           <button type="button" className="yg-btn primary wide" onClick={() => g.quit()} data-testid="yg-again">
-            Start a new career
+            Save my score and start again
           </button>
         </footer>
       </section>

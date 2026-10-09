@@ -51,6 +51,8 @@ class YourGov implements GameModule {
   }
 
   destroy() {
+    // A finished career the player didn't get round to closing still counts.
+    this.game?.submitFinal();
     this.root?.unmount();
     this.el?.remove();
     this.emitter.clear();
