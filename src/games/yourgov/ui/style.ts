@@ -311,5 +311,15 @@ select.yg-input option{background:#151a24;color:#fff}
   .yg-endturn span{display:none}.yg-endturn{padding:0 14px}
 }
 @container (max-height:520px){.yg-dock{gap:0;padding:4px}.yg-dock-btn{width:36px;height:36px}.yg-sheet{top:62px;bottom:70px}.yg-bottom{bottom:8px}.yg-viewswitch,.yg-timebar,.yg-endturn{height:42px}}
+/* Phones in landscape: room for the platform's pause button at the top centre, and a dock in two columns. */
+@container (max-height:460px){
+  .yg-stat.opt3{display:none}
+  .yg-dock{display:grid;grid-template-columns:repeat(2,34px);gap:2px;padding:4px;border-radius:20px;top:60px}
+  .yg-dock-btn{width:34px;height:34px}
+  .yg-sheet{left:96px;width:min(380px,calc(100% - 108px));top:60px;bottom:64px}
+  .yg-missions,.yg-election{top:60px;bottom:64px}
+  .yg-title{padding-top:58px}
+  .yg-top{top:8px}
+}
 @media (prefers-reduced-motion:reduce){.yg *,.yg *::before,.yg *::after{animation-duration:0s!important;transition:none!important}}
 `;

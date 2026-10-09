@@ -942,7 +942,7 @@ function TopBar({ g }: { g: Game }) {
         {stat("coins", money(ps.funds), "Funds", "", "yg-funds")}
         {stat("people", `${(ps.members / 1000).toFixed(0)}k`, "Members", "opt")}
         {stat("handshake", String(Math.round(ps.unity)), "Unity", "opt2")}
-        {stat("seats", String(G.houseBy(s)[s.party]), "Seats")}
+        {stat("seats", String(G.houseBy(s)[s.party]), "Seats", "opt3")}
       </div>
       <span className="grow" />
       {g.ui.view === "map" && !s.election && (
