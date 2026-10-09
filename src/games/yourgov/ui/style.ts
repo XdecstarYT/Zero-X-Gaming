@@ -485,6 +485,57 @@ select.yg-input option{background:#151a24;color:#fff}
 @keyframes yg-pulse-red{50%{opacity:.6}}
 .yg-speech-row{display:flex;flex-wrap:wrap;gap:6px}
 
+/* ---- markets, the court, the conference ---- */
+.yg-good{color:#7dffa0}
+.yg-ratebox{display:flex;align-items:center;gap:8px;padding:8px 12px 10px}
+.yg-ratebox b{font-size:17px;min-width:64px;text-align:center;font-variant-numeric:tabular-nums}
+.yg-ratebox .yg-btn.primary{margin-left:auto}
+.yg-trend svg{display:block;touch-action:pan-y}
+.yg-bench{display:flex;justify-content:center;gap:6px;padding:12px 10px 4px}
+.yg-judge{width:22px;height:30px;border-radius:11px 11px 6px 6px;background:#9aa0a8;box-shadow:inset 0 -8px 0 rgba(0,0,0,.25),0 2px 6px rgba(0,0,0,.35)}
+.yg-judge.liberal{background:#4f8dff}.yg-judge.conservative{background:#ff6b5e}.yg-judge.centrist{background:#d9c27a}
+.yg-judge.vacant{background:transparent;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.4);border-style:dashed}
+.yg-choice.on{background:linear-gradient(135deg,color-mix(in srgb,var(--pc,#0a84ff) 45%,transparent),rgba(255,255,255,.08));box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.6)}
+.yg-motion{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.07)}
+.yg-motion b{display:block}.yg-motion small{display:block;font-size:11px}
+.yg-modal-foot .grow{flex:1}
+
+/* ---- social media ---- */
+.yg-feed{display:grid;gap:7px}
+.yg-post{padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.06);box-shadow:inset 3px 0 0 var(--c)}
+.yg-post.mine{background:linear-gradient(135deg,color-mix(in srgb,var(--c) 22%,transparent),rgba(255,255,255,.05))}
+.yg-post-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.yg-post p{margin:5px 0 4px;font-weight:550;line-height:1.35}
+.yg-post-foot{display:flex;align-items:center;gap:4px;color:var(--muted);font-weight:700}
+
+/* ---- the front page ---- */
+.yg-paper{flex:1 1 auto;margin:10px;padding:16px 16px 12px;border-radius:14px;background:#f3eee2;color:#1d1a16;font-family:Georgia,"Times New Roman",serif;box-shadow:0 10px 30px -10px rgba(0,0,0,.6);overflow:auto;min-height:0}
+.yg-paper-mast{display:flex;align-items:baseline;justify-content:space-between;gap:8px;border-bottom:3px double #1d1a16;padding-bottom:6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.yg-paper-mast b{font-size:clamp(20px,6vw,30px);letter-spacing:0;text-transform:none;font-weight:900;text-align:center;flex:1}
+.yg-paper-lead{font-size:clamp(19px,5vw,26px);line-height:1.15;font-weight:800;margin:12px 0 10px}
+.yg-paper-cols{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+.yg-paper-item{font-size:14px;line-height:1.35;padding:6px 0;border-top:1px solid rgba(0,0,0,.15);margin:0}
+.yg-paper-item.good::before{content:"▲ ";color:#1f8a3c}.yg-paper-item.bad::before{content:"▼ ";color:#c0392b}
+.yg-paper-box{display:grid;gap:3px;align-content:start;padding:10px;border:1px solid rgba(0,0,0,.25);font-size:13px}
+.yg-paper-box b{font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin-top:6px}
+.yg-paper-big{font-size:30px;font-weight:900;line-height:1}
+.yg-paper .yg-good{color:#1f8a3c}.yg-paper .yg-warn{color:#b8590b}
+@container (max-width:560px){.yg-paper-cols{grid-template-columns:1fr}.yg-paper{margin:6px;padding:12px}}
+
+/* ---- the career's story, legacy, hall of fame, modes ---- */
+.yg-timeline-list{display:grid;gap:2px;border-radius:var(--rs);background:rgba(255,255,255,.05);padding:4px 0}
+.yg-moment{display:flex;align-items:center;gap:10px;padding:6px 12px;font-size:12.5px;font-weight:600}
+.yg-moment-ico{width:22px;text-align:center;font-size:15px}
+.yg-legacy{margin:10px 0 4px;padding:14px;border-radius:18px;text-align:center;background:linear-gradient(160deg,rgba(255,214,10,.2),rgba(255,255,255,.05));box-shadow:inset 0 0 0 1px rgba(255,214,10,.35)}
+.yg-legacy h3{font-size:20px;font-weight:820;margin:4px 0 8px}
+.yg-legacy-meter{height:8px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden;margin:0 auto 8px;max-width:260px}
+.yg-legacy-meter i{display:block;height:100%;background:linear-gradient(90deg,#ffd60a,#ff9f0a);border-radius:999px}
+.yg-hall-rank{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:rgba(255,214,10,.25);font-weight:850;flex:none}
+.yg-modepick{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:10px 0 2px}
+.yg-modepick .yg-switch span{display:grid;font-weight:650}
+.yg-ff{width:48px;min-height:48px;font-size:18px;border-radius:50%!important;flex:none}
+@container (max-height:520px){.yg-ff{width:42px;min-height:42px}}
+
 /* ---- small stages ---- */
 @container (max-width:980px){.yg-stat small{display:none}.yg-stat.opt2{display:none}}
 @container (max-width:860px){.yg-stat.opt{display:none}.yg-brand-name{display:none}.yg-missions{display:none}}

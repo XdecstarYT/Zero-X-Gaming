@@ -8,6 +8,7 @@
  * uses another module's values (sim.ts, politics.ts and this file import each other).
  */
 import { WEEKS, type Effects, type PartyId, type Pos } from "./data";
+import * as K from "./career";
 import * as P from "./politics";
 import * as G from "./sim";
 
@@ -78,7 +79,7 @@ export function issues(s: G.GameState): Record<string, number> {
   const law = (id: string) => s.laws[id] ?? 1;
   const raw: Record<string, number> = {
     economy: 14 + Math.max(0, e.growth - st.growth) * 10 + Math.max(0, st.unemployment - e.unemployment) * 5,
-    cost: 13 + Math.max(0, e.happiness - st.happiness) * 1.2 + Math.max(0, -(s.budgetFx?.happiness ?? 0)) * 4,
+    cost: 13 + Math.max(0, e.happiness - st.happiness) * 1.2 + Math.max(0, -(s.budgetFx?.happiness ?? 0)) * 4 + Math.max(0, (s.mk?.inflation ?? 2) - 2.5) * 6,
     health: 11 + (law("healthcare") === 0 ? 5 : 0),
     housing: 8 + (law("housing") === 0 ? 5 : 0),
     immigration: 7 + (law("immigration") === 2 ? 7 : 0),
@@ -257,8 +258,12 @@ export function budgetEffects(plan: BudgetPlan) {
 
 /** How much a party likes a budget (added to its stance on the vote). */
 export function budgetLean(s: G.GameState, plan: BudgetPlan | undefined, partyId: PartyId) {
+  return budgetLeanAt(plan, G.party(s, partyId).pos);
+}
+
+/** How much someone standing at a place on the compass likes a budget. */
+export function budgetLeanAt(plan: BudgetPlan | undefined, p: Pos) {
   if (!plan) return 0;
-  const p = G.party(s, partyId).pos;
   let u = 0;
   for (const a of BUDGET_AREAS) u += (plan[a.id] ?? 0) * a.lean * p.e * 0.12;
   // The right worries about deficits.
@@ -290,6 +295,7 @@ export function budgetPassed(s: G.GameState, plan: BudgetPlan | undefined, byYou
   s.budgetFx = budgetEffects(p);
   if (byYou) {
     note(s, "budgets");
+    K.mark(s, "💷", "Passed your own budget");
     for (const a of BUDGET_AREAS) {
       const k = p[a.id] ?? 0;
       if (k) P.courtGroup(s, a.group, (a.id === "tax" ? -k : k) * (k > 0 ? 3 : 4));
@@ -543,6 +549,10 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "regions", name: "Heartlands", icon: "🗺️", about: "Run half the regions", score: 150, check: (s) => s.governors.filter((id) => G.pol(s, id)?.party === s.party).length * 2 >= s.governors.length },
   { id: "year", name: "A year in power", icon: "📅", about: "Lead the government for a year", score: 150, check: (s) => s.gov.head === s.you && s.week - s.gov.since >= WEEKS },
   { id: "comeback", name: "Comeback", icon: "🔥", about: "Grow your seats by a fifth in one election", score: 150, check: (s) => (s.counters.comeback ?? 0) >= 1 },
+  { id: "viral", name: "Gone viral", icon: "📱", about: "Have a post go viral", score: 50, check: (s) => (s.counters.viral ?? 0) >= 1 },
+  { id: "judge", name: "Judge maker", icon: "⚖️", about: "Put a judge on the top court", score: 100, check: (s) => (s.counters.judges ?? 0) >= 1 },
+  { id: "bull", name: "Bull market", icon: "🐂", about: "See the stock market up by half", score: 75, check: (s) => (s.mk?.index ?? 0) >= 1500 },
+  { id: "aaa", name: "Triple A", icon: "🏅", about: "Lead a country rated AAA", score: 100, check: (s) => s.gov.head === s.you && s.mk?.rating === 0 },
   { id: "decade", name: "Old hand", icon: "🕰️", about: "Last ten years in politics", score: 100, check: (s) => s.week >= WEEKS * 10 },
 ];
 
@@ -555,6 +565,7 @@ export function checkAchievements(s: G.GameState) {
     s.achievements[a.id] = s.week;
     s.score += a.score;
     out.push(a);
+    K.mark(s, a.icon, `Achievement: ${a.name}`);
     G.news(s, "mission", `Achievement: ${a.name} (${a.about.toLowerCase()})`, 1);
   }
   return out;

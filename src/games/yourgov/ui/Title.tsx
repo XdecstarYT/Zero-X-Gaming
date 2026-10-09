@@ -4,9 +4,11 @@ import type { Game } from "../game";
 import { mapReady } from "../map";
 import { avalon, EXEC_KINDS, LOWER_SYSTEMS, shareCode, UPPER_KINDS, type Scenario } from "../scenario";
 import * as G from "../sim";
+import type { Mode } from "../career";
 import { Stage3D } from "../render/stage";
 import { flagUrl } from "./flags";
 import { Icon } from "./icons";
+import { HallOfFame, ModePicker } from "./Power";
 import { ScenarioStudio } from "./ScenarioStudio";
 
 /** The scenario behind a pick: Avalon (new every game), a real country, or one of yours. */
@@ -31,7 +33,8 @@ export function systemLine(sc: Scenario) {
 export function Title({ g }: { g: Game }) {
   const [pick, setPick] = useState("avalon");
   const [step, setStep] = useState<"country" | "party">("country");
-  const [tab, setTab] = useState<"real" | "mine">("real");
+  const [tab, setTab] = useState<"real" | "mine" | "hall">("real");
+  const [mode, setMode] = useState<Mode>({ difficulty: "normal", sandbox: false });
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1e6) + 1);
   const [studio, setStudio] = useState<Scenario | null>(null);
   const [importing, setImporting] = useState(false);
@@ -85,7 +88,7 @@ export function Title({ g }: { g: Game }) {
 
   const start = () => {
     if (!ready || !chosen) return;
-    g.newGame(party, seed, sc);
+    g.newGame(party, seed, sc, mode);
   };
   const customise = (from: Scenario) => {
     const copy = structuredClone(from);
@@ -122,9 +125,14 @@ export function Title({ g }: { g: Game }) {
                 <button type="button" role="radio" aria-checked={tab === "mine"} onClick={() => setTab("mine")} data-testid="yg-tab-mine">
                   Your scenarios{g.library.length ? ` (${g.library.length})` : ""}
                 </button>
+                <button type="button" role="radio" aria-checked={tab === "hall"} onClick={() => setTab("hall")} data-testid="yg-tab-hall">
+                  🏆 Hall of fame
+                </button>
               </div>
             </div>
-            {tab === "real" ? (
+            {tab === "hall" ? (
+              <HallOfFame g={g} />
+            ) : tab === "real" ? (
               <div className="yg-countries" role="listbox" aria-label="Choose a country">
                 {presets.map(({ id, sc: p }) => (
                   <button key={id} type="button" role="option" aria-selected={pick === id} className={`yg-country${pick === id ? " on" : ""}`} onClick={() => setPick(id)} data-testid={`yg-country-${id}`}>
@@ -244,6 +252,7 @@ export function Title({ g }: { g: Game }) {
                 </button>
               ))}
             </div>
+            <ModePicker mode={mode} onChange={setMode} />
             <p className="yg-muted small yg-title-blurb">
               {chosen
                 ? `You lead the ${chosen.name} in ${sc.name}. ${sc.system.exec === "presidential" ? `Win the presidency and the ${sc.system.lower.short}` : `Win the ${sc.system.lower.short}, build a coalition if you must, and become ${sc.system.titles.head}`}. Each week hold events, write and vote on bills (and draft laws of your own) and keep your promises. Your score grows with every law, seat and promise over a twenty-year career.`

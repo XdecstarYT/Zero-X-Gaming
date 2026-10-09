@@ -14,6 +14,10 @@ import { COMMITTEES, EVENT, EVENT_MAX, GROUP_COMMITTEE, LAW, LAW_GROUPS, LAWS, W
 import { buildCountry, geoOf, type Country, type MapSpec } from "./map";
 import { NAMES } from "./names";
 import { avalon, LOWER_SYSTEMS, type LowerSystem, type PartyDef, type Scenario, type SystemDef, type Titles } from "./scenario";
+import { aiStrength, careerWeek, endless, mark, playerEdge, startFunds, type Mode, type Moment } from "./career";
+import { afterVote, initInstitutions, institutionsWeek, maybeChallenge, memberStance, settleInstitutions, type Conference, type Court, type Whip } from "./institutions";
+import { initMarkets, marketFx, marketsWeek, type Markets } from "./markets";
+import { initMedia, rivalsWeek, type Post } from "./media";
 import { campaignAfterElection, campaignWeek, initCampaign, settleCampaign, staffSkill, budgetLean, budgetPassed, aiBudget, note, type BudgetPlan, type Pledge, type QTState, type ScandalState, type StaffMember } from "./campaign";
 import { afterElection, cabinetFx, courtGroup, initPolitics, lawChanged, newGovernment, playerBonus, politicsWeek, pressEvent, runPlan, settlePending, type CrisisState, type DebateState, type Deal, type Faction, type Foreign, type PlanItem } from "./politics";
 
@@ -45,6 +49,8 @@ export interface Tally {
   abstain: number;
   /** How each member voted (politician id → 1 yes, 0 abstain, -1 no). */
   by: Record<number, number>;
+  /** Your party's lawmakers who voted against its line. */
+  rebels?: number;
 }
 export interface Bill {
   id: number;
@@ -66,6 +72,8 @@ export interface Bill {
   insist?: boolean;
   /** A budget's spending and tax plan (campaign.ts). */
   plan?: BudgetPlan;
+  /** How you whip your party's lawmakers on it (institutions.ts). */
+  whip?: Whip;
   last: { stage: Stage; tally: Tally; passed: boolean } | null;
 }
 
@@ -303,6 +311,20 @@ export interface GameState {
   lastMove: number;
   /** The election week you last gave a speech. */
   speech: number;
+
+  // The super mega update.
+  /** Inflation, interest rates, the stock market and the credit rating (markets.ts). */
+  mk: Markets;
+  /** The country's top court (institutions.ts). */
+  court: Court;
+  /** Week a court vacancy opened while you lead (-1: none). */
+  courtSeen: number;
+  conference: Conference | null;
+  /** Your following and the feed (media.ts). */
+  social: { followers: number; posts: Post[] };
+  /** Difficulty and sandbox (career.ts). */
+  mode: Mode;
+  timeline: Moment[];
 }
 
 export interface SeatProjection {
@@ -377,6 +399,15 @@ export function pol(s: GameState, id: number) {
 export const lawOf = (s: GameState, id: string): LawDef | undefined => LAW[id] ?? s.custom.find((l) => l.id === id);
 /** Every law on the books, built-in first. */
 export const allLaws = (s: GameState): LawDef[] => (s.custom.length ? [...LAWS, ...s.custom] : LAWS);
+
+/** The super mega update's state (and the missing pieces of older saves). */
+function initRest(s: GameState) {
+  s.mode ??= { difficulty: "normal", sandbox: false };
+  s.timeline ??= [];
+  initMarkets(s);
+  initInstitutions(s);
+  initMedia(s);
+}
 
 /** The country's pool of first and last names. */
 export const namePool = (s: GameState) => NAMES[s.sc.culture] ?? NAMES.en;
@@ -615,6 +646,8 @@ function calibrate(s: GameState) {
 export interface NewGameOptions {
   scenario?: Scenario;
   homeState?: number;
+  /** Difficulty and sandbox play. */
+  mode?: Mode;
 }
 
 export function newGame(seed: number, partyId: PartyId, opts: NewGameOptions = {}): GameState {
@@ -638,7 +671,7 @@ export function newGame(seed: number, partyId: PartyId, opts: NewGameOptions = {
     parties: Object.fromEntries(
       ps.map((p) => [
         p.id,
-        { funds: 40 + (p.id === you ? 20 : 0), members: Math.round(40_000 + p.base * 1_000_000), unity: 70, swing: 0, leader: -1, relations: Object.fromEntries(ps.map((q) => [q.id, q.id === p.id ? 100 : Math.round(40 - 45 * dist(p.pos, q.pos) - (p.refuses?.includes(q.id) ? 30 : 0))])) },
+        { funds: 40 + (p.id === you ? 20 + startFunds(opts.mode?.difficulty ?? "normal") : 0), members: Math.round(40_000 + p.base * 1_000_000), unity: 70, swing: 0, leader: -1, relations: Object.fromEntries(ps.map((q) => [q.id, q.id === p.id ? 100 : Math.round(40 - 45 * dist(p.pos, q.pos) - (p.refuses?.includes(q.id) ? 30 : 0))])) },
       ]),
     ),
     campaign: Object.fromEntries(ps.map((p) => [p.id, c.states.map(() => 0)])),
@@ -682,8 +715,9 @@ export function newGame(seed: number, partyId: PartyId, opts: NewGameOptions = {
     custom: [],
     nextLaw: 1,
     history: [],
+    mode: { difficulty: opts.mode?.difficulty ?? "normal", sandbox: !!opts.mode?.sandbox },
     // Filled in by initPolitics once the offices are.
-    ...({} as Pick<GameState, "plan" | "nextPlan" | "goodwill" | "lobbies" | "factions" | "lowUnity" | "challenge" | "cabinet" | "partners" | "deals" | "crisis" | "nextCrisis" | "orders" | "foreign" | "press" | "debate" | "lastReferendum" | "boosts" | "tradeGrowth" | "donors" | "staff" | "hires" | "hiresWeek" | "manifesto" | "budgetDraft" | "budgetFx" | "qt" | "scandal" | "nextScandal" | "achievements" | "counters" | "mrp" | "pos0" | "lastMove" | "speech">),
+    ...({} as Pick<GameState, "plan" | "nextPlan" | "goodwill" | "lobbies" | "factions" | "lowUnity" | "challenge" | "cabinet" | "partners" | "deals" | "crisis" | "nextCrisis" | "orders" | "foreign" | "press" | "debate" | "lastReferendum" | "boosts" | "tradeGrowth" | "donors" | "staff" | "hires" | "hiresWeek" | "manifesto" | "budgetDraft" | "budgetFx" | "qt" | "scandal" | "nextScandal" | "achievements" | "counters" | "mrp" | "pos0" | "lastMove" | "speech" | "mk" | "court" | "courtSeen" | "conference" | "social" | "timeline">),
   };
   s.fx0 = lawEffects(s);
   calibrate(s);
@@ -722,6 +756,7 @@ export function newGame(seed: number, partyId: PartyId, opts: NewGameOptions = {
   s.week = 1;
   initPolitics(s);
   initCampaign(s);
+  initRest(s);
   s.missions = [];
   addMission(s, { kind: "election", deadline: electionDeadline(s), reward: 400 });
   addPromise(s);
@@ -1308,12 +1343,16 @@ export function applyElection(s: GameState, e: ElectionRun, quiet = false) {
   const t = titles(s);
   const mine = e.houseSeats[s.party] ?? 0;
   const seats = sy.lower.seats;
-  if (e.contests.lower) news(s, "election", `${e.title}: the ${party(s, s.party).name} win ${mine} of ${seats} seats in the ${sy.lower.short}`, mine >= (e.prevHouse[s.party] ?? 0) ? 1 : -1);
+  if (e.contests.lower) {
+    news(s, "election", `${e.title}: the ${party(s, s.party).name} win ${mine} of ${seats} seats in the ${sy.lower.short}`, mine >= (e.prevHouse[s.party] ?? 0) ? 1 : -1);
+    mark(s, "🗳️", `${e.title}: ${mine} of ${seats} seats (${mine >= (e.prevHouse[s.party] ?? 0) ? "+" : "–"}${Math.abs(mine - (e.prevHouse[s.party] ?? 0))})`);
+  }
   if (e.contests.upper && e.upper) news(s, "election", `${sy.upper.name}: the ${party(s, s.party).short} hold ${e.senateSeats[s.party] ?? 0} of ${e.upper.length} seats`, (e.senateSeats[s.party] ?? 0) >= (e.prevSenate[s.party] ?? 0) ? 1 : 0);
   if (e.president) {
     const youWon = e.president.party === s.party;
     news(s, "election", `${e.president.name} (${party(s, e.president.party).short}) is elected ${t.president} with ${Math.round(e.president.share * 100)}%${e.president.runoff ? " in the run-off" : ""}`, youWon ? 1 : -1);
     if (youWon) {
+      mark(s, "🦅", `Elected ${t.president}`);
       s.electionsWon++;
       s.score += 500;
       s.stats.approval = Math.max(s.stats.approval, 55);
@@ -1489,10 +1528,14 @@ export function setGovernment(s: GameState, parties: PartyId[], quiet = false) {
     head = s.house.find((h) => h !== s.president && h !== s.you && pol(s, h)?.party === parties[0]) ?? newPolitician(s, parties[0], 0).id;
   }
   const before = s.gov.parties[0];
+  const wasHead = s.gov.head === s.you;
   s.gov = { parties, head, since: s.week };
   s.talks = null;
   if (s.cabinet) newGovernment(s);
   if (quiet) return;
+  if (head === s.you && !wasHead) mark(s, "🏛️", `Became ${titles(s).head}`);
+  else if (wasHead && head !== s.you) mark(s, "🚪", `Left office as ${titles(s).head}`);
+  else if (parties.includes(s.party) && parties[0] !== s.party) mark(s, "🤝", "Joined a coalition government");
   const t = titles(s);
   const names = parties.map((p) => party(s, p).short).join("–");
   const p = pol(s, head);
@@ -1678,6 +1721,7 @@ export function tally(s: GameState, b: Bill, r = roll(s)): Tally {
   let yes = 0;
   let no = 0;
   let abstain = 0;
+  let rebels = 0;
   const stance = new Map<PartyId, number>();
   for (const id of voters(s, b)) {
     const p = pol(s, id);
@@ -1688,15 +1732,18 @@ export function tally(s: GameState, b: Bill, r = roll(s)): Tally {
       let st = stance.get(p.party);
       if (st === undefined) stance.set(p.party, (st = partyStance(s, p.party, b)));
       const unity = (s.parties[p.party]?.unity ?? 50) / 100;
-      const u = st + (r.next() - 0.5) * (1.2 - unity);
+      // Your own lawmakers lean to their wing of the party as far as the whip lets them.
+      const mine = p.party === s.party && b.stage !== "president";
+      const u = (mine ? memberStance(s, p, b, st) : st) + (r.next() - 0.5) * (1.2 - unity);
       v = u > 0.08 ? 1 : u < -0.08 ? -1 : 0;
+      if (mine && Math.abs(st) > 0.08 && v !== 0 && v !== Math.sign(st)) rebels++;
     }
     by[id] = v;
     if (v > 0) yes++;
     else if (v < 0) no++;
     else abstain++;
   }
-  return { yes, no, abstain, by };
+  return { yes, no, abstain, by, rebels };
 }
 
 /** Does a stage's vote carry? */
@@ -1778,6 +1825,7 @@ function advanceBill(s: GameState, b: Bill) {
   const t = tally(s, b);
   const ok = carries(s, b, t);
   b.last = { stage: b.stage, tally: t, passed: ok };
+  if (b.stage !== "president") afterVote(s, b, t);
   const mine = b.party === s.party;
   const sy = sys(s);
   const name = lawOf(s, b.law)?.name ?? "A bill";
@@ -1829,6 +1877,7 @@ function advanceBill(s: GameState, b: Bill) {
     const from = s.laws[b.law];
     s.laws[b.law] = b.option;
     lawChanged(s, b.law, from, b.option, mine, s.gov.head === s.you);
+    maybeChallenge(s, b.law, from, b.option, mine);
     const l = lawOf(s, b.law)!;
     news(s, "law", `${l.name} becomes law${sy.exec === "presidential" ? "" : ` with ${titles(s).assent}`}: ${l.options[b.option].label}`, mine ? 1 : 0);
     if (mine) {
@@ -1895,7 +1944,7 @@ export function holdEvent(s: GameState, id: string, state = s.homeState, target?
   // Campaign staff: the press secretary heads off backfires, the campaign manager gets more out of every event.
   const backfired = !!ev.risk && r.next() < ev.risk * (1 - 0.1 * staffSkill(s, "press"));
   const k = (backfired ? -0.8 : 1) * (0.7 + you.charisma / 15) * again * (backfired ? 1 : 1 + 0.05 * staffSkill(s, "manager"));
-  const boost = ev.boost * k;
+  const boost = ev.boost * k * (backfired ? 1 : playerEdge(s));
   const camp = s.campaign[s.party];
   if (ev.scope === "state") camp[state] = clamp(camp[state] + boost, -20, 40);
   else if (ev.scope === "national") for (let i = 0; i < camp.length; i++) camp[i] = clamp(camp[i] + boost * 0.6, -20, 40);
@@ -1966,7 +2015,7 @@ function aiTurn(s: GameState) {
     for (let k = 0; k < n && ps.funds > 1; k++) {
       const st = c.states[Math.floor(r.next() * c.states.length)];
       if (pd.only && !pd.only.includes(st.key)) continue;
-      s.campaign[id][st.id] = clamp(s.campaign[id][st.id] + 2 + r.next() * 3, -20, 40);
+      s.campaign[id][st.id] = clamp(s.campaign[id][st.id] + (2 + r.next() * 3) * aiStrength(s), -20, 40);
       ps.funds -= 0.6;
     }
     // Bills: the biggest parties write the most.
@@ -2005,14 +2054,15 @@ function economy(s: GameState) {
   // The cabinet (good ministers help), temporary boosts (crisis decisions, executive actions) and trade deals.
   const cab = cabinetFx(s);
   const bf = s.budgetFx;
-  const extra = { growth: cab.growth + (s.boosts?.growth ?? 0) + (s.tradeGrowth ?? 0) + (bf?.growth ?? 0), happiness: cab.happiness + (s.boosts?.happiness ?? 0) + (bf?.happiness ?? 0) };
+  const mf = marketFx(s);
+  const extra = { growth: cab.growth + (s.boosts?.growth ?? 0) + (s.tradeGrowth ?? 0) + (bf?.growth ?? 0) + mf.growth, happiness: cab.happiness + (s.boosts?.happiness ?? 0) + (bf?.happiness ?? 0) + mf.happiness };
   const targetHappy = e.happiness + fx.happiness + extra.happiness - Math.max(0, st.unemployment - e.unemployment - 1) * 0.8 + (st.growth - e.growth) * 1.5;
   st.happiness += (targetHappy - st.happiness) * 0.05 + (r.next() - 0.5) * 0.3;
   const debtNorm = e.debt / (e.gdp * 1000);
   const targetGrowth = e.growth + fx.growth + extra.growth - Math.max(0, st.debt / (st.gdp * 1000) - debtNorm - 0.2) * 1.5;
   st.growth += (targetGrowth - st.growth) * 0.04 + (r.next() - 0.5) * 0.08;
   st.unemployment = clamp(st.unemployment + (e.unemployment + fx.unemployment + (bf?.unemployment ?? 0) - (st.growth - e.growth) * 0.6 - st.unemployment) * 0.04, 1, 30);
-  st.budget = e.budget + fx.budget + (cab.budget + (bf?.budget ?? 0)) * k + (st.growth - e.growth) * 25 * k;
+  st.budget = e.budget + fx.budget + (cab.budget + (bf?.budget ?? 0)) * k + mf.budget + (st.growth - e.growth) * 25 * k;
   st.debt = Math.max(0, st.debt - st.budget / WEEKS);
   st.gdp *= 1 + st.growth / 100 / WEEKS;
   // The government's approval follows how people feel.
@@ -2124,6 +2174,7 @@ export function endTurn(s: GameState) {
   // Whatever the player left unanswered (a crisis, a debate, a challenge) is settled.
   settlePending(s);
   settleCampaign(s);
+  settleInstitutions(s);
   if (s.over) return s;
   // Votes due this week.
   for (const b of s.bills) if (b.stage !== "passed" && b.stage !== "failed" && b.voteAt <= s.week) advanceBill(s, b);
@@ -2159,6 +2210,10 @@ export function endTurn(s: GameState) {
   s.missions = s.missions.filter((m) => (!m.done && !m.failed) || s.week - m.deadline < 6);
   politicsWeek(s);
   campaignWeek(s);
+  marketsWeek(s);
+  institutionsWeek(s);
+  rivalsWeek(s);
+  careerWeek(s);
   s.usedEvents = [];
   s.week++;
   // What's in the diary for the new week.
@@ -2170,7 +2225,7 @@ export function endTurn(s: GameState) {
   } else regionalElections(s);
   // Regional elections that fell on a national election day happen the week after.
   if (s.election) s.regionNext = s.regionNext.map((w) => (w === s.week ? w + 1 : w));
-  if (yearOf(s) - s.sc.startYear >= CAREER_YEARS) s.over = true;
+  if (!endless(s) && yearOf(s) - s.sc.startYear >= CAREER_YEARS) s.over = true;
   return s;
 }
 
@@ -2298,6 +2353,7 @@ export function load(json: string | null): GameState | null {
       const s = raw as unknown as GameState;
       initPolitics(s);
       initCampaign(s);
+  initRest(s);
       return s;
     }
     // Version 1 and 2: Avalon, before scenarios.
@@ -2340,6 +2396,7 @@ export function load(json: string | null): GameState | null {
     s.v = 3;
     initPolitics(s);
     initCampaign(s);
+  initRest(s);
     return s as GameState;
   } catch {
     return null;

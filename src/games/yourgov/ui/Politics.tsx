@@ -11,6 +11,7 @@ import * as P from "../politics";
 import * as G from "../sim";
 import * as C from "../campaign";
 import { BudgetBox, BudgetCard, QTCard, ScandalCard } from "./Campaign";
+import { ConferenceCard, NomineeCard } from "./Power";
 import { Portrait } from "./Chamber";
 import { Icon } from "./icons";
 import { Bar, fxText, Group, MidBar, Modal, money, pct, Row, Seg, Sheet, Stars, Sw } from "./kit";
@@ -842,6 +843,8 @@ export function Decisions({ g }: { g: Game }) {
   if (C.budgetDue(s) && !later("budget")) return <BudgetCard g={g} />;
   if (s.debate && s.debate.week < s.week && !later("debate")) return <DebateCard g={g} />;
   if (s.qt && s.qt.week < s.week && !later("qt")) return <QTCard g={g} />;
+  if (s.conference && !later("conference")) return <ConferenceCard g={g} />;
+  if (s.court?.nominees && s.gov.head === s.you && !later("court")) return <NomineeCard g={g} />;
   return null;
 }
 

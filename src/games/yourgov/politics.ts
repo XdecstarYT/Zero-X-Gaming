@@ -10,6 +10,8 @@
 import { EVENT, LAW, WEEKS, type PartyId, type Pos } from "./data";
 import type { Country } from "./map";
 import * as C from "./campaign";
+import * as K from "./career";
+import * as M from "./media";
 import * as G from "./sim";
 
 const dist = (a: Pos, b: Pos) => Math.hypot(a.e - b.e, a.s - b.s);
@@ -182,6 +184,7 @@ export function answerChallenge(s: G.GameState, a: ChallengeAnswer) {
   const support = leadershipSupport(s) + (G.roll(s).next() - 0.5) * 0.12;
   if (support >= 0.5) {
     C.note(s, "challengesSurvived");
+    K.mark(s, "🛡️", "Survived a leadership challenge");
     ps.unity = clamp(ps.unity + 15, 0, 100);
     for (const x of s.factions) x.mood = clamp(x.mood + 6, 0, 100);
     s.score += 50;
@@ -190,6 +193,7 @@ export function answerChallenge(s: G.GameState, a: ChallengeAnswer) {
   }
   s.ousted = true;
   s.over = true;
+  K.mark(s, "👋", "Ousted by the party");
   G.news(s, "party", `${G.fullName(G.pol(s, s.you)!)} is ousted as ${G.titles(s).leader.toLowerCase()} of the ${G.party(s, s.party).name}`, -1);
   return { survived: false, support };
 }
@@ -286,7 +290,7 @@ export function finishDebate(s: G.GameState) {
   s.debate = null;
   const rival = G.party(s, d.rival);
   const ps = s.parties[s.party];
-  const won = total > 6;
+  const won = total > M.debateBar(s, d.rival);
   const lost = total < 0;
   if (won) {
     C.note(s, "debatesWon");
@@ -597,7 +601,8 @@ export function answerCrisis(s: G.GameState, choice: number) {
 function maybeCrisis(s: G.GameState) {
   if (s.crisis || s.week < s.nextCrisis) return;
   const r = G.roll(s);
-  s.nextCrisis = s.week + 9 + r.int(0, 10);
+  const [gap, spread] = K.crisisGap(s);
+  s.nextCrisis = s.week + gap + r.int(0, spread);
   const def = r.pick(CRISES);
   const c = G.country(s);
   const head = s.gov.head === s.you;
@@ -703,6 +708,7 @@ export function callReferendum(s: G.GameState, law: string, option: number): { y
     s.lawsPassed++;
     s.score += 60;
     C.note(s, "referendumsWon");
+    K.mark(s, "✅", `Won a referendum on ${l.name.toLowerCase()}`);
   } else s.stats.approval = clamp(s.stats.approval - 4, 5, 95);
   G.news(s, "law", `Referendum on ${l.name.toLowerCase()} (${l.options[option].label}): ${passed ? "yes" : "no"} wins with ${Math.round((passed ? yes : 1 - yes) * 100)}%`, passed ? 1 : -1);
   return { yes, passed };
@@ -896,8 +902,9 @@ export function politicsWeek(s: G.GameState) {
   ps.unity = clamp(ps.unity + (fm - ps.unity) * 0.05, 0, 100);
   if (ps.unity < 30) s.lowUnity++;
   else s.lowUnity = Math.max(0, s.lowUnity - 1);
-  if (s.lowUnity === 4) G.news(s, "party", `Rumblings in the ${G.party(s, s.party).short}: rebels talk of a leadership challenge`, -1);
-  if (s.lowUnity >= 8 && !s.challenge && !s.over) {
+  const after = K.challengeAfter(s);
+  if (s.lowUnity === Math.floor(after / 2) && after < Infinity) G.news(s, "party", `Rumblings in the ${G.party(s, s.party).short}: rebels talk of a leadership challenge`, -1);
+  if (s.lowUnity >= after && !s.challenge && !s.over) {
     const worst = [...s.factions].sort((a, b) => a.mood - b.mood)[0];
     s.challenge = { week: s.week, faction: worst.id };
     G.news(s, "party", `The ${worst.name.toLowerCase()} trigger a leadership challenge`, -1);

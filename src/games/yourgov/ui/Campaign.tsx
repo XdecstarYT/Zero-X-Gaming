@@ -14,6 +14,7 @@ import { Portrait } from "./Chamber";
 import { Hemicycle } from "./charts";
 import { Icon } from "./icons";
 import { Group, Modal, money, pct, Row, Seg, Stars, Sw, wage } from "./kit";
+import { Social, TraitChip } from "./Power";
 
 const posDist = (a: Pos, b: Pos) => Math.hypot(a.e - b.e, a.s - b.s);
 
@@ -116,7 +117,7 @@ export function Leaders({ g }: { g: Game }) {
               <Portrait s={s} p={p} size={30} />
               <span className="grow">
                 {p ? G.fullName(p) : "—"}
-                {x.party === s.party && <span className="yg-tag accent">you</span>}
+                {x.party === s.party ? <span className="yg-tag accent">you</span> : <TraitChip s={s} party={x.party} />}
                 <span className="yg-fav" aria-label={`${Math.round(x.fav * 100)}% favourable, ${Math.round(x.unfav * 100)}% unfavourable`}>
                   <i className="good" style={{ width: `${x.fav * 100}%` }} />
                   <i className="bad" style={{ width: `${x.unfav * 100}%` }} />
@@ -438,11 +439,12 @@ export function HQ({ g }: { g: Game }) {
           { id: "staff", label: "Staff" },
           { id: "manifesto", label: "Manifesto" },
           { id: "position", label: "Position" },
+          { id: "social", label: "Social" },
         ]}
         testId="yg-hq"
         className="yg-seg-fill"
       />
-      {g.ui.hq === "staff" ? <Staff g={g} /> : g.ui.hq === "manifesto" ? <Manifesto g={g} /> : <Position g={g} />}
+      {g.ui.hq === "staff" ? <Staff g={g} /> : g.ui.hq === "manifesto" ? <Manifesto g={g} /> : g.ui.hq === "social" ? <Social g={g} /> : <Position g={g} />}
     </>
   );
 }

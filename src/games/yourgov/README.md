@@ -149,7 +149,38 @@ Wired in the same way (`initCampaign`, `campaignWeek` after `politicsWeek`, `set
   systems), as head of government or a leader in opposition; **party scandals** to handle
   (suspend, stand by, apologise or deny); an **election-night speech**; an exit poll as the count
   begins.
-- **Achievements**: 28 career milestones, each adding to the score.
+- **Achievements**: 32 career milestones, each adding to the score.
+
+## The super mega update
+
+Four more modules, wired the same way (`init…` from `initRest` in sim.ts, a weekly function from
+`endTurn`, anything unanswered settled at the start of the next week).
+
+- **Markets** (`markets.ts`): inflation (the economy running hot, deficits, crisis shocks, dear
+  money pulling it back), the interest rate (an independent central bank follows a Taylor rule;
+  under government the head of government sets it every few weeks, an AI government a little
+  looser; abolished, it drifts), a stock market index and a credit rating that moves a notch at a
+  time with debt and deficits. Dearer money slows growth and costs the budget interest; inflation
+  above where it started hurts happiness and rises up the issues list.
+- **Institutions** (`institutions.ts`): **the whips** (each of your lawmakers leans towards their
+  faction's view of a bill, as far as a normal whip, a three-line whip or a free vote allows; the
+  tally counts rebels, and rebellions cost unity); **the court** (nine judges with places on the
+  compass; changes to rights laws and constitutional laws are often challenged and the bench
+  rules weeks later, upholding the change or striking it down; seats come free every year or two,
+  the head of government picks a nominee and, in presidential systems, the upper house confirms);
+  **the party conference** each year (your speech, and a motion from each wing to back or oppose:
+  backed motions become promises).
+- **Media** (`media.ts`): posting twice a week (followers grow towards a third of the country,
+  some posts go viral and lift you everywhere, some backfire) and rival leaders' **traits**
+  (firebrand, technocrat, populist, veteran, celebrity) that change how they campaign, attack and
+  debate.
+- **Career** (`career.ts`): **difficulty** (AI campaigning, your events' pull, crisis frequency,
+  how quickly the party turns) and a **sandbox** (no time limit, no challenges); `needsYou` for
+  **skipping ahead** to the next thing that needs you; the career **timeline**, the **legacy**
+  title and rating, and a local **hall of fame** of the ten best careers.
+- The **weekly front page** (News), a **Markets** page (The country), the **whip** on every bill,
+  the **court** in the parliament panel, a **Social** page in Campaign HQ, nominee and conference
+  cards, the story of your career, and difficulty, sandbox and the hall of fame on the title.
 
 ## Maps (`map.ts`)
 
@@ -200,6 +231,10 @@ and the week strip picks when an event happens; tapping the timeline opens it at
 | `map.ts` | Generated and real maps |
 | `sim.ts` | Game state and every rule |
 | `campaign.ts` | The polling centre, campaign staff, the manifesto, the budget, Question Time, party scandals, moving the party, election-night speeches, achievements |
+| `markets.ts` | Inflation, interest rates, the stock market, the credit rating |
+| `institutions.ts` | The whips and rebels, the court, the party conference |
+| `media.ts` | Social media and rival leaders' traits |
+| `career.ts` | Difficulty and sandbox, skipping ahead, the timeline, legacy and hall of fame |
 | `politics.ts` | Voter groups, interest groups, the press, factions, debates, the diary, the cabinet, coalition deals, crises, executive actions, referendums, foreign relations |
 | `game.ts` | The controller: actions, settings, the scenario library, sound, saving, score |
 | `geo/` | Real countries' map data (generated; see above) |
@@ -207,6 +242,7 @@ and the week strip picks when an event happens; tapping the timeline opens it at
 | `ui/App.tsx` | The Liquid Glass HUD: bars, dock, sheets, election night, coalition talks |
 | `ui/Politics.tsx` | Events and the diary, voters and the press, the government, factions; crisis, debate and challenge cards |
 | `ui/Campaign.tsx` | The polling centre's pages, campaign HQ, the budget, Question Time and scandal cards, achievements, election-night extras |
+| `ui/Power.tsx` | Markets, whips, the court, the conference, social media, the front page, legacy and hall of fame |
 | `ui/kit.tsx` | The building blocks every panel uses |
 | `ui/Title.tsx` | Picking a country and a party; your scenarios; share codes |
 | `ui/ScenarioStudio.tsx` | Making a country: map, parties, system, economy and laws |

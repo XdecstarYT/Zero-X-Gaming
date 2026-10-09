@@ -8,19 +8,25 @@ import { EVENT, SAVE_KEY, type PartyId } from "./data";
 import { mapReady, prepareMap } from "./map";
 import { checkScenario, readCode, type Scenario } from "./scenario";
 import * as C from "./campaign";
+import * as K from "./career";
+import * as I from "./institutions";
+import * as Mk from "./markets";
+import * as Md from "./media";
 import * as P from "./politics";
 import * as G from "./sim";
 import { Sound } from "./audio";
 import type { MapMode } from "./ui/mapColors";
 
 const LIBRARY_KEY = "zx-yourgov-scenarios";
+const HALL_KEY = "zx-yourgov-hall";
 /** Most custom scenarios kept. */
 export const LIBRARY_MAX = 24;
 
 export type Tab = "bills" | "write" | "events" | "chamber" | "parties" | "party" | "country" | "news" | "missions" | "settings" | "voters" | "gov" | "hq" | null;
 /** The pages of the polling centre (the parties panel). */
 export type PollPage = "parties" | "groups" | "regions" | "leaders" | "issues" | "seats";
-export type HqPage = "staff" | "manifesto" | "position";
+export type HqPage = "staff" | "manifesto" | "position" | "social";
+export type CountryPage = "overview" | "markets";
 /** The sections of the events panel. */
 export type EventKind = "campaign" | "voters" | "money" | "party" | "diary";
 
@@ -58,6 +64,9 @@ export interface UIState {
   hq: HqPage;
   /** The budget card is open (outside budget season too). */
   budget: boolean;
+  country: CountryPage;
+  /** The weekly front page is open. */
+  paper: boolean;
   /** The law studio: drafting a new law (id null) or editing one of yours. */
   studio: { id: string | null } | null;
   toasts: { id: number; text: string; tone: 1 | 0 | -1 }[];
@@ -85,7 +94,7 @@ export interface Scorer {
 
 export class Game {
   s: G.GameState | null = null;
-  ui: UIState = { tab: "missions", view: "map", mapMode: "politics", house: "house", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, poll: "parties", hq: "staff", budget: false, studio: null, toasts: [], count: 0 };
+  ui: UIState = { tab: "missions", view: "map", mapMode: "politics", house: "house", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, poll: "parties", hq: "staff", budget: false, country: "overview", paper: false, studio: null, toasts: [], count: 0 };
   prefs: Prefs = { ...DEFAULT_PREFS };
   readonly sound = new Sound();
   private listeners = new Set<() => void>();
@@ -97,6 +106,10 @@ export class Game {
   loadingSave = false;
   /** The player's own scenarios. */
   library: Scenario[] = [];
+  /** The best careers on this device. */
+  hall: K.HallEntry[] = [];
+  /** Where the last finished career placed in the hall of fame (-1: it didn't). */
+  hallPlace = -1;
 
   constructor(private scorer: Scorer) {
     try {
@@ -126,6 +139,12 @@ export class Game {
       this.library = (Array.isArray(raw) ? raw : []).map((x) => checkScenario(x)).filter((x): x is Scenario => typeof x !== "string");
     } catch {
       this.library = [];
+    }
+    try {
+      const raw = JSON.parse(localStorage.getItem(HALL_KEY) ?? "[]") as unknown;
+      this.hall = Array.isArray(raw) ? (raw.filter((x) => x && typeof x === "object" && typeof (x as K.HallEntry).score === "number") as K.HallEntry[]).slice(0, 10) : [];
+    } catch {
+      this.hall = [];
     }
     try {
       this.prefs = { ...DEFAULT_PREFS, ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as Partial<Prefs>) };
@@ -193,10 +212,11 @@ export class Game {
   // ------------------------------------------------------------------ lifecycle
 
   /** Start a career (the scenario's map must be loaded: see `prepare`). */
-  newGame(party: PartyId, seed = Math.floor(Math.random() * 1e6) + 1, scenario?: Scenario) {
-    this.s = G.newGame(seed, party, scenario ? { scenario: structuredClone(scenario) } : {});
+  newGame(party: PartyId, seed = Math.floor(Math.random() * 1e6) + 1, scenario?: Scenario, mode?: K.Mode) {
+    this.s = G.newGame(seed, party, { ...(scenario ? { scenario: structuredClone(scenario) } : {}), mode });
+    this.hallPlace = -1;
     this.startedAt = performance.now();
-    this.ui = { ...this.ui, tab: "missions", view: "map", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, poll: "parties", hq: "staff", budget: false, studio: null, count: 0 };
+    this.ui = { ...this.ui, tab: "missions", view: "map", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, poll: "parties", hq: "staff", budget: false, country: "overview", paper: false, studio: null, count: 0 };
     this.sound.play("start");
     this.changed();
   }
@@ -269,6 +289,16 @@ export class Game {
   private finish() {
     if (!this.s) return;
     this.scorer.final(this.s.score);
+    // Into the hall of fame (sandbox careers don't count).
+    if (this.s.mode?.sandbox) return;
+    const { list, place } = K.addToHall(this.hall, K.hallEntry(this.s));
+    this.hall = list;
+    this.hallPlace = place;
+    try {
+      localStorage.setItem(HALL_KEY, JSON.stringify(list));
+    } catch {
+      /* storage full or blocked */
+    }
   }
 
   get activeMs() {
@@ -375,7 +405,7 @@ export class Game {
   // ------------------------------------------------------------------ the wider politics
 
   /** Put a decision (crisis, debate, challenge…) off to the end of the week. */
-  later(kind: "crisis" | "debate" | "challenge" | "qt" | "scandal" | "budget") {
+  later(kind: "crisis" | "debate" | "challenge" | "qt" | "scandal" | "budget" | "court" | "conference") {
     if (!this.s) return;
     this.setUI({ later: { ...this.ui.later, [kind]: this.s.week } });
   }
@@ -537,6 +567,69 @@ export class Game {
     const s = this.s;
     if (!s || !C.electionSpeech(s, id)) return;
     this.sound.play("cheer");
+    this.changed();
+  }
+
+  // ------------------------------------------------------------------ the super mega update
+
+  /** End weeks until something needs you (at most a dozen). */
+  fastForward(max = 12) {
+    const s = this.s;
+    if (!s) return;
+    const why = K.needsYou(s);
+    if (why) return this.toast(`${why} first`, 0);
+    let n = 0;
+    while (n < max && !K.needsYou(this.s!) && !s.over) {
+      this.endTurn();
+      n++;
+    }
+    const stop = K.needsYou(s);
+    if (stop && !s.election) this.toast(`Skipped ${n} week${n === 1 ? "" : "s"}: ${stop.toLowerCase()} needs you`, 0);
+  }
+
+  setRate(rate: number) {
+    const s = this.s;
+    if (!s) return;
+    const e = Mk.setRate(s, rate);
+    if (e) return this.toast(e, -1);
+    this.sound.play("gavel");
+    this.toast(s.news[0]?.text ?? "Done", 0);
+    this.changed();
+  }
+
+  setWhip(bill: number, w: I.Whip) {
+    if (!this.s || !I.setWhip(this.s, bill, w)) return;
+    this.sound.play("click");
+    this.changed();
+  }
+
+  nominate(i: number) {
+    const s = this.s;
+    if (!s) return;
+    const r = I.nominate(s, i);
+    if (!r.ok) return this.toast(r.why ?? "No vacancy", -1);
+    this.sound.play(r.confirmed ? "win" : "bad");
+    this.toast(s.news[0]?.text ?? "Done", r.confirmed ? 1 : -1);
+    this.changed();
+  }
+
+  conference(speech: string, back: boolean[]) {
+    const s = this.s;
+    if (!s?.conference) return;
+    const sp = I.holdConference(s, speech, back);
+    if (!sp) return;
+    this.sound.play("cheer");
+    this.toast(s.news[0]?.text ?? "Conference closes", 1);
+    this.changed();
+  }
+
+  post(kind: string) {
+    const s = this.s;
+    if (!s) return;
+    const r = Md.post(s, kind);
+    if (!r.ok) return this.toast(r.why ?? "You can't post now", -1);
+    this.sound.play(r.viral ? "win" : r.backfired ? "bad" : "click");
+    this.toast(r.viral ? "It's going viral!" : r.backfired ? "That didn't land…" : "Posted", r.viral ? 1 : r.backfired ? -1 : 0);
     this.changed();
   }
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createRng } from "../../engine/rng";
 import { COMMITTEES, LAW_GROUPS, type LawDef, type PartyId } from "../data";
-import type { Game, PollPage, Tab } from "../game";
+import type { CountryPage, Game, PollPage, Tab } from "../game";
 import { EXEC_KINDS, LOWER_SYSTEMS, UPPER_KINDS } from "../scenario";
 import * as G from "../sim";
 import { Portrait } from "./Chamber";
@@ -10,6 +10,7 @@ import { GlassDefs, canRefract, trackSheen } from "./glass";
 import { Icon } from "./icons";
 import { Bar, big, cap, Flag, fxText, Group, money, pct, Row, Seg, Sheet, Sw } from "./kit";
 import { Achievements, Crosstabs, ExitPoll, HQ, Issues, Leaders, RegionTable, Seats, Speech } from "./Campaign";
+import { CourtBox, FrontPage, LegacyBox, MarketsPage, Timeline as Story, TraitChip, WhipControl } from "./Power";
 import { Confetti, Decisions, Events, Factions, Government, govAlert, ReferendumButton, Voters } from "./Politics";
 import { LawStudio } from "./LawStudio";
 import type { MapMode } from "./mapColors";
@@ -89,6 +90,7 @@ function Career({ g }: { g: Game }) {
         ))}
       </Group>
       <Achievements g={g} />
+      <Story g={g} />
     </Sheet>
   );
 }
@@ -295,6 +297,7 @@ function Bills({ g }: { g: Game }) {
             {btn(0, "Abstain", proj?.abstain, "")}
             {btn(-1, "Decline", proj?.no, "bad")}
           </div>
+          <WhipControl g={g} b={b} rebels={proj?.rebels ?? 0} />
           <Group label={`Lobby the parties (${money(s, G.LOBBY_COST)} a go, twice each)`}>
             {G.partyDefs(s)
               .filter((p) => p.id !== s.party && G.voters(s, b).some((id) => G.pol(s, id)?.party === p.id))
@@ -450,6 +453,7 @@ function Parliament({ g }: { g: Game }) {
             </Row>
           ))}
       </Group>
+      <CourtBox g={g} />
       <Group label="Committees">
         {COMMITTEES.map((name) => (
           <Row key={name}>
@@ -513,6 +517,7 @@ function Parties({ g }: { g: Game }) {
               {!p.noRun && <Portrait s={s} p={leader} size={26} />}
               <span className="grow small">
                 {p.noRun ? "Doesn't stand in elections" : `${leader ? G.fullName(leader) : ""} · ${p.ideology}`}
+                {!p.noRun && !p.others && <TraitChip s={s} party={p.id} />}
                 {p.only && ` · ${p.only.length === 1 ? (G.country(s).states.find((x) => x.key === p.only![0])?.name ?? "") + " only" : "regional"}`}
               </span>
               <span className="small">{house[p.id]} seats</span>
@@ -649,8 +654,29 @@ function Country({ g }: { g: Game }) {
   const head = G.pol(s, s.gov.head);
   const pres = G.pol(s, s.president);
   const cur = s.sc.economy.cur;
+  const pages = (
+    <Seg<CountryPage>
+      value={g.ui.country}
+      label="The country"
+      onChange={(v) => g.setUI({ country: v })}
+      options={[
+        { id: "overview", label: "Overview" },
+        { id: "markets", label: "Markets" },
+      ]}
+      testId="yg-country-page"
+      className="yg-seg-fill"
+    />
+  );
+  if (g.ui.country === "markets")
+    return (
+      <Sheet title={s.sc.name} eyebrow="Inflation, rates and markets" onClose={() => g.setUI({ tab: null })} testId="yg-p-country">
+        {pages}
+        <MarketsPage g={g} />
+      </Sheet>
+    );
   return (
     <Sheet title={s.sc.name} eyebrow={EXEC_KINDS.find((x) => x.id === sy.exec)?.name ?? ""} onClose={() => g.setUI({ tab: null })} testId="yg-p-country">
+      {pages}
       <div className="yg-tiles">
         <div className="yg-tile-stat">
           <span>Population</span>
@@ -741,6 +767,14 @@ function News({ g }: { g: Game }) {
   const s = g.s!;
   return (
     <Sheet title="News" eyebrow={`${s.sc.name} today`} onClose={() => g.setUI({ tab: null })} testId="yg-p-news">
+      <button type="button" className="yg-cta" onClick={() => g.setUI({ paper: true })} data-testid="yg-open-paper">
+        <span className="yg-cta-icon">📰</span>
+        <span>
+          <b>This week&apos;s front page</b>
+          <small>The headlines, the polls and the markets</small>
+        </span>
+        <Icon name="chevron" size={18} />
+      </button>
       {s.news.map((n, i) => (
         <article key={i} className={`yg-news ${n.tone > 0 ? "good" : n.tone < 0 ? "bad" : ""}`}>
           <span className="yg-muted small">
@@ -1164,6 +1198,9 @@ function BottomBar({ g }: { g: Game }) {
         </span>
         <Timeline g={g} />
       </div>
+      <button type="button" className="yg-glass yg-btn icon yg-ff" title="Skip ahead to the next thing that needs you" aria-label="Skip ahead" disabled={!!s.election || !!s.talks || s.over} onClick={() => g.fastForward()} data-testid="yg-ff">
+        ⏩
+      </button>
       <button type="button" className="yg-endturn" title="End the week (Enter)" disabled={!!s.election || !!s.talks || s.over} onClick={() => g.endTurn()} data-testid="yg-end-turn">
         <Icon name="hourglass" size={20} stroke={2} />
         <span>End week</span>
@@ -1236,6 +1273,7 @@ function GameOver({ g }: { g: Game }) {
               <b>{s.electionsWon}</b>
             </div>
           </div>
+          <LegacyBox g={g} />
           <Group>
             <Row>
               <span className="grow">Budgets approved</span>
@@ -1246,6 +1284,7 @@ function GameOver({ g }: { g: Game }) {
               <span className="r">{s.custom.length}</span>
             </Row>
           </Group>
+          <Story g={g} max={10} />
         </div>
         <footer className="yg-modal-foot">
           <button type="button" className="yg-btn primary wide" onClick={() => g.quit()} data-testid="yg-again">
@@ -1364,6 +1403,7 @@ export function App({ game }: { game: Game }) {
       {s.talks && !s.election && <Talks g={g} />}
       {g.ui.studio && <LawStudio g={g} />}
       <Decisions g={g} />
+      {g.ui.paper && !s.election && <FrontPage g={g} />}
       {s.over && !g.ui.result && <GameOver g={g} />}
     </div>
   );
