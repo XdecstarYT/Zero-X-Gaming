@@ -16,7 +16,7 @@
  * Usage:
  *   node scripts/yourgov/build-geo.mjs <natural-earth-geojson-dir> <tile-cache-dir> [codes...]
  * The Natural Earth files needed (from github.com/nvkelso/natural-earth-vector/geojson):
- *   ne_10m_admin_1_states_provinces.geojson, ne_50m_admin_0_countries.geojson,
+ *   ne_10m_admin_1_states_provinces_lakes.geojson, ne_50m_admin_0_countries.geojson,
  *   ne_10m_populated_places_simple.geojson
  */
 import { execFileSync } from "node:child_process";
@@ -512,7 +512,7 @@ if (!neDir || !tileDir) {
 mkdirSync(tileDir, { recursive: true });
 mkdirSync(OUT, { recursive: true });
 const ne = {
-  admin1: JSON.parse(readFileSync(join(neDir, "ne_10m_admin_1_states_provinces.geojson"), "utf8")),
+  admin1: JSON.parse(readFileSync(join(neDir, "ne_10m_admin_1_states_provinces_lakes.geojson"), "utf8")),
   admin0: JSON.parse(readFileSync(join(neDir, "ne_50m_admin_0_countries.geojson"), "utf8")),
   places: JSON.parse(readFileSync(join(neDir, "ne_10m_populated_places_simple.geojson"), "utf8")),
   tiles: tileDir,
