@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LAW, PARTIES } from "./data";
+import { LAW, PARTIES, type LawDef } from "./data";
 import * as G from "./sim";
 
 describe("YourGov", () => {
@@ -57,9 +57,9 @@ describe("YourGov", () => {
   it("constitutional laws need two thirds", () => {
     const s = G.newGame(3, "ctr");
     const b = G.proposeBill(s, "votingAge", 0)!;
-    expect(G.required(b)).toBeCloseTo(2 / 3);
-    expect(G.carries(b, { yes: 60, no: 40, abstain: 0, by: {} })).toBe(false);
-    expect(G.carries(b, { yes: 70, no: 30, abstain: 0, by: {} })).toBe(true);
+    expect(G.required(s, b)).toBeCloseTo(2 / 3);
+    expect(G.carries(s, b, { yes: 60, no: 40, abstain: 0, by: {} })).toBe(false);
+    expect(G.carries(s, b, { yes: 70, no: 30, abstain: 0, by: {} })).toBe(true);
   });
 
   it("events cost money, move your numbers and can only be held once a turn", () => {
@@ -98,14 +98,115 @@ describe("YourGov", () => {
     expect(budgets).toBeGreaterThanOrEqual(19);
     expect(s.news.length).toBeGreaterThan(10);
     expect(Number.isFinite(s.stats.happiness) && Number.isFinite(s.stats.gdp)).toBe(true);
-    console.log("score", s.score, "laws", Object.entries(s.laws).filter(([k, v]) => LAW[k].start !== v).length, "won", s.electionsWon, "pres", G.pol(s, s.president)?.party, JSON.stringify(G.houseBy(s)));
+    expect(s.history.length).toBeGreaterThan(100);
+    expect(s.history.length).toBeLessThanOrEqual(260);
   }, 60_000);
 
-  it("saves and loads", () => {
+  it("saves and loads, and upgrades a version 1 save", () => {
     const s = G.newGame(4, "lib");
     G.endTurn(s);
     const back = G.load(G.save(s))!;
     expect(back.week).toBe(s.week);
     expect(G.load("nonsense")).toBeNull();
+    const old = JSON.parse(G.save(s));
+    old.v = 1;
+    delete old.custom;
+    delete old.history;
+    delete old.nextLaw;
+    const up = G.load(JSON.stringify(old))!;
+    expect(up.v).toBe(2);
+    expect(up.custom).toEqual([]);
+    expect(up.history).toEqual([]);
+  });
+
+  it("records a weekly history of the polls and the economy", () => {
+    const s = G.newGame(6, "ctr");
+    expect(s.history).toHaveLength(1);
+    for (let i = 0; i < 5; i++) G.endTurn(s);
+    expect(s.history).toHaveLength(6);
+    const h = s.history[s.history.length - 1];
+    expect(h.poll).toHaveLength(G.PARTY_IDS.length);
+    expect(h.poll.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 2);
+  });
+});
+
+describe("custom laws", () => {
+  const draft = (over: Partial<G.LawDraft> = {}): G.LawDraft => ({
+    name: "Four-day week",
+    about: "How many days make a working week.",
+    group: "Economy",
+    start: 0,
+    options: [
+      { label: "Five days", pos: { e: 0.4, s: 0.2 }, fx: {} },
+      { label: "Four days", pos: { e: -0.5, s: -0.3 }, fx: { happiness: 3, growth: -0.2 } },
+    ],
+    ...over,
+  });
+
+  it("drafts a law into the books with today's option in force", () => {
+    const s = G.newGame(12, "grn");
+    const funds = s.parties.grn.funds;
+    const law = G.draftLaw(s, draft());
+    expect(typeof law).not.toBe("string");
+    const l = law as LawDef;
+    expect(l.custom).toBe(true);
+    expect(l.committee).toBe(1);
+    expect(s.laws[l.id]).toBe(0);
+    expect(G.lawOf(s, l.id)).toBe(l);
+    expect(G.allLaws(s)).toContain(l);
+    expect(s.parties.grn.funds).toBeCloseTo(funds - G.DRAFT_COST);
+  });
+
+  it("checks drafts: names, options, limits and clean text", () => {
+    const s = G.newGame(12, "grn");
+    expect(G.draftLaw(s, draft({ name: "x" }))).toMatch(/name/);
+    expect(G.draftLaw(s, draft({ name: "Healthcare" }))).toMatch(/already/);
+    expect(G.draftLaw(s, draft({ options: [{ label: "Only", pos: { e: 0, s: 0 }, fx: {} }] }))).toMatch(/2 to 5/);
+    expect(G.draftLaw(s, draft({ start: 5 }))).toMatch(/in force/);
+    const l = G.draftLaw(s, draft({ name: "  <b>Big</b>   law\u0007 ", options: [{ label: "A", pos: { e: 9, s: -9 }, fx: { budget: 999, happiness: -50 } }, { label: "B", pos: { e: 0, s: 0 }, fx: {} }] })) as LawDef;
+    expect(l.name).toBe("bBig/b law");
+    expect(l.options[0].pos).toEqual({ e: 1, s: -1 });
+    expect(l.options[0].fx).toEqual({ happiness: -G.FX_LIMITS.happiness, budget: G.FX_LIMITS.budget });
+  });
+
+  it("goes through the legislature, takes effect, and can be repealed", () => {
+    const s = G.newGame(14, "grn");
+    const l = G.draftLaw(s, draft()) as LawDef;
+    const happyBefore = G.lawEffects(s).happiness;
+    const b = G.proposeBill(s, l.id, 1)!;
+    expect(b).toBeTruthy();
+    expect(G.repealLaw(s, l.id)).toBe(false);
+    // Force it through to see it take effect.
+    for (let i = 0; i < 8 && b.stage !== "passed" && b.stage !== "failed"; i++) {
+      b.lobbied = [...G.PARTY_IDS];
+      G.endTurn(s);
+      if (s.election) G.closeElection(s);
+    }
+    if (b.stage === "passed") expect(G.lawEffects(s).happiness).toBeCloseTo(happyBefore + 3);
+    expect(G.repealLaw(s, l.id)).toBe(true);
+    expect(G.lawOf(s, l.id)).toBeUndefined();
+    expect(s.laws[l.id]).toBeUndefined();
+    expect(Number.isFinite(G.lawEffects(s).happiness)).toBe(true);
+  });
+
+  it("can be edited until it has been voted on, and AI parties use custom laws too", () => {
+    const s = G.newGame(15, "ctr");
+    const l = G.draftLaw(s, draft()) as LawDef;
+    const e = G.editLaw(s, l.id, draft({ name: "Four-day work week", start: 1 })) as LawDef;
+    expect(e.name).toBe("Four-day work week");
+    expect(s.laws[l.id]).toBe(1);
+    G.proposeBill(s, l.id, 0);
+    expect(G.editLaw(s, l.id, draft())).toMatch(/already/);
+    // The left-wing parties want five days → four days; over a few years someone proposes it.
+    const s2 = G.newGame(16, "her");
+    for (let k = 0; k < G.CUSTOM_MAX; k++) expect(typeof G.draftLaw(s2, draft({ name: `Law number ${k}` }))).not.toBe("string");
+    expect(G.draftLaw(s2, draft({ name: "One too many" }))).toMatch(/at most/);
+    let ai = false;
+    for (let i = 0; i < 200 && !ai; i++) {
+      G.endTurn(s2);
+      if (s2.election) G.closeElection(s2);
+      ai = s2.bills.some((b) => b.law.startsWith("custom-") && b.party !== "her");
+    }
+    expect(ai).toBe(true);
   });
 });

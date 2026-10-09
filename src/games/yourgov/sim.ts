@@ -7,7 +7,7 @@
  * Pure and deterministic: all randomness comes from the state's own seeded stream.
  */
 import { createRng } from "../engine/rng";
-import { COMMITTEES, EVENT, FIRST, LAST, LAW, LAWS, PARTIES, PARTY, START_YEAR, WEEKS, type Effects, type LawDef, type PartyId, type Pos } from "./data";
+import { COMMITTEES, EVENT, FIRST, GROUP_COMMITTEE, LAST, LAW, LAW_GROUPS, LAWS, PARTIES, PARTY, START_YEAR, WEEKS, type Effects, type LawDef, type LawGroup, type PartyId, type Pos } from "./data";
 import { makeCountry, type Country } from "./map";
 
 export const PARTY_IDS = PARTIES.map((p) => p.id);
@@ -123,8 +123,19 @@ export interface Stats {
   approval: number;
 }
 
+/** One week's snapshot, for the trend charts. */
+export interface HistoryPoint {
+  w: number;
+  /** National poll per party (PARTY_IDS order). */
+  poll: number[];
+  approval: number;
+  happiness: number;
+  growth: number;
+  unemployment: number;
+}
+
 export interface GameState {
-  v: 1;
+  v: 2;
   seed: number;
   week: number;
   rolls: number;
@@ -159,6 +170,11 @@ export interface GameState {
   /** Events you've held this turn (each at most once a turn). */
   usedEvents: string[];
   over: boolean;
+  /** Laws the player has drafted (they work like any other law). */
+  custom: LawDef[];
+  nextLaw: number;
+  /** Weekly snapshots, newest last (capped). */
+  history: HistoryPoint[];
 }
 
 // ------------------------------------------------------------------ helpers
@@ -187,6 +203,10 @@ export const weekOf = (week: number) => (week % WEEKS) + 1;
 export const dateLabel = (week: number) => `${yearOf(week)}.${String(weekOf(week)).padStart(2, "0")}`;
 export const fullName = (p: Politician) => `${p.first} ${p.last}`;
 export const pol = (s: GameState, id: number) => s.politicians.find((p) => p.id === id);
+/** A law by id: one of the built-in ones or one the player drafted. */
+export const lawOf = (s: GameState, id: string): LawDef | undefined => LAW[id] ?? s.custom.find((l) => l.id === id);
+/** Every law on the books, built-in first. */
+export const allLaws = (s: GameState): LawDef[] => (s.custom.length ? [...LAWS, ...s.custom] : LAWS);
 
 function newPolitician(s: GameState, party: PartyId, state: number, r = roll(s)): Politician {
   const p: Politician = { id: s.nextId++, first: r.pick(FIRST), last: r.pick(LAST), party, age: r.int(32, 70), face: Math.floor(r.next() * 1e6), state, charisma: r.int(3, 9) };
@@ -250,7 +270,7 @@ export function statePoll(s: GameState, state: number) {
 export function newGame(seed: number, party: PartyId, homeState?: number): GameState {
   const c = country(seed);
   const s: GameState = {
-    v: 1,
+    v: 2,
     seed,
     week: 0,
     rolls: 0,
@@ -287,6 +307,9 @@ export function newGame(seed: number, party: PartyId, homeState?: number): GameS
     score: 0,
     usedEvents: [],
     over: false,
+    custom: [],
+    nextLaw: 1,
+    history: [],
   };
   // You, and every party's leader.
   const r = roll(s);
@@ -305,6 +328,7 @@ export function newGame(seed: number, party: PartyId, homeState?: number): GameS
   addPromise(s);
   addMission(s, { kind: "members", target: Math.round(s.parties[party].members * 1.3), deadline: s.week + 40, reward: 120 });
   news(s, "party", `${fullName(you)} is elected secretary of ${PARTY[party].name}`, 1);
+  record(s);
   return s;
 }
 
@@ -317,7 +341,7 @@ function addPromise(s: GameState) {
   const r = roll(s);
   const pos = PARTY[s.party].pos;
   // Promise what your voters want: a law where some other option sits closer to your party.
-  const choices = LAWS.filter((l) => !l.constitutional && !s.missions.some((m) => m.law === l.id && !m.done && !m.failed)).flatMap((l) => {
+  const choices = allLaws(s).filter((l) => !l.constitutional && !s.missions.some((m) => m.law === l.id && !m.done && !m.failed)).flatMap((l) => {
     const cur = s.laws[l.id];
     return [-1, 1]
       .filter((d) => l.options[cur + d] && dist(l.options[cur + d].pos, pos) < dist(l.options[cur].pos, pos) - 0.05)
@@ -333,7 +357,8 @@ export function missionText(m: Mission, s: GameState) {
   if (m.kind === "members") return `Grow the party to ${(m.target! / 1000).toFixed(0)}k members`;
   if (m.kind === "seats") return `Win ${m.target} seats in the House`;
   if (m.kind === "laws") return `Pass ${m.target} laws`;
-  const l = LAW[m.law!];
+  const l = lawOf(s, m.law!);
+  if (!l) return "Keep a promise (the law was repealed)";
   const isRate = l.options[0].label.endsWith("%");
   return isRate ? `Promise to ${m.dir! < 0 ? "lower" : "raise"} ${l.name.toLowerCase()}` : `Promise to change ${l.name.toLowerCase()} to ${l.options[(m.start ?? s.laws[l.id]) + m.dir!]?.label ?? "…"}`;
 }
@@ -583,8 +608,8 @@ function fail(s: GameState, m: Mission) {
 
 export function lawEffects(s: GameState) {
   const fx: Required<Effects> = { happiness: 0, growth: 0, budget: 0, unemployment: 0 };
-  for (const l of LAWS) {
-    const o = l.options[s.laws[l.id]].fx;
+  for (const l of allLaws(s)) {
+    const o = l.options[s.laws[l.id] ?? l.start]?.fx ?? {};
     fx.happiness += o.happiness ?? 0;
     fx.growth += o.growth ?? 0;
     fx.budget += o.budget ?? 0;
@@ -601,7 +626,8 @@ export function partyStance(s: GameState, party: PartyId, b: Bill) {
     const rel = pres ? s.parties[party].relations[pres] : 0;
     return (party === pres ? 0.8 : 0) + rel / 120 + (s.stats.happiness - 20) / 60 - 0.05;
   }
-  const l = LAW[b.law];
+  const l = lawOf(s, b.law);
+  if (!l) return -1;
   const cur = l.options[s.laws[l.id]].pos;
   const nxt = l.options[b.option].pos;
   let u = (dist(cur, pos) - dist(nxt, pos)) * 1.4;
@@ -623,7 +649,7 @@ export function voters(s: GameState, b: Bill) {
 export const youVoteOn = (s: GameState, b: Bill) => voters(s, b).includes(s.you);
 
 /** The share of votes needed (ordinary half, constitutional two thirds). */
-export const required = (b: Bill) => (!b.budget && LAW[b.law]?.constitutional ? 2 / 3 : 0.5);
+export const required = (s: GameState, b: Bill) => (!b.budget && lawOf(s, b.law)?.constitutional ? 2 / 3 : 0.5);
 
 /** Count the votes at the current stage (with the player's own vote if they sit there). */
 export function tally(s: GameState, b: Bill, r = roll(s)): Tally {
@@ -650,14 +676,14 @@ export function tally(s: GameState, b: Bill, r = roll(s)): Tally {
 }
 
 /** Does a stage's vote carry? */
-export const carries = (b: Bill, t: Tally) => (b.stage === "president" ? t.yes > 0 || t.abstain > 0 : t.yes > (t.yes + t.no) * required(b) && t.yes > 0);
+export const carries = (s: GameState, b: Bill, t: Tally) => (b.stage === "president" ? t.yes > 0 || t.abstain > 0 : t.yes > (t.yes + t.no) * required(s, b) && t.yes > 0);
 
 function committeeFor(s: GameState, law: string) {
   // Committee members: drawn from the House in proportion to party strength; you sit on half of them.
   const r = roll(s);
   const pool = [...s.house];
   const out: number[] = [];
-  const youSit = s.house.includes(s.you) && (LAW[law]?.committee ?? 1) % 2 === 1;
+  const youSit = s.house.includes(s.you) && (lawOf(s, law)?.committee ?? 1) % 2 === 1;
   if (youSit) out.push(s.you);
   while (out.length < COMMITTEE_SIZE && pool.length) {
     const i = Math.floor(r.next() * pool.length);
@@ -669,7 +695,7 @@ function committeeFor(s: GameState, law: string) {
 
 /** Put a bill forward. Returns null if that bill is already in the pipeline or changes nothing. */
 export function proposeBill(s: GameState, law: string, option: number, proposer = s.you): Bill | null {
-  const l = LAW[law];
+  const l = lawOf(s, law);
   if (!l || option === s.laws[law] || !l.options[option]) return null;
   if (s.bills.some((b) => b.law === law && b.stage !== "passed" && b.stage !== "failed")) return null;
   const p = pol(s, proposer);
@@ -714,7 +740,7 @@ const NEXT: Record<Stage, Stage> = { committee: "house", house: "senate", senate
 
 function advanceBill(s: GameState, b: Bill) {
   const t = tally(s, b);
-  const ok = carries(b, t);
+  const ok = carries(s, b, t);
   b.last = { stage: b.stage, tally: t, passed: ok };
   const mine = b.party === s.party;
   if (!ok) {
@@ -723,7 +749,7 @@ function advanceBill(s: GameState, b: Bill) {
       s.stats.approval -= 6;
       s.stats.happiness -= 1;
       news(s, "budget", `The House rejects the budget, ${t.yes} to ${t.no}`, -1);
-    } else news(s, "law", `${LAW[b.law].name}: the bill falls ${b.last.stage === "president" ? "to a presidential veto" : `in the ${stageName(b.last.stage)}`}`, mine ? -1 : 0);
+    } else news(s, "law", `${lawOf(s, b.law)?.name ?? "A bill"}: the bill falls ${b.last.stage === "president" ? "to a presidential veto" : `in the ${stageName(b.last.stage)}`}`, mine ? -1 : 0);
     return;
   }
   // Budgets only need the House.
@@ -739,7 +765,8 @@ function advanceBill(s: GameState, b: Bill) {
       return;
     }
     s.laws[b.law] = b.option;
-    news(s, "law", `${LAW[b.law].name} becomes law: ${LAW[b.law].options[b.option].label}`, mine ? 1 : 0);
+    const l = lawOf(s, b.law)!;
+    news(s, "law", `${l.name} becomes law: ${l.options[b.option].label}`, mine ? 1 : 0);
     if (mine) {
       s.lawsPassed++;
       s.score += 40;
@@ -823,7 +850,7 @@ function aiTurn(s: GameState) {
     const seats = s.house.filter((h) => pol(s, h)?.party === id).length;
     if (r.next() < 0.04 + seats / 600) {
       const pos = PARTY[id].pos;
-      const cand = LAWS.flatMap((l) => {
+      const cand = allLaws(s).flatMap((l) => {
         const cur = s.laws[l.id];
         return [cur - 1, cur + 1].filter((o) => l.options[o] && dist(l.options[o].pos, pos) < dist(l.options[cur].pos, pos) - 0.08).map((o) => ({ l, o }));
       });
@@ -919,6 +946,7 @@ export function endTurn(s: GameState) {
   economy(s);
   finances(s);
   events(s);
+  record(s);
   for (const id of PARTY_IDS) s.campaign[id] = s.campaign[id].map((v) => v * 0.93);
   // Budget day.
   if (weekOf(s.week) === BUDGET_WEEK) {
@@ -955,6 +983,99 @@ export function closeElection(s: GameState) {
 
 // ------------------------------------------------------------------ saving
 
+/** Keep this week's numbers for the trend charts (about five years of weeks). */
+function record(s: GameState) {
+  const poll = nationalPoll(s);
+  s.history.push({ w: s.week, poll: PARTY_IDS.map((id) => Math.round(poll[id] * 10000) / 10000), approval: Math.round(s.stats.approval * 10) / 10, happiness: Math.round(s.stats.happiness * 10) / 10, growth: Math.round(s.stats.growth * 100) / 100, unemployment: Math.round(s.stats.unemployment * 10) / 10 });
+  if (s.history.length > 260) s.history.splice(0, s.history.length - 260);
+}
+
+// ------------------------------------------------------------------ custom laws
+
+export const CUSTOM_MAX = 10;
+export const DRAFT_COST = 2;
+/** How far a custom law's options may move each number (per year in force). */
+export const FX_LIMITS: Required<Effects> = { happiness: 6, growth: 0.5, budget: 80, unemployment: 1.5 };
+
+export interface LawDraft {
+  name: string;
+  about?: string;
+  group: LawGroup;
+  committee?: number;
+  constitutional?: boolean;
+  /** Index of the option that is in force today. */
+  start: number;
+  options: { label: string; pos: Pos; fx: Effects }[];
+}
+
+const cleanText = (t: unknown, max: number) =>
+  [...String(t ?? "")]
+    .filter((ch) => ch >= " " && ch !== "\u007f" && ch !== "<" && ch !== ">")
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+
+/** Check and tidy a draft. Returns the law it would make, or why it can't be made. */
+export function checkDraft(s: GameState, d: LawDraft, id = `custom-${s.nextLaw}`): LawDef | string {
+  const name = cleanText(d.name, 40);
+  if (name.length < 3) return "Give the law a name (at least 3 letters).";
+  if (allLaws(s).some((l) => l.name.toLowerCase() === name.toLowerCase() && l.id !== id)) return "There's already a law with that name.";
+  if (!LAW_GROUPS.includes(d.group)) return "Pick a category.";
+  if (!Array.isArray(d.options) || d.options.length < 2 || d.options.length > 5) return "A law needs 2 to 5 options.";
+  const options = d.options.map((o) => ({
+    label: cleanText(o.label, 28),
+    pos: { e: clamp(Number(o.pos?.e) || 0, -1, 1), s: clamp(Number(o.pos?.s) || 0, -1, 1) },
+    fx: Object.fromEntries((Object.keys(FX_LIMITS) as (keyof Effects)[]).map((k) => [k, clamp(Number(o.fx?.[k]) || 0, -FX_LIMITS[k], FX_LIMITS[k])]).filter(([, v]) => v !== 0)) as Effects,
+  }));
+  if (options.some((o) => !o.label)) return "Every option needs a name.";
+  if (new Set(options.map((o) => o.label.toLowerCase())).size !== options.length) return "Two options have the same name.";
+  const start = Math.round(Number(d.start));
+  if (!(start >= 0 && start < options.length)) return "Choose which option is in force today.";
+  const committee = Math.round(Number(d.committee ?? GROUP_COMMITTEE[d.group]));
+  return { id, name, about: cleanText(d.about, 120) || undefined, group: d.group, committee: committee >= 1 && committee <= COMMITTEES.length ? committee : GROUP_COMMITTEE[d.group], options, start, constitutional: !!d.constitutional, custom: true };
+}
+
+/** Write a new law into the books (with today's option in force). Costs party money. */
+export function draftLaw(s: GameState, d: LawDraft): LawDef | string {
+  if (s.custom.length >= CUSTOM_MAX) return `You can have at most ${CUSTOM_MAX} laws of your own.`;
+  const ps = s.parties[s.party];
+  if (ps.funds < DRAFT_COST) return "Not enough party funds.";
+  const law = checkDraft(s, d);
+  if (typeof law === "string") return law;
+  s.nextLaw++;
+  ps.funds -= DRAFT_COST;
+  s.custom.push(law);
+  s.laws[law.id] = law.start;
+  s.score += 10;
+  news(s, "law", `${fullName(pol(s, s.you)!)} drafts a new law: ${law.name}`, 1);
+  return law;
+}
+
+/** Change a drafted law that has never been put to a vote. */
+export function editLaw(s: GameState, id: string, d: LawDraft): LawDef | string {
+  const i = s.custom.findIndex((l) => l.id === id);
+  if (i < 0) return "That law isn't one of yours.";
+  if (s.bills.some((b) => b.law === id)) return "That law has already been before the legislature.";
+  const law = checkDraft(s, d, id);
+  if (typeof law === "string") return law;
+  s.custom[i] = law;
+  s.laws[id] = law.start;
+  return law;
+}
+
+/** Strike a drafted law from the books (not while a bill on it is going through). */
+export function repealLaw(s: GameState, id: string) {
+  const i = s.custom.findIndex((l) => l.id === id);
+  if (i < 0 || s.bills.some((b) => b.law === id && b.stage !== "passed" && b.stage !== "failed")) return false;
+  const [law] = s.custom.splice(i, 1);
+  delete s.laws[id];
+  s.bills = s.bills.filter((b) => b.law !== id);
+  s.missions = s.missions.filter((m) => m.law !== id);
+  news(s, "law", `${law.name} is struck from the books`, 0);
+  return true;
+}
+
 export function save(s: GameState) {
   // The election's per-county arrays are big; keep only the last one.
   return JSON.stringify(s);
@@ -963,16 +1084,22 @@ export function save(s: GameState) {
 export function load(json: string | null): GameState | null {
   if (!json) return null;
   try {
-    const s = JSON.parse(json) as GameState;
-    if (s.v !== 1 || !s.parties || !s.laws) return null;
-    for (const l of LAWS) s.laws[l.id] ??= l.start;
-    return s;
+    const s = JSON.parse(json) as GameState | (Omit<GameState, "v"> & { v: 1 });
+    if ((s.v !== 1 && s.v !== 2) || !s.parties || !s.laws) return null;
+    // Version 1 saves had no custom laws or history.
+    const out = s as GameState;
+    out.v = 2;
+    out.custom ??= [];
+    out.nextLaw ??= 1;
+    out.history ??= [];
+    for (const l of allLaws(out)) out.laws[l.id] ??= l.start;
+    return out;
   } catch {
     return null;
   }
 }
 
-export const committeeName = (law: LawDef) => COMMITTEES[law.committee - 1];
+export const committeeName = (law: LawDef) => COMMITTEES[law.committee - 1] ?? COMMITTEES[0];
 export const houseBy = (s: GameState) => Object.fromEntries(PARTY_IDS.map((id) => [id, s.house.filter((h) => pol(s, h)?.party === id).length])) as Record<PartyId, number>;
 export const senateBy = (s: GameState) => Object.fromEntries(PARTY_IDS.map((id) => [id, s.senate.filter((h) => pol(s, h)?.party === id).length])) as Record<PartyId, number>;
 export const youHold = (s: GameState) => {

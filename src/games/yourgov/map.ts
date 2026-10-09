@@ -19,6 +19,9 @@ export interface Section {
   /** 0 rural – 1 big city. */
   urban: number;
   lean: Pos;
+  /** The Voronoi seed the county grew from (map pixels). */
+  sx: number;
+  sy: number;
   /** Name of its town (the biggest sections are cities). */
   town: string;
   city: boolean;
@@ -87,6 +90,20 @@ function name(r: ReturnType<typeof rng>, used: Set<string>) {
   return `${r.pick(SYL_A)}${r.pick(SYL_B)} ${used.size}`;
 }
 
+/**
+ * How far inland a point is: positive on land, negative at sea, continuous (the 3D terrain
+ * uses it for its coastline). `lake` is 0–1 where an inland lake cuts in.
+ */
+export function landField(seed: number, x: number, y: number) {
+  const nx = (x / MAP_W - 0.47) / 0.48;
+  const ny = (y / MAP_H - 0.5) / 0.44;
+  const d = Math.hypot(nx * 1.0, ny * 1.1);
+  const n = fbm(x / 70, y / 70, seed) * 0.75 + fbm(x / 22, y / 22, seed + 7) * 0.25;
+  const ln = fbm(x / 30, y / 30, seed + 99);
+  const lake = d < 0.6 ? Math.min(1, Math.max(0, (ln - 0.76) / 0.04)) : 0;
+  return { coast: 0.82 - (d + (0.5 - n) * 0.75), lake, lakeIn: ln > 0.78 && d < 0.6 };
+}
+
 /** Build the country for a seed. Deterministic. */
 export function makeCountry(seed: number, nSections = 950, nStates = 16): Country {
   const r = rng(seed);
@@ -96,12 +113,8 @@ export function makeCountry(seed: number, nSections = 950, nStates = 16): Countr
   const land = new Uint8Array(W * H);
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
-      const nx = (x / W - 0.47) / 0.48;
-      const ny = (y / H - 0.5) / 0.44;
-      const d = Math.hypot(nx * 1.0, ny * 1.1);
-      const n = fbm(x / 70, y / 70, seed) * 0.75 + fbm(x / 22, y / 22, seed + 7) * 0.25;
-      const lake = fbm(x / 30, y / 30, seed + 99) > 0.78 && d < 0.6;
-      land[y * W + x] = d + (0.5 - n) * 0.75 < 0.82 && !lake ? 1 : 0;
+      const f = landField(seed, x, y);
+      land[y * W + x] = f.coast > 0 && !f.lakeIn ? 1 : 0;
     }
   // Keep the biggest landmass only (islands and slivers would be odd sections).
   const comp = new Int32Array(W * H).fill(-1);
@@ -200,7 +213,7 @@ export function makeCountry(seed: number, nSections = 950, nStates = 16): Countr
     // Leanings: cities lean left and liberal, the countryside right and conservative, with regional colour.
     const reg = { e: (fbm(cx / 90, cy / 90, seed + 21) - 0.5) * 2.2, s: (fbm(cx / 90, cy / 90, seed + 31) - 0.5) * 2.2 };
     const lean = { e: Math.max(-1, Math.min(1, reg.e + (0.25 - urban) * 0.9 + (r.next() - 0.5) * 0.25)), s: Math.max(-1, Math.min(1, reg.s + (0.3 - urban) * 1.1 + (r.next() - 0.5) * 0.25)) };
-    return { id: i, state: -1, cx, cy, area: area[i], pop, urban, lean, town: "", city: false };
+    return { id: i, state: -1, cx, cy, sx: s.x, sy: s.y, area: area[i], pop, urban, lean, town: "", city: false };
   });
   // States: grow from seeds over the section adjacency so every state is in one piece.
   const adj: Set<number>[] = Array.from({ length: n }, () => new Set());

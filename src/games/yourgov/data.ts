@@ -61,7 +61,15 @@ export interface LawDef {
   start: number;
   /** Changing it needs two thirds. */
   constitutional?: boolean;
+  /** Drafted by the player (kept in the save, not in this file). */
+  custom?: boolean;
+  /** One line on what it's about (custom laws). */
+  about?: string;
 }
+
+/** The committee each group of laws goes to by default. */
+export const GROUP_COMMITTEE: Record<LawGroup, number> = { Economy: 1, Services: 3, Society: 6, Security: 5, Government: 8 };
+export const LAW_GROUPS: LawGroup[] = ["Economy", "Services", "Society", "Security", "Government"];
 
 const rate = (id: string, name: string, committee: number, values: number[], start: number, perPoint: Effects, eFrom: number, eTo: number): LawDef => ({
   id,
