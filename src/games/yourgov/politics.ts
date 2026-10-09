@@ -9,6 +9,7 @@
  */
 import { EVENT, LAW, WEEKS, type PartyId, type Pos } from "./data";
 import type { Country } from "./map";
+import * as C from "./campaign";
 import * as G from "./sim";
 
 const dist = (a: Pos, b: Pos) => Math.hypot(a.e - b.e, a.s - b.s);
@@ -180,6 +181,7 @@ export function answerChallenge(s: G.GameState, a: ChallengeAnswer) {
   }
   const support = leadershipSupport(s) + (G.roll(s).next() - 0.5) * 0.12;
   if (support >= 0.5) {
+    C.note(s, "challengesSurvived");
     ps.unity = clamp(ps.unity + 15, 0, 100);
     for (const x of s.factions) x.mood = clamp(x.mood + 6, 0, 100);
     s.score += 50;
@@ -269,7 +271,7 @@ export function debateAnswer(s: G.GameState, style: DebateStyle) {
   const you = G.pol(s, s.you);
   const ch = you?.charisma ?? 5;
   const unity = s.parties[s.party].unity;
-  const points = style === "facts" ? 2 + r.next() * 3 + (unity - 60) / 25 : style === "attack" ? -6 + r.next() * 16 : (ch - 5) * 1.3 + (r.next() - 0.4) * 8;
+  const points = (style === "facts" ? 2 + r.next() * 3 + (unity - 60) / 25 : style === "attack" ? -6 + r.next() * 16 : (ch - 5) * 1.3 + (r.next() - 0.4) * 8) + C.staffSkill(s, "speech") * 0.4;
   d.answers.push({ style, points: Math.round(points * 10) / 10 });
   if (d.answers.length >= d.topics.length) return { points, done: finishDebate(s) };
   return { points, done: null };
@@ -287,6 +289,7 @@ export function finishDebate(s: G.GameState) {
   const won = total > 6;
   const lost = total < 0;
   if (won) {
+    C.note(s, "debatesWon");
     ps.swing += 0.05;
     ps.members += 2000;
     s.score += 50;
@@ -570,6 +573,7 @@ export function answerCrisis(s: G.GameState, choice: number) {
     // The groups remember who decided.
     for (const [g, v] of Object.entries(o.goodwill ?? {})) bump(s.goodwill, g, v);
     s.score += (o.approval ?? 0) > 0 ? 20 : 5;
+    C.note(s, "crisesDecided");
     G.news(s, "government", `${crisisText(s, c, def.title)}: the government decides to ${o.label.toLowerCase()}`, (o.approval ?? 0) >= 0 ? 1 : -1);
     return true;
   }
@@ -698,6 +702,7 @@ export function callReferendum(s: G.GameState, law: string, option: number): { y
     lawChanged(s, law, from, option, true, true);
     s.lawsPassed++;
     s.score += 60;
+    C.note(s, "referendumsWon");
   } else s.stats.approval = clamp(s.stats.approval - 4, 5, 95);
   G.news(s, "law", `Referendum on ${l.name.toLowerCase()} (${l.options[option].label}): ${passed ? "yes" : "no"} wins with ${Math.round((passed ? yes : 1 - yes) * 100)}%`, passed ? 1 : -1);
   return { yes, passed };
@@ -786,7 +791,7 @@ export const OUTLETS = [
 ];
 
 /** Where an outlet's coverage of you settles, given your party's politics. */
-const pressBase = (s: G.GameState, o: (typeof OUTLETS)[number]) => clamp(25 - 45 * dist(o.pos, G.party(s, s.party).pos), -40, 40);
+const pressBase = (s: G.GameState, o: (typeof OUTLETS)[number]) => clamp(25 - 45 * dist(o.pos, G.party(s, s.party).pos) + C.staffSkill(s, "press") * 1.5, -40, 40);
 
 /** How much better (or worse) the press is treating you than it usually would. */
 export function pressLift(s: G.GameState) {
@@ -884,7 +889,7 @@ export function politicsWeek(s: G.GameState) {
   // The press drifts back to what it thinks of your politics.
   for (const o of OUTLETS) s.press[o.id] = (s.press[o.id] ?? 0) + (pressBase(s, o) - (s.press[o.id] ?? 0)) * 0.04;
   // Donors forget (slowly) how often you've asked.
-  s.donors *= 0.8;
+  s.donors *= 0.8 - 0.03 * C.staffSkill(s, "finance");
   // Factions: moods settle; unity follows them; a long stretch of disunity brings a challenge.
   for (const f of s.factions) f.mood += (55 - f.mood) * 0.02;
   const fm = s.factions.reduce((a, f) => a + (f.strength * f.mood) / 100, 0);

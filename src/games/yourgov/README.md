@@ -122,6 +122,35 @@ date moves on, `afterElection`, `lawChanged` when a bill becomes law).
   neighbours and partners (state visits, trade deals that add growth, public rebukes).
 - AI parties change leader after a bad election.
 
+## The campaign machine (`campaign.ts`)
+
+Wired in the same way (`initCampaign`, `campaignWeek` after `politicsWeek`, `settleCampaign`,
+`campaignAfterElection`; staff effects inside `holdEvent`; the budget plan inside the budget bill).
+
+- **The polling centre** (the Parties panel): national trend, voting intention by voter group
+  (crosstabs) and by region (`regionPolls`, one pass over the counties), leader ratings
+  (favourable / unfavourable from charisma, unity, the press and the government's approval), the
+  most important issues (from the economy, the laws in force and any crisis, with the party most
+  trusted by the group that cares most), and a commissioned **seat projection** (`projectSeats`
+  in sim.ts runs today's polls through the real electoral system, and the presidency, then
+  restores the random stream so nothing else changes).
+- **Campaign HQ**: six staff roles (campaign manager, pollster, press secretary, finance director,
+  field director, speechwriter), 1–5 stars, paid weekly; new people every ten weeks; unpaid staff
+  quit. The **manifesto**: up to four pledges in the 30 weeks before a lower-house or
+  presidential election; the groups that want them warm to you, your factions judge them, and in
+  government they become promises (missions) to keep within two years. **Position**: move the
+  party a step on the compass every six months, within reach of where it started.
+- **The budget**: as head of government, set seven areas (health, education, welfare, defence,
+  infrastructure, climate, taxes) from a big cut to a big rise. Parties vote by ideology (the left
+  likes spending and taxes, the right cuts and smaller deficits); once passed it moves happiness,
+  growth, jobs, approval and the deficit for a year, and the groups who gain or lose react. Other
+  governments write their own (`aiBudget`).
+- **Question Time** every three weeks (a press briefing or an oversight hearing in presidential
+  systems), as head of government or a leader in opposition; **party scandals** to handle
+  (suspend, stand by, apologise or deny); an **election-night speech**; an exit poll as the count
+  begins.
+- **Achievements**: 28 career milestones, each adding to the score.
+
 ## Maps (`map.ts`)
 
 `MapSpec` is a generated map (`GenMap`) or a real one (`RealMap`). Real countries' outlines,
@@ -170,12 +199,14 @@ and the week strip picks when an event happens; tapping the timeline opens it at
 | `data.ts` | Laws and their options, committees, events |
 | `map.ts` | Generated and real maps |
 | `sim.ts` | Game state and every rule |
+| `campaign.ts` | The polling centre, campaign staff, the manifesto, the budget, Question Time, party scandals, moving the party, election-night speeches, achievements |
 | `politics.ts` | Voter groups, interest groups, the press, factions, debates, the diary, the cabinet, coalition deals, crises, executive actions, referendums, foreign relations |
 | `game.ts` | The controller: actions, settings, the scenario library, sound, saving, score |
 | `geo/` | Real countries' map data (generated; see above) |
 | `render/` | The 3D country, chamber, camera rig, terrain builder and its worker |
 | `ui/App.tsx` | The Liquid Glass HUD: bars, dock, sheets, election night, coalition talks |
 | `ui/Politics.tsx` | Events and the diary, voters and the press, the government, factions; crisis, debate and challenge cards |
+| `ui/Campaign.tsx` | The polling centre's pages, campaign HQ, the budget, Question Time and scandal cards, achievements, election-night extras |
 | `ui/kit.tsx` | The building blocks every panel uses |
 | `ui/Title.tsx` | Picking a country and a party; your scenarios; share codes |
 | `ui/ScenarioStudio.tsx` | Making a country: map, parties, system, economy and laws |

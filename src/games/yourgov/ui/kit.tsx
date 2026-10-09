@@ -96,6 +96,17 @@ export function Seg<T extends string>({ value, options, onChange, label, testId,
   );
 }
 
+/** A card that needs an answer, over the game. */
+export function Modal({ children, label, testId, wide }: { children: ReactNode; label: string; testId: string; wide?: boolean }) {
+  return (
+    <div className="yg-modal-back" data-testid={testId}>
+      <section className={`yg-glass yg-modal ${wide ? "" : "small"} yg-decision`} role="dialog" aria-modal="true" aria-label={label}>
+        {children}
+      </section>
+    </div>
+  );
+}
+
 /** One to five stars for a 3–9 rating. */
 export const Stars = ({ n }: { n: number }) => {
   const k = Math.max(1, Math.min(5, Math.round((n - 2) / 1.4)));

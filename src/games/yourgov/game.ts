@@ -7,6 +7,7 @@
 import { EVENT, SAVE_KEY, type PartyId } from "./data";
 import { mapReady, prepareMap } from "./map";
 import { checkScenario, readCode, type Scenario } from "./scenario";
+import * as C from "./campaign";
 import * as P from "./politics";
 import * as G from "./sim";
 import { Sound } from "./audio";
@@ -16,7 +17,10 @@ const LIBRARY_KEY = "zx-yourgov-scenarios";
 /** Most custom scenarios kept. */
 export const LIBRARY_MAX = 24;
 
-export type Tab = "bills" | "write" | "events" | "chamber" | "parties" | "party" | "country" | "news" | "missions" | "settings" | "voters" | "gov" | null;
+export type Tab = "bills" | "write" | "events" | "chamber" | "parties" | "party" | "country" | "news" | "missions" | "settings" | "voters" | "gov" | "hq" | null;
+/** The pages of the polling centre (the parties panel). */
+export type PollPage = "parties" | "groups" | "regions" | "leaders" | "issues" | "seats";
+export type HqPage = "staff" | "manifesto" | "position";
 /** The sections of the events panel. */
 export type EventKind = "campaign" | "voters" | "money" | "party" | "diary";
 
@@ -50,6 +54,10 @@ export interface UIState {
   /** Modals put off until next week (crisis, debate or challenge), by the week. */
   later: Record<string, number>;
   result: ResultCard | null;
+  poll: PollPage;
+  hq: HqPage;
+  /** The budget card is open (outside budget season too). */
+  budget: boolean;
   /** The law studio: drafting a new law (id null) or editing one of yours. */
   studio: { id: string | null } | null;
   toasts: { id: number; text: string; tone: 1 | 0 | -1 }[];
@@ -77,7 +85,7 @@ export interface Scorer {
 
 export class Game {
   s: G.GameState | null = null;
-  ui: UIState = { tab: "missions", view: "map", mapMode: "politics", house: "house", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, studio: null, toasts: [], count: 0 };
+  ui: UIState = { tab: "missions", view: "map", mapMode: "politics", house: "house", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, poll: "parties", hq: "staff", budget: false, studio: null, toasts: [], count: 0 };
   prefs: Prefs = { ...DEFAULT_PREFS };
   readonly sound = new Sound();
   private listeners = new Set<() => void>();
@@ -135,6 +143,11 @@ export class Game {
 
   private changed(save = true) {
     this.version++;
+    if (save && this.s && !this.s.over)
+      for (const a of C.checkAchievements(this.s)) {
+        this.sound.play("win");
+        this.toast(`${a.icon} Achievement: ${a.name}`, 1);
+      }
     if (save && this.s) {
       try {
         localStorage.setItem(SAVE_KEY, G.save(this.s));
@@ -183,7 +196,7 @@ export class Game {
   newGame(party: PartyId, seed = Math.floor(Math.random() * 1e6) + 1, scenario?: Scenario) {
     this.s = G.newGame(seed, party, scenario ? { scenario: structuredClone(scenario) } : {});
     this.startedAt = performance.now();
-    this.ui = { ...this.ui, tab: "missions", view: "map", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, studio: null, count: 0 };
+    this.ui = { ...this.ui, tab: "missions", view: "map", state: null, bill: null, law: null, event: null, evKind: "campaign", evWeek: null, appoint: null, later: {}, result: null, poll: "parties", hq: "staff", budget: false, studio: null, count: 0 };
     this.sound.play("start");
     this.changed();
   }
@@ -361,8 +374,8 @@ export class Game {
 
   // ------------------------------------------------------------------ the wider politics
 
-  /** Put a decision (crisis, debate, challenge) off to the end of the week. */
-  later(kind: "crisis" | "debate" | "challenge") {
+  /** Put a decision (crisis, debate, challenge…) off to the end of the week. */
+  later(kind: "crisis" | "debate" | "challenge" | "qt" | "scandal" | "budget") {
     if (!this.s) return;
     this.setUI({ later: { ...this.ui.later, [kind]: this.s.week } });
   }
@@ -439,6 +452,91 @@ export class Game {
     if (!r.ok) return this.toast(r.why ?? "You can't do that now", -1);
     this.sound.play(r.success ? "cheer" : "bad");
     this.toast(s.news[0]?.text ?? "Done", r.success ? 1 : -1);
+    this.changed();
+  }
+
+  // ------------------------------------------------------------------ the campaign machine
+
+  commissionMrp() {
+    const s = this.s;
+    if (!s) return;
+    const e = C.commissionMrp(s);
+    if (e) return this.toast(e, -1);
+    this.sound.play("paper");
+    this.toast("The seat projection is in", 1);
+    this.changed();
+  }
+
+  hire(role: string, i: number) {
+    const s = this.s;
+    if (!s) return;
+    const e = C.hire(s, role, i);
+    if (e) return this.toast(e, -1);
+    this.sound.play("cheer");
+    this.changed();
+  }
+
+  fire(role: string) {
+    const s = this.s;
+    if (!s || !C.fire(s, role)) return;
+    this.sound.play("click");
+    this.changed();
+  }
+
+  publishManifesto(pledges: C.Pledge[]) {
+    const s = this.s;
+    if (!s) return;
+    const e = C.publishManifesto(s, pledges);
+    if (e) return this.toast(e, -1);
+    this.sound.play("cheer");
+    this.toast("Your manifesto is out", 1);
+    this.changed();
+  }
+
+  draftBudget(plan: C.BudgetPlan) {
+    const s = this.s;
+    if (!s) return;
+    const e = C.draftBudget(s, plan);
+    if (e) return this.toast(e, -1);
+    this.sound.play("paper");
+    this.toast(`The budget goes to the ${G.sys(s).lower.short} in week ${G.BUDGET_WEEK}`, 1);
+    this.setUI({ budget: false });
+    this.changed();
+  }
+
+  questionTime(style: string) {
+    const s = this.s;
+    if (!s?.qt) return;
+    const pts = C.answerQT(s, style);
+    if (pts === null) return;
+    this.sound.play(pts >= 1 ? "cheer" : pts <= -2 ? "bad" : "click");
+    this.toast(s.news[0]?.text ?? "Done", pts >= 1 ? 1 : pts <= -2 ? -1 : 0);
+    this.changed();
+  }
+
+  scandal(choice: number) {
+    const s = this.s;
+    if (!s?.scandal) return;
+    const r = C.answerScandal(s, choice);
+    this.sound.play(r?.worse ? "bad" : "paper");
+    this.toast(s.news[0]?.text ?? "Done", r?.worse ? -1 : 0);
+    this.changed();
+  }
+
+  moveParty(dir: C.MoveDir) {
+    const s = this.s;
+    if (!s) return;
+    const e = C.moveParty(s, dir);
+    if (e) return this.toast(e, -1);
+    this.sound.play("paper");
+    this.toast(s.news[0]?.text ?? "Done", 0);
+    this.changed();
+  }
+
+  speech(id: string) {
+    const s = this.s;
+    if (!s || !C.electionSpeech(s, id)) return;
+    this.sound.play("cheer");
     this.changed();
   }
 

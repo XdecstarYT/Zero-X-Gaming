@@ -228,6 +228,12 @@ describe("custom laws", () => {
       if (s.election) G.closeElection(s);
     }
     if (b.stage === "passed") expect(G.lawEffects(s).happiness).toBeCloseTo(happyBefore + 3);
+    // An AI party may have put its own bill on the law since: while one is going through, it can't be repealed.
+    const other = s.bills.find((x) => x.law === l.id && x.stage !== "passed" && x.stage !== "failed");
+    if (other) {
+      expect(G.repealLaw(s, l.id)).toBe(false);
+      other.stage = "failed";
+    }
     expect(G.repealLaw(s, l.id)).toBe(true);
     expect(G.lawOf(s, l.id)).toBeUndefined();
     expect(s.laws[l.id]).toBeUndefined();

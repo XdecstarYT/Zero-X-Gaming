@@ -8,12 +8,26 @@ type YG = {
     parties: Record<string, { funds: number }>;
     party: string;
     plan: { week: number; event: string; state: number }[];
-    usedEvents: string[]; week: number; cal: { lower: number }; bills: { law: string; stage: string }[]; election: unknown; lastElection: unknown; talks: unknown; news: { text: string }[]; custom: { id: string; name: string; options: { label: string }[] }[]; laws: Record<string, number>; house: number[]; sc: { id: string; name: string } };
+    usedEvents: string[];
+    staff: Record<string, unknown>;
+    mrp: unknown;
+    budgetDraft: { plan: Record<string, number> } | null;
+    gov: { parties: string[]; head: number; since: number };
+    you: number; week: number; cal: { lower: number }; bills: { law: string; stage: string }[]; election: unknown; lastElection: unknown; talks: unknown; news: { text: string }[]; custom: { id: string; name: string; options: { label: string }[] }[]; laws: Record<string, number>; house: number[]; sc: { id: string; name: string } };
   endTurn: () => void;
+  setUI: (p: Record<string, unknown>) => void;
   quit: () => void;
   library: { id: string; name: string }[];
 };
 const yg = <T,>(page: Page, f: (g: YG) => T) => page.evaluate(`(${f.toString()})(window.__yg)`) as Promise<T>;
+
+/** Put off any decision card that has come up (Question Time, a scandal, a crisis…). */
+async function dismissCards(page: Page) {
+  for (const id of ["yg-qt-later", "yg-scandal-later", "yg-crisis-later", "yg-debate-later", "yg-budget-later"]) {
+    const b = page.getByTestId(id);
+    if (await b.isVisible().catch(() => false)) await b.click();
+  }
+}
 
 test("Zenith shows its retirement notice", async ({ page }) => {
   await page.goto("/games/zenith");
@@ -116,12 +130,36 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   await page.getByTestId("yg-tab-party").click();
   await expect(page.getByTestId("yg-factions")).toBeVisible();
 
+  // The polling centre: voting intention by group, and a seat projection.
+  await page.getByTestId("yg-tab-parties").click();
+  await page.getByTestId("yg-poll-groups").click();
+  await expect(page.getByTestId("yg-crosstabs")).toContainText("Young voters");
+  await page.getByTestId("yg-poll-seats").click();
+  await page.getByTestId("yg-mrp").click();
+  expect(await yg(page, (g) => !!g.s.mrp)).toBe(true);
+
+  // Campaign HQ: hire a campaign manager.
+  await page.getByTestId("yg-tab-hq").click();
+  await page.getByTestId("yg-hire-manager-0").click();
+  expect(await yg(page, (g) => !!g.s.staff.manager)).toBe(true);
+
+  // In charge, write a budget: more for health.
+  await yg(page, (g) => {
+    g.s.gov = { parties: [g.s.party], head: g.s.you, since: g.s.week };
+    g.setUI({ tab: null, budget: true });
+  });
+  await page.getByTestId("yg-budget-health-seg-1").click();
+  await page.getByTestId("yg-budget-save").click();
+  expect(await yg(page, (g) => g.s.budgetDraft?.plan.health)).toBe(1);
+
   // End three weeks (the hourglass and the Enter key).
   await page.getByTestId("yg-end-turn").dispatchEvent("click");
+  await dismissCards(page);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("Enter");
   await page.getByTestId("yg-end-turn").dispatchEvent("click");
   await expect(page.getByTestId("yg-date")).toHaveText("2046.05");
+  await dismissCards(page);
   // The planned town hall was held when its week came.
   expect(await yg(page, (g) => g.s.plan.length)).toBe(0);
 
@@ -146,6 +184,10 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   expect(await yg(page, (g) => !!g.s.election)).toBe(true);
   await expect(page.getByTestId("yg-election-skip")).toBeVisible();
   await page.getByTestId("yg-election-skip").dispatchEvent("click");
+  // An election-night speech.
+  await expect(page.getByTestId("yg-speech")).toBeVisible();
+  await page.getByTestId("yg-speech").getByRole("button").first().click();
+  await expect(page.getByTestId("yg-speech")).toHaveCount(0);
   await page.getByTestId("yg-election-continue").dispatchEvent("click");
   expect(await yg(page, (g) => !g.s.election && !!g.s.lastElection)).toBe(true);
   await expect(page.getByTestId("yg-chamber")).toBeVisible();

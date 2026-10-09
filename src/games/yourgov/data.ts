@@ -191,7 +191,7 @@ export const EVENTS: EventDef[] = [
   // The party.
   { id: "recruit", kind: "party", name: "Membership drive", icon: "🤝", cost: 0.8, scope: "self", boost: 0, members: 4000, desc: "Grow the party." },
   { id: "congress", kind: "party", name: "Party congress", icon: "🎪", cost: 3, scope: "self", boost: 1, unity: 15, desc: "Rally the party behind you. Every faction is pleased." },
-  { id: "manifesto", kind: "party", name: "Publish manifesto", icon: "📜", cost: 1, scope: "national", boost: 2, unity: 5, desc: "Set out your programme." },
+  { id: "manifesto", kind: "party", name: "Policy launch", icon: "📜", cost: 1, scope: "national", boost: 2, unity: 5, desc: "Unveil a big idea. (Your manifesto is in Campaign HQ.)" },
   { id: "caucus", kind: "party", name: "Caucus dinner", icon: "🍷", cost: 0.4, scope: "self", boost: 0, unity: 6, desc: "Keep your lawmakers sweet." },
   { id: "training", kind: "party", name: "Candidate school", icon: "🧑‍🏫", cost: 1.2, scope: "national", boost: 0.8, members: 600, desc: "Train the next generation of candidates." },
 ];

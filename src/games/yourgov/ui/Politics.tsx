@@ -9,9 +9,11 @@ import { EVENT, EVENT_MAX, EVENTS, type EventDef, type PartyId } from "../data";
 import type { EventKind, Game } from "../game";
 import * as P from "../politics";
 import * as G from "../sim";
+import * as C from "../campaign";
+import { BudgetBox, BudgetCard, QTCard, ScandalCard } from "./Campaign";
 import { Portrait } from "./Chamber";
 import { Icon } from "./icons";
-import { Bar, fxText, Group, MidBar, money, pct, Row, Seg, Sheet, Stars, Sw } from "./kit";
+import { Bar, fxText, Group, MidBar, Modal, money, pct, Row, Seg, Sheet, Stars, Sw } from "./kit";
 
 const KINDS: { id: EventKind; label: string }[] = [
   { id: "campaign", label: "Campaign" },
@@ -604,6 +606,7 @@ export function Government({ g }: { g: Game }) {
           ) : (
             <p className="yg-note">Executive actions, appointments, diplomacy and referendums belong to the {t.head}. Win power to use them.</p>
           )}
+          <BudgetBox g={g} />
           <Coalition g={g} />
           <Foreign g={g} />
         </>
@@ -613,16 +616,6 @@ export function Government({ g }: { g: Game }) {
 }
 
 // ------------------------------------------------------------------ decisions
-
-function Modal({ children, label, testId, wide }: { children: React.ReactNode; label: string; testId: string; wide?: boolean }) {
-  return (
-    <div className="yg-modal-back" data-testid={testId}>
-      <section className={`yg-glass yg-modal ${wide ? "" : "small"} yg-decision`} role="dialog" aria-modal="true" aria-label={label}>
-        {children}
-      </section>
-    </div>
-  );
-}
 
 function CrisisCard({ g }: { g: Game }) {
   const s = g.s!;
@@ -843,13 +836,17 @@ export function Decisions({ g }: { g: Game }) {
   if (s.over) return null;
   const later = (k: string) => g.ui.later[k] === s.week;
   if (s.challenge && !later("challenge")) return <ChallengeCard g={g} />;
+  if (g.ui.budget && s.gov.head === s.you) return <BudgetCard g={g} />;
+  if (s.scandal && s.scandal.week < s.week && !later("scandal")) return <ScandalCard g={g} />;
   if (s.crisis && !later("crisis")) return <CrisisCard g={g} />;
+  if (C.budgetDue(s) && !later("budget")) return <BudgetCard g={g} />;
   if (s.debate && s.debate.week < s.week && !later("debate")) return <DebateCard g={g} />;
+  if (s.qt && s.qt.week < s.week && !later("qt")) return <QTCard g={g} />;
   return null;
 }
 
 /** What needs the player's attention in the government panel. */
-export const govAlert = (s: G.GameState) => !!s.crisis || (s.gov.head === s.you && Object.keys(s.cabinet).length < P.PORTFOLIOS.length);
+export const govAlert = (s: G.GameState) => !!s.crisis || C.budgetDue(s) || (s.gov.head === s.you && Object.keys(s.cabinet).length < P.PORTFOLIOS.length);
 
 /** For the law page: put a change to the people. */
 export function ReferendumButton({ g, law, option }: { g: Game; law: string; option: number }) {

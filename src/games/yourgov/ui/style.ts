@@ -437,6 +437,54 @@ select.yg-input option{background:#151a24;color:#fff}
 @keyframes yg-marquee{to{transform:translateX(-100%)}}
 @container (max-width:1100px){.yg-ticker{display:none}}
 
+/* ---- the polling centre ---- */
+.yg-scrollseg{overflow-x:auto;scrollbar-width:none;margin:4px -2px 2px;padding:0 2px;touch-action:pan-x;overscroll-behavior:contain}
+.yg-scrollseg::-webkit-scrollbar{display:none}
+.yg-scrollseg .yg-seg{flex-wrap:nowrap}
+.yg-scrollseg .yg-seg button{flex:none;white-space:nowrap}
+.yg-xtab{display:grid;gap:2px;margin-top:6px;font-variant-numeric:tabular-nums;overflow-x:auto;touch-action:pan-x pan-y}
+.yg-xtab>span{display:flex;align-items:center;justify-content:center;min-height:30px;padding:0 4px;border-radius:7px;font-weight:700;font-size:12px}
+.yg-xtab>span.h{font-size:10.5px;letter-spacing:.04em;color:var(--muted);gap:4px;min-height:24px}
+.yg-xtab>span.h i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.yg-xtab>span.n{justify-content:flex-start;font-weight:600;font-size:11.5px;background:rgba(255,255,255,.05);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.yg-xtab>span.c{box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.yg-xtab>span.c.mine{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.7)}
+.yg-xtab>span.all{font-weight:850;margin-bottom:4px}
+.yg-rname{display:block;font-weight:650}
+.yg-stack{display:flex;height:6px;border-radius:999px;overflow:hidden;margin-top:4px;background:rgba(255,255,255,.08)}
+.yg-stack i{display:block;height:100%}
+.yg-fav{display:flex;height:6px;border-radius:999px;overflow:hidden;margin:5px 0 3px;background:rgba(255,255,255,.1)}
+.yg-fav i.good{background:var(--good)}.yg-fav i.bad{background:var(--bad);margin-left:auto}
+.yg-net{font-size:15px;min-width:38px;text-align:right}.yg-net.up{color:#7dffa0}.yg-net.down{color:#ff9d96}
+.yg-delta{font-size:10.5px;font-weight:700;min-width:30px;text-align:right}.yg-delta.up{color:#7dffa0}.yg-delta.down{color:#ff9d96}
+
+/* ---- campaign HQ ---- */
+.yg-staffcard{margin-top:8px;border-radius:16px;background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);overflow:hidden}
+.yg-staffcard-top{display:flex;align-items:center;gap:10px;padding:10px 12px 4px}
+.yg-staffcard-top b{display:block}.yg-staffcard-top small{display:block;font-size:11px}
+.yg-staffcard .yg-row{min-height:38px;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.yg-dpad{display:grid;grid-template-columns:1fr 1fr;grid-template-areas:"up up" "left right" "down down";gap:6px;max-width:300px;margin:8px auto 4px}
+.yg-dpad .up{grid-area:up;justify-self:center}.yg-dpad .down{grid-area:down;justify-self:center}.yg-dpad .left{grid-area:left}.yg-dpad .right{grid-area:right}
+
+/* ---- the budget ---- */
+.yg-budget{display:grid;gap:8px}
+.yg-budget-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(190px,1.3fr);align-items:center;gap:10px;padding:6px 8px;border-radius:14px;background:rgba(255,255,255,.05)}
+.yg-budget-name{font-weight:650;font-size:13px}
+.yg-seg.small button{min-height:28px;font-size:13px;font-weight:800}
+@container (max-width:560px){.yg-budget-row{grid-template-columns:1fr}}
+
+/* ---- achievements, election night ---- */
+.yg-badges{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px}
+.yg-badge-tile{display:grid;justify-items:center;text-align:center;gap:1px;padding:9px 6px;border-radius:14px;background:rgba(255,255,255,.04);opacity:.42;filter:grayscale(1)}
+.yg-badge-tile span{font-size:22px}
+.yg-badge-tile b{font-size:11px;line-height:1.15}
+.yg-badge-tile small{font-size:9.5px;color:var(--muted);line-height:1.15}
+.yg-badge-tile.got{opacity:1;filter:none;background:linear-gradient(160deg,rgba(255,214,10,.22),rgba(255,255,255,.06));box-shadow:inset 0 0 0 1px rgba(255,214,10,.4)}
+.yg-exitpoll{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;border-radius:14px;background:rgba(0,0,0,.25)}
+.yg-exitpoll>b{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:#ff453a;color:#fff;animation:yg-pulse-red 1.6s ease-in-out infinite}
+@keyframes yg-pulse-red{50%{opacity:.6}}
+.yg-speech-row{display:flex;flex-wrap:wrap;gap:6px}
+
 /* ---- small stages ---- */
 @container (max-width:980px){.yg-stat small{display:none}.yg-stat.opt2{display:none}}
 @container (max-width:860px){.yg-stat.opt{display:none}.yg-brand-name{display:none}.yg-missions{display:none}}

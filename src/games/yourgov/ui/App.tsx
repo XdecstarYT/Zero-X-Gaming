@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createRng } from "../../engine/rng";
 import { COMMITTEES, LAW_GROUPS, type LawDef, type PartyId } from "../data";
-import type { Game, Tab } from "../game";
+import type { Game, PollPage, Tab } from "../game";
 import { EXEC_KINDS, LOWER_SYSTEMS, UPPER_KINDS } from "../scenario";
 import * as G from "../sim";
 import { Portrait } from "./Chamber";
@@ -9,6 +9,7 @@ import { Hemicycle, PollChart, Trend } from "./charts";
 import { GlassDefs, canRefract, trackSheen } from "./glass";
 import { Icon } from "./icons";
 import { Bar, big, cap, Flag, fxText, Group, money, pct, Row, Seg, Sheet, Sw } from "./kit";
+import { Achievements, Crosstabs, ExitPoll, HQ, Issues, Leaders, RegionTable, Seats, Speech } from "./Campaign";
 import { Confetti, Decisions, Events, Factions, Government, govAlert, ReferendumButton, Voters } from "./Politics";
 import { LawStudio } from "./LawStudio";
 import type { MapMode } from "./mapColors";
@@ -87,6 +88,7 @@ function Career({ g }: { g: Game }) {
           </Row>
         ))}
       </Group>
+      <Achievements g={g} />
     </Sheet>
   );
 }
@@ -464,8 +466,35 @@ function Parties({ g }: { g: Game }) {
   const poll = G.nationalPoll(s);
   const house = G.houseBy(s);
   const list = [...G.partyDefs(s)].sort((a, b) => (poll[b.id] ?? 0) - (poll[a.id] ?? 0) || (house[b.id] ?? 0) - (house[a.id] ?? 0));
+  const page = g.ui.poll;
+  const pages = (
+    <div className="yg-scrollseg">
+      <Seg<PollPage>
+        value={page}
+        label="Polling centre"
+        onChange={(v) => g.setUI({ poll: v })}
+        options={[
+          { id: "parties", label: "Parties" },
+          { id: "groups", label: "Groups" },
+          { id: "regions", label: cap(G.titles(s).regions.split(" ")[0]) },
+          { id: "leaders", label: "Leaders" },
+          { id: "issues", label: "Issues" },
+          { id: "seats", label: "Seats" },
+        ]}
+        testId="yg-poll"
+      />
+    </div>
+  );
+  if (page !== "parties")
+    return (
+      <Sheet title="Polling centre" eyebrow={`${s.sc.name} · ${G.dateLabel(s)}`} onClose={() => g.setUI({ tab: null })} testId="yg-p-parties">
+        {pages}
+        {page === "groups" ? <Crosstabs g={g} /> : page === "regions" ? <RegionTable g={g} /> : page === "leaders" ? <Leaders g={g} /> : page === "issues" ? <Issues g={g} /> : <Seats g={g} />}
+      </Sheet>
+    );
   return (
-    <Sheet title="Parties" eyebrow="National polls" onClose={() => g.setUI({ tab: null })} testId="yg-p-parties">
+    <Sheet title="Polling centre" eyebrow="National polls" onClose={() => g.setUI({ tab: null })} testId="yg-p-parties">
+      {pages}
       <PollChart s={s} />
       {list.map((p) => {
         const ps = s.parties[p.id];
@@ -835,6 +864,7 @@ function ElectionCard({ g }: { g: Game }) {
       <div className="yg-progress" aria-label="Counted">
         <i style={{ width: `${Math.min(1, k) * 100}%` }} />
       </div>
+      {!done && <ExitPoll s={s} e={e} />}
       <div className="yg-tiles">
         <div className="yg-tile-stat">
           <span>Sections</span>
@@ -889,6 +919,7 @@ function ElectionCard({ g }: { g: Game }) {
       )}
       {done && e.contests.lower && sy.exec !== "presidential" && <p className="yg-muted small">Coalition talks follow the count.</p>}
       {done && (e.president?.party === s.party || (!e.president && seats[s.party] === Math.max(...Object.values(seats)))) && <Confetti colors={[G.party(s, s.party).color, "#ffffff", "#ffd60a"]} />}
+      {done && (e.contests.lower || e.contests.pres) && <Speech g={g} />}
       <button type="button" className={`yg-btn wide ${done ? "primary" : ""}`} onClick={() => (done ? g.closeElection() : g.setUI({ count: 1 }))} data-testid={done ? "yg-election-continue" : "yg-election-skip"}>
         {done ? "Continue" : "Skip the count"}
       </button>
@@ -1018,9 +1049,10 @@ const TABS: { id: Exclude<Tab, null | "settings">; icon: string; label: string }
   { id: "events", icon: "events", label: "Events and the diary" },
   { id: "voters", icon: "target", label: "Voters and the press" },
   { id: "chamber", icon: "parliament", label: "Parliament" },
-  { id: "parties", icon: "parties", label: "Parties and polls" },
+  { id: "parties", icon: "parties", label: "Polling centre" },
   { id: "party", icon: "party", label: "Your party" },
   { id: "gov", icon: "cabinet", label: "Government" },
+  { id: "hq", icon: "people", label: "Campaign HQ" },
   { id: "country", icon: "country", label: "The country" },
   { id: "news", icon: "news", label: "News" },
 ];
@@ -1301,6 +1333,10 @@ export function App({ game }: { game: Game }) {
       <Voters g={g} />
     ) : tab === "gov" ? (
       <Government g={g} />
+    ) : tab === "hq" ? (
+      <Sheet title="Campaign HQ" eyebrow={`${G.party(s, s.party).name} · funds ${money(s, s.parties[s.party].funds)}`} onClose={() => g.setUI({ tab: null })} testId="yg-p-hq">
+        <HQ g={g} />
+      </Sheet>
     ) : tab === "settings" ? (
       <Settings g={g} />
     ) : null;
