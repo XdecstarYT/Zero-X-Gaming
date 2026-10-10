@@ -118,6 +118,8 @@ export interface Forklift {
   battery: number;
   /** The charging point it's using (charger struct id × 2 + point), or -1. */
   charger: number;
+  /** How many times in a row it found nothing to do. */
+  miss?: number;
 }
 
 export type TruckState = "transit" | "queued" | "arriving" | "backing" | "docked" | "leaving" | "gone";
@@ -328,6 +330,8 @@ export interface State {
   stats: { delivered: number; onTime: number; late: number; failed: number; revenue: number; made: number; madeGoods: number; unloaded: number; moves: number; rushOnTime: number; phones: number; peakStock: number; trains: number; charges: number; contractsDone: number; events: number; madeItems: Partial<Record<ItemId, number>>; borrowed: number; repaid: number; coldShipped: number; ownShipped: number; missions: number; vipOnTime: number; spoiled: number };
   seasonOver: boolean;
   bankrupt: boolean;
+  /** Bumped whenever something on the floor is built, moved or removed (the forklifts' map is redrawn). */
+  rev?: number;
 }
 
 /* ------------------------------------------------------------------ random */
@@ -406,14 +410,15 @@ function mixOf(s: State) {
 
 const inside = (s: State, x: number, z: number) => x >= 2 && x < width(s) && z >= BACK_Z && z < DOCK_Z;
 
-/** Tiles: 0 floor you can drive on, 1 blocked. Rebuilt when the layout changes. */
-let gridCache: { key: string; g: Uint8Array } | null = null;
-function layoutKey(s: State) {
-  return `${s.expanded}|${s.mega}|${s.rail}|${s.doors.length}|${s.structs.length}|${s.structs.filter((t) => t.dead).length}`;
+/** Tiles: 0 floor you can drive on, 1 blocked. Rebuilt when the layout changes (one per game, so the title screen's demo never shares one). */
+const grids = new WeakMap<State, { exp: boolean; mega: boolean; rail: boolean; doors: number; structs: number; rev: number; g: Uint8Array }>();
+/** Something on the floor was built, moved or taken away: the grid is redrawn on next use. */
+function dirty(s: State) {
+  s.rev = (s.rev ?? 0) + 1;
 }
 export function grid(s: State): Uint8Array {
-  const key = layoutKey(s);
-  if (gridCache && gridCache.key === key) return gridCache.g;
+  const c = grids.get(s);
+  if (c && c.rev === (s.rev ?? 0) && c.structs === s.structs.length && c.doors === s.doors.length && c.exp === s.expanded && c.mega === s.mega && c.rail === s.rail) return c.g;
   const g = new Uint8Array(GRID_W * GRID_H).fill(1);
   for (let z = BACK_Z; z < DOCK_Z; z++) for (let x = 2; x < width(s); x++) g[z * GRID_W + x] = 0;
   for (const d of s.doors) {
@@ -427,7 +432,7 @@ export function grid(s: State): Uint8Array {
     if (t.dead) continue;
     for (let z = t.z; z < t.z + t.d; z++) for (let x = t.x; x < t.x + t.w; x++) g[z * GRID_W + x] = 1;
   }
-  gridCache = { key, g };
+  grids.set(s, { exp: s.expanded, mega: s.mega, rail: s.rail, doors: s.doors.length, structs: s.structs.length, rev: s.rev ?? 0, g });
   return g;
 }
 const free = (g: Uint8Array, x: number, z: number) => x >= 0 && z >= 0 && x < GRID_W && z < GRID_H && g[z * GRID_W + x] === 0;
@@ -454,8 +459,7 @@ function accessCandidates(s: State, sl: Slot): [number, number][] {
   ];
 }
 
-export function access(s: State, sl: Slot): [number, number] | null {
-  const g = grid(s);
+export function access(s: State, sl: Slot, g = grid(s)): [number, number] | null {
   for (const c of accessCandidates(s, sl)) if (free(g, c[0], c[1])) return c;
   return null;
 }
@@ -485,6 +489,18 @@ function reach(s: State, g: Uint8Array) {
   return seen;
 }
 
+const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+/** The path finder's working memory, reused by every search. */
+const RB = {
+  cost: new Float64Array(GRID_W * GRID_H * 4),
+  prev: new Int32Array(GRID_W * GRID_H * 4),
+  closed: new Uint8Array(GRID_W * GRID_H * 4),
+  seen: new Uint32Array(GRID_W * GRID_H * 4),
+  stamp: 0,
+  heap: [] as number[],
+  hp: [] as number[],
+};
+
 /** Shortest path on the grid (4-way, turns cost a little so routes run straight), as tile centres. */
 export function route(s: State, ax: number, az: number, bx: number, bz: number): [number, number][] {
   const g = grid(s);
@@ -508,15 +524,25 @@ export function route(s: State, ax: number, az: number, bx: number, bz: number):
     start = best;
   }
   const goal = bz * GRID_W + bx;
-  const N = GRID_W * GRID_H;
-  // State = tile * 4 + heading, so turning can cost.
-  const cost = new Float64Array(N * 4).fill(Infinity);
-  const prev = new Int32Array(N * 4).fill(-1);
+  // State = tile * 4 + heading, so turning can cost. The buffers are shared between calls (a
+  // stamp marks which entries this search has written), so finding a path allocates nothing.
+  const { cost, prev, closed, seen } = RB;
+  const stamp = ++RB.stamp;
+  const known = (st: number) => seen[st] === stamp;
+  const touch = (st: number) => {
+    if (seen[st] !== stamp) {
+      seen[st] = stamp;
+      cost[st] = Infinity;
+      prev[st] = -1;
+      closed[st] = 0;
+    }
+  };
   const h = (c: number) => Math.abs((c % GRID_W) - bx) + Math.abs(Math.floor(c / GRID_W) - bz);
-  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   // A binary heap of [priority, state].
-  const heap: number[] = [];
-  const hp: number[] = [];
+  const heap = RB.heap;
+  const hp = RB.hp;
+  heap.length = 0;
+  hp.length = 0;
   const push = (st: number, pr: number) => {
     let i = heap.length;
     heap.push(st);
@@ -552,14 +578,14 @@ export function route(s: State, ax: number, az: number, bx: number, bz: number):
     return top;
   };
   for (let k = 0; k < 4; k++) {
+    touch(start * 4 + k);
     cost[start * 4 + k] = 0;
     push(start * 4 + k, h(start));
   }
   let found = -1;
-  const closed = new Uint8Array(N * 4);
   while (heap.length) {
     const st = pop();
-    if (closed[st]) continue;
+    if (known(st) && closed[st]) continue;
     closed[st] = 1;
     const c = st >> 2;
     if (c === goal) {
@@ -572,8 +598,9 @@ export function route(s: State, ax: number, az: number, bx: number, bz: number):
       const nx = x + DIRS[k][0];
       const nz = z + DIRS[k][1];
       const nc = nz * GRID_W + nx;
-      if (!free(g, nx, nz) && nc !== goal) continue;
+      if (!free(g, nx, nz) && (nc !== goal || nx < 0 || nz < 0 || nx >= GRID_W || nz >= GRID_H)) continue;
       const ns = nc * 4 + k;
+      touch(ns);
       const nc2 = cost[st] + 1 + ((st & 3) === k ? 0 : 0.35);
       if (nc2 < cost[ns]) {
         cost[ns] = nc2;
@@ -666,7 +693,7 @@ function makeStruct(s: State, p: Placement): Struct {
     for (let dz = 0; dz < d; dz++) t.slots.push(addSlot(s, "out", p.x + w - 1, p.z + dz, 0.55, t.id));
     t.m = { type: p.type ?? "press", recipe: 0, state: "idle", t: 0, wear: 0, made: 0, on: true, outSlot: -1 };
   }
-  gridCache = null;
+  dirty(s);
   return t;
 }
 
@@ -707,7 +734,7 @@ export function placeError(s: State, p: Placement): string | null {
   }
   s.slots.length = before.slots;
   s.structs.length = before.structs;
-  gridCache = null;
+  dirty(s);
   return err;
 }
 
@@ -742,7 +769,7 @@ export function remove(s: State, id: number): string | null {
   for (const sl of t.slots) s.slots[sl].dead = true;
   // Half back.
   earn(s, Math.round(structCost({ kind: t.kind, type: t.m?.type, x: 0, z: 0 }) / 2), "rewards");
-  gridCache = null;
+  dirty(s);
   return null;
 }
 
@@ -782,8 +809,9 @@ function nearestStore(s: State, x: number, z: number, nearDocks: boolean, item?:
   let best: Slot | null = null;
   let bd = Infinity;
   const frozen = !!item && !!ITEMS[item].frozen;
+  const g = grid(s);
   for (const sl of s.slots) {
-    if (sl.kind !== "store" || !freeSlot(sl) || !access(s, sl)) continue;
+    if (sl.kind !== "store" || !freeSlot(sl) || !access(s, sl, g)) continue;
     // Without smart slotting stock goes in the first free bay; with it, as near as can be.
     // Frozen goods go in the freezers if there's room; everything else leaves the freezers free.
     const d = (nearDocks ? dist(sl.x, sl.z, x, z) + sl.y * 2 : sl.id) + (frozen !== !!sl.cold ? 100_000 : 0);
@@ -968,6 +996,31 @@ function findJob(s: State, f: Forklift): boolean {
     }
     return best;
   };
+  // One pass over the pallets: what each order has, and what's free to pick, by item.
+  const forOrder = new Map<number, Pallet[]>();
+  const avail = new Map<ItemId, Pallet[]>();
+  for (const id in s.pallets) {
+    const p = s.pallets[id];
+    if (p.order >= 0) {
+      const l = forOrder.get(p.order);
+      if (l) l.push(p);
+      else forOrder.set(p.order, [p]);
+    } else if (p.loc === "slot" && p.busy < 0 && s.slots[p.ref].kind === "store") {
+      const l = avail.get(p.item);
+      if (l) l.push(p);
+      else avail.set(p.item, [p]);
+    }
+  }
+  const has = (o: number, item: ItemId) => {
+    let n = 0;
+    for (const p of forOrder.get(o) ?? []) if (p.item === item) n++;
+    return n;
+  };
+  const oldest = (item: ItemId) => {
+    let best: Pallet | null = null;
+    for (const p of avail.get(item) ?? []) if ((!best || p.born < best.born) && sourceAccess(s, p)) best = p;
+    return best;
+  };
   const docked = s.trucks.filter((t) => t.state === "docked");
   // 1 · Load trucks at the doors.
   for (const t of docked) {
@@ -976,7 +1029,7 @@ function findJob(s: State, f: Forklift): boolean {
     if (!o) continue;
     const ci = t.cargo.indexOf(-1);
     if (ci < 0) continue;
-    const staged = Object.values(s.pallets).filter((p) => p.order === o.id && p.busy < 0 && p.loc === "slot" && s.slots[p.ref].kind === "stage");
+    const staged = (forOrder.get(o.id) ?? []).filter((p) => p.busy < 0 && p.loc === "slot" && s.slots[p.ref].kind === "stage");
     const p = near(staged);
     if (p) {
       claim(s, f, "load", p, { k: "truck", id: t.id, ci });
@@ -996,7 +1049,7 @@ function findJob(s: State, f: Forklift): boolean {
       const o = s.orders
         .filter((o) => (o.state === "confirmed" || o.state === "picked" || o.state === "loading") && o.door >= 0)
         .sort((a, b) => a.due - b.due)
-        .find((o) => o.lines.some((l) => l.item === p.item && Object.values(s.pallets).filter((q) => q.order === o.id && q.item === l.item).length < l.n));
+        .find((o) => o.lines.some((l) => l.item === p.item && has(o.id, l.item) < l.n));
       const lane = o ? s.doors[o.door].stage.map((id) => s.slots[id]).find(freeSlot) : undefined;
       if (o && lane) {
         p.order = o.id;
@@ -1033,11 +1086,9 @@ function findJob(s: State, f: Forklift): boolean {
     const lane = door.stage.map((id) => s.slots[id]).filter(freeSlot);
     if (!lane.length) continue;
     for (const line of o.lines) {
-      const have = Object.values(s.pallets).filter((p) => p.order === o.id && p.item === line.item).length;
-      if (have >= line.n) continue;
-      const av = available(s, line.item);
+      if (has(o.id, line.item) >= line.n) continue;
       // First in, first out (by lot) unless slotting says nearest.
-      const p = up(s, "slotting") || up(s, "wms") ? near(av) : av.filter((q) => sourceAccess(s, q)).sort((a, b) => a.born - b.born)[0];
+      const p = up(s, "slotting") || up(s, "wms") ? near(avail.get(line.item) ?? []) : oldest(line.item);
       if (!p) continue;
       p.order = o.id;
       claim(s, f, "pick", p, { k: "slot", id: lane[0].id });
@@ -1049,16 +1100,19 @@ function findJob(s: State, f: Forklift): boolean {
     if (t.dead || !t.m || !t.m.on || t.m.state === "broken" || t.m.state === "repair") continue;
     const r = MACHINES[t.m.type].recipes[t.m.recipe];
     for (const item of r.inputs) {
+      if (!avail.get(item)?.length) continue;
       const dst = feedSlot(s, t, item);
       if (!dst) continue;
-      const av = available(s, item);
-      const p = av.filter((q) => sourceAccess(s, q)).sort((a, b) => a.born - b.born)[0];
+      const p = oldest(item);
       if (!p) continue;
       claim(s, f, "feed", p, { k: "slot", id: dst.id });
       return true;
     }
   }
   // 6 · Put away whatever's left on the lanes, and inputs a machine no longer uses.
+  let coldRoom: boolean | null = null;
+  // Frozen pallets out of the cold go back in a freezer if one has room.
+  const coldFree = () => (coldRoom ??= s.slots.some((x) => x.cold && freeSlot(x)));
   for (const sl of s.slots) {
     if (sl.dead || sl.pallet < 0) continue;
     const p = s.pallets[sl.pallet];
@@ -1069,8 +1123,6 @@ function findJob(s: State, f: Forklift): boolean {
       const t = s.structs[sl.owner];
       stray = !MACHINES[t.m!.type].recipes[t.m!.recipe].inputs.includes(p.item);
     }
-    // Frozen pallets out of the cold go back in a freezer if one has room.
-    const coldFree = () => s.slots.some((x) => x.cold && freeSlot(x) && !x.dead);
     if (!stray && ITEMS[p.item].frozen && sl.kind === "store" && !sl.cold && coldFree()) stray = true;
     if (!stray) continue;
     const dst = nearestStore(s, sl.x, sl.z, true, p.item);
@@ -1171,7 +1223,8 @@ function stepFork(s: State, f: Forklift, dt: number) {
     case "park": {
       liftTo(0);
       if (f.phase === "park" && moveAlong(s, f, speed * dt)) f.phase = "idle";
-      if (s.time - f.looked < 2) return;
+      // A forklift that keeps finding nothing to do looks a little less often (up to every 8 s).
+      if (s.time - f.looked < 2 + Math.min(6, (f.miss ?? 0) * 2)) return;
       f.looked = s.time;
       // Low battery: off to a charger (or a slow top-up where it stands if there isn't one).
       if (f.battery < 0.22) {
@@ -1187,7 +1240,11 @@ function stepFork(s: State, f: Forklift, dt: number) {
           if (!s.alerts.some((a) => a.text.startsWith("Build a charging bay") && s.time - a.t < 4 * HOUR)) alert(s, "warn", "Build a charging bay: forklift batteries are flat");
         }
       }
-      if (findJob(s, f)) return;
+      if (findJob(s, f)) {
+        f.miss = 0;
+        return;
+      }
+      f.miss = (f.miss ?? 0) + 1;
       // Nothing to do: wait on the aisle, out of the way.
       if (f.phase === "idle") {
         const px = 2 + ((f.id * 4) % Math.max(4, width(s) - 3)) + 0.5;
@@ -1946,7 +2003,7 @@ export function buyUpgrade(s: State, id: UpgradeId): string | null {
   if (id === "highbay")
     for (const t of s.structs)
       if (t.kind === "rack" && !t.dead) for (let c = 0; c < t.w; c++) t.slots.push(addSlot(s, "store", t.x + c, t.z, 2 * LEVEL_H, t.id));
-  gridCache = null;
+  dirty(s);
   alert(s, "good", `${u.name} done`);
   return null;
 }
@@ -2315,7 +2372,6 @@ export function deserialize(json: string): State | null {
     s.today.moves ??= 0;
     for (const k of ["borrowed", "repaid", "coldShipped", "ownShipped", "missions", "vipOnTime", "spoiled"] as const) s.stats[k] ??= 0;
     if (!s.missions.length) newMissions(s);
-    gridCache = null;
     return s;
   } catch {
     return null;

@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeStatic } from "@/nextx/batch";
 import { CARRIERS, type MachineType } from "../data";
 
 export const COL = {
@@ -629,12 +630,25 @@ export function palletGeometry() {
 export interface ForkModel {
   group: THREE.Group;
   carriage: THREE.Group;
-  wheels: THREE.Object3D[];
   beacon: THREE.Mesh;
 }
 
-/** A counterbalance forklift, facing +z, about 0.65 wide and 1.3 long (forks to 1.3 ahead). */
+let forkTemplate: THREE.Group | null = null;
+
+/**
+ * A counterbalance forklift, facing +z, about 0.65 wide and 1.3 long (forks to 1.3 ahead). Built
+ * once and merged to a handful of draw calls (the body, the lifting carriage, the beacon); every
+ * forklift after that is a copy sharing the same geometry.
+ */
 export function forklift(): ForkModel {
+  forkTemplate ??= buildForklift();
+  const g = forkTemplate.clone(true);
+  const beacon = g.getObjectByName("beacon") as THREE.Mesh;
+  beacon.material = (beacon.material as THREE.Material).clone();
+  return { group: g, carriage: g.getObjectByName("carriage") as THREE.Group, beacon };
+}
+
+function buildForklift() {
   const g = new THREE.Group();
   const yellow = mat(COL.fork, 0.38, 0.05);
   const dark = mat(COL.forkDark, 0.55, 0.1);
@@ -688,6 +702,7 @@ export function forklift(): ForkModel {
   g.add(box(0.22, 0.12, 0.04, glow("#fff6d8"), 0, 1.5, 0.47, false));
   // Carriage: the plate, a load backrest and two tapered forks.
   const carriage = new THREE.Group();
+  carriage.name = "carriage";
   carriage.userData.dynamic = true;
   carriage.add(box(0.56, 0.26, 0.05, dark, 0, 0, 0.47));
   for (let i = 0; i < 4; i++) carriage.add(box(0.04, 0.42, 0.03, dark, -0.21 + i * 0.14, 0.24, 0.475));
@@ -698,38 +713,47 @@ export function forklift(): ForkModel {
   }
   carriage.position.y = 0.1;
   g.add(carriage);
-  const wheels: THREE.Object3D[] = [];
   const rim = mat("#e3e6ec", 0.35, 0.6);
   for (const [x, z, r] of [[-0.34, 0.24, 0.15], [0.34, 0.24, 0.15], [-0.32, -0.46, 0.125], [0.32, -0.46, 0.125]]) {
     const w = wheel(r, 0.13, rim, 14);
     w.position.set(x, r, z);
-    w.userData.dynamic = true;
     g.add(w);
-    wheels.push(w);
   }
   const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), new THREE.MeshBasicMaterial({ color: "#ffb020" }));
+  beacon.name = "beacon";
+  beacon.userData.dynamic = true;
   beacon.position.set(0, 1.34, -0.32);
   g.add(beacon);
   shadows(g);
   beacon.castShadow = false;
   g.add(blob(1.1, 1.7, 0.55));
-  return { group: g, carriage, wheels, beacon };
+  mergeStatic(carriage, { palette: true });
+  mergeStatic(g, { palette: true });
+  return g;
 }
 
 /* ------------------------------------------------------------------ truck */
 
 export interface TruckModel {
   group: THREE.Group;
-  wheels: THREE.Object3D[];
 }
 
 export const TRAILER_LEN = 7.2;
 
+const truckTemplates = new Map<number, THREE.Group>();
+
 /**
  * A tractor unit and a curtain-sider trailer with its roof rolled back (so the load shows from
- * above). The origin is the middle of the trailer's rear; the cab points along +z.
+ * above). The origin is the middle of the trailer's rear; the cab points along +z. One merged
+ * template per carrier, copied for every truck.
  */
 export function truck(carrier: number): TruckModel {
+  let t = truckTemplates.get(carrier);
+  if (!t) truckTemplates.set(carrier, (t = buildTruck(carrier)));
+  return { group: t.clone(true) };
+}
+
+function buildTruck(carrier: number) {
   const g = new THREE.Group();
   const c = CARRIERS[carrier];
   const W = 2.4;
@@ -800,20 +824,18 @@ export function truck(carrier: number): TruckModel {
   const stack = cyl(0.07, 1.6, alloy, 10);
   stack.position.set(1.0, 2.0, L + 0.55);
   g.add(stack);
-  const wheels: THREE.Object3D[] = [];
   for (const z of [0.85, 1.85, L + 0.45, L + 1.35, L + 2.15])
     for (const sx of [-1, 1]) {
       const w = wheel(0.44, 0.36, rim, 18);
       w.position.set(sx * 0.98, 0.44, z);
-      w.userData.dynamic = true;
       g.add(w);
-      wheels.push(w);
     }
   shadows(g);
   const sh = blob(3.4, L + 4.0, 0.5);
   sh.position.z = (L + 2.7) / 2;
   g.add(sh);
-  return { group: g, wheels };
+  mergeStatic(g, { palette: true });
+  return g;
 }
 
 /* ------------------------------------------------------------------ machines */
@@ -1003,16 +1025,22 @@ export const windowMat = new THREE.MeshStandardMaterial({ color: "#8fb4dc", emis
 
 export interface TrainModel {
   group: THREE.Group;
-  wheels: THREE.Object3D[];
 }
+
+const trainTemplates = new Map<number, THREE.Group>();
 
 /** A shunting locomotive and two flat wagons, running along +x. The origin is the middle of the two wagons. */
 export function train(carrier: number): TrainModel {
+  let t = trainTemplates.get(carrier);
+  if (!t) trainTemplates.set(carrier, (t = buildTrain(carrier)));
+  return { group: t.clone(true) };
+}
+
+function buildTrain(carrier: number) {
   const g = new THREE.Group();
   const c = CARRIERS[carrier];
   const dark = mat("#2a2e38", 0.6, 0.2);
   const steel = mat("#7d8494", 0.4, 0.6);
-  const wheels: THREE.Object3D[] = [];
   const rim = mat("#9aa1ad", 0.4, 0.7);
   const wagon = (cx: number) => {
     g.add(box(4.6, 0.25, 2.6, mat("#55606f", 0.55, 0.35), cx, 0.65, 0));
@@ -1023,9 +1051,7 @@ export function train(carrier: number): TrainModel {
         const w = wheel(0.32, 0.12, rim, 14);
         w.rotation.y = Math.PI / 2;
         w.position.set(cx + wx, 0.32, sz);
-        w.userData.dynamic = true;
         g.add(w);
-        wheels.push(w);
       }
   };
   wagon(-2.4);
@@ -1046,15 +1072,14 @@ export function train(carrier: number): TrainModel {
       const w = wheel(0.36, 0.14, rim, 14);
       w.rotation.y = Math.PI / 2;
       w.position.set(lx + wx, 0.36, sz);
-      w.userData.dynamic = true;
       g.add(w);
-      wheels.push(w);
     }
   shadows(g);
   const sh = blob(18, 3.6, 0.45);
   sh.position.x = 3;
   g.add(sh);
-  return { group: g, wheels };
+  mergeStatic(g, { palette: true });
+  return g;
 }
 
 /** A charging bay: a cabinet and two charging posts with status lights, 2×1 tiles from its corner. */
@@ -1088,20 +1113,30 @@ export interface PersonModel {
   legs: THREE.Mesh[];
 }
 
-/** A warehouse worker in a hi-vis vest with reflective bands, and a hard hat. */
+const personTemplates = new Map<number, THREE.Group>();
+
+/** A warehouse worker in a hi-vis vest with reflective bands, and a hard hat (twelve looks, each merged once and copied). */
 export function person(n: number): PersonModel {
+  const k = n % 12;
+  let t = personTemplates.get(k);
+  if (!t) personTemplates.set(k, (t = buildPerson(k)));
+  const g = t.clone(true);
+  return { group: g, legs: [g.getObjectByName("hip0") as THREE.Mesh, g.getObjectByName("hip1") as THREE.Mesh] };
+}
+
+function buildPerson(n: number) {
   const g = new THREE.Group();
   const trousers = mat(["#2c3443", "#3b3f4a", "#24314a"][n % 3], 0.8);
-  const legs: THREE.Mesh[] = [];
-  for (const x of [-0.07, 0.07]) {
+  [-0.07, 0.07].forEach((x, i) => {
     const l = box(0.1, 0.42, 0.1, trousers, 0, -0.42, 0);
     const hip = new THREE.Group();
+    hip.name = `hip${i}`;
+    hip.userData.dynamic = true;
     hip.position.set(x, 0.45, 0);
     l.position.y = -0.21;
     hip.add(l);
     g.add(hip);
-    legs.push(hip as unknown as THREE.Mesh);
-  }
+  });
   const vest = mat(n % 2 ? "#ff8a1f" : "#d9f23a", 0.6);
   g.add(rbox(0.28, 0.42, 0.17, vest, 0, 0.44, 0, 0.05));
   for (const y of [0.56, 0.68]) g.add(box(0.29, 0.03, 0.18, glow("#eef4ff"), 0, y, 0, false));
@@ -1117,7 +1152,8 @@ export function person(n: number): PersonModel {
     if ((o as THREE.Mesh).isMesh) o.castShadow = true;
   });
   g.add(blob(0.55, 0.55, 0.45));
-  return { group: g, legs };
+  mergeStatic(g, { palette: true });
+  return g;
 }
 
 /** A parked car, facing +z. */

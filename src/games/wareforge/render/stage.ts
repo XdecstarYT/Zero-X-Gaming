@@ -41,6 +41,18 @@ export class Stage {
   private composer: EffectComposer | null = null;
   private bloom: UnrealBloomPass | null = null;
   private ao: GTAOPass | null = null;
+  /**
+   * Adaptive resolution: the pixel ratio steps down while frames run slow and creeps back up when
+   * there's headroom, so a busy warehouse stays smooth on a phone instead of stuttering.
+   */
+  private pr: number;
+  private prMin: number;
+  private prMax: number;
+  private ema = 16.7;
+  private slow = 0;
+  private fast = 0;
+  private raisedAt = -1e9;
+  private frames = 0;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -51,12 +63,18 @@ export class Stage {
     // multisamples its own buffer for the post chain; low skips both.
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality === "medium", powerPreference: "high-performance", stencil: false });
     const dpr = window.devicePixelRatio || 1;
-    this.renderer.setPixelRatio(quality === "low" ? 1 : Math.min(2, dpr));
+    // Phones start at 1.5× (sharp, and well under half the pixels of 2.5–3×), and earn more if they can.
+    this.prMax = quality === "low" ? 1 : Math.min(2, dpr);
+    this.prMin = quality === "low" ? 0.75 : Math.min(1, this.prMax);
+    this.pr = quality === "medium" ? Math.min(1.5, this.prMax) : this.prMax;
+    this.renderer.setPixelRatio(this.pr);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = quality !== "low";
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // Medium redraws the sun's shadow map every other frame: things move slowly, nobody can tell.
+    this.renderer.shadowMap.autoUpdate = quality === "high";
     this.world = new World(quality);
     this.world.bakeEnvironment(this.renderer);
     if (quality === "high") {
@@ -64,9 +82,13 @@ export class Stage {
       this.composer = new EffectComposer(this.renderer, target);
       this.composer.addPass(new RenderPass(this.world.scene, this.world.camera));
       try {
-        this.ao = new GTAOPass(this.world.scene, this.world.camera, 256, 256);
-        this.ao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.6, thickness: 1.2, scale: 1.1, samples: 12 });
-        this.ao.blendIntensity = 0.85;
+        const ao = new GTAOPass(this.world.scene, this.world.camera, 256, 256);
+        ao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.6, thickness: 1.2, scale: 1.1, samples: 12 });
+        ao.blendIntensity = 0.85;
+        // Ambient occlusion is soft: half resolution looks the same at a quarter of the cost.
+        const size = ao.setSize.bind(ao);
+        ao.setSize = (w: number, h: number) => size(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2)));
+        this.ao = ao;
         this.composer.addPass(this.ao);
       } catch {
         this.ao = null;
@@ -92,12 +114,52 @@ export class Stage {
     this.world.resize(this.w, this.h);
   }
 
+  /** Step the pixel ratio from how long frames are taking (milliseconds between them). */
+  private govern(ms: number, now: number) {
+    // A hidden tab or a one-off stall says nothing about the steady frame rate.
+    if (ms > 1000) return;
+    this.ema += (ms - this.ema) * 0.06;
+    if (this.ema > 24) {
+      this.slow += ms;
+      this.fast = 0;
+    } else if (this.ema < 17.6) {
+      this.fast += ms;
+      this.slow = 0;
+    } else this.slow = this.fast = 0;
+    if (this.slow > 1500 && this.pr > this.prMin) {
+      // Slowed down soon after stepping up: that step was one too many, don't try it again.
+      if (now - this.raisedAt < 12_000) this.prMax = this.pr - 0.25;
+      this.setPixelRatio(this.pr - 0.25);
+      this.ema = 20;
+      this.slow = 0;
+    } else if (this.fast > 6000 && this.pr < this.prMax) {
+      this.setPixelRatio(this.pr + 0.25);
+      this.raisedAt = now;
+      this.fast = 0;
+    }
+  }
+
+  private setPixelRatio(pr: number) {
+    this.pr = Math.max(this.prMin, Math.min(this.prMax, pr));
+    this.renderer.setPixelRatio(this.pr);
+    this.composer?.setPixelRatio(this.pr);
+    this.resize();
+  }
+
+  /** The pixel ratio the governor has settled on (for the graphics menu). */
+  get pixelRatio() {
+    return this.pr;
+  }
+
   private frame = (now: number) => {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.frame);
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    const ms = now - this.last;
+    const dt = Math.min(0.1, ms / 1000);
     this.last = now;
     if (document.hidden) return;
+    this.govern(ms, now);
+    if (!this.renderer.shadowMap.autoUpdate && this.frames++ % 2 === 0) this.renderer.shadowMap.needsUpdate = true;
     if (this.spin) this.world.rig.goal.yaw += this.spin * dt;
     this.events.frame(dt);
     this.world.update(dt);

@@ -112,6 +112,12 @@ export function truckPose(s: State, t: Truck): { x: number; z: number; rot: numb
 const iceGlow = new THREE.MeshBasicMaterial({ color: "#8fd3ff" });
 const frostMat = new THREE.MeshBasicMaterial({ color: "#dff1ff", transparent: true, opacity: 0.55 });
 
+/** How tall a pallet's load stands: materials low, parts higher, finished goods tallest. */
+const loadH = (p: Pallet) => {
+  const t = ITEMS[p.item].tier;
+  return t === "raw" ? 0.55 : t === "part" ? 0.68 : 0.82;
+};
+
 /** A trailer's cargo position, relative to its rear. */
 const cargoLocal = (ci: number) => ({ x: ci % 2 ? 0.55 : -0.55, z: 1.4 + Math.floor(ci / 2) * 1.0 });
 
@@ -131,7 +137,7 @@ export class World {
   private workers: { m: PersonModel; path: [number, number][]; x: number; z: number; wait: number; speed: number }[] = [];
   private hemi: THREE.HemisphereLight;
   private night = 0;
-  /** Lights that come on at night (switched off by day). */
+  /** Lights that come on at night (dark by day). */
   private nightLights: THREE.PointLight[] = [];
   private scenery = new THREE.Group();
   private sceneryKey = "";
@@ -146,7 +152,8 @@ export class World {
     return this.night;
   }
   private machines = new Map<number, MachineModel>();
-  private shutters: { door: number; mesh: THREE.Mesh }[] = [];
+  /** The dock doors' shutters, one instance a door (they roll up for a truck). */
+  private shutters: { doors: number[]; mesh: THREE.InstancedMesh; y: number[] } | null = null;
   private pinObj = pin();
   private selLine: THREE.LineLoop;
   private ghost: THREE.Mesh;
@@ -154,7 +161,8 @@ export class World {
   private tmp = new THREE.Object3D();
   private col = new THREE.Color();
   private time = 0;
-  private picks: { box: THREE.Box3; focus: Focus }[] = [];
+  /** The state last drawn (what a tap picks from). */
+  private last: State | null = null;
   private sky: SkyMesh;
   private skyEnv: SkyEnvironment | null = null;
   private light: SkyLight = skyFor(1);
@@ -163,7 +171,7 @@ export class World {
   /** The fixed scenery round the site, merged into a few meshes once built. */
   private statics = new THREE.Group();
   /** Red and green lights by each dock door. */
-  private doorLights: { door: number; red: THREE.Mesh; green: THREE.Mesh }[] = [];
+  private doorLights: { doors: number[]; mesh: THREE.InstancedMesh; busy: (boolean | null)[] } | null = null;
   private floorAOTex: THREE.Texture | null = null;
   /** Shared surfaces, their textures drawn once. */
   private surf: Record<Surface, THREE.MeshStandardMaterial>;
@@ -227,10 +235,12 @@ export class World {
     this.fade = new THREE.MeshBasicMaterial({ map: fadeTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
     this.scene.add(this.layoutGroup, this.scenery, this.statics);
     this.buildScenery();
-    // Floodlights for the night.
-    for (let i = 0; i < 4; i++) {
+    // Lamps for the night: over the hall, and (on high) floodlights over the yard. They stay in
+    // the scene all day at zero brightness: switching lights on and off would make every material
+    // rebuild its shader at dusk and dawn, a stall you can feel.
+    const lamps = quality === "high" ? 4 : quality === "medium" ? 2 : 0;
+    for (let i = 0; i < lamps; i++) {
       const l = new THREE.PointLight("#ffd9a0", 0, 26, 2);
-      l.visible = false;
       this.nightLights.push(l);
       this.scene.add(l);
     }
@@ -241,7 +251,10 @@ export class World {
     // Finished goods wear glossy shrink-wrap.
     this.palletWrap = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshPhysicalMaterial({ map: lt, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12, sheen: 0.4, sheenColor: new THREE.Color("#dfe9ff") }),
+      // Phones get a plain glossy wrap: the clear coat and sheen cost a lot per pixel.
+      quality === "high"
+        ? new THREE.MeshPhysicalMaterial({ map: lt, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12, sheen: 0.4, sheenColor: new THREE.Color("#dfe9ff") })
+        : new THREE.MeshStandardMaterial({ map: lt, roughness: 0.28, metalness: 0.05 }),
       MAX_PALLETS,
     );
     this.palletWrap.setColorAt(0, new THREE.Color("#fff"));
@@ -456,7 +469,7 @@ export class World {
       t.rotation.y = r() * 6.28;
       S.add(t);
     }
-    mergeStatic(S);
+    mergeStatic(S, { palette: true });
   }
 
   /** What's round each site: a river, fields, an old works, a harbor with cranes, or hills. */
@@ -584,7 +597,7 @@ export class World {
         G.add(pine);
       }
     }
-    mergeStatic(G);
+    mergeStatic(G, { palette: true });
   }
 
   /* ---------------------------------------------------------------- the building (rebuilt when the layout changes) */
@@ -606,8 +619,8 @@ export class World {
     this.disposeGroup(G);
     this.machines.clear();
     this.chargers.clear();
-    this.shutters = [];
-    this.doorLights = [];
+    this.shutters = null;
+    this.doorLights = null;
     const W = width(s);
     const sf = this.surf;
     // Floor: polished concrete, with soft shadow baked round everything that stands on it.
@@ -740,8 +753,21 @@ export class World {
     G.add(box(W - 1.15, 0.62, 0.06, sf.fascia, (W + 1.75) / 2, H - 0.66, DOCK_Z + 0.3));
     G.add(box(W - 1.15, 0.12, 0.46, sf.coping, (W + 1.75) / 2, H, DOCK_Z + 0.12));
     const frame = mat("#3a414f", 0.45, 0.5);
+    const doors = [...s.doors].sort((a, b) => a.i - b.i);
+    const shutters = new THREE.InstancedMesh(new THREE.BoxGeometry(2.76, 1, 0.08), sf.door, Math.max(1, doors.length));
+    shutters.count = doors.length;
+    shutters.castShadow = true;
+    shutters.receiveShadow = true;
+    shutters.userData.own = true;
+    G.add(shutters);
+    this.shutters = { doors: doors.map((d) => d.i), mesh: shutters, y: doors.map(() => 2.5) };
+    const lights = new THREE.InstancedMesh(new THREE.SphereGeometry(0.055, 10, 8), new THREE.MeshBasicMaterial({ color: "#ffffff" }), Math.max(2, doors.length * 2));
+    lights.count = doors.length * 2;
+    lights.userData.own = true;
+    G.add(lights);
+    this.doorLights = { doors: doors.map((d) => d.i), mesh: lights, busy: doors.map(() => null) };
     let cursor = 1.45;
-    for (const d of [...s.doors].sort((a, b) => a.i - b.i)) {
+    for (const [k, d] of doors.entries()) {
       const x0 = doorX0(d.i);
       wallSeg(cursor, x0);
       cursor = x0 + 3;
@@ -750,14 +776,7 @@ export class World {
       G.add(box(0.12, 2.7, 0.36, frame, x0 + 0.06, 0, DOCK_Z + 0.12));
       G.add(box(0.12, 2.7, 0.36, frame, x0 + 2.94, 0, DOCK_Z + 0.12));
       G.add(box(2.8, 0.3, 0.3, frame, x0 + 1.5, 2.4, DOCK_Z + 0.12));
-      const shutter = new THREE.Mesh(new THREE.BoxGeometry(2.76, 1, 0.08), sf.door);
-      shutter.userData.own = true;
-      shutter.userData.dynamic = true;
-      shutter.castShadow = true;
-      shutter.receiveShadow = true;
-      shutter.position.set(x0 + 1.5, 2.4, DOCK_Z + 0.2);
-      G.add(shutter);
-      this.shutters.push({ door: d.i, mesh: shutter });
+
       // A dock shelter round the opening: padded sides and a head pad (the trailer backs in between).
       G.add(rbox(0.3, 2.6, 0.3, sf.shelter, x0 + 0.15, 0.25, DOCK_Z + 0.43, 0.05));
       G.add(rbox(0.3, 2.6, 0.3, sf.shelter, x0 + 2.85, 0.25, DOCK_Z + 0.43, 0.05));
@@ -768,15 +787,13 @@ export class World {
       G.add(box(2.4, 0.06, 0.5, mat("#9ca3b3", 0.4, 0.6), x0 + 1.5, 0, DOCK_Z + 0.3));
       // Dock lights by the door: red while a truck is on it, green when it's clear to back in.
       G.add(rbox(0.17, 0.44, 0.1, mat("#2b2f38", 0.5), x0 - 0.32, 1.55, DOCK_Z + 0.32, 0.03));
-      const lamp = (y: number, c: THREE.Color) => {
-        const m = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), new THREE.MeshBasicMaterial({ color: c }));
-        m.position.set(x0 - 0.32, y, DOCK_Z + 0.39);
-        m.userData.own = true;
-        m.userData.dynamic = true;
-        G.add(m);
-        return m;
-      };
-      this.doorLights.push({ door: d.i, red: lamp(1.87, LIGHT_ON.redOff), green: lamp(1.69, LIGHT_ON.green) });
+      for (const [j, y] of [1.87, 1.69].entries()) {
+        this.tmp.position.set(x0 - 0.32, y, DOCK_Z + 0.39);
+        this.tmp.rotation.set(0, 0, 0);
+        this.tmp.scale.set(1, 1, 1);
+        this.tmp.updateMatrix();
+        lights.setMatrixAt(k * 2 + j, this.tmp.matrix);
+      }
       // Sign on the fascia.
       const color = d.type === "in" ? "#1f9d74" : d.type === "out" ? COL.door : "#7c5cf0";
       const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.56), this.signMat(doorName(s, d.i), color));
@@ -890,7 +907,7 @@ export class World {
     inst(beams, mat(COL.rackBeam, 0.42, 0.3));
     inst(guards, sf.hazard);
     // Everything that doesn't move goes into a few big meshes.
-    mergeStatic(G);
+    mergeStatic(G, { palette: true });
   }
 
   /** Ambient occlusion for the floor: soft shade round racks and machines and along the walls. */
@@ -950,7 +967,7 @@ export class World {
       this.layoutKey = key;
       this.buildLayout(s);
     }
-    this.picks = [];
+    this.last = s;
     this.syncSky(opts.daylight === "day" ? 11 * HOUR : s.time, eventOn(s, "storm"));
     this.syncWorkers(s, dt * Math.min(3, opts.speed ?? 1));
     this.syncWeather(s, dt);
@@ -986,34 +1003,41 @@ export class World {
           else o.rotation.y = Math.sin(ph * 1.3) * 1.2;
         });
       }
-      this.picks.push({ box: new THREE.Box3(new THREE.Vector3(t.x, 0, t.z), new THREE.Vector3(t.x + t.w, 2.8, t.z + t.d)), focus: { k: "struct", id } });
-    }
-    for (const t of s.structs) {
-      if (t.dead || t.kind === "machine") continue;
-      const h = t.kind === "rack" ? rackLevels(s) * LEVEL_H : t.kind === "freezer" ? FREEZER.levels * LEVEL_H : t.kind === "charger" ? 1.4 : 0.9;
-      this.picks.push({ box: new THREE.Box3(new THREE.Vector3(t.x, 0, t.z), new THREE.Vector3(t.x + t.w, h, t.z + t.d)), focus: { k: "struct", id: t.id } });
     }
     // Shutters open for a truck.
-    for (const sh of this.shutters) {
-      const d = s.doors[sh.door];
-      const tr = d && d.truck >= 0 ? s.trucks.find((t) => t.id === d.truck) : null;
-      const open = tr && (tr.state === "docked" || tr.state === "backing" || (tr.state === "leaving" && tr.t < TRUCK_PHASE * 0.2)) ? 1 : 0;
-      const target = open ? 0.25 : 2.5;
-      const cur = sh.mesh.scale.y;
-      const next = cur + (target - cur) * Math.min(1, dt * 3);
-      sh.mesh.scale.y = next;
-      sh.mesh.position.y = 2.7 - next / 2;
-      this.picks.push({ box: new THREE.Box3(new THREE.Vector3(doorX0(sh.door), 0, STAGE_Z[0]), new THREE.Vector3(doorX0(sh.door) + 3, 0.2, DOCK_Z + 1)), focus: { k: "door", id: sh.door } });
+    const sh = this.shutters;
+    if (sh) {
+      sh.doors.forEach((i, k) => {
+        const d = s.doors[i];
+        const tr = d && d.truck >= 0 ? s.trucks.find((t) => t.id === d.truck) : null;
+        const open = tr && (tr.state === "docked" || tr.state === "backing" || (tr.state === "leaving" && tr.t < TRUCK_PHASE * 0.2));
+        const target = open ? 0.25 : 2.5;
+        const y = (sh.y[k] += (target - sh.y[k]) * Math.min(1, dt * 3));
+        this.tmp.position.set(doorX0(i) + 1.5, 2.7 - y / 2, DOCK_Z + 0.2);
+        this.tmp.rotation.set(0, 0, 0);
+        this.tmp.scale.set(1, y, 1);
+        this.tmp.updateMatrix();
+        sh.mesh.setMatrixAt(k, this.tmp.matrix);
+      });
+      sh.mesh.instanceMatrix.needsUpdate = true;
     }
     // Dock lights: red while a truck is on the door, green when it's clear to back in.
-    for (const dl of this.doorLights) {
-      const d = s.doors[dl.door];
-      const busy = !!d && d.truck >= 0 && s.trucks.some((t) => t.id === d.truck && (t.state === "docked" || t.state === "backing" || t.state === "arriving"));
-      (dl.red.material as THREE.MeshBasicMaterial).color.copy(busy ? LIGHT_ON.red : LIGHT_ON.redOff);
-      (dl.green.material as THREE.MeshBasicMaterial).color.copy(busy ? LIGHT_ON.greenOff : LIGHT_ON.green);
+    const dl = this.doorLights;
+    if (dl) {
+      let changed = false;
+      dl.doors.forEach((i, k) => {
+        const d = s.doors[i];
+        const busy = !!d && d.truck >= 0 && s.trucks.some((t) => t.id === d.truck && (t.state === "docked" || t.state === "backing" || t.state === "arriving"));
+        if (busy === dl.busy[k]) return;
+        dl.busy[k] = busy;
+        dl.mesh.setColorAt(k * 2, busy ? LIGHT_ON.red : LIGHT_ON.redOff);
+        dl.mesh.setColorAt(k * 2 + 1, busy ? LIGHT_ON.greenOff : LIGHT_ON.green);
+        changed = true;
+      });
+      if (changed && dl.mesh.instanceColor) dl.mesh.instanceColor.needsUpdate = true;
     }
     this.syncForks(s, dt);
-    this.syncTrucks(s, dt);
+    this.syncTrucks(s);
     this.syncPallets(s);
     this.syncSelection(s, sel);
     this.syncGhost(ghost);
@@ -1038,7 +1062,6 @@ export class World {
       while (d < -Math.PI) d += Math.PI * 2;
       g.rotation.y += d * Math.min(1, dt * 12);
       m.carriage.position.y = 0.1 + f.lift;
-      for (const w of m.wheels) w.rotation.x += moved * 4;
       (m.beacon.material as THREE.MeshBasicMaterial).color.set(
         f.phase === "charge" ? "#3ddc84" : f.battery < 0.22 ? "#ff3b30" : f.phase === "idle" ? "#8a90a0" : Math.sin(this.time * 9 + i) > 0 ? "#ffb020" : "#ff7a00",
       );
@@ -1052,14 +1075,18 @@ export class World {
       }
       spot.visible = moved > 1e-4 && f.phase !== "charge";
       spot.position.set(f.x + Math.sin(g.rotation.y) * 2.1, 0.012, f.z + Math.cos(g.rotation.y) * 2.1);
-      this.picks.push({ box: new THREE.Box3(new THREE.Vector3(f.x - 0.6, 0, f.z - 0.6), new THREE.Vector3(f.x + 0.6, 1.4, f.z + 0.6)), focus: { k: "fork", id: f.id } });
     });
   }
 
-  private syncTrucks(s: State, dt: number) {
+  /** Where every truck is this frame (worked out once, used for the trucks and their loads). */
+  private poses = new Map<number, ReturnType<typeof truckPose>>();
+
+  private syncTrucks(s: State) {
     const seen = new Set<number>();
+    this.poses.clear();
     for (const t of s.trucks) {
       const pose = truckPose(s, t);
+      this.poses.set(t.id, pose);
       if (!pose.visible) continue;
       seen.add(t.id);
       if (t.rail) {
@@ -1069,10 +1096,7 @@ export class World {
           this.scene.add(tm.group);
           this.trains.set(t.id, tm);
         }
-        const moved = Math.abs(tm.group.position.x - pose.x);
         tm.group.position.set(pose.x, 0, pose.z);
-        for (const w of tm.wheels) w.rotation.y -= moved * 3;
-        this.picks.push({ box: new THREE.Box3(new THREE.Vector3(pose.x - 5, 0, pose.z - 1.4), new THREE.Vector3(pose.x + 12, 3, pose.z + 1.4)), focus: { k: "truck", id: t.id } });
         continue;
       }
       let m = this.trucks.get(t.id);
@@ -1080,19 +1104,9 @@ export class World {
         m = { ...truck(t.carrier), carrier: t.carrier };
         this.scene.add(m.group);
         this.trucks.set(t.id, m);
-        m.group.position.set(pose.x, 0, pose.z);
-        m.group.rotation.y = pose.rot;
       }
-      const g = m.group;
-      const moved = Math.hypot(g.position.x - pose.x, g.position.z - pose.z);
-      g.position.set(pose.x, 0, pose.z);
-      g.rotation.y = pose.rot;
-      for (const w of m.wheels) w.rotation.x += moved * 2.4 * (t.state === "backing" ? -1 : 1);
-      void dt;
-      const c = Math.cos(pose.rot);
-      const sn = Math.sin(pose.rot);
-      const far = { x: pose.x + sn * (TRAILER_LEN + 2.4), z: pose.z + c * (TRAILER_LEN + 2.4) };
-      this.picks.push({ box: new THREE.Box3(new THREE.Vector3(Math.min(pose.x, far.x) - 1.3, 0, Math.min(pose.z, far.z) - 1.3), new THREE.Vector3(Math.max(pose.x, far.x) + 1.3, 3, Math.max(pose.z, far.z) + 1.3)), focus: { k: "truck", id: t.id } });
+      m.group.position.set(pose.x, 0, pose.z);
+      m.group.rotation.y = pose.rot;
     }
     for (const [id, m] of this.trucks)
       if (!seen.has(id)) {
@@ -1111,7 +1125,7 @@ export class World {
     if (p.loc === "truck") {
       const t = s.trucks.find((x) => x.id === p.ref);
       if (!t) return null;
-      const pose = truckPose(s, t);
+      const pose = this.poses.get(t.id) ?? truckPose(s, t);
       if (!pose.visible) return null;
       if (t.rail) {
         const k = p.ci % 8;
@@ -1143,7 +1157,7 @@ export class World {
       const w = this.palletWorld(s, p);
       if (!w) continue;
       const item = ITEMS[p.item];
-      const h = item.tier === "raw" ? 0.55 : item.tier === "part" ? 0.68 : 0.82;
+      const h = loadH(p);
       o.position.set(w.x, w.y + 0.07, w.z);
       o.rotation.set(0, w.rot, 0);
       o.scale.set(1, 1, 1);
@@ -1157,7 +1171,6 @@ export class World {
       const k = wrapped ? nw++ : nl++;
       target.setMatrixAt(k, o.matrix);
       target.setColorAt(k, this.col.set(item.load));
-      if (p.loc === "slot") this.picks.push({ box: new THREE.Box3(new THREE.Vector3(w.x - 0.45, w.y, w.z - 0.45), new THREE.Vector3(w.x + 0.45, w.y + h + 0.14, w.z + 0.45)), focus: { k: "pallet", id: p.id } });
       n++;
     }
     this.palletBase.count = n;
@@ -1218,17 +1231,17 @@ export class World {
     lampMat.emissiveIntensity = night * 1.5;
     this.bayLampMat.emissiveIntensity = night * 1.5;
     windowMat.emissiveIntensity = night * 0.6;
-    const spots: [number, number][] = [
-      [tgt.x - 14, DOCK_Z + 4],
-      [tgt.x + 14, DOCK_Z + 4],
-      [tgt.x - 10, 9],
-      [tgt.x + 10, 9],
+    // The hall lit from above, then the yard floodlights.
+    const spots: [number, number, number, number][] = [
+      [tgt.x - 10, 5, 9, 22],
+      [tgt.x + 10, 5, 9, 22],
+      [tgt.x - 14, 6, DOCK_Z + 4, 14],
+      [tgt.x + 14, 6, DOCK_Z + 4, 14],
     ];
     this.nightLights.forEach((l, i) => {
-      l.visible = night > 0.02;
-      // The yard floodlights, and the hall lit brighter from above.
-      l.intensity = night * (i < 2 ? 14 : 22);
-      l.position.set(spots[i][0], i < 2 ? 6 : 5, spots[i][1]);
+      const [x, y, z, power] = spots[i];
+      l.intensity = night * power * (this.nightLights.length < 4 ? 1.25 : 1);
+      l.position.set(x, y, z);
     });
     for (const o of this.scenery.children) if (o.userData.water) ((o as THREE.Mesh).material as THREE.MeshStandardMaterial).color.set(day > 0.4 ? "#7fb2e4" : "#2a3a66");
   }
@@ -1363,15 +1376,50 @@ export class World {
 
   private ray = new THREE.Raycaster();
 
+  /** Everything you can tap, as boxes (gathered when you tap, not every frame). */
+  private collectPicks(s: State) {
+    const out: { box: THREE.Box3; focus: Focus }[] = [];
+    const add = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, focus: Focus) =>
+      out.push({ box: new THREE.Box3(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1)), focus });
+    for (const t of s.structs) {
+      if (t.dead) continue;
+      const h = t.kind === "machine" ? 2.8 : t.kind === "rack" ? rackLevels(s) * LEVEL_H : t.kind === "freezer" ? FREEZER.levels * LEVEL_H : t.kind === "charger" ? 1.4 : 0.9;
+      add(t.x, 0, t.z, t.x + t.w, h, t.z + t.d, { k: "struct", id: t.id });
+    }
+    for (const d of s.doors) add(doorX0(d.i), 0, STAGE_Z[0], doorX0(d.i) + 3, 0.2, DOCK_Z + 1, { k: "door", id: d.i });
+    s.forks.forEach((f, i) => {
+      const p = this.forks[i]?.group.position;
+      if (p) add(p.x - 0.6, 0, p.z - 0.6, p.x + 0.6, 1.4, p.z + 0.6, { k: "fork", id: f.id });
+    });
+    for (const t of s.trucks) {
+      const pose = truckPose(s, t);
+      if (!pose.visible) continue;
+      if (t.rail) {
+        add(pose.x - 5, 0, pose.z - 1.4, pose.x + 12, 3, pose.z + 1.4, { k: "truck", id: t.id });
+        continue;
+      }
+      const far = { x: pose.x + Math.sin(pose.rot) * (TRAILER_LEN + 2.4), z: pose.z + Math.cos(pose.rot) * (TRAILER_LEN + 2.4) };
+      add(Math.min(pose.x, far.x) - 1.3, 0, Math.min(pose.z, far.z) - 1.3, Math.max(pose.x, far.x) + 1.3, 3, Math.max(pose.z, far.z) + 1.3, { k: "truck", id: t.id });
+    }
+    for (const id in s.pallets) {
+      const p = s.pallets[id];
+      const sl = p.loc === "slot" ? s.slots[p.ref] : null;
+      if (!sl) continue;
+      add(sl.x + 0.05, sl.y, sl.z + 0.05, sl.x + 0.95, sl.y + loadH(p) + 0.14, sl.z + 0.95, { k: "pallet", id: p.id });
+    }
+    return out;
+  }
+
   /** What's under a point on the screen (normalised device coordinates). */
   pick(nx: number, ny: number): Focus | null {
+    if (!this.last) return null;
     this.ray.setFromCamera(new THREE.Vector2(nx, ny), this.camera);
     let best: Focus | null = null;
     let bd = Infinity;
     const hit = new THREE.Vector3();
     // Smaller things (pallets, forklifts) win over the rack or truck they're on when hit about as close.
     const weight = (f: Focus) => (f.k === "pallet" ? 0 : f.k === "fork" ? 0.4 : f.k === "door" ? 3 : 1.5);
-    for (const p of this.picks) {
+    for (const p of this.collectPicks(this.last)) {
       if (!this.ray.ray.intersectBox(p.box, hit)) continue;
       const d = hit.distanceTo(this.ray.ray.origin) + weight(p.focus);
       if (d < bd) {
