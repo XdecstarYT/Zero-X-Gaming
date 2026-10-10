@@ -11,6 +11,8 @@ import { LeaderboardTabs } from "@/components/game/LeaderboardTabs";
 import { FavoriteButton } from "@/components/game/FavoriteButton";
 import { GameArt } from "@/components/game/GameArt";
 import { inZlink } from "@/lib/zlink";
+import { isNextX } from "@/lib/nextx";
+import { NextXMark } from "@/components/nextx/NextXLogo";
 
 export const dynamicParams = false;
 
@@ -63,6 +65,11 @@ export default async function GamePage(props: PageProps<"/games/[slug]">) {
                   <span className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${game.pass === "zlink" ? "border-violet text-violet" : game.pass ? "border-magenta/60 text-magenta" : "border-border-strong text-muted"}`} data-testid="game-access">
                     {passLabel}
                   </span>
+                  {isNextX(game.slug) && (
+                    <Link href="/nextx" className="flex items-center gap-1 rounded-full border border-[#8b5cff]/60 bg-[#04040d] px-2.5 py-0.5 text-xs font-bold text-white hover:bg-[#8b5cff]/20" data-testid="game-nextx">
+                      <NextXMark className="h-3.5 w-3.5" title="" /> NextX
+                    </Link>
+                  )}
                   {inLink && game.pass !== "zlink" && (
                     <Link href="/zlink" className="rounded-full border border-violet/60 px-2.5 py-0.5 text-xs font-bold text-violet hover:bg-violet/10">
                       Z+ Included with ZLink+

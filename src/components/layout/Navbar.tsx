@@ -13,6 +13,7 @@ import { ZLinkMemberMark } from "@/components/zlink/ZLinkMemberMark";
 export const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/games", label: "Games" },
+  { href: "/nextx", label: "NextX" },
   { href: "/sports", label: "Sports+" },
   { href: "/cash-cup", label: "Cash Cup", short: "Cup" },
   { href: "/battle-pass", label: "Battle Pass", short: "Pass" },
