@@ -172,6 +172,9 @@ export class World {
   /** The roof trusses: they fade away as the camera comes in close, so they don't block the view. */
   private roof: THREE.Group | null = null;
   private trussMat = new THREE.MeshStandardMaterial({ color: "#a9b0bf", roughness: 0.4, metalness: 0.65, transparent: true });
+  /** The high-bay lamps hang from the trusses and fade with them (their glow follows the street lamps'). */
+  private bayLampMat = new THREE.MeshStandardMaterial({ color: "#dcdfe5", emissive: "#ffe7b0", emissiveIntensity: 0, roughness: 0.35, metalness: 0.2, transparent: true });
+  private bayFrameMat = new THREE.MeshStandardMaterial({ color: "#454c5a", roughness: 0.5, metalness: 0.4, transparent: true });
 
   constructor(readonly quality: Quality) {
     this.scene.background = new THREE.Color("#bcd7ef");
@@ -685,8 +688,8 @@ export class World {
     for (let x = 4; x < W - 1; x += 6) {
       roof.add(box(0.09, 0.34, DOCK_Z - 1.6, this.trussMat, x, 4.28, (DOCK_Z + 1.75) / 2));
       for (const z of [6, 12, 17]) {
-        G.add(box(0.98, 0.05, 0.58, mat("#454c5a", 0.5, 0.4), x, 4.05, z, false));
-        G.add(box(0.9, 0.08, 0.5, lampMat, x, 4.08, z, false));
+        roof.add(box(0.98, 0.05, 0.58, this.bayFrameMat, x, 4.05, z, false));
+        roof.add(box(0.9, 0.08, 0.5, this.bayLampMat, x, 4.08, z, false));
       }
     }
     roof.add(box(W - 2, 0.1, 0.1, this.trussMat, (W + 1.75) / 2, 4.52, (DOCK_Z + 1.75) / 2));
@@ -1213,6 +1216,7 @@ export class World {
     this.scene.environmentIntensity = 0.75;
     const night = Math.max(0, Math.min(1, (0.75 - day) / 0.6));
     lampMat.emissiveIntensity = night * 1.5;
+    this.bayLampMat.emissiveIntensity = night * 1.5;
     windowMat.emissiveIntensity = night * 0.6;
     const spots: [number, number][] = [
       [tgt.x - 14, DOCK_Z + 4],
@@ -1460,6 +1464,8 @@ export class World {
     if (this.roof) {
       const o = THREE.MathUtils.smoothstep(this.rig.cur.dist, 20, 34);
       this.trussMat.opacity = o;
+      this.bayLampMat.opacity = o;
+      this.bayFrameMat.opacity = o;
       this.roof.visible = o > 0.02;
     }
     this.sky.position.copy(this.camera.position);

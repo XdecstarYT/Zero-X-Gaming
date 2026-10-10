@@ -39,7 +39,7 @@ export const NEXTX_TITLES: NextXTitle[] = [
       "Your cash always on show, a bank with loans, and your own trucks",
       "A cold chain: freezer racks and frozen goods that spoil",
       "A Mega hall 78 bays long, a rail siding, contracts and events",
-      "Day and night, storms and snow, and workers on the floor",
+      "NextX Engine graphics: sky light, shadows and sharp detail, even on phones",
     ],
   },
   {

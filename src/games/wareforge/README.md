@@ -67,6 +67,19 @@ Older saves load: the new fields get defaults.
 | Goals | 8 new: debt free, cold chain, your own fleet, ten missions, a Gold customer, a VIP on time, a Mk II, a level 5 driver. |
 | Look and feel | Freezer racks (white, insulated, an ice-blue light), the snowy cold store with drifts and snowy pines, falling snow, rain and a grey sky in a storm; follow a truck or forklift with the camera; photo mode; synthesised sounds (a till ding, a horn at the gate, an alarm, a chime) that follow the platform's sound setting; five first-shift tips. |
 
+## The NextX graphics update
+
+| Area | What's new |
+| --- | --- |
+| Quality | Three tiers. **Medium** (phones, by default): a sharp picture at up to twice the screen's resolution, multisampled, with sun shadows. **High** (big screens): a multisampled post chain with ambient occlusion (GTAO at half resolution), bloom on the lamps, ACES tone mapping and the NextX colour grade, and 4096 shadows. **Low** (weak devices): no shadows or multisampling. Pick one in the menu or leave it on Auto. |
+| Sky and light | The NextX Engine sky (`src/nextx/look.ts`): a blue sky with a sun, clouds and stars that also lights and reflects in the scene through an environment map captured from it; colours from night to golden hour to day; storms grey it over. The shadow box follows the view, snapped to its texels so it doesn't shimmer. |
+| The hall | Polished concrete with saw cuts and ambient occlusion baked round racks, machines and walls; insulated metal cladding on a concrete plinth with a coping; a blue fascia with the bay signs and, inside, the site's name on the back wall; slimmer trusses and framed high-bay lamps that fade away as you zoom in. |
+| The docks | Sectional doors with vision panels, black dock shelters round each opening, bumpers, hazard-striped kerb plates, levellers and a red/green dock light that turns red while a truck is on the door; a concrete apron and shade at the foot of the wall. |
+| Goods | Wooden pallets (slatted decks, runners, bottom boards) under cartons with seams, tape and barcode labels; finished goods shrink-wrapped. Racks get yellow-and-black column guards. |
+| Vehicles | Tractor units with grilles, windscreens, mirrors, fuel tanks and exhaust stacks pulling curtain-siders in their carrier's livery (roof rolled back so the load shows); forklifts with an LPG tank, a slatted guard, mast channels and chains, a load backrest and a driver in hi-vis; rounded cars with lights; soft contact shadows under everything that moves. |
+| The site | Textured lawn with broad colour variation, asphalt with grit, cracks and oil spots, a footway and kerb, a chain-link fence, a glass office with mullions and rooftop plant, broadleaf trees and pines, round snowflakes. |
+| Speed | Static geometry is merged per material (`src/nextx/batch.ts`): the scene went from about 860 meshes to about 360, and models share their geometry and materials (a truck no longer leaves its materials behind when it drives off). |
+
 ## Code
 
 | File | What |
@@ -77,7 +90,7 @@ Older saves load: the new fields get defaults.
 | `audio.ts` | Synthesised sounds (Web Audio) |
 | `render/world.ts` | three.js world, kept in step with the sim each frame; picking |
 | `render/models.ts` | Forklift, truck, train, machine, charger, worker, car, office, gatehouse, lamp, crane, tree and pin models; canvas textures |
-| `render/stage.ts` | Renderer, loop and input (pan, turn, pinch, wheel, tap) |
+| `render/stage.ts` | Renderer, quality tiers, the post chain (GTAO, bloom, grade), loop and input (pan, turn, pinch, wheel, tap) |
 | `ui/App.tsx`, `ui/style.ts` | The liquid-glass interface (NextX `GlassDefs` with the `wf` prefix) |
 | `index.ts` | The Zero X `GameModule` |
 

@@ -922,7 +922,11 @@ daily market, events, 13 upgrades and 12 goals, and a day and night cycle with b
 every layout and adds a bank (a cash chart, loans with hourly interest), carrier fees and your own trucks, a cold
 chain with freezer racks and spoiling frozen goods, the WH-15 Polar Cold Store, three missions a day and a day's
 report, loyal and VIP customers, Mk II machines, forklift driver levels, 8 upgrades and 8 goals, snow and storm
-rain, a follow camera, photo mode, sounds and tips. See `src/games/wareforge/README.md`.
+rain, a follow camera, photo mode, sounds and tips. The NextX graphics update gives it three quality tiers (phones
+get a sharp multisampled picture with sun shadows; big screens add GTAO, bloom and the NextX grade), the NextX
+Engine sky (`src/nextx/look.ts`) lighting the scene, polished concrete with baked occlusion, clad walls with dock
+shelters and dock lights, wooden pallets and labelled cartons, detailed trucks and forklifts, contact shadows, and
+static batching (`src/nextx/batch.ts`). See `src/games/wareforge/README.md`.
 
 ### NextX titles play in the NextX app
 

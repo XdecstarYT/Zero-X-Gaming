@@ -19,6 +19,16 @@ game starts where the last one finished. The NextX app (`/nextx`,
   hour; `mountBackdrop("warehouse", host)` is WareForge's yard at work (trucks backing onto the doors,
   forklifts on the aisles). Quality is picked for the device; a still camera for people who prefer
   less motion.
+- **The look** (`look.ts`): one light for every title. `makeSky()` is a sky dome with a sun disc,
+  a halo, drifting clouds and stars at night; `skyFor(sunHeight)` gives the sky's colours and the
+  sun and ambient intensities from night through dusk and golden hour to full day;
+  `SkyEnvironment` captures the sky into an environment map (recaptured as the light changes) so
+  the scene is lit and reflected by its own sky; `GRADE` is the colour grade and vignette for the
+  end of a post chain. Grown from Zero City's sky; WareForge runs on it.
+- **Static batching** (`batch.ts`): `mergeStatic(root)` folds every mesh under a group that never
+  moves into one mesh per material (and shadow setting), so buildings made of hundreds of parts
+  draw in tens of calls. Anything marked `userData.dynamic` is left alone; shared materials stay
+  shared, so their colour or glow can still change.
 - **Camera rig** (`rig.ts`): an orbiting camera with damping (target, distance, yaw, pitch), pan
   under the finger, zoom toward a point. Built for YourGov's map, used by WareForge.
 - **Powered by** (`PoweredBy.tsx`): the mark on each title's title screen, linking to the app.
