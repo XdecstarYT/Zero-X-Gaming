@@ -31,11 +31,13 @@ test("WareForge: members only; pick a site, accept an order, buy stock, build a 
   await page.getByTestId("wf-site-wh01").click();
   await expect(page.getByTestId("wf-top")).toBeVisible();
   await expect(page.getByTestId("wf-kpis")).toContainText("Stock on hand");
-  await expect(page.getByText("Shipment Tracking")).toBeVisible();
+  // In the page's game frame the tracker and the status table live in the Site panel.
+  await page.getByTestId("wf-dock-site").click();
+  await expect(page.getByTestId("wf-sheet-site")).toContainText("Shipment Tracking");
 
   // Orders: the booked shipment is there; accept an offer.
   await page.getByTestId("wf-dock-orders").click();
-  await expect(page.getByTestId("wf-order-SHP-78442")).toBeVisible();
+  await expect(page.getByTestId("wf-sheet-orders").getByTestId("wf-order-SHP-78442")).toBeVisible();
   const offers = await page.getByTestId("wf-accept").count();
   if (offers) await page.getByTestId("wf-accept").first().click();
 
@@ -76,7 +78,8 @@ test("WareForge: members only; pick a site, accept an order, buy stock, build a 
 
   // Pick something in the world, then the inspector shows it.
   await page.getByTestId("wf-pause").click();
-  await page.locator(".wf-trow").first().click();
+  await page.getByTestId("wf-dock-site").click();
+  await page.locator(".wf-trow:visible").first().click();
   await expect(page.getByTestId("wf-inspector")).toBeVisible();
 
   // Save and leave, then continue.
