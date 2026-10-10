@@ -15,7 +15,7 @@ const PAGES: PaletteItem[] = [
   { id: "p-games", label: "All games", hint: "Page", href: "/games", icon: "🎮", words: "browse library catalog" },
   { id: "p-sports", label: "Sports+", hint: "Page", href: "/sports", icon: "🏟️", words: "sport live channels" },
   { id: "p-pass", label: "Battle Pass", hint: "Page", href: "/battle-pass", icon: "🎟️", words: "season tiers rewards xp" },
-  { id: "p-nextx", label: "NextX", hint: "Next generation game production: YourGov and Zero City", href: "/nextx", icon: "✦", words: "nextx next gen yourgov zero city studio label app" },
+  { id: "p-nextx", label: "NextX", hint: "Next generation game production: WareForge, YourGov and Zero City", href: "/nextx", icon: "✦", words: "nextx next gen wareforge yourgov zero city studio label app" },
   { id: "p-cash-cup", label: "Cash Cup", hint: "Page", href: "/cash-cup", icon: "🏆", words: "tournament neon siege zx cash prize" },
   { id: "p-shop", label: "Item Shop", hint: "Page", href: "/shop", icon: "🛒", words: "skins coins zx cash buy" },
   { id: "p-locker", label: "Locker", hint: "Page", href: "/locker", icon: "🧥", words: "cosmetics outfit equip" },

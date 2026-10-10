@@ -27,7 +27,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 
 const INTRO_KEY = "zx-nextx-intro";
 const noSubscribe = () => () => {};
-const SCENE: Record<NextXSlug, "country" | "city"> = { yourgov: "country", "zero-city": "city" };
+const SCENE: Record<NextXSlug, "country" | "city" | "warehouse"> = { wareforge: "warehouse", yourgov: "country", "zero-city": "city" };
 
 /** The featured title's world, live, behind the glass. */
 function EngineBackdrop({ slug, still }: { slug: NextXSlug; still: boolean }) {
@@ -192,7 +192,7 @@ function Library({ featured, setFeatured }: { featured: NextXSlug; setFeatured: 
       </div>
       <div className="nx-glass mt-6 flex flex-col items-center gap-3 rounded-[28px] px-6 py-10 text-center" data-testid="nextx-next">
         <NextXMark className="h-12 w-12 opacity-70" />
-        <p className="font-display text-xl font-black uppercase tracking-wider">Project 03</p>
+        <p className="font-display text-xl font-black uppercase tracking-wider">Project 04</p>
         <p className="max-w-md text-sm text-white/65">In production on the NextX Engine. The next NextX title is being built to the same standard.</p>
       </div>
     </div>

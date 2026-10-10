@@ -22,6 +22,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   "zero-city": () => import("./zero-city/index"),
   yourgov: () => import("./yourgov/index"),
   lifeline: () => import("./lifeline/index"),
+  wareforge: () => import("./wareforge/index"),
 };
 
 export function hasGame(slug: string) {

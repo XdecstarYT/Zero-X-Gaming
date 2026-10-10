@@ -906,6 +906,17 @@ every node of that colour goes (+3 s). A link of six leaves a **Pulse** (clears 
 start and finish a link, Backspace to drop it). The rules are pure functions in `logic.ts` (tested, including a
 hundred-link run that never leaves the board without a move); `index.ts` draws it on a canvas.
 
+### WareForge (ZLink+ exclusive, NextX)
+
+A 3D warehouse, production and manufacturing strategy game (`src/games/wareforge/`; `20261101100000_wareforge.sql`),
+the third NextX title. Accept customer orders and forklifts pick them onto the lane behind a dock door while a
+carrier's truck backs on to be loaded; track each shipment from confirmed to delivered. Buy stock or materials (a
+truck brings them in), lay out racks, floor blocks and four kinds of machine that make parts and finished goods,
+buy forklifts and fourteen upgrades, chase twelve goals. Three sites; a five-day season scored on growth
+(cap 300,000; members only). The simulation (`sim.ts`) is pure and seeded on a tile grid with A* forklift routing
+(tested); the renderer is a pastel three.js yard with the NextX camera rig, and the UI is NextX liquid glass in a
+light theme. See `src/games/wareforge/README.md`.
+
 ### Zenith (ZLink+ exclusive)
 
 A photoreal city builder (`src/games/zenith/`; `20261021090000_zenith.sql`). A 48×48 map of 12 m tiles: a winding

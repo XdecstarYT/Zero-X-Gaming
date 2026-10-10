@@ -18,6 +18,7 @@ const PAGES = [
   "/games/zero-city", "/games/lifeline",
   "/cash-cup",
   "/nextx",
+  "/games/wareforge",
   "/profile",
   "/settings",
 ];

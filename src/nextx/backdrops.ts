@@ -1,11 +1,14 @@
 /**
  * NextX Engine · Photoreal backdrops. The same renderers the NextX titles play on, running as a
  * living background: YourGov's country (photoreal terrain, a physical sky, a sea with surf,
- * drifting clouds) turning slowly in the sun, and Zero City's island city (PBR buildings, roads,
- * image-based light, ACES tone mapping) orbiting at golden hour.
+ * drifting clouds) turning slowly in the sun, Zero City's island city (PBR buildings, roads,
+ * image-based light, ACES tone mapping) orbiting at golden hour, and WareForge's warehouse yard
+ * at work (trucks backing onto the doors, forklifts running the aisles).
  *
  * Load this module lazily: it pulls in three.js and both games' renderers.
  */
+import { newGame as newWarehouse, tick as tickWarehouse } from "@/games/wareforge/sim";
+import { Stage as WarehouseStage } from "@/games/wareforge/render/stage";
 import { Stage3D } from "@/games/yourgov/render/stage";
 import { country } from "@/games/yourgov/sim";
 import { demoCity } from "@/games/zero-city/demo";
@@ -14,7 +17,7 @@ import { CameraRig } from "@/games/zero-city/render/camera";
 import { Engine } from "@/games/zero-city/render/engine";
 import { defaultSettings } from "@/games/zero-city/settings";
 
-export type BackdropKind = "country" | "city";
+export type BackdropKind = "country" | "city" | "warehouse";
 export type Quality = "high" | "low";
 
 export interface Backdrop {
@@ -116,7 +119,41 @@ function cityBackdrop(host: HTMLElement, quality: Quality, still: boolean): Back
   };
 }
 
+/** WareForge's Riverside Hub, working through its morning shift. */
+function warehouseBackdrop(host: HTMLElement, quality: Quality, still: boolean): Backdrop {
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none";
+  canvas.setAttribute("aria-hidden", "true");
+  host.appendChild(canvas);
+  const state = newWarehouse("wh01", 41);
+  // Get the shift going: the first truck in, forklifts at work.
+  tickWarehouse(state, 20 * 60);
+  let done: () => void = () => {};
+  const ready = new Promise<void>((r) => (done = r));
+  let first = true;
+  const stage: WarehouseStage = new WarehouseStage(canvas, quality, {
+    frame: (dt) => {
+      if (!still) tickWarehouse(state, dt * 60);
+      stage.world.sync(state, dt, null, null);
+      if (first) {
+        first = false;
+        done();
+      }
+    },
+  });
+  stage.spin = still ? 0 : 0.04;
+  stage.world.rig.jump({ target: stage.world.rig.goal.target.clone().set(14, 0, 18), dist: 62, yaw: 0.5, pitch: 0.82 });
+  return {
+    ready,
+    dispose() {
+      stage.dispose();
+      canvas.remove();
+    },
+  };
+}
+
 /** Mount a backdrop in `host` (which should be positioned). Throws if WebGL isn't available. */
 export function mountBackdrop(kind: BackdropKind, host: HTMLElement, quality: Quality = pickQuality(), still = false): Backdrop {
+  if (kind === "warehouse") return warehouseBackdrop(host, quality, still);
   return kind === "country" ? countryBackdrop(host, quality, still) : cityBackdrop(host, quality, still);
 }

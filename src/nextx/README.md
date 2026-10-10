@@ -1,6 +1,6 @@
 # NextX Engine
 
-What every NextX title (YourGov, Zero City, and what comes next) is built on, shared so each new
+What every NextX title (WareForge, YourGov, Zero City, and what comes next) is built on, shared so each new
 game starts where the last one finished. The NextX app (`/nextx`,
 `src/components/nextx/NextXApp.tsx`) runs on it too.
 
@@ -9,12 +9,16 @@ game starts where the last one finished. The NextX app (`/nextx`,
   at the edge, and catch a highlight that follows the pointer. `GlassDefs({ prefix })` puts the
   lens filters on the page (`#<prefix>-lg`, `#<prefix>-lg-bar`); `trackSheen(root, selector)` moves
   the highlights; `canRefract()` says whether the browser can bend. YourGov uses it with the `yg`
-  prefix (`games/yourgov/ui/glass.tsx`); the NextX app with `nx` (`.nx-glass`, `.nx-btn`,
+  prefix (`games/yourgov/ui/glass.tsx`), WareForge with `wf` in a light theme; the NextX app with `nx` (`.nx-glass`, `.nx-btn`,
   `.nx-capsule` in `globals.css`). Zero City's glass (`games/zero-city/ui/glass.tsx`) is the
   original it grew from.
 - **Photoreal backdrops** (`backdrops.ts`, load lazily): the titles' own renderers running as a
   living background. `mountBackdrop("country", host)` is YourGov's country (terrain, a physical
   sky, a sea with surf, clouds) turning in the sun; `mountBackdrop("city", host)` is Zero City's
   island city (PBR buildings, roads, trees, image-based light, ACES grading) orbiting at golden
-  hour. Quality is picked for the device; a still camera for people who prefer less motion.
+  hour; `mountBackdrop("warehouse", host)` is WareForge's yard at work (trucks backing onto the doors,
+  forklifts on the aisles). Quality is picked for the device; a still camera for people who prefer
+  less motion.
+- **Camera rig** (`rig.ts`): an orbiting camera with damping (target, distance, yaw, pitch), pan
+  under the finger, zoom toward a point. Built for YourGov's map, used by WareForge.
 - **Powered by** (`PoweredBy.tsx`): the mark on each title's title screen, linking to the app.

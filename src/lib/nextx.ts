@@ -2,7 +2,7 @@
  * NextX: Zero X's next-generation game production label. Its own app (/nextx) shows the titles
  * made to the NextX standard: photoreal 3D worlds, deep simulations, phone-first interfaces.
  */
-export const NEXTX_SLUGS = ["yourgov", "zero-city"] as const;
+export const NEXTX_SLUGS = ["wareforge", "yourgov", "zero-city"] as const;
 export type NextXSlug = (typeof NEXTX_SLUGS)[number];
 
 export const isNextX = (slug: string) => (NEXTX_SLUGS as readonly string[]).includes(slug);
@@ -19,6 +19,23 @@ export interface NextXTitle {
 }
 
 export const NEXTX_TITLES: NextXTitle[] = [
+  {
+    slug: "wareforge",
+    pitch: "Run a warehouse and a factory in 3D: book trucks, pick orders, build machines and ship on time.",
+    accent: "#2f6fe4",
+    accent2: "#f6c21c",
+    stats: [
+      { v: "3", k: "Sites" },
+      { v: "15", k: "Goods" },
+      { v: "4", k: "Machines" },
+    ],
+    features: [
+      "Docks, racks and a production floor you lay out yourself",
+      "Forklifts that plan their own routes round your racks",
+      "Trucks that back onto your doors, load and drive away",
+      "Orders with deadlines, tracked from confirmed to delivered",
+    ],
+  },
   {
     slug: "yourgov",
     pitch: "Lead a party, write the laws and win a country, county by county, on a photoreal 3D map.",
@@ -65,12 +82,13 @@ export const NEXTX_STANDARD = [
 
 /** The NextX Engine: what the titles share, and which title it came from. */
 export const NEXTX_ENGINE = [
-  { title: "Liquid Glass UI", from: "Both", body: "Panels that bend the world behind them like thick glass, with a highlight that follows your finger." },
+  { title: "Liquid Glass UI", from: "All three", body: "Panels that bend the world behind them like thick glass, with a highlight that follows your finger." },
   { title: "Photoreal terrain", from: "YourGov", body: "Real elevation, rivers, farmland, forests, snow and cities, painted county by county." },
   { title: "Physical sky and sea", from: "YourGov", body: "An atmospheric sky, a sea with surf and drifting clouds." },
   { title: "PBR city renderer", from: "Zero City", body: "Buildings, roads, trees and traffic lit with image-based light and soft shadows." },
-  { title: "Cinematic cameras", from: "Both", body: "Smooth orbits, fly-tos and tilts down to street level." },
+  { title: "Cinematic cameras", from: "All three", body: "Smooth orbits, fly-tos and tilts down to street level." },
   { title: "Filmic grading", from: "Both", body: "ACES tone mapping, bloom and ambient occlusion where the device can take it." },
   { title: "Adaptive quality", from: "Both", body: "High detail on desktops, a lighter path on phones, chosen for you." },
-  { title: "Phone-first layout", from: "Both", body: "Dock, sheets and tab bars that fit a thumb, upright or sideways." },
+  { title: "Phone-first layout", from: "All three", body: "Dock, sheets and tab bars that fit a thumb, upright or sideways." },
+  { title: "Logistics simulation", from: "WareForge", body: "Forklifts that find their own way round your racks, trucks that back onto the doors, machines that wear and break." },
 ];

@@ -69,6 +69,8 @@ export function GameArt({
         <ZeroCityArt id={id} />
       ) : game.slug === "yourgov" ? (
         <YourGovArt />
+      ) : game.slug === "wareforge" ? (
+        <WareForgeArt />
       ) : game.slug === "lifeline" ? (
         <LifelineArt id={id} />
       ) : game.category === "sports" ? (
@@ -637,6 +639,49 @@ function StoreArt({ a, b }: { a: string; b: string }) {
           $
         </text>
       </g>
+    </g>
+  );
+}
+
+function WareForgeArt() {
+  // An isometric pastel yard: a lavender dock wall with blue doors, trucks backed up, pallets and a forklift.
+  const iso = (x: number, y: number, z = 0) => [160 + (x - y) * 13, 70 + (x + y) * 6.5 - z * 13] as const;
+  const quad = (pts: (readonly [number, number])[]) => pts.map((p) => p.join(",")).join(" ");
+  const block = (x: number, y: number, w: number, d: number, h: number, top: string, left: string, right: string, k: string) => (
+    <g key={k}>
+      <polygon points={quad([iso(x, y, h), iso(x + w, y, h), iso(x + w, y + d, h), iso(x, y + d, h)])} fill={top} />
+      <polygon points={quad([iso(x, y + d, h), iso(x + w, y + d, h), iso(x + w, y + d, 0), iso(x, y + d, 0)])} fill={left} />
+      <polygon points={quad([iso(x + w, y, h), iso(x + w, y + d, h), iso(x + w, y + d, 0), iso(x + w, y, 0)])} fill={right} />
+    </g>
+  );
+  return (
+    <g>
+      <rect width="320" height="200" fill="#e8ebf6" />
+      <polygon points={quad([iso(-4, -4), iso(16, -4), iso(16, 16), iso(-4, 16)])} fill="#dcdfe9" />
+      {block(0, 0, 12, 4, 3, "#cfd3f7", "#b8bdf3", "#9aa1ea", "wall")}
+      {[1, 4.5, 8].map((x, i) => (
+        <polygon key={i} points={quad([iso(x, 4, 2.4), iso(x + 2.5, 4, 2.4), iso(x + 2.5, 4, 0), iso(x, 4, 0)])} fill="#3d5fd9" />
+      ))}
+      {[1.2, 8.2].map((x, i) => (
+        <g key={i}>
+          {block(x, 4.2, 2.1, 6, 2.2, "#f7f8fc", "#e6e9f3", "#d3d7e6", `t${i}`)}
+          {block(x + 0.1, 10.3, 1.9, 1.6, 1.8, i ? "#f0743a" : "#2f6fe4", i ? "#d65f28" : "#2559c4", i ? "#b94f20" : "#1e4aa8", `c${i}`)}
+        </g>
+      ))}
+      {[[5, 6], [6, 6], [5, 7.2], [6.2, 8.4]].map(([x, y], i) => block(x, y, 0.8, 0.8, i % 2 ? 0.9 : 0.7, i % 2 ? "#6a9df5" : "#e2c08f", i % 2 ? "#4f86ee" : "#d8b98b", i % 2 ? "#3f74e6" : "#c4a273", `p${i}`))}
+      {block(4.6, 9.4, 0.8, 1.2, 0.9, "#f6c21c", "#e0ad0a", "#c99a05", "fl")}
+      <g transform={`translate(${iso(6.4, 7.6, 3)[0]},${iso(6.4, 7.6, 3)[1]})`}>
+        <circle r="7" fill="#2f6fe4" />
+        <path d="M-5 4 0 13 5 4z" fill="#2f6fe4" />
+        <circle r="2.6" fill="#fff" />
+      </g>
+      <rect x="18" y="16" width="96" height="26" rx="13" fill="#ffffff" opacity=".85" />
+      <circle cx="32" cy="29" r="7" fill="#2f6fe4" />
+      <rect x="44" y="24" width="60" height="4" rx="2" fill="#1b2236" opacity=".7" />
+      <rect x="44" y="31" width="40" height="3" rx="1.5" fill="#5b6478" opacity=".6" />
+      <rect x="226" y="150" width="80" height="38" rx="10" fill="#ffffff" opacity=".85" />
+      <rect x="234" y="158" width="30" height="4" rx="2" fill="#5b6478" />
+      <rect x="234" y="167" width="50" height="7" rx="3" fill="#1b2236" />
     </g>
   );
 }
