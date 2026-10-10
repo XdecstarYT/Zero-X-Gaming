@@ -26,10 +26,11 @@ const yg = <T,>(page: Page, f: (g: YG) => T) => page.evaluate(`(${f.toString()})
 
 /** Put off any decision card that has come up (Question Time, a scandal, a crisis…). */
 async function dismissCards(page: Page) {
-  for (const id of ["yg-qt-later", "yg-scandal-later", "yg-crisis-later", "yg-debate-later", "yg-budget-later", "yg-conf-later", "yg-nominee-later", "yg-result-ok"]) {
-    const b = page.getByTestId(id);
-    if (await b.isVisible().catch(() => false)) await b.click();
-  }
+  for (let round = 0; round < 2; round++)
+    for (const id of ["yg-qt-later", "yg-scandal-later", "yg-crisis-later", "yg-debate-later", "yg-budget-later", "yg-conf-later", "yg-nominee-later", "yg-summit-later", "yg-sotn-later", "yg-result-ok"]) {
+      const b = page.getByTestId(id);
+      if (await b.isVisible().catch(() => false)) await b.click();
+    }
 }
 
 test("Zenith shows its retirement notice", async ({ page }) => {
@@ -39,7 +40,7 @@ test("Zenith shows its retirement notice", async ({ page }) => {
 
 test("YourGov: members only; pick a party, draft a law of your own, write bills, hold events, end weeks and count an election", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === "mobile", "the desktop run covers play; the page is checked on mobile by the a11y pass");
-  test.setTimeout(300_000);
+  test.setTimeout(480_000);
   const errors: string[] = [];
   page.on("console", (m) => {
     if (m.type() === "error" && !/ERR_TUNNEL|Failed to load resource|supabase/i.test(m.text())) errors.push(m.text());
@@ -164,6 +165,21 @@ test("YourGov: members only; pick a party, draft a law of your own, write bills,
   await page.getByTestId("yg-open-paper").click();
   await expect(page.getByTestId("yg-paper")).toBeVisible();
   await page.getByTestId("yg-paper-close").click();
+  // The customisation update: announce a policy from a template.
+  await page.getByTestId("yg-tab-studio").click();
+  await page.getByTestId("yg-policy-new").click();
+  await page.getByTestId("yg-ptpl-free-school-meals").click();
+  await page.getByTestId("yg-policy-announce").click();
+  expect(await yg(page, (g) => g.s.studio.policies.length)).toBe(1);
+  // The mega super update: society, the palette and the inbox.
+  await page.getByTestId("yg-tab-world").click();
+  await expect(page.getByTestId("yg-society")).toBeVisible();
+  await page.getByTestId("yg-tab-world").click();
+  await page.getByTestId("yg-open-palette").click();
+  await page.getByTestId("yg-palette-input").fill("protests");
+  await page.getByTestId("yg-cmd-0").click();
+  await expect(page.getByTestId("yg-protests")).toBeVisible();
+  await page.getByTestId("yg-tab-world").click();
 
   // In charge, write a budget: more for health.
   await yg(page, (g) => {

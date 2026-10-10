@@ -149,7 +149,7 @@ Wired in the same way (`initCampaign`, `campaignWeek` after `politicsWeek`, `set
   systems), as head of government or a leader in opposition; **party scandals** to handle
   (suspend, stand by, apologise or deny); an **election-night speech**; an exit poll as the count
   begins.
-- **Achievements**: 32 career milestones, each adding to the score.
+- **Achievements**: 48 career milestones (16 added in the two updates below), each adding to the score.
 
 ## The super mega update
 
@@ -181,6 +181,48 @@ Four more modules, wired the same way (`init…` from `initRest` in sim.ts, a we
 - The **weekly front page** (News), a **Markets** page (The country), the **whip** on every bill,
   the **court** in the parliament panel, a **Social** page in Campaign HQ, nominee and conference
   cards, the story of your career, and difficulty, sandbox and the hall of fame on the title.
+
+## The customisation update and the mega super update
+
+Two updates together, 226 features in all (every one is listed in game under Settings → What's
+new, built from `ui/notes.ts`). Five more modules, wired the same way as the others (`init…` from
+`initRest`, a weekly function from `endTurn`, anything unanswered settled the next week):
+
+- **Studio** (`studio.ts`): **policies** you write (area, running cost, effects, the voter groups
+  it's for, a deadline), announce, then deliver in government or drop (a U-turn); a missed
+  deadline is a broken promise. An ambition rule keeps them honest: the more a policy does, the
+  more it must cost. **Executive orders**, **events** and **crises** of your own (orders get a court
+  risk from their strength; events are priced from what they do; every crisis choice must cost
+  something). The party's **brand** (name, short name, colour, slogan, logo, label), your
+  **leader** (name, nickname, catchphrase, one of eleven backgrounds, a new look), the **speech
+  writer** (themes, tone, length, the quoted line), **renames** (country, offices, houses,
+  ministries, regions), **national holidays**, and **named and amended bills**. Custom laws can
+  name the voter groups that care; you can keep twenty.
+- **Society** (`society.ts`): eight indices (crime, health, schools, environment, housing,
+  inequality, infrastructure, trust) that follow the laws, delivered policies, orders, crises and
+  the economy, feed happiness and the issues; life expectancy; five industries, the trade balance
+  and house prices; ten kinds of **protest** (meet, police, give way, march); seasons
+  (southern-hemisphere aware) that weight the crises; the World Cup and Olympics.
+- **World** (`world.ts`): a global economy cycle, two **summits** a year (a decision card),
+  six **treaties**, foreign aid, sanctions and state visits.
+- **Grassroots** (`grassroots.ts`): battlegrounds and up to five **targets**, candidate selection,
+  membership fees, a campaign **strategy**, get-out-the-vote drives, bus tours, your **energy**
+  (holidays, health scares), newspaper endorsements, rival manifestos; and the floor of the house:
+  a **shadow cabinet**, **opposition days**, poaching members (and losing yours), **filibusters**,
+  **fast-tracks** and **co-sponsors**.
+- **Office** (`office.ts`): the government's **priority**, the **State of the Nation** (written in
+  the speech writer), the honours list, public inquiries, emergency powers, civil service reform,
+  a one-tap reshuffle and a confidence vote in yourself.
+- Content: 13 laws (two of them constitutional: compulsory voting and the parliament's term,
+  which really changes the term), 14 events, 10 crises, 8 orders, 16 achievements.
+- UI: two new dock panels (**Customise**, `ui/Studio.tsx`; **Society & the world**,
+  `ui/World.tsx`), new Campaign HQ pages (`ui/Ground.tsx`), government and bill tools and the
+  summit and State of the Nation cards (`ui/Office.tsx`), and `ui/Extras.tsx`: a command palette
+  (/ or K), an inbox (I), photo mode (H), career stats, help and a glossary, save slots with export
+  and import. Three new map modes (margin, runner-up, targets), a colour-blind palette, and new
+  settings (accent, text size, compact, calm, hide ticker or missions, confirm votes, skip length).
+- Typing in a text box no longer pauses the game (`GameStage.tsx` ignores the pause key and the
+  fullscreen change while you type).
 
 ## Maps (`map.ts`)
 

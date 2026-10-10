@@ -545,7 +545,7 @@ select.yg-input option{background:#151a24;color:#fff}
 .yg-modes .yg-seg{flex-wrap:nowrap}.yg-modes .yg-seg button{flex:none;white-space:nowrap}
 .yg-inbox-btn,.yg-search-btn{position:relative;width:44px;min-height:44px;padding:0;font-size:17px;flex:none}
 .yg-count{position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;padding:0 4px;border-radius:999px;background:var(--bad);color:#fff;font-size:10.5px;font-weight:800;display:grid;place-items:center;box-shadow:0 0 0 2px rgba(10,14,22,.6)}
-.yg-season{margin-right:5px}
+.yg-date.yg-season{margin-right:-4px}
 .yg-slogan{margin:2px 4px 8px;font-style:italic;color:var(--muted);font-weight:600}
 .yg-up{color:#7dffa0}.yg-down{color:#ff9d96}
 .yg-likes{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}

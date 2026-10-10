@@ -1295,10 +1295,10 @@ function BottomBar({ g }: { g: Game }) {
         )}
       </div>
       <div className="yg-glass yg-capsule yg-timebar">
-        <span className="yg-date" data-testid="yg-date" title={So.season(s)}>
-          <span className="yg-season" aria-hidden>
-            {So.SEASON_ICON[So.season(s)]}
-          </span>
+        <span className="yg-date yg-season" title={So.season(s)} aria-hidden>
+          {So.SEASON_ICON[So.season(s)]}
+        </span>
+        <span className="yg-date" data-testid="yg-date">
           {G.dateLabel(s)}
         </span>
         <Timeline g={g} />
