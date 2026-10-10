@@ -20,6 +20,8 @@ export type Sheet = null | "site" | "orders" | "buy" | "build" | "fleet" | "upgr
 export interface Prefs {
   gfx: Quality | "auto";
   sound: boolean;
+  /** Follow the clock through day and night, or keep it daytime. */
+  daylight: "cycle" | "day";
 }
 
 export interface Hooks {
@@ -29,9 +31,9 @@ export interface Hooks {
 
 const loadPrefs = (): Prefs => {
   try {
-    return { gfx: "auto", sound: true, ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as Partial<Prefs>) };
+    return { gfx: "auto", sound: true, daylight: "cycle", ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as Partial<Prefs>) };
   } catch {
-    return { gfx: "auto", sound: true };
+    return { gfx: "auto", sound: true, daylight: "cycle" };
   }
 };
 
@@ -125,7 +127,10 @@ export class Game {
       sim.tick(s, dt * GAME_SECS_PER_REAL * this.speed);
       this.activeMs += dt * 1000;
     }
-    this.stage?.world.sync(s, dt, this.screen === "play" ? this.sel : null, this.tool ? this.ghost : null);
+    this.stage?.world.sync(s, dt, this.screen === "play" ? this.sel : null, this.tool ? this.ghost : null, {
+      daylight: this.screen === "title" ? "day" : this.prefs.daylight,
+      speed: this.screen === "play" && !this.hold && !this.paused ? this.speed : 0,
+    });
     if (this.screen !== "play") return;
     this.uiClock += dt;
     if (this.uiClock > 0.25) {
@@ -210,8 +215,9 @@ export class Game {
     if (this.stage) {
       this.stage.spin = 0;
       const w = sim.width(this.s!);
-      this.stage.world.rig.fly({ dist: window.innerWidth < window.innerHeight ? 64 : 54, yaw: 0.42, pitch: 0.9 });
-      this.stage.world.rig.goal.target.set(w / 2 + 1, 0, 17);
+      const wide = w > 30;
+      this.stage.world.rig.fly({ dist: (window.innerWidth < window.innerHeight ? 64 : 54) * (w > 50 ? 1.45 : 1), yaw: 0.42, pitch: 0.9 });
+      this.stage.world.rig.goal.target.set(wide ? Math.min(w / 2 + 1, 30) : w / 2 + 1, 0, 17);
     }
     this.save();
     this.bump();
@@ -324,11 +330,18 @@ export class Game {
   callTruck(id: number) {
     if (this.s) this.result(sim.callTruck(this.s, id), "Truck called: here within 15 minutes ($150)");
   }
-  buy(item: ItemId, n: number) {
+  buy(item: ItemId, n: number, rail = false) {
     if (!this.s) return;
-    const po = sim.buy(this.s, item, n);
-    if (po) this.say(`${po.code}: ${n} pallets ordered from ${po.supplier}`, "good");
+    const po = sim.buy(this.s, item, n, false, rail);
+    if (po) this.say(`${po.code}: ${po.n} pallets ordered from ${po.supplier}${rail ? " by rail" : ""}`, "good");
     else this.say("Not enough cash", "bad");
+  }
+  acceptContract(id: number) {
+    if (this.s) this.result(sim.acceptContract(this.s, id), "Contract signed: the shipments are booked");
+  }
+  declineContract(id: number) {
+    if (this.s) sim.declineContract(this.s, id);
+    this.bump();
   }
   setAuto(item: ItemId, min: number, qty: number) {
     if (this.s) sim.setAuto(this.s, item, min, qty);

@@ -55,7 +55,7 @@ describe("WareForge simulation", () => {
       for (let i = 0; i <= n; i++) {
         const tx = Math.floor(px + ((qx - px) * i) / Math.max(1, n));
         const tz = Math.floor(pz + ((qz - pz) * i) / Math.max(1, n));
-        expect(g[tz * 44 + tx]).toBe(0);
+        expect(g[tz * 80 + tx]).toBe(0);
       }
       px = qx;
       pz = qz;
@@ -131,5 +131,95 @@ describe("WareForge simulation", () => {
     run(back, HOUR);
     expect(sim.search(back, "PAL").length).toBeGreaterThan(0);
     expect(ITEMS.helmet.name).toBe("PPE Safety Helmet");
+  });
+});
+
+describe("WareForge super mega update", () => {
+  it("opens the Mega hall to 78 bays and 18 doors", () => {
+    const s = sim.newGame("wh01", 21);
+    s.cash = 1e7;
+    expect(sim.buyUpgrade(s, "mega")).toBe("Needs Site expansion");
+    expect(sim.buyUpgrade(s, "expand")).toBeNull();
+    expect(sim.buyUpgrade(s, "mega")).toBeNull();
+    expect(sim.width(s)).toBe(78);
+    while (!sim.buyUpgrade(s, "door"));
+    expect(s.doors.length).toBe(18);
+    expect(sim.place(s, { kind: "rack", x: 70, z: 6 })).toBeNull();
+  });
+
+  it("brings trains to the rail siding and unloads them", () => {
+    const s = sim.newGame("wh01", 22);
+    s.cash = 1e6;
+    expect(sim.buy(s, "helmet", 16, false, true)).toBeNull();
+    expect(sim.buyUpgrade(s, "rail")).toBeNull();
+    const po = sim.buy(s, "helmet", 16, false, true)!;
+    expect(po.n).toBe(16);
+    expect(sim.purchaseCost(s, "helmet", 16, true)).toBeLessThan(sim.purchaseCost(s, "helmet", 16));
+    for (let i = 0; i < 8 * 60 && s.stats.trains < 1; i++) sim.tick(s, 60);
+    expect(s.stats.trains).toBe(1);
+    expect(s.goals.rail1).toBe(true);
+    // Nothing may be built across the rail doors.
+    expect(sim.placeError(s, { kind: "floor", x: 9, z: 2 })).toMatch(/rail/);
+  });
+
+  it("drains forklift batteries and recharges them at a charging bay", () => {
+    const s = sim.newGame("wh01", 23);
+    const f = s.forks[0];
+    f.battery = 0.1;
+    for (let i = 0; i < 3 * 60 && s.stats.charges < 1; i++) sim.tick(s, 60);
+    expect(s.stats.charges).toBeGreaterThanOrEqual(1);
+    const g = sim.newGame("wh01", 24);
+    sim.tick(g, 4 * 3600);
+    expect(g.forks.some((x) => x.battery < 1)).toBe(true);
+  });
+
+  it("runs contracts: a run of shipments with a bonus for all on time", () => {
+    const s = sim.newGame("wh01", 25);
+    const c = sim.offerContract(s);
+    expect(sim.acceptContract(s, c.id)).toBeNull();
+    expect(s.orders.filter((o) => o.contract === c.id).length).toBe(c.count);
+    expect(s.orders.filter((o) => o.contract === c.id).every((o) => o.state === "confirmed")).toBe(true);
+    // Far-off shipments don't hold a door yet.
+    const last = s.orders.filter((o) => o.contract === c.id).sort((a, b) => b.due - a.due)[0];
+    if (last.due - s.time > last.transit * 60 + 8 * 3600) expect(last.door).toBe(-1);
+  });
+
+  it("moves market prices daily and runs events with their effects", () => {
+    const s = sim.newGame("wh01", 26);
+    const cost = sim.purchaseCost(s, "steel", 4);
+    sim.startEvent(s, "strike");
+    expect(sim.purchaseCost(s, "steel", 4)).toBeGreaterThan(cost);
+    sim.startEvent(s, "power");
+    const w = sim.newGame("wh07", 26);
+    sim.startEvent(w, "power");
+    w.event!.until = w.time + 10 * 3600;
+    sim.tick(w, 3 * 3600);
+    expect(w.stats.made).toBe(0);
+    run(s, 26 * 3600);
+    expect(Object.values(s.market).some((v) => v !== 1)).toBe(true);
+  });
+
+  it("starts the new sites: Harbor Gate with rail, Summit with the Mega hall and a robot cell", () => {
+    const h = sim.newGame("wh09", 27);
+    expect(h.rail && h.expanded).toBe(true);
+    const m = sim.newGame("wh12", 27);
+    expect(m.mega && m.rail).toBe(true);
+    expect(sim.width(m)).toBe(78);
+    expect(m.structs.some((t) => t.m?.type === "robot")).toBe(true);
+    expect(m.structs.some((t) => t.kind === "charger")).toBe(true);
+  });
+
+  it("loads a save from before the update", () => {
+    const s = sim.newGame("wh01", 28);
+    const old = JSON.parse(sim.serialize(s));
+    delete old.mega;
+    delete old.rail;
+    delete old.market;
+    delete old.contracts;
+    delete old.event;
+    for (const f of old.forks) delete f.battery;
+    const back = sim.deserialize(JSON.stringify(old))!;
+    expect(back.forks[0].battery).toBe(1);
+    run(back, 3600);
   });
 });

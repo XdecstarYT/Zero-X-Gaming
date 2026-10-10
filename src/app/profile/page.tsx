@@ -12,6 +12,7 @@ import { formatNumber, timeAgo } from "@/lib/format";
 import { levelFromXp } from "@/lib/xp";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { accountTag } from "@/lib/zxg-account";
+import { gameHref } from "@/lib/nextx";
 
 export const metadata: Metadata = { title: "Profile" };
 
@@ -182,7 +183,7 @@ export default async function ProfilePage() {
                 {p.history.map((h, i) => (
                   <tr key={`${h.created_at}-${i}`} className="border-t border-border">
                     <td className="px-4 py-2.5">
-                      <Link href={`/games/${h.game_slug}`} className="font-semibold hover:text-cyan">
+                      <Link href={gameHref(h.game_slug)} className="font-semibold hover:text-cyan">
                         {getGame(h.game_slug)?.title ?? h.game_slug}
                       </Link>
                     </td>

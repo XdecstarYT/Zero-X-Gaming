@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { NEXTX_SLUGS } from "./src/lib/nextx";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -34,6 +35,10 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // NextX titles run inside the NextX app; their old game pages send you there (query kept).
+  async redirects() {
+    return NEXTX_SLUGS.map((slug) => ({ source: `/games/${slug}`, destination: `/nextx/play/${slug}`, permanent: false }));
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

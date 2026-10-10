@@ -3,6 +3,10 @@
  * two-finger twist to turn, wheel or pinch to zoom, click to pick) for WareForge's world.
  */
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { World, type Quality } from "./world";
 
 export interface StageEvents {
@@ -26,6 +30,9 @@ export class Stage {
   private ro: ResizeObserver;
   private off: (() => void)[] = [];
   private disposed = false;
+  /** High quality: a soft bloom on lamps and lights, stronger at night. */
+  private composer: EffectComposer | null = null;
+  private bloom: UnrealBloomPass | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -41,6 +48,13 @@ export class Stage {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.world = new World(quality);
     this.world.bakeEnvironment(this.renderer);
+    if (quality === "high") {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.addPass(new RenderPass(this.world.scene, this.world.camera));
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.25, 0.5, 0.92);
+      this.composer.addPass(this.bloom);
+      this.composer.addPass(new OutputPass());
+    }
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(canvas);
     this.resize();
@@ -53,6 +67,7 @@ export class Stage {
     this.w = Math.max(1, Math.round(r.width));
     this.h = Math.max(1, Math.round(r.height));
     this.renderer.setSize(this.w, this.h, false);
+    this.composer?.setSize(this.w, this.h);
     this.world.resize(this.w, this.h);
   }
 
@@ -65,7 +80,14 @@ export class Stage {
     if (this.spin) this.world.rig.goal.yaw += this.spin * dt;
     this.events.frame(dt);
     this.world.update(dt);
-    this.renderer.render(this.world.scene, this.world.camera);
+    const night = this.world.nightness;
+    this.renderer.toneMappingExposure = 1.08 + night * 0.12;
+    if (this.composer && this.bloom) {
+      // Only real lights glow: by day the sunlit floor is bright, so the threshold sits high.
+      this.bloom.strength = 0.08 + night * 0.37;
+      this.bloom.threshold = 1.7 - night * 0.8;
+      this.composer.render(dt);
+    } else this.renderer.render(this.world.scene, this.world.camera);
   };
 
   private ndc(e: { clientX: number; clientY: number }) {
@@ -159,6 +181,7 @@ export class Stage {
     this.ro.disconnect();
     this.off.forEach((f) => f());
     this.world.dispose();
+    this.composer?.dispose();
     this.renderer.dispose();
   }
 }

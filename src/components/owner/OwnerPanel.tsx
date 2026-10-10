@@ -20,6 +20,7 @@ import {
 } from "@/lib/owner";
 import { useAuth } from "@/store/auth";
 import { toast } from "@/store/toast";
+import { gameHref } from "@/lib/nextx";
 
 const n = (v: number | null | undefined) => (v ?? 0).toLocaleString("en-US");
 
@@ -190,7 +191,7 @@ export function OwnerPanel() {
                   return (
                     <tr key={g.slug} className="border-t border-border">
                       <td className="py-1.5">
-                        <Link href={`/games/${g.slug}`} className="font-semibold hover:text-cyan">
+                        <Link href={gameHref(g.slug)} className="font-semibold hover:text-cyan">
                           {g.title}
                         </Link>
                       </td>

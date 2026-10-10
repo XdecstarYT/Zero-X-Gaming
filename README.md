@@ -915,7 +915,17 @@ truck brings them in), lay out racks, floor blocks and four kinds of machine tha
 buy forklifts and fourteen upgrades, chase twelve goals. Three sites; a five-day season scored on growth
 (cap 300,000; members only). The simulation (`sim.ts`) is pure and seeded on a tile grid with A* forklift routing
 (tested); the renderer is a pastel three.js yard with the NextX camera rig, and the UI is NextX liquid glass in a
-light theme. See `src/games/wareforge/README.md`.
+light theme. The super mega update adds the Mega hall (78 bays, 18 doors), a rail siding with freight
+trains, two more sites, forklift batteries and charging bays, a Robot Cell and high-tech goods, contracts, a
+daily market, events, 13 upgrades and 12 goals, and a day and night cycle with bloom
+(`20261102100000_wareforge_mega.sql` raises the score cap). See `src/games/wareforge/README.md`.
+
+### NextX titles play in the NextX app
+
+WareForge, YourGov and Zero City are ZLink+ games that run inside the NextX app at `/nextx/play/<slug>`
+(`src/components/nextx/NextXPlayer.tsx`). `next.config.ts` redirects their `/games/<slug>` pages there
+(keeping the query string), and `gameHref()` in `src/lib/nextx.ts` points every link at the right place.
+The ZLink+ page has a NextX section and marks NextX titles.
 
 ### Zenith (ZLink+ exclusive)
 

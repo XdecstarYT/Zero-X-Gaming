@@ -1,4 +1,5 @@
 import { GAMES } from "./catalog";
+import { gameHref } from "@/lib/nextx";
 
 export interface PaletteItem {
   id: string;
@@ -30,7 +31,7 @@ export function paletteItems(owner = false): PaletteItem[] {
     id: `g-${g.slug}`,
     label: g.title,
     hint: g.tagline,
-    href: `/games/${g.slug}`,
+    href: gameHref(g.slug),
     icon: "▶",
     words: `${g.category} ${g.tags.join(" ")}`,
   }));

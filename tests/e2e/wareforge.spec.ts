@@ -73,6 +73,8 @@ test("WareForge: members only; pick a site, accept an order, buy stock, build a 
 
   // Run at 8× until the first truck is unloaded and the first shipment delivered.
   await page.getByTestId("wf-speed-8").click();
+  // The software renderer in CI draws few frames a second: fast-forward the clock so the shift gets going.
+  await wf(page, (g) => void (g.speed = 64));
   await expect.poll(() => wf(page, (g) => g.s.stats.unloaded), { timeout: 150_000, intervals: [2000] }).toBeGreaterThan(0);
   await expect.poll(() => wf(page, (g) => g.s.stats.delivered), { timeout: 150_000, intervals: [2000] }).toBeGreaterThan(0);
 

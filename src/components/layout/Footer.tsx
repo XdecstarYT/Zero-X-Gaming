@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "./Logo";
 import { GAMES } from "@/lib/catalog";
+import { gameHref } from "@/lib/nextx";
 
 const COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
   {
@@ -24,7 +25,7 @@ const COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
   {
     title: "Popular",
     links: GAMES.filter((g) => ["life", "ubusiness", "hometown", "trenches"].includes(g.slug)).map((g) => ({
-      href: `/games/${g.slug}`,
+      href: gameHref(g.slug),
       label: g.title,
     })),
   },

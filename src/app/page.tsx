@@ -17,6 +17,7 @@ import { WhyZeroX } from "@/components/home/WhyZeroX";
 import { ZLinkTeaser } from "@/components/home/ZLinkTeaser";
 import { CashCupTeaser } from "@/components/home/CashCupTeaser";
 import { NextXTeaser } from "@/components/home/NextXTeaser";
+import { gameHref } from "@/lib/nextx";
 
 export default function HomePage() {
   const featured = getGame(FEATURED_SLUG) ?? GAMES[0];
@@ -53,7 +54,7 @@ export default function HomePage() {
               Great War fronts or play Sports+. Earn XP and ZX Cash, unlock the battle pass, and play with friends.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <LinkButton href={`/games/${featured.slug}`} size="lg">
+              <LinkButton href={gameHref(featured.slug)} size="lg">
                 Play {featured.title}
               </LinkButton>
               <LinkButton href="/games" size="lg" variant="secondary">

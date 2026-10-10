@@ -9,6 +9,7 @@ import { Rating } from "@/components/ui/Rating";
 import { GameArt } from "./GameArt";
 import { FavoriteButton } from "./FavoriteButton";
 import { TiltCard } from "@/components/ui/TiltCard";
+import { gameHref } from "@/lib/nextx";
 
 /**
  * Whole card is clickable via a stretched link; the favourite button sits
@@ -47,7 +48,7 @@ export function GameCard({ game, className, meta }: { game: Game; className?: st
       <div className="p-4">
         <h3 className="font-display text-base font-bold tracking-wide transition-colors group-hover:text-cyan">
           <Link
-            href={`/games/${game.slug}`}
+            href={gameHref(game.slug)}
             className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
           >
             {game.title}

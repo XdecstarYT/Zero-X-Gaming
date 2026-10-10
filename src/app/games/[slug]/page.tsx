@@ -13,6 +13,7 @@ import { GameArt } from "@/components/game/GameArt";
 import { inZlink } from "@/lib/zlink";
 import { isNextX } from "@/lib/nextx";
 import { NextXMark } from "@/components/nextx/NextXLogo";
+import { gameHref } from "@/lib/nextx";
 
 export const dynamicParams = false;
 
@@ -94,7 +95,7 @@ export default async function GamePage(props: PageProps<"/games/[slug]">) {
               </p>
               <p className="mt-1 text-muted">{game.retiring.note}</p>
               {game.retiring.successor && (
-                <Link href={`/games/${game.retiring.successor}`} className="mt-2 inline-block font-bold text-violet hover:underline">
+                <Link href={gameHref(game.retiring.successor)} className="mt-2 inline-block font-bold text-violet hover:underline">
                   Play {getGame(game.retiring.successor)?.title ?? "its successor"} instead →
                 </Link>
               )}

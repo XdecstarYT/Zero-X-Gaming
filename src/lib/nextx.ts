@@ -7,6 +7,12 @@ export type NextXSlug = (typeof NEXTX_SLUGS)[number];
 
 export const isNextX = (slug: string) => (NEXTX_SLUGS as readonly string[]).includes(slug);
 
+/**
+ * Where a game is played. NextX titles run inside the NextX app (they're still ZLink+ games,
+ * unlocked by the membership); everything else has its page under /games.
+ */
+export const gameHref = (slug: string) => (isNextX(slug) ? `/nextx/play/${slug}` : `/games/${slug}`);
+
 export interface NextXTitle {
   slug: NextXSlug;
   /** A short line for the label's library. */
@@ -25,15 +31,15 @@ export const NEXTX_TITLES: NextXTitle[] = [
     accent: "#2f6fe4",
     accent2: "#f6c21c",
     stats: [
-      { v: "3", k: "Sites" },
-      { v: "15", k: "Goods" },
-      { v: "4", k: "Machines" },
+      { v: "5", k: "Sites" },
+      { v: "22", k: "Goods" },
+      { v: "7", k: "Machines" },
     ],
     features: [
-      "Docks, racks and a production floor you lay out yourself",
-      "Forklifts that plan their own routes round your racks",
-      "Trucks that back onto your doors, load and drive away",
-      "Orders with deadlines, tracked from confirmed to delivered",
+      "A Mega hall 78 bays long, with eighteen doors and a rail siding",
+      "Forklifts with batteries that route round your racks and recharge",
+      "Trucks and freight trains, contracts, a daily market and events",
+      "Day and night: floodlights, glowing lamps and workers on the floor",
     ],
   },
   {

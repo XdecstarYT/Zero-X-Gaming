@@ -6,6 +6,7 @@ import { GameArt } from "@/components/game/GameArt";
 import { getGame } from "@/lib/catalog";
 import { LINK_LEVELS, linkLevel, ZLINK_DROP, zlinkDaysLeft, zlinkDropIn, zlinkDropReady } from "@/lib/economy";
 import { useZlink } from "./use-zlink";
+import { gameHref } from "@/lib/nextx";
 
 /** For members: the exclusive game up front, your link level, and the weekly drop. */
 export function ZLinkDashboard() {
@@ -25,7 +26,7 @@ export function ZLinkDashboard() {
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         {lw && (
           <div className="grid gap-3">
-            <Link href={`/games/${lw.slug}`} data-testid="zlink-exclusive" className="zx-ring group relative overflow-hidden rounded-2xl border border-violet/60 bg-surface">
+            <Link href={gameHref(lw.slug)} data-testid="zlink-exclusive" className="zx-ring group relative overflow-hidden rounded-2xl border border-violet/60 bg-surface">
               <div className="aspect-[16/8] overflow-hidden">
                 <GameArt game={lw} className="transition-transform duration-700 group-hover:scale-105" />
               </div>
@@ -38,7 +39,7 @@ export function ZLinkDashboard() {
               </div>
             </Link>
             {also && (
-              <Link href={`/games/${also.slug}`} className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-5 py-3 hover:border-violet" data-testid="zlink-also">
+              <Link href={gameHref(also.slug)} className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-5 py-3 hover:border-violet" data-testid="zlink-also">
                 <span>
                   <span className="block text-xs font-bold uppercase tracking-[0.3em] text-violet">Also members only</span>
                   <span className="font-display text-lg font-black uppercase">{also.title}</span>

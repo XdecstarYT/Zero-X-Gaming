@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { getGame } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
-import { NEXTX_ENGINE, NEXTX_STANDARD, NEXTX_TITLES, type NextXSlug, type NextXTitle } from "@/lib/nextx";
+import { gameHref, NEXTX_ENGINE, NEXTX_STANDARD, NEXTX_TITLES, type NextXSlug, type NextXTitle } from "@/lib/nextx";
 import { UPDATES } from "@/lib/updates";
 import { canRefract, GlassDefs, trackSheen } from "@/nextx/glass";
 import { useSettings } from "@/store/settings";
@@ -239,10 +239,10 @@ function TitleCard({ t, on, onPreview }: { t: NextXTitle; on: boolean; onPreview
           ))}
         </ul>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link href={`/games/${g.slug}`} className="rounded-full px-6 py-2.5 font-display text-sm font-black uppercase tracking-wider text-[#06061a] shadow-[0_8px_30px_-8px_var(--nx-a)] transition-transform hover:scale-105" style={{ background: `linear-gradient(120deg, ${t.accent2}, ${t.accent})` }} data-testid={`nextx-launch-${t.slug}`}>
+          <Link href={gameHref(g.slug)} className="rounded-full px-6 py-2.5 font-display text-sm font-black uppercase tracking-wider text-[#06061a] shadow-[0_8px_30px_-8px_var(--nx-a)] transition-transform hover:scale-105" style={{ background: `linear-gradient(120deg, ${t.accent2}, ${t.accent})` }} data-testid={`nextx-launch-${t.slug}`}>
             Launch ▸
           </Link>
-          <Link href={`/games/${g.slug}#about`} className="nx-btn rounded-full px-5 py-2.5 text-sm font-bold text-white/90">
+          <Link href={`${gameHref(g.slug)}#about`} className="nx-btn rounded-full px-5 py-2.5 text-sm font-bold text-white/90">
             Details
           </Link>
         </div>
@@ -285,14 +285,14 @@ function Studio() {
 }
 
 function Updates() {
-  const list = UPDATES.filter((u) => NEXTX_TITLES.some((t) => u.href === `/games/${t.slug}`));
+  const list = UPDATES.filter((u) => NEXTX_TITLES.some((t) => u.href === gameHref(t.slug)));
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6" data-testid="nextx-updates">
       <h2 className="font-display text-3xl font-black uppercase tracking-tight drop-shadow">Updates</h2>
       <p className="mt-1 text-white/70">Every update to a NextX title, newest first.</p>
       <ol className="mt-6 space-y-4">
         {list.map((u) => {
-          const t = NEXTX_TITLES.find((x) => u.href === `/games/${x.slug}`)!;
+          const t = NEXTX_TITLES.find((x) => u.href === gameHref(x.slug))!;
           return (
             <li key={u.title} className="nx-glass rounded-3xl p-5" style={{ borderLeft: `3px solid ${t.accent}` }}>
               <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-white/60">

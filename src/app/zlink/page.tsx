@@ -7,6 +7,8 @@ import { ZLinkDashboard } from "@/components/zlink/ZLinkDashboard";
 import { GameArt } from "@/components/game/GameArt";
 import { getGame } from "@/lib/catalog";
 import { ZLINK_PERKS, zlinkGames } from "@/lib/zlink";
+import { gameHref, isNextX, NEXTX_SLUGS } from "@/lib/nextx";
+import { NextXMark } from "@/components/nextx/NextXLogo";
 
 export const metadata: Metadata = {
   title: "ZLink+",
@@ -58,6 +60,21 @@ export default function ZLinkPage() {
         </ul>
       </section>
 
+      <section aria-labelledby="zlink-nextx" className="relative mx-auto mt-16 max-w-6xl px-4 sm:px-6" data-testid="zlink-nextx">
+        <Link href="/nextx" className="flex flex-col gap-4 overflow-hidden rounded-2xl border border-[#8b5cff]/60 bg-[#04040d] p-6 text-white transition-colors hover:border-[#22e5ff] sm:flex-row sm:items-center">
+          <NextXMark className="h-16 w-16 shrink-0" title="" />
+          <div className="flex-1">
+            <h2 id="zlink-nextx" className="font-display text-xl font-black uppercase tracking-tight sm:text-2xl">
+              NextX is part of ZLink+
+            </h2>
+            <p className="mt-1 text-sm text-white/75">
+              {NEXTX_SLUGS.map((s) => getGame(s)?.title).filter(Boolean).join(", ")}: the next generation titles come with your link, and run in the NextX app.
+            </p>
+          </div>
+          <span className="rounded-full bg-white px-5 py-2 font-display text-sm font-black uppercase tracking-wider text-[#06061a]">Open NextX ▸</span>
+        </Link>
+      </section>
+
       <section aria-labelledby="zlink-games" className="relative mx-auto mt-16 max-w-6xl px-4 sm:px-6">
         <h2 id="zlink-games" className="font-display text-2xl font-black uppercase tracking-tight sm:text-3xl">
           {games.length} games, one link
@@ -65,11 +82,14 @@ export default function ZLinkPage() {
         <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7" data-testid="zlink-games">
           {games.map((g) => (
             <li key={g.slug}>
-              <Link href={`/games/${g.slug}`} className="group block overflow-hidden rounded-xl border border-border bg-surface transition-colors hover:border-cyan">
+              <Link href={gameHref(g.slug)} className="group block overflow-hidden rounded-xl border border-border bg-surface transition-colors hover:border-cyan">
                 <div className="aspect-[16/10] overflow-hidden">
                   <GameArt game={g} className="transition-transform duration-500 group-hover:scale-105" />
                 </div>
-                <p className="truncate px-3 py-2 text-sm font-bold">{g.title}</p>
+                <p className="flex items-center gap-1.5 truncate px-3 py-2 text-sm font-bold">
+                  {isNextX(g.slug) && <NextXMark className="h-4 w-4 shrink-0" title="Runs in NextX" />}
+                  {g.title}
+                </p>
               </Link>
             </li>
           ))}

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { PoweredBy } from "@/nextx/PoweredBy";
 import { GlassDefs, canRefract, trackSheen } from "@/nextx/glass";
 import {
-  CARRIERS, FORKLIFT_COST, GOALS, ITEMS, MACHINES, MACHINE_TYPES, MAX_FORKLIFTS, RACK, FLOOR, RAW, PARTS, GOODS, SEASON_DAYS, SPEEDS, UPGRADES,
+  CARRIERS, CHARGER, EVENTS, FORKLIFT_COST, GOALS, HIGH_TECH, ITEMS, MACHINES, MACHINE_TYPES, MAX_FORKLIFTS, RACK, FLOOR, RAIL_CAP, RAW, PARTS, GOODS, SEASON_DAYS, SPEEDS, UPGRADES,
   buyPrice, siteDef, supplierFor, type DoorType, type ItemId,
 } from "../data";
 import type { Game, Sheet } from "../game";
@@ -93,6 +93,7 @@ export function App({ game: g }: { game: Game }) {
         <>
           <TopBar g={g} s={s} />
           <Kpis s={s} />
+          {s.event && <EventBanner s={s} />}
           {g.sel && !g.tool && <Inspector g={g} s={s} f={g.sel} />}
           <Tracking g={g} s={s} />
           <Table g={g} s={s} />
@@ -127,13 +128,15 @@ function Title({ g }: { g: Game }) {
           <div key={d.id} className="wf-site wf-glass">
             <div className="wf-between">
               <span className="wf-eyebrow">{d.code}</span>
-              <span className={`wf-pill ${d.difficulty === "Easy" ? "good" : d.difficulty === "Normal" ? "" : "warn"}`}>{d.difficulty}</span>
+              <span className={`wf-pill ${d.difficulty === "Easy" ? "good" : d.difficulty === "Normal" ? "" : d.difficulty === "Hard" ? "warn" : "bad"}`}>{d.difficulty}</span>
             </div>
             <h3>{d.name}</h3>
             <p>{d.blurb}</p>
             <div className="wf-row dim" style={{ fontSize: 12, fontWeight: 600, flexWrap: "wrap" }}>
               <span>{money(d.cash)}</span>·<span>{d.doors.length} doors</span>·<span>{d.forklifts} forklifts</span>
               {d.machines.length > 0 && <>·<span>{d.machines.length} machines</span></>}
+              {d.rail && <>·<span>rail</span></>}
+              {d.mega && <>·<span>Mega hall</span></>}
             </div>
             <button className="wf-btn primary wide" data-testid={`wf-site-${d.id}`} onClick={() => g.newGame(d.id)}>
               Run {d.code}
@@ -242,6 +245,21 @@ function Search({ g, s, inline = false }: { g: Game; s: State; inline?: boolean 
           </div>
         )}
       </div>
+  );
+}
+
+/* ====================================================================== events */
+
+function EventBanner({ s }: { s: State }) {
+  const e = s.event!;
+  const def = EVENTS.find((x) => x.kind === e.kind)!;
+  return (
+    <div className="wf-event wf-glass wf-capsule" role="status" data-testid="wf-event">
+      <span aria-hidden="true">{def.icon}</span>
+      <b>{def.name}</b>
+      <span className="muted">{def.body}</span>
+      <span className="wf-pill grey">{mins(e.until - s.time)} left</span>
+    </div>
   );
 }
 
@@ -390,13 +408,13 @@ function ForkInfo({ s, id }: { s: State; id: number }) {
   if (!f) return null;
   const j = f.job;
   const p = j ? s.pallets[j.pallet] : null;
-  const verb: Record<string, string> = { load: "Loading a truck", unload: "Unloading a truck", output: "Clearing a machine", pick: "Picking an order", feed: "Feeding a machine", putaway: "Putting away" };
+  const verb: Record<string, string> = { charge: "Charging", load: "Loading a truck", unload: "Unloading a truck", output: "Clearing a machine", pick: "Picking an order", feed: "Feeding a machine", putaway: "Putting away" };
   return (
     <>
       <div className="wf-eyebrow">Forklift</div>
       <div className="title">{f.name}</div>
       <div className="wf-chips">
-        <span className={`wf-pill ${j ? "good" : "grey"}`}>{j ? verb[j.kind] : f.phase === "park" ? "Parking" : "Idle"}</span>
+        <span className={`wf-pill ${j ? "good" : "grey"}`}>{j ? verb[j.kind] : f.phase === "charge" ? "Charging" : f.phase === "park" ? "Parking" : "Idle"}</span>
       </div>
       <div className="wf-kv">
         <div>
@@ -413,8 +431,12 @@ function ForkInfo({ s, id }: { s: State; id: number }) {
         </div>
         <div>
           <small>Wage</small>
-          <b>$40/h</b>
+          <b>{sim.up(s, "agv") ? "$16/h (AGV)" : "$40/h"}</b>
         </div>
+      </div>
+      <div className="wf-section">Battery {Math.round(f.battery * 100)}%{f.phase === "charge" ? " · charging" : ""}</div>
+      <div className="wf-bar">
+        <i style={{ width: `${f.battery * 100}%`, background: f.battery < 0.22 ? "linear-gradient(90deg,#f06c70,#d83d43)" : "linear-gradient(90deg,#2fc488,#159a63)" }} />
       </div>
     </>
   );
@@ -429,11 +451,11 @@ function TruckInfo({ g, s, id }: { g: Game; s: State; id: number }) {
   const n = t.cargo.filter((x) => x >= 0).length;
   return (
     <>
-      <div className="wf-eyebrow">{t.dir === "in" ? "Inbound truck" : "Outbound truck"} · {c.name}</div>
+      <div className="wf-eyebrow">{t.rail ? "Freight train" : t.dir === "in" ? "Inbound truck" : "Outbound truck"} · {c.name}</div>
       <div className="title">{t.plate}</div>
       <div className="wf-chips">
         <span className={`wf-pill ${t.state === "docked" ? "good" : t.state === "queued" ? "warn" : ""}`}>{STATE_LABEL[t.state]}</span>
-        {t.door >= 0 && <span className="wf-pill grey">{sim.doorName(s, t.door)}</span>}
+        {t.door >= 0 && <span className="wf-pill grey">{t.rail ? `Rail ${t.door + 1}` : sim.doorName(s, t.door)}</span>}
       </div>
       <div className="wf-kv">
         <div>
@@ -441,7 +463,7 @@ function TruckInfo({ g, s, id }: { g: Game; s: State; id: number }) {
           <b>{po ? `${po.n} × ${ITEMS[po.item].name}` : o ? `#${o.code}` : "—"}</b>
         </div>
         <div>
-          <small>In trailer</small>
+          <small>{t.rail ? "On the wagons" : "In trailer"}</small>
           <b className="num">
             {n}/{t.dir === "out" && o ? o.total : t.cap}
           </b>
@@ -528,12 +550,11 @@ function StructInfo({ g, s, id }: { g: Game; s: State; id: number }) {
   if (t.m) {
     const m = t.m;
     const def = MACHINES[m.type];
-    const r = def.recipes[m.recipe];
     const stateTxt: Record<string, [string, string]> = {
       running: ["Running", "good"], starved: ["Waiting for materials", "warn"], blocked: ["Output full", "warn"], broken: ["Broken down", "bad"], repair: ["Being repaired", ""], service: ["Being serviced", ""], idle: ["Ready", "grey"], off: ["Switched off", "grey"],
     };
-    const [label, cls] = stateTxt[m.state] ?? ["", "grey"];
-    const cyc = r.secs * (sim.up(s, "lean") ? 0.8 : 1);
+    const [label, cls] = sim.eventOn(s, "power") && m.state !== "broken" ? ["No power", "bad"] : (stateTxt[m.state] ?? ["", "grey"]);
+    const cyc = sim.cycleSecs(s, t);
     return (
       <>
         <div className="wf-eyebrow">Machine · M-{String(t.id + 1).padStart(2, "0")}</div>
@@ -585,6 +606,32 @@ function StructInfo({ g, s, id }: { g: Game; s: State; id: number }) {
           </button>
           <button className="wf-btn small" onClick={() => g.removeStruct(t.id)}>
             Sell
+          </button>
+        </div>
+      </>
+    );
+  }
+  if (t.kind === "charger") {
+    const using = s.forks.filter((f) => f.charger >= 0 && Math.floor(f.charger / 2) === t.id);
+    return (
+      <>
+        <div className="wf-eyebrow">Charging bay</div>
+        <div className="title">C-{String(t.id + 1).padStart(2, "0")}</div>
+        <div className="wf-chips">
+          <span className={`wf-pill ${using.length ? "warn" : "good"}`}>{using.length ? `${using.length}/2 in use` : "Free"}</span>
+          {sim.up(s, "fastcharge") && <span className="wf-pill grey">Fast chargers</span>}
+        </div>
+        <div className="wf-list" style={{ marginTop: 10 }}>
+          {using.map((f) => (
+            <div key={f.id} className="wf-between" style={{ fontSize: 13 }}>
+              <b>{f.name}</b>
+              <span className="num">{Math.round(f.battery * 100)}%</span>
+            </div>
+          ))}
+        </div>
+        <div className="wf-seg" style={{ marginTop: 12 }}>
+          <button className="wf-btn small" onClick={() => g.removeStruct(t.id)}>
+            Remove
           </button>
         </div>
       </>
@@ -736,11 +783,15 @@ function Table({ g, s, inline = false }: { g: Game; s: State; inline?: boolean }
       });
     }
   if (tab === "forks")
-    for (const f of s.forks) rows.push({ key: `f${f.id}`, a: f.name, b: f.job ? f.job.kind[0].toUpperCase() + f.job.kind.slice(1) : "Idle", sub: `${f.trips} trips`, pill: f.job ? ["Busy", "good"] : ["Idle", "grey"], f: { k: "fork", id: f.id } });
+    for (const f of s.forks)
+      rows.push({
+        key: `f${f.id}`, a: f.name, b: f.phase === "charge" ? "Charging" : f.job ? f.job.kind[0].toUpperCase() + f.job.kind.slice(1) : "Idle", sub: `${f.trips} trips · battery ${Math.round(f.battery * 100)}%`,
+        pill: f.phase === "charge" ? ["Charging", "violet"] : f.battery < 0.22 ? ["Low battery", "bad"] : f.job ? ["Busy", "good"] : ["Idle", "grey"], f: { k: "fork", id: f.id },
+      });
   if (tab === "trucks")
     for (const t of [...s.trucks].filter((x) => x.state !== "gone").sort((a, b) => a.eta - b.eta))
       rows.push({
-        key: `t${t.id}`, a: t.dir === "in" ? "Inbound" : "Outbound", b: t.plate, sub: CARRIERS[t.carrier].name,
+        key: `t${t.id}`, a: t.rail ? "Train" : t.dir === "in" ? "Inbound" : "Outbound", b: t.plate, sub: CARRIERS[t.carrier].name,
         pill: t.state === "transit" ? [`En route ${mins(t.eta - s.time)}`, ""] : [STATE_LABEL[t.state], t.state === "queued" ? "warn" : "good"], f: { k: "truck", id: t.id },
       });
   if (tab === "machines")
@@ -864,8 +915,53 @@ function OrdersSheet({ g, s }: { g: Game; s: State }) {
   const offers = s.orders.filter((o) => o.state === "offer");
   const active = s.orders.filter((o) => ["confirmed", "picked", "loading", "transit"].includes(o.state)).sort((a, b) => a.due - b.due);
   const done = s.orders.filter((o) => o.state === "delivered" || o.state === "failed").slice(-6).reverse();
+  const contracts = s.contracts.filter((c) => c.state === "offer" || c.state === "active");
   return (
     <>
+      {contracts.length > 0 && (
+        <>
+          <div className="wf-section">Contracts</div>
+          <div className="wf-list">
+            {contracts.map((c) => (
+              <div key={c.id} className="wf-item" data-testid="wf-contract">
+                <div className="wf-between">
+                  <h4>
+                    📝 {c.customer} <span className="muted" style={{ fontWeight: 600 }}>· {c.city}</span>
+                  </h4>
+                  <span className="wf-pill violet">Bonus {money(c.bonus)}</span>
+                </div>
+                <p>
+                  {c.count} shipments of {c.n} × {ITEMS[c.item].icon} {ITEMS[c.item].name}, one every {c.every} hours, 10% over list. The bonus is paid if every one is on time.
+                </p>
+                {c.state === "offer" ? (
+                  <div className="wf-between" style={{ marginTop: 8 }}>
+                    <span className="dim" style={{ fontSize: 11.5 }}>
+                      expires {mins(c.expires - s.time)}
+                    </span>
+                    <div className="wf-seg">
+                      <button className="wf-btn small" onClick={() => g.declineContract(c.id)}>
+                        Decline
+                      </button>
+                      <button className="wf-btn small primary" onClick={() => g.acceptContract(c.id)} data-testid="wf-contract-accept">
+                        Sign
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 8 }}>
+                    <div className="wf-bar">
+                      <i style={{ width: `${((c.onTime + c.late) / c.count) * 100}%` }} />
+                    </div>
+                    <small className="dim">
+                      {c.onTime + c.late}/{c.count} done{c.late ? ` · ${c.late} late` : ""}
+                    </small>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       <div className="wf-section">New offers</div>
       <div className="wf-list">
         {offers.map((o) => {
@@ -882,6 +978,7 @@ function OrdersSheet({ g, s }: { g: Game; s: State }) {
                 {o.lines.map((l) => `${l.n} × ${ITEMS[l.item].icon} ${ITEMS[l.item].name}`).join(" · ")}
                 <br />
                 Deliver within {mins(o.due - s.time)} ({mins(o.transit * 60)} on the road){o.rush ? " · RUSH +25%" : ""}
+                {o.lines.some((l) => HIGH_TECH.includes(l.item)) ? " · high tech" : ""}
               </p>
               <div className="wf-between" style={{ marginTop: 8 }}>
                 <span className={`wf-pill ${can ? "good" : "warn"}`}>{can ? "In stock" : "Need stock"}</span>
@@ -932,13 +1029,16 @@ function OrdersSheet({ g, s }: { g: Game; s: State }) {
 
 function BuySheet({ g, s }: { g: Game; s: State }) {
   const [n, setN] = useState(6);
+  const [rail, setRail] = useState(false);
+  const max = rail ? RAIL_CAP : 12;
   const group = (title: string, items: ItemId[]) => (
     <>
       <div className="wf-section">{title}</div>
       <div className="wf-list">
         {items.map((id) => {
           const it = ITEMS[id];
-          const cost = sim.purchaseCost(s, id, n);
+          const cost = sim.purchaseCost(s, id, Math.min(n, max), rail);
+          const mk = sim.marketOf(s, id);
           const auto = s.auto[id];
           return (
             <div key={id} className="wf-item">
@@ -952,14 +1052,20 @@ function BuySheet({ g, s }: { g: Game; s: State }) {
               </div>
               <div className="wf-between" style={{ marginTop: 6 }}>
                 <span className="dim" style={{ fontSize: 12 }}>
-                  {money(buyPrice(id))}/pallet · {supplierFor(id).name}
+                  {money(sim.unitCost(s, id, rail))}/pallet{" "}
+                  {Math.abs(mk - 1) > 0.01 && (
+                    <b className={mk > 1 ? "wf-down" : "wf-up"} title="Today's market">
+                      {mk > 1 ? "▲" : "▼"} {Math.abs(Math.round((mk - 1) * 100))}%
+                    </b>
+                  )}{" "}
+                  · {supplierFor(id).name}
                 </span>
                 <div className="wf-seg">
                   <button className={`wf-btn small ${auto ? "on" : ""}`} onClick={() => g.setAuto(id, auto ? 0 : 4, n)} title="Keep at least 4 pallets: reorder automatically">
                     {auto ? "Auto ✓" : "Auto"}
                   </button>
-                  <button className="wf-btn small primary" disabled={s.cash < cost} onClick={() => g.buy(id, n)} data-testid={`wf-buy-${id}`}>
-                    Buy {n} · {money(cost)}
+                  <button className="wf-btn small primary" disabled={s.cash < cost} onClick={() => g.buy(id, Math.min(n, max), rail)} data-testid={`wf-buy-${id}`}>
+                    Buy {Math.min(n, max)} · {money(cost)}
                   </button>
                 </div>
               </div>
@@ -972,19 +1078,29 @@ function BuySheet({ g, s }: { g: Game; s: State }) {
   return (
     <>
       <div className="wf-between">
-        <span className="muted" style={{ fontSize: 13 }}>Pallets per truck</span>
+        <span className="muted" style={{ fontSize: 13 }}>Pallets per {rail ? "train" : "truck"}</span>
         <div className="wf-stepper">
           <button className="wf-btn icon small" onClick={() => setN(Math.max(1, n - 1))} aria-label="Fewer">
             −
           </button>
           <output className="num">{n}</output>
-          <button className="wf-btn icon small" onClick={() => setN(Math.min(12, n + 1))} aria-label="More">
+          <button className="wf-btn icon small" onClick={() => setN(Math.min(max, n + 1))} aria-label="More">
             +
           </button>
         </div>
       </div>
+      {s.rail && (
+        <div className="wf-seg" style={{ marginTop: 8 }}>
+          <button className={`wf-btn small ${!rail ? "on" : ""}`} onClick={() => setRail(false)}>
+            🚚 By truck
+          </button>
+          <button className={`wf-btn small ${rail ? "on" : ""}`} onClick={() => setRail(true)} data-testid="wf-buy-rail">
+            🚆 By rail (up to {RAIL_CAP}, 10% off)
+          </button>
+        </div>
+      )}
       <p className="dim" style={{ fontSize: 12, margin: "6px 0 0" }}>
-        Plus $120 freight a truck. Auto keeps four pallets in stock and reorders when you fall below.
+        Plus {rail ? "$60 freight a train" : "$120 freight a truck"}. Prices move with the market every day. Auto keeps four pallets in stock and reorders when you fall below.
       </p>
       {group("Finished goods (wholesale)", GOODS)}
       {group("Raw materials", RAW)}
@@ -1012,6 +1128,12 @@ function BuildSheet({ g, s }: { g: Game; s: State }) {
           <b>{FLOOR.name}</b>
           <small>{FLOOR.blurb}</small>
           <b>{money(FLOOR.cost)}</b>
+        </button>
+        <button className="wf-tile" onClick={() => g.setTool({ kind: "charger", rot: 0 })} disabled={s.cash < CHARGER.cost} data-testid="wf-build-charger">
+          <span className="big">🔌</span>
+          <b>{CHARGER.name}</b>
+          <small>{CHARGER.blurb}</small>
+          <b>{money(CHARGER.cost)}</b>
         </button>
       </div>
       <div className="wf-section">Production</div>
@@ -1214,6 +1336,18 @@ function MenuSheet({ g, s }: { g: Game; s: State }) {
               {q[0].toUpperCase() + q.slice(1)}
             </button>
           ))}
+        </div>
+      </div>
+      <div className="wf-item">
+        <h4>Time of day</h4>
+        <p>Follow the clock through sunrise, sunset and night (lights come on), or keep it daytime.</p>
+        <div className="wf-seg" style={{ marginTop: 8 }}>
+          <button className={`wf-btn small ${g.prefs.daylight === "cycle" ? "on" : ""}`} onClick={() => g.setPrefs({ daylight: "cycle" })} data-testid="wf-daylight-cycle">
+            Day and night
+          </button>
+          <button className={`wf-btn small ${g.prefs.daylight === "day" ? "on" : ""}`} onClick={() => g.setPrefs({ daylight: "day" })}>
+            Always day
+          </button>
         </div>
       </div>
       <div className="wf-item">

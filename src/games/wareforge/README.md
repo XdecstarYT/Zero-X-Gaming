@@ -29,6 +29,24 @@ game. Run a dock, racks and a production floor; accept orders and ship them on t
   - Fourteen upgrades and twelve goals with cash rewards.
 - **Time**: 1× is two real minutes a game hour, with speeds up to 8×. A season is five days. The score is net worth gained ÷ 10, + 25 per on-time delivery, + 5 per finished pallet made. It is final when the season ends or the business goes bust (cash below −$25,000). Play carries on after the season.
 
+## The super mega update
+
+| Area | What's new |
+| --- | --- |
+| Map | The grid is 80 tiles wide. After the first expansion (to bay 42), the **Mega hall** runs to bay 78 with room for 18 doors. |
+| Rail | A siding behind the building with two rail doors. Trains bring 16 pallets at 10% off and $60 freight, and forklifts unload them through the back wall. |
+| Sites | WH-09 Harbor Gate (rail, port scenery) and WH-12 Summit Mega DC (Mega hall, rail, a full production line). |
+| Forklifts | Batteries drain per tile and per lift. Below 22% a forklift drives to a **charging bay** (2×1, two points). Fast chargers double the charge rate. |
+| Production | Copper wire → motor (Motor Winder) and battery cells → battery pack (Cell Pack Line). The Robot Cell (three inputs) makes e-bikes, camera drones and laptops. |
+| Market | Every item's price drifts each day (×0.75–1.35) and drives both buying and order values. |
+| Contracts | A customer offers N shipments of one item every few hours at 10% over list, with a bonus if all are on time. Far-future shipments don't hold a door. |
+| Events | Storm (trucks +1 h), shopping rush (2× offers, +10%), supplier strike (2× lead time, +15%), power cut (machines stop), heatwave (batteries drain faster), tech boom (high-tech goods +20%). |
+| Upgrades | 13 new: Mega hall, rail siding, fast chargers, AGV fleet, solar roof, warehouse system, robotics, quality lab, insurance, driver training, cross-docking, brand campaign, premium customers (high-tech orders). |
+| Goals | 12 new. |
+| Look | A day and night cycle (sun path, dusk colours, moonlight) with lamps and window glow, floodlights and bloom on high quality. Also: roof trusses with high-bay lights, a walkway and bollards, shrink-wrapped goods, blue forklift safety spots, workers walking the floor, an office, a car park, a gatehouse with a barrier, street lamps, freight trains, and themed surroundings (river, fields, old works, harbor with cranes and a ship, hills). |
+
+Older saves load: the new fields get defaults.
+
 ## Code
 
 | File | What |
@@ -37,7 +55,7 @@ game. Run a dock, racks and a production floor; accept orders and ship them on t
 | `sim.ts` | The pure, seeded simulation (see below) |
 | `game.ts` | Controller: state, clock and speed, selection, build tool, saving (`zx-wareforge-save`), score |
 | `render/world.ts` | three.js world, kept in step with the sim each frame; picking |
-| `render/models.ts` | Forklift, truck, machine, tree and pin models; canvas textures |
+| `render/models.ts` | Forklift, truck, train, machine, charger, worker, car, office, gatehouse, lamp, crane, tree and pin models; canvas textures |
 | `render/stage.ts` | Renderer, loop and input (pan, turn, pinch, wheel, tap) |
 | `ui/App.tsx`, `ui/style.ts` | The liquid-glass interface (NextX `GlassDefs` with the `wf` prefix) |
 | `index.ts` | The Zero X `GameModule` |
@@ -59,4 +77,4 @@ The simulation is plain JSON on a 44×34 tile grid:
 - Idle forklifts pick the most urgent job: load > unload > clear a machine > pick an order > feed a machine > put away.
 - Forklifts route with A* (turns cost a little) round racks and machines.
 
-`?wf` on the game URL exposes the controller as `window.__wf` for tests.
+The game plays in the NextX app at `/nextx/play/wareforge` (`/games/wareforge` redirects there). `?wf` on the URL exposes the controller as `window.__wf` for tests.

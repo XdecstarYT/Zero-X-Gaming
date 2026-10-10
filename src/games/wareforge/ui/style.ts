@@ -172,6 +172,8 @@ export const css = `
 .wf-stepper output{min-width:24px;text-align:center;font-weight:800}
 
 /* ---- toasts and banners ---- */
+.wf-event{position:absolute;left:50%;top:72px;transform:translateX(-50%);z-index:5;display:flex;align-items:center;gap:8px;padding:6px 8px 6px 14px;font-size:13px;max-width:min(720px,calc(100% - 24px));animation:wf-in .3s ease both}
+.wf-event .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .wf-toast{position:absolute;left:50%;top:76px;transform:translateX(-50%);z-index:20;padding:10px 16px;font-weight:700;font-size:13.5px;animation:wf-toast 2.6s ease both;pointer-events:none;max-width:calc(100% - 24px);text-align:center}
 .wf-toast.bad{color:var(--bad)}
 .wf-toast.good{color:#0e8a57}
@@ -185,7 +187,7 @@ export const css = `
 .wf-hero .logo{display:inline-flex;align-items:center;gap:12px;font-size:clamp(34px,8vw,64px);font-weight:900;letter-spacing:-.035em;line-height:1}
 .wf-hero .logo svg{width:clamp(44px,9vw,72px);height:auto}
 .wf-hero p{margin:8px auto 0;max-width:520px;color:var(--ink2);font-size:15px;line-height:1.45}
-.wf-sites{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;width:min(980px,100%)}
+.wf-sites{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;width:min(1180px,100%)}
 .wf-site{padding:14px;text-align:left;display:flex;flex-direction:column;gap:6px}
 .wf-site h3{margin:0;font-size:16px}
 .wf-site p{margin:0;font-size:12.5px;color:var(--ink2);line-height:1.4;flex:1}
@@ -198,7 +200,11 @@ export const css = `
 .wf-inline{position:static!important;width:auto!important;display:block!important;max-height:none!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;animation:none!important}
 .wf-inline::before{display:none}
 .wf-dock .site{display:none}
+@container wf (min-width:1181px) and (min-height:721px){
+  .wf-event{top:182px}
+}
 @container wf (max-width:1180px) or (max-height:720px){
+  .wf-event{top:150px}
   .wf-track,.wf-table{display:none}
   .wf-dock .site{display:flex}
   .wf-kpi{min-width:132px;padding:8px 12px}
@@ -229,6 +235,8 @@ export const css = `
   .wf-toolbar{bottom:calc(76px + env(safe-area-inset-bottom))}
   .wf-sites{grid-template-columns:1fr}
   .wf-toast{top:calc(196px + env(safe-area-inset-top))}
+  .wf-event{top:calc(196px + env(safe-area-inset-top));font-size:12px}
+  .wf-event .muted{display:none}
 }
 @container wf (max-width:520px){
   .wf-chip{display:none}

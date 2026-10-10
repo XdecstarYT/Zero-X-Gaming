@@ -19,6 +19,7 @@ const PAGES = [
   "/cash-cup",
   "/nextx",
   "/games/wareforge",
+  "/nextx/play/wareforge",
   "/profile",
   "/settings",
 ];

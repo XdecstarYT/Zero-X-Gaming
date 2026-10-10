@@ -415,3 +415,215 @@ export function pin() {
   g.add(dot);
   return g;
 }
+
+/* ------------------------------------------------------------------ super mega update models */
+
+/** A shared emissive material for lamps: its intensity follows the time of day. */
+export const lampMat = new THREE.MeshStandardMaterial({ color: "#fff7e0", emissive: "#ffe7b0", emissiveIntensity: 0, roughness: 0.4 });
+export const windowMat = new THREE.MeshStandardMaterial({ color: "#9fc4ef", emissive: "#ffd998", emissiveIntensity: 0, roughness: 0.08, metalness: 0.3 });
+
+export interface TrainModel {
+  group: THREE.Group;
+  wheels: THREE.Mesh[];
+}
+
+/** A shunting locomotive and two flat wagons, running along +x. The origin is the middle of the two wagons. */
+export function train(carrier: number): TrainModel {
+  const g = new THREE.Group();
+  const c = CARRIERS[carrier];
+  const dark = mat("#2a2e38", 0.7);
+  const steel = mat("#7d8494", 0.5, 0.5);
+  const wheels: THREE.Mesh[] = [];
+  const tyre = mat("#1d2027", 0.8, 0.4);
+  const wagon = (cx: number) => {
+    g.add(box(4.6, 0.25, 2.6, mat("#5b6474", 0.6, 0.3), cx, 0.65, 0));
+    for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) g.add(box(0.08, 0.7, 0.08, steel, cx - 2.2 + i * 1.47, 0.9, sx * 1.25));
+    for (const wx of [-1.7, -1.0, 1.0, 1.7]) {
+      for (const sz of [-0.85, 0.85]) {
+        const w = cyl(0.32, 0.12, tyre, 14);
+        w.rotation.x = Math.PI / 2;
+        w.position.set(cx + wx, 0.32, sz);
+        g.add(w);
+        wheels.push(w);
+      }
+    }
+  };
+  wagon(-2.4);
+  wagon(2.4);
+  // The locomotive at the front (+x).
+  const paint = mat(c.color, 0.35, 0.2);
+  const lx = 8.4;
+  g.add(box(7, 0.4, 2.6, dark, lx, 0.5, 0));
+  g.add(box(4.6, 1.9, 2.2, paint, lx - 1, 0.9, 0));
+  g.add(box(2, 2.6, 2.5, paint, lx + 2.3, 0.9, 0));
+  g.add(box(2.02, 0.3, 2.52, mat(c.stripe, 0.5), lx + 2.3, 2.6, 0));
+  const glass = new THREE.MeshStandardMaterial({ color: "#20293a", roughness: 0.1, metalness: 0.4 });
+  g.add(box(0.05, 0.7, 2.0, glass, lx + 3.32, 2.2, 0, false));
+  g.add(box(0.1, 0.12, 0.3, new THREE.MeshBasicMaterial({ color: "#fff6d8" }), lx + 3.35, 1.3, 0, false));
+  g.add(box(4.6, 0.2, 2.25, mat(c.stripe, 0.5), lx - 1, 1.5, 0));
+  for (const wx of [-2.8, -1.6, 1.6, 2.8]) {
+    for (const sz of [-0.85, 0.85]) {
+      const w = cyl(0.36, 0.14, tyre, 14);
+      w.rotation.x = Math.PI / 2;
+      w.position.set(lx + wx, 0.36, sz);
+      g.add(w);
+      wheels.push(w);
+    }
+  }
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return { group: g, wheels };
+}
+
+/** A charging bay: a cabinet and two charging posts with status lights, 2×1 tiles from its corner. */
+export function charger() {
+  const g = new THREE.Group();
+  g.add(box(1.9, 1.3, 0.5, mat("#e9ecf4", 0.5), 1, 0, 0.3));
+  g.add(box(1.9, 0.08, 0.55, mat("#2fae7e", 0.5), 1, 1.3, 0.3));
+  const leds: THREE.Mesh[] = [];
+  for (const x of [0.5, 1.5]) {
+    g.add(box(0.22, 1.1, 0.22, mat("#3a3f4c", 0.6), x, 0, 0.75));
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), new THREE.MeshBasicMaterial({ color: "#3ddc84" }));
+    led.position.set(x, 1.0, 0.87);
+    g.add(led);
+    leds.push(led);
+    // A charging spot painted in front.
+    const spot = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), new THREE.MeshBasicMaterial({ color: "#2fae7e", transparent: true, opacity: 0.35 }));
+    spot.rotation.x = -Math.PI / 2;
+    spot.position.set(x, 0.007, 1.5);
+    g.add(spot);
+  }
+  g.add(box(0.5, 0.35, 0.05, new THREE.MeshBasicMaterial({ color: "#2fae7e" }), 1, 0.85, 0.56, false));
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh && !(o as THREE.Mesh).geometry.type.startsWith("Plane")) o.castShadow = true;
+  });
+  return { group: g, leds };
+}
+
+export interface PersonModel {
+  group: THREE.Group;
+  legs: THREE.Mesh[];
+}
+
+/** A warehouse worker in a hi-vis vest and a hard hat. */
+export function person(seed: number): PersonModel {
+  const g = new THREE.Group();
+  const trousers = mat(["#2c3443", "#3b3f4a", "#24314a"][seed % 3], 0.8);
+  const legs: THREE.Mesh[] = [];
+  for (const x of [-0.07, 0.07]) {
+    const l = box(0.1, 0.42, 0.1, trousers, 0, -0.42, 0);
+    const hip = new THREE.Group();
+    hip.position.set(x, 0.45, 0);
+    l.position.y = -0.21;
+    hip.add(l);
+    g.add(hip);
+    legs.push(hip as unknown as THREE.Mesh);
+  }
+  g.add(box(0.28, 0.4, 0.16, mat(seed % 2 ? "#ff8a1f" : "#d9f23a", 0.6), 0, 0.45, 0));
+  const skin = mat(["#f0c7a0", "#c99a72", "#8d5f3d", "#e8b88f"][seed % 4], 0.8);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10), skin);
+  head.position.y = 0.95;
+  g.add(head);
+  const hat = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(seed % 3 === 0 ? "#f6c21c" : "#ffffff", 0.4));
+  hat.position.y = 0.98;
+  g.add(hat);
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) o.castShadow = true;
+  });
+  return { group: g, legs };
+}
+
+/** A parked car, facing +z. */
+export function car(seed: number) {
+  const g = new THREE.Group();
+  const cols = ["#e8ecf4", "#2f6fe4", "#d94848", "#2b2f3a", "#9aa4b1", "#f0b429", "#1f9d74"];
+  const paint = mat(cols[seed % cols.length], 0.3, 0.3);
+  g.add(box(1.7, 0.55, 3.9, paint, 0, 0.25, 0));
+  g.add(box(1.5, 0.48, 2.0, new THREE.MeshStandardMaterial({ color: "#25303f", roughness: 0.1, metalness: 0.4 }), 0, 0.8, -0.2));
+  for (const x of [-0.75, 0.75])
+    for (const z of [-1.25, 1.25]) {
+      const w = cyl(0.3, 0.2, mat("#1d2027", 0.9), 12);
+      w.rotation.z = Math.PI / 2;
+      w.position.set(x, 0.3, z);
+      g.add(w);
+    }
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) o.castShadow = true;
+  });
+  return g;
+}
+
+/** A two-storey glass office with a canopy and a rooftop sign. w along x, d along z. */
+export function office(w: number, d: number) {
+  const g = new THREE.Group();
+  const frame = mat("#e6e9f3", 0.6);
+  g.add(box(w, 0.3, d, frame, 0, 0, 0));
+  g.add(box(w - 0.3, 5.6, d - 0.3, windowMat, 0, 0.3, 0));
+  for (let x = -w / 2 + 0.15; x <= w / 2; x += 1.6) g.add(box(0.12, 5.6, d + 0.02, frame, x, 0.3, 0));
+  for (const y of [0.3, 3.0, 5.8]) g.add(box(w + 0.05, 0.25, d + 0.05, frame, 0, y, 0));
+  g.add(box(w + 0.4, 0.3, d + 0.4, mat("#cfd3f7", 0.6), 0, 6.0, 0));
+  g.add(box(3.6, 0.15, 2, frame, 0, 2.6, d / 2 + 1));
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(5, 1.2), new THREE.MeshBasicMaterial({ map: signTexture("WAREFORGE", "#2f6fe4"), transparent: true }));
+  sign.position.set(0, 7.1, d / 2 - 0.5);
+  g.add(sign);
+  g.add(box(5.2, 0.12, 0.12, frame, 0, 6.4, d / 2 - 0.5));
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return g;
+}
+
+/** The gatehouse and a barrier arm (returned so it can lift). */
+export function gatehouse() {
+  const g = new THREE.Group();
+  g.add(box(2.4, 2.6, 2.4, mat("#e9ecf4", 0.6), 0, 0, 0));
+  g.add(box(2.42, 0.9, 2.42, windowMat, 0, 1.3, 0));
+  g.add(box(2.8, 0.2, 2.8, mat("#2f6fe4", 0.5), 0, 2.6, 0));
+  g.add(box(0.3, 1.0, 0.3, mat("#f6c21c", 0.5), 1.6, 0, 1.4));
+  const arm = new THREE.Group();
+  arm.position.set(1.6, 0.95, 1.4);
+  const bar = box(5.5, 0.12, 0.12, mat("#d94848", 0.5), 2.75, -0.06, 0);
+  arm.add(bar);
+  for (let i = 0; i < 4; i++) arm.add(box(0.6, 0.125, 0.125, mat("#ffffff", 0.5), 0.9 + i * 1.3, -0.065, 0));
+  g.add(arm);
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) o.castShadow = true;
+  });
+  return { group: g, arm };
+}
+
+/** A street lamp; its head glows at night. */
+export function streetLamp() {
+  const g = new THREE.Group();
+  const pole = mat("#7d8494", 0.5, 0.5);
+  g.add(box(0.14, 5.2, 0.14, pole, 0, 0, 0));
+  g.add(box(1.2, 0.1, 0.1, pole, 0.55, 5.1, 0));
+  const head = box(0.6, 0.12, 0.3, lampMat, 1.1, 5.0, 0, false);
+  g.add(head);
+  return g;
+}
+
+/** A ship-to-shore container crane (for the harbor). */
+export function crane(color: string) {
+  const g = new THREE.Group();
+  const m = mat(color, 0.5, 0.2);
+  for (const x of [-3, 3]) for (const z of [-2.5, 2.5]) g.add(box(0.5, 14, 0.5, m, x, 0, z));
+  g.add(box(6.5, 0.8, 0.8, m, 0, 13, -2.5));
+  g.add(box(6.5, 0.8, 0.8, m, 0, 13, 2.5));
+  g.add(box(0.8, 0.8, 26, m, -2.2, 14, 6));
+  g.add(box(0.8, 0.8, 26, m, 2.2, 14, 6));
+  g.add(box(3, 2, 2.2, mat("#e8ecf4", 0.5), 0, 12.6, 9));
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) o.castShadow = true;
+  });
+  return g;
+}
+
+export const CONTAINER_COLORS = ["#d94848", "#2f6fe4", "#1f9d74", "#f0743a", "#7c5cf0", "#e9ecf4", "#f0b429"];

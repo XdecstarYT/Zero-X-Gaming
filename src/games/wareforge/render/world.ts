@@ -7,9 +7,12 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Rig } from "@/nextx/rig";
-import { AISLE_Z, DOCK_Z, GRID_W, ITEMS, MACHINES, ROAD_Z, STAGE_Z, TRUCK_PHASE, WIDTH_FULL, doorX0 } from "../data";
-import { LEVEL_H, doorName, rackLevels, width, type Focus, type Pallet, type State, type Truck } from "../sim";
-import { COL, TRAILER_LEN, asphaltTexture, box, floorTexture, forklift, loadTexture, machine, mat, pin, signTexture, tree, truck, type ForkModel, type MachineModel, type TruckModel } from "./models";
+import { AISLE_Z, DAY, DOCK_Z, GRID_W, HOUR, ITEMS, MACHINES, RAIL_DOORS, RAIL_Z, ROAD_Z, STAGE_Z, TRUCK_PHASE, WIDTH_FULL, WIDTH_MEGA, doorX0, siteDef, type SiteDef } from "../data";
+import { LEVEL_H, doorName, rackLevels, route, width, type Focus, type Pallet, type State, type Truck } from "../sim";
+import {
+  COL, CONTAINER_COLORS, TRAILER_LEN, asphaltTexture, box, car, charger, crane, floorTexture, forklift, gatehouse, lampMat, loadTexture, machine, mat, office, person, pin,
+  signTexture, streetLamp, train, tree, truck, windowMat, type ForkModel, type MachineModel, type PersonModel, type TrainModel, type TruckModel,
+} from "./models";
 
 export type Quality = "high" | "low";
 
@@ -28,8 +31,26 @@ const MAX_PALLETS = 1400;
 const LANE_IN = ROAD_Z + 2.3;
 const LANE_OUT = ROAD_Z + 0.9;
 
+/** Where a train is (the middle of its two wagons); it always runs along +x. */
+export function trainPose(t: Truck): { x: number; z: number; rot: number; visible: boolean } {
+  const cx = t.door >= 0 ? RAIL_DOORS[t.door] + 1.5 : 0;
+  const u = Math.min(1, t.t / TRUCK_PHASE);
+  const ease = (v: number) => 1 - (1 - v) * (1 - v);
+  switch (t.state) {
+    case "arriving":
+      return { x: -70 + (cx + 70) * ease(u), z: RAIL_Z, rot: 0, visible: true };
+    case "docked":
+      return { x: cx, z: RAIL_Z, rot: 0, visible: true };
+    case "leaving":
+      return { x: cx + (GRID_W + 80 - cx) * u * u, z: RAIL_Z, rot: 0, visible: true };
+    default:
+      return { x: 0, z: 0, rot: 0, visible: false };
+  }
+}
+
 /** Where a truck is (the middle of its trailer's rear) and which way it faces. */
 export function truckPose(s: State, t: Truck): { x: number; z: number; rot: number; visible: boolean } {
+  if (t.rail) return trainPose(t);
   const cx = t.door >= 0 ? doorX0(t.door) + 1.5 : 0;
   const u = Math.min(1, t.t / TRUCK_PHASE);
   const ease = (v: number) => v * v * (3 - 2 * v);
@@ -92,6 +113,22 @@ export class World {
   private palletLoad: THREE.InstancedMesh;
   private forks: ForkModel[] = [];
   private trucks = new Map<number, TruckModel & { carrier: number }>();
+  private trains = new Map<number, TrainModel>();
+  private chargers = new Map<number, { leds: THREE.Mesh[] }>();
+  private workers: { m: PersonModel; path: [number, number][]; x: number; z: number; wait: number; speed: number }[] = [];
+  private hemi: THREE.HemisphereLight;
+  private night = 0;
+  /** Lights that come on at night (switched off by day). */
+  private nightLights: THREE.PointLight[] = [];
+  private scenery = new THREE.Group();
+  private sceneryKey = "";
+  private barrier: THREE.Group | null = null;
+  private palletWrap!: THREE.InstancedMesh;
+  private spots: THREE.Mesh[] = [];
+  /** How bright the night is (0 day … 1 night), for bloom and exposure. */
+  get nightness() {
+    return this.night;
+  }
   private machines = new Map<number, MachineModel>();
   private shutters: { door: number; mesh: THREE.Mesh }[] = [];
   private pinObj = pin();
@@ -110,8 +147,8 @@ export class World {
       { minDist: 10, maxDist: 120, minPitch: 0.42, maxPitch: 1.42, bounds: { x0: -6, z0: -2, x1: GRID_W + 10, z1: 40 } },
       { target: new THREE.Vector3(14, 0, 17), dist: 58, yaw: 0.42, pitch: 0.88 },
     );
-    const hemi = new THREE.HemisphereLight("#f6f7ff", "#cfd3e6", 0.9);
-    this.scene.add(hemi);
+    this.hemi = new THREE.HemisphereLight("#f6f7ff", "#cfd3e6", 0.9);
+    this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight("#fff5e6", 2.3);
     this.sun.position.set(-22, 60, 40);
     this.sun.target.position.set(22, 0, 16);
@@ -120,23 +157,37 @@ export class World {
       this.sun.castShadow = true;
       this.sun.shadow.mapSize.set(2048, 2048);
       const c = this.sun.shadow.camera;
-      c.left = -48;
-      c.right = 48;
-      c.top = 40;
-      c.bottom = -40;
+      c.left = -50;
+      c.right = 50;
+      c.top = 44;
+      c.bottom = -44;
       c.near = 10;
-      c.far = 160;
+      c.far = 200;
       this.sun.shadow.bias = -0.0004;
       this.sun.shadow.normalBias = 0.03;
       this.sun.shadow.radius = 4;
     }
-    this.scene.add(this.layoutGroup);
+    this.scene.add(this.layoutGroup, this.scenery);
     this.buildScenery();
+    // Floodlights for the night.
+    for (let i = 0; i < 4; i++) {
+      const l = new THREE.PointLight("#ffd9a0", 0, 26, 2);
+      l.visible = false;
+      this.nightLights.push(l);
+      this.scene.add(l);
+    }
     // Pallets: a wooden base and a load, one instance each.
     const lt = loadTexture();
     this.palletBase = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.14, 0.9), mat(COL.pallet, 0.85), MAX_PALLETS);
     this.palletLoad = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ map: lt, roughness: 0.55 }), MAX_PALLETS);
-    for (const m of [this.palletBase, this.palletLoad]) {
+    // Finished goods wear glossy shrink-wrap.
+    this.palletWrap = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshPhysicalMaterial({ map: lt, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.15, sheen: 0.4, sheenColor: new THREE.Color("#dfe9ff") }),
+      MAX_PALLETS,
+    );
+    this.palletWrap.setColorAt(0, new THREE.Color("#fff"));
+    for (const m of [this.palletBase, this.palletLoad, this.palletWrap]) {
       m.castShadow = true;
       m.receiveShadow = true;
       m.frustumCulled = false;
@@ -239,16 +290,54 @@ export class World {
     fence(-2.5, -2, GRID_W + 24, -2);
     fence(-2.5, -2, -2.5, ROAD_Z - 0.6);
     fence(GRID_W + 24, -2, GRID_W + 24, ROAD_Z - 0.6);
+    // The office, the car park, the gatehouse and street lamps.
+    const off = office(10, 8);
+    off.position.set(-10, 0, 12);
+    S.add(off);
+    const parkTex = asphaltTexture("#d3d7e2");
+    parkTex.repeat.set(3, 2);
+    const park = new THREE.Mesh(new THREE.PlaneGeometry(14, 10), new THREE.MeshStandardMaterial({ map: parkTex, roughness: 0.9 }));
+    park.rotation.x = -Math.PI / 2;
+    park.position.set(-10, -0.012, 23.5);
+    park.receiveShadow = true;
+    S.add(park);
+    for (let i = 0; i < 6; i++) {
+      const line = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 4.6), white);
+      line.rotation.x = -Math.PI / 2;
+      line.position.set(-16 + i * 2.4, 0.004, 21.4);
+      S.add(line);
+      if (i < 5 && (i * 7) % 3 !== 1) {
+        const c = car(i * 3 + 1);
+        c.position.set(-14.8 + i * 2.4, 0, 21.4);
+        S.add(c);
+      }
+    }
+    const gh = gatehouse();
+    gh.group.position.set(-4.4, 0, ROAD_Z - 2.2);
+    S.add(gh.group);
+    this.barrier = gh.arm;
+    for (let x = -30; x < GRID_W + 60; x += 14) {
+      const l = streetLamp();
+      l.position.set(x, 0, ROAD_Z + 3.9);
+      l.rotation.y = Math.PI / 2;
+      S.add(l);
+    }
+    for (let x = 4; x < GRID_W + 20; x += 18) {
+      const l = streetLamp();
+      l.position.set(x, 0, ROAD_Z - 1.2);
+      l.rotation.y = -Math.PI / 2;
+      S.add(l);
+    }
     // Trees round the edges and across the road.
     let seed = 7;
     const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    for (let i = 0; i < 46; i++) {
+    for (let i = 0; i < 70; i++) {
       const side = i % 4;
       let x: number;
       let z: number;
       if (side === 0) {
-        x = -12 + r() * 8;
-        z = -6 + r() * 36;
+        x = -24 + r() * 8;
+        z = -6 + r() * 20;
       } else if (side === 1) {
         x = GRID_W + 26 + r() * 10;
         z = -6 + r() * 36;
@@ -266,10 +355,98 @@ export class World {
     }
   }
 
+  /** What's round each site: a river, fields, an old works, a harbor with cranes, or hills. */
+  private buildTheme(def: SiteDef) {
+    const G = this.scenery;
+    this.disposeGroup(G);
+    let seed = def.id.charCodeAt(3) * 97 + 13;
+    const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const water = (x: number, z: number, w: number, d: number) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d, 1, 1), new THREE.MeshStandardMaterial({ color: "#86b8e8", roughness: 0.08, metalness: 0.2, envMapIntensity: 1.4 }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x, -0.05, z);
+      m.userData.own = true;
+      m.userData.water = true;
+      G.add(m);
+    };
+    if (def.theme === "river") {
+      water(40, 52, 360, 16);
+      for (let x = -60; x < 140; x += 3) {
+        const reed = box(0.3 + r() * 0.4, 0.4 + r() * 0.5, 0.3, mat("#9cc98a", 0.9), x + r(), 0, 43.6 + r() * 0.8, false);
+        G.add(reed);
+      }
+    } else if (def.theme === "harbor") {
+      water(40, 58, 360, 26);
+      G.add(box(300, 0.6, 3, mat("#c3c7d4", 0.8), 40, -0.4, 44.5));
+      for (const [x, c] of [[8, "#2f6fe4"], [38, "#f0743a"], [68, "#2f6fe4"]] as [number, string][]) {
+        const cr = crane(c);
+        cr.position.set(x, 0, 42);
+        G.add(cr);
+      }
+      // Container stacks along the quay.
+      for (let i = 0; i < 36; i++) {
+        const x = -20 + (i % 18) * 6.5 + r();
+        const z = 38 + Math.floor(i / 18) * 3;
+        const h = 1 + Math.floor(r() * 3);
+        for (let k = 0; k < h; k++) G.add(box(6, 2.4, 2.4, mat(CONTAINER_COLORS[Math.floor(r() * CONTAINER_COLORS.length)], 0.6), x, k * 2.42, z));
+      }
+      // A ship at the berth.
+      G.add(box(70, 6, 14, mat("#2b2f3a", 0.6), 40, -2, 55));
+      G.add(box(70, 0.6, 14.2, mat("#d94848", 0.6), 40, 3.4, 55));
+      G.add(box(10, 8, 10, mat("#e9ecf4", 0.5), 70, 4, 55));
+    } else if (def.theme === "works") {
+      for (const [x, z, h] of [[-26, -8, 22], [-20, -12, 16], [100, -6, 26]] as [number, number, number][]) {
+        const ch = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.6, h, 18), mat("#b98a74", 0.85));
+        ch.position.set(x, h / 2, z);
+        ch.castShadow = true;
+        ch.userData.own = true;
+        G.add(ch);
+        G.add(box(2.6, 0.6, 2.6, mat("#d94848", 0.6), x, h - 2, z));
+      }
+      for (let i = 0; i < 4; i++) {
+        const shed = box(14, 6, 10, mat(["#d3c6c0", "#c9ccef", "#d8d2c4"][i % 3], 0.85), -40 + i * 50, 0, -16 - (i % 2) * 6);
+        G.add(shed);
+      }
+      for (const x of [94, 100]) {
+        const silo = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 10, 20), mat("#dfe2ec", 0.5, 0.4));
+        silo.position.set(x, 5, 6);
+        silo.castShadow = true;
+        silo.userData.own = true;
+        G.add(silo);
+      }
+    } else if (def.theme === "fields") {
+      for (let i = 0; i < 10; i++) {
+        const f = new THREE.Mesh(new THREE.PlaneGeometry(30, 14), mat(["#d9e7a6", "#c4dc9a", "#e8d98f", "#b9d79f"][i % 4], 0.95));
+        f.rotation.x = -Math.PI / 2;
+        f.position.set(-40 + (i % 5) * 32, -0.02, 46 + Math.floor(i / 5) * 16);
+        f.userData.own = true;
+        G.add(f);
+      }
+      const barn = box(8, 5, 6, mat("#d94848", 0.8), -30, 0, 52);
+      G.add(barn);
+    } else {
+      // Summit: rolling hills and pines behind.
+      for (let i = 0; i < 9; i++) {
+        const h = 10 + r() * 16;
+        const hill = new THREE.Mesh(new THREE.ConeGeometry(18 + r() * 14, h, 7), mat(["#b9d7a6", "#a8cf9a", "#c6ddb0"][i % 3], 0.95));
+        hill.position.set(-50 + i * 24, h / 2 - 1, -34 - r() * 10);
+        hill.userData.own = true;
+        G.add(hill);
+      }
+      for (let i = 0; i < 40; i++) {
+        const pine = new THREE.Mesh(new THREE.ConeGeometry(0.9, 3.4, 7), mat("#5f9f78", 0.85));
+        pine.position.set(-40 + r() * 160, 1.7, -12 - r() * 12);
+        pine.castShadow = true;
+        pine.userData.own = true;
+        G.add(pine);
+      }
+    }
+  }
+
   /* ---------------------------------------------------------------- the building (rebuilt when the layout changes) */
 
   private keyOf(s: State) {
-    return `${s.expanded}|${s.doors.map((d) => d.type).join("")}|${s.structs.length}|${s.structs.filter((t) => t.dead).length}|${rackLevels(s)}`;
+    return `${s.expanded}|${s.mega}|${s.rail}|${s.doors.map((d) => d.type).join("")}|${s.structs.length}|${s.structs.filter((t) => t.dead).length}|${rackLevels(s)}`;
   }
 
   private disposeGroup(g: THREE.Object3D) {
@@ -284,6 +461,7 @@ export class World {
     const G = this.layoutGroup;
     this.disposeGroup(G);
     this.machines.clear();
+    this.chargers.clear();
     this.shutters = [];
     const W = width(s);
     // Floor.
@@ -307,9 +485,65 @@ export class World {
     for (let x = 3; x < W - 1; x += 1.6) paint(x, AISLE_Z[0] + 0.96, 0.7, 0.08, "#ffffff");
     const wall = mat(COL.wall, 0.8);
     const wallDark = mat(COL.wallDark, 0.8);
-    // Back wall (full height), low side walls, a coping on top.
-    G.add(box(W - 1.5, 4.4, 0.3, wall, (W + 1.75) / 2, 0, 1.6));
+    // Back wall (full height, with rail doors when there's a siding), low side walls, a coping on top.
+    const backSeg = (x0: number, x1: number) => {
+      if (x1 - x0 <= 0.05) return;
+      G.add(box(x1 - x0, 4.4, 0.3, wall, (x0 + x1) / 2, 0, 1.6));
+    };
+    let bc = 1.75;
+    if (s.rail)
+      for (const x0 of RAIL_DOORS) {
+        backSeg(bc, x0);
+        G.add(box(3, 1.4, 0.3, wall, x0 + 1.5, 3.0, 1.6));
+        G.add(box(0.14, 3, 0.36, mat("#2fae7e", 0.4), x0 + 0.07, 0, 1.6));
+        G.add(box(0.14, 3, 0.36, mat("#2fae7e", 0.4), x0 + 2.93, 0, 1.6));
+        const rs = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.56), new THREE.MeshBasicMaterial({ map: signTexture(`Rail ${RAIL_DOORS.indexOf(x0) + 1}`, "#2fae7e"), transparent: true }));
+        rs.position.set(x0 + 1.5, 3.3, 1.79);
+        rs.userData.own = true;
+        G.add(rs);
+        bc = x0 + 3;
+      }
+    backSeg(bc, W + 0.25);
     G.add(box(W - 1.5, 0.14, 0.42, wallDark, (W + 1.75) / 2, 4.4, 1.6));
+    // Roof trusses with high-bay lights (no roof, so you can see in).
+    const steel = mat("#aab1c0", 0.45, 0.6);
+    for (let x = 4; x < W - 1; x += 6) {
+      G.add(box(0.16, 0.5, DOCK_Z - 1.6, steel, x, 4.2, (DOCK_Z + 1.75) / 2));
+      for (const z of [6, 12, 17]) {
+        const lamp = box(0.9, 0.08, 0.5, lampMat, x, 4.08, z, false);
+        G.add(lamp);
+      }
+    }
+    G.add(box(W - 2, 0.16, 0.16, steel, (W + 1.75) / 2, 4.5, (DOCK_Z + 1.75) / 2));
+    // A green pedestrian walkway along the back, and yellow bollards at every door.
+    paint(2, 2.15, W - 2, 0.6, "#bfe6c9");
+    for (let x = 3; x < W - 1; x += 3) paint(x, 2.25, 0.18, 0.4, "#ffffff");
+    for (const d of s.doors) {
+      const x0 = doorX0(d.i);
+      for (const bx of [x0 - 0.2, x0 + 3.2]) {
+        G.add(box(0.16, 0.9, 0.16, mat(COL.line, 0.4), bx, 0, DOCK_Z - 0.35));
+        G.add(box(0.17, 0.12, 0.17, mat("#2b2f3a", 0.6), bx, 0.55, DOCK_Z - 0.35));
+      }
+    }
+    // The rail siding: ballast, sleepers and rails behind the building.
+    if (s.rail) {
+      const ballast = new THREE.Mesh(new THREE.PlaneGeometry(GRID_W + 160, 3.4), mat("#b8b2a6", 0.95));
+      ballast.rotation.x = -Math.PI / 2;
+      ballast.position.set(GRID_W / 2, -0.005, RAIL_Z);
+      ballast.receiveShadow = true;
+      ballast.userData.own = true;
+      G.add(ballast);
+      const sleepers: THREE.Matrix4[] = [];
+      for (let x = -80; x < GRID_W + 80; x += 0.9) sleepers.push(new THREE.Matrix4().compose(new THREE.Vector3(x, 0.05, RAIL_Z), new THREE.Quaternion(), new THREE.Vector3(0.22, 0.1, 2.6)));
+      const sm = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat("#7a6a5a", 0.9), sleepers.length);
+      sleepers.forEach((m, i) => sm.setMatrixAt(i, m));
+      sm.receiveShadow = true;
+      sm.userData.own = true;
+      G.add(sm);
+      for (const dz of [-0.72, 0.72]) G.add(box(GRID_W + 160, 0.14, 0.1, mat("#8d929c", 0.3, 0.8), GRID_W / 2, 0.1, RAIL_Z + dz, false));
+      // Loading apron between the wall and the track.
+      for (const x0 of RAIL_DOORS) G.add(box(3, 0.08, 1.2, mat("#9ca3b3", 0.5, 0.5), x0 + 1.5, 0, 0.9));
+    }
     for (const x of [1.6, W + 0.15]) {
       G.add(box(0.3, 1.3, DOCK_Z - 1.4, wall, x, 0, (DOCK_Z + 1.75) / 2));
       G.add(box(0.42, 0.1, DOCK_Z - 1.4, wallDark, x, 1.3, (DOCK_Z + 1.75) / 2));
@@ -362,14 +596,17 @@ export class World {
       }
     }
     wallSeg(cursor, W + 0.3);
-    // The unit next door until the site expands.
-    if (!s.expanded) {
-      const nx0 = W + 0.6;
-      const nw = WIDTH_FULL + 0.4 - nx0;
-      G.add(box(nw, 3.6, DOCK_Z - 1.1, mat("#c9ccef", 0.85), nx0 + nw / 2, 0, (DOCK_Z + 1.5) / 2));
+    // The units next door until the site expands (and the block until the Mega hall).
+    const units: [number, number, string, string][] = [];
+    if (!s.expanded) units.push([W + 0.6, WIDTH_FULL + 0.4, "#c9ccef", "TO LET"]);
+    if (!s.mega) units.push([(s.expanded ? W : WIDTH_FULL + 0.4) + 0.6, WIDTH_MEGA + 0.4, "#d2cfe9", "MEGA HALL SITE"]);
+    for (const [nx0, nx1, color, label] of units) {
+      const nw = nx1 - nx0;
+      G.add(box(nw, 3.6, DOCK_Z - 1.1, mat(color, 0.85), nx0 + nw / 2, 0, (DOCK_Z + 1.5) / 2));
       G.add(box(nw + 0.2, 0.18, DOCK_Z - 0.9, mat("#dfe1f6", 0.7), nx0 + nw / 2, 3.6, (DOCK_Z + 1.5) / 2));
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(4, 1.1), new THREE.MeshBasicMaterial({ map: signTexture("TO LET", "#8b92b8"), transparent: true }));
-      sign.position.set(nx0 + nw / 2, 2.2, DOCK_Z + 0.02);
+      for (let x = nx0 + 2; x < nx1 - 2; x += 5) G.add(box(3, 2.6, 0.05, mat("#aab0dc", 0.8), x + 1.5, 0, DOCK_Z + 0.03));
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(label.length * 0.45 + 1, 1.1), new THREE.MeshBasicMaterial({ map: signTexture(label, "#8b92b8"), transparent: true }));
+      sign.position.set(nx0 + nw / 2, 2.9, DOCK_Z + 0.06);
       sign.userData.own = true;
       G.add(sign);
     }
@@ -398,6 +635,11 @@ export class World {
           m.userData.own = true;
           G.add(m);
         }
+      } else if (t.kind === "charger") {
+        const ch = charger();
+        ch.group.position.set(t.x, 0, t.z);
+        G.add(ch.group);
+        this.chargers.set(t.id, { leds: ch.leds });
       } else if (t.m) {
         const def = MACHINES[t.m.type];
         const mm = machine(t.m.type, t.w, t.d, def.color);
@@ -421,14 +663,33 @@ export class World {
 
   /* ---------------------------------------------------------------- every frame */
 
-  sync(s: State, dt: number, sel: Focus | null, ghost: Ghost | null) {
+  sync(s: State, dt: number, sel: Focus | null, ghost: Ghost | null, opts: { daylight?: "cycle" | "day"; speed?: number } = {}) {
     this.time += dt;
+    if (this.sceneryKey !== s.site) {
+      this.sceneryKey = s.site;
+      this.buildTheme(siteDef(s.site));
+    }
     const key = this.keyOf(s);
     if (key !== this.layoutKey) {
       this.layoutKey = key;
       this.buildLayout(s);
     }
     this.picks = [];
+    this.syncSky(opts.daylight === "day" ? 11 * HOUR : s.time);
+    this.syncWorkers(s, dt * Math.min(3, opts.speed ?? 1));
+    // Charging bays: green when free, amber while charging.
+    for (const [id, ch] of this.chargers) {
+      ch.leds.forEach((led, k) => {
+        const busy = s.forks.some((f) => f.charger === id * 2 + k && f.phase === "charge" && f.path.length === 0);
+        (led.material as THREE.MeshBasicMaterial).color.set(busy ? (Math.sin(this.time * 4) > 0 ? "#ffb020" : "#ffd27a") : "#3ddc84");
+      });
+    }
+    // The gate lifts for trucks coming and going.
+    if (this.barrier) {
+      const busy = s.trucks.some((t) => !t.rail && (t.state === "arriving" || t.state === "leaving"));
+      const target = busy ? -1.35 : 0;
+      this.barrier.rotation.z += (target - this.barrier.rotation.z) * Math.min(1, dt * 3);
+    }
     // Machines.
     for (const [id, mm] of this.machines) {
       const t = s.structs[id];
@@ -452,7 +713,7 @@ export class World {
     }
     for (const t of s.structs) {
       if (t.dead || t.kind === "machine") continue;
-      const h = t.kind === "rack" ? rackLevels(s) * LEVEL_H : 0.9;
+      const h = t.kind === "rack" ? rackLevels(s) * LEVEL_H : t.kind === "charger" ? 1.4 : 0.9;
       this.picks.push({ box: new THREE.Box3(new THREE.Vector3(t.x, 0, t.z), new THREE.Vector3(t.x + t.w, h, t.z + t.d)), focus: { k: "struct", id: t.id } });
     }
     // Shutters open for a truck.
@@ -481,6 +742,7 @@ export class World {
       this.forks.push(f);
     }
     while (this.forks.length > s.forks.length) this.scene.remove(this.forks.pop()!.group);
+    while (this.spots.length > s.forks.length) this.scene.remove(this.spots.pop()!);
     s.forks.forEach((f, i) => {
       const m = this.forks[i];
       const g = m.group;
@@ -493,7 +755,19 @@ export class World {
       g.rotation.y += d * Math.min(1, dt * 12);
       m.carriage.position.y = 0.1 + f.lift;
       for (const w of m.wheels) w.rotation.x += moved * 4;
-      (m.beacon.material as THREE.MeshBasicMaterial).color.set(f.phase === "idle" ? "#8a90a0" : Math.sin(this.time * 9 + i) > 0 ? "#ffb020" : "#ff7a00");
+      (m.beacon.material as THREE.MeshBasicMaterial).color.set(
+        f.phase === "charge" ? "#3ddc84" : f.battery < 0.22 ? "#ff3b30" : f.phase === "idle" ? "#8a90a0" : Math.sin(this.time * 9 + i) > 0 ? "#ffb020" : "#ff7a00",
+      );
+      // The blue safety spot on the floor ahead while it drives.
+      let spot = this.spots[i];
+      if (!spot) {
+        spot = new THREE.Mesh(new THREE.CircleGeometry(0.32, 20), new THREE.MeshBasicMaterial({ color: "#3d8bff", transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+        spot.rotation.x = -Math.PI / 2;
+        this.scene.add(spot);
+        this.spots[i] = spot;
+      }
+      spot.visible = moved > 1e-4 && f.phase !== "charge";
+      spot.position.set(f.x + Math.sin(g.rotation.y) * 2.1, 0.012, f.z + Math.cos(g.rotation.y) * 2.1);
       this.picks.push({ box: new THREE.Box3(new THREE.Vector3(f.x - 0.6, 0, f.z - 0.6), new THREE.Vector3(f.x + 0.6, 1.4, f.z + 0.6)), focus: { k: "fork", id: f.id } });
     });
   }
@@ -504,6 +778,19 @@ export class World {
       const pose = truckPose(s, t);
       if (!pose.visible) continue;
       seen.add(t.id);
+      if (t.rail) {
+        let tm = this.trains.get(t.id);
+        if (!tm) {
+          tm = train(t.carrier);
+          this.scene.add(tm.group);
+          this.trains.set(t.id, tm);
+        }
+        const moved = Math.abs(tm.group.position.x - pose.x);
+        tm.group.position.set(pose.x, 0, pose.z);
+        for (const w of tm.wheels) w.rotation.y -= moved * 3;
+        this.picks.push({ box: new THREE.Box3(new THREE.Vector3(pose.x - 5, 0, pose.z - 1.4), new THREE.Vector3(pose.x + 12, 3, pose.z + 1.4)), focus: { k: "truck", id: t.id } });
+        continue;
+      }
       let m = this.trucks.get(t.id);
       if (!m) {
         m = { ...truck(t.carrier), carrier: t.carrier };
@@ -534,6 +821,11 @@ export class World {
         this.scene.remove(m.group);
         this.trucks.delete(id);
       }
+    for (const [id, m] of this.trains)
+      if (!seen.has(id)) {
+        this.scene.remove(m.group);
+        this.trains.delete(id);
+      }
   }
 
   /** World position of a pallet (tile units, y up). */
@@ -543,6 +835,10 @@ export class World {
       if (!t) return null;
       const pose = truckPose(s, t);
       if (!pose.visible) return null;
+      if (t.rail) {
+        const k = p.ci % 8;
+        return { x: pose.x + (p.ci < 8 ? -2.4 : 2.4) + ((k % 4) - 1.5) * 1.05, z: pose.z + (k < 4 ? 0.6 : -0.6), y: 0.8, rot: 0 };
+      }
       const l = cargoLocal(p.ci);
       const c = Math.cos(pose.rot);
       const sn = Math.sin(pose.rot);
@@ -561,6 +857,8 @@ export class World {
 
   private syncPallets(s: State) {
     let n = 0;
+    let nl = 0;
+    let nw = 0;
     const o = this.tmp;
     for (const p of Object.values(s.pallets)) {
       if (n >= MAX_PALLETS) break;
@@ -576,16 +874,120 @@ export class World {
       o.position.y = w.y + 0.14 + h / 2;
       o.scale.set(0.84, h, 0.84);
       o.updateMatrix();
-      this.palletLoad.setMatrixAt(n, o.matrix);
-      this.palletLoad.setColorAt(n, this.col.set(item.load));
+      const wrapped = item.tier === "goods";
+      const target = wrapped ? this.palletWrap : this.palletLoad;
+      const k = wrapped ? nw++ : nl++;
+      target.setMatrixAt(k, o.matrix);
+      target.setColorAt(k, this.col.set(item.load));
       if (p.loc === "slot") this.picks.push({ box: new THREE.Box3(new THREE.Vector3(w.x - 0.45, w.y, w.z - 0.45), new THREE.Vector3(w.x + 0.45, w.y + h + 0.14, w.z + 0.45)), focus: { k: "pallet", id: p.id } });
       n++;
     }
     this.palletBase.count = n;
-    this.palletLoad.count = n;
-    this.palletBase.instanceMatrix.needsUpdate = true;
-    this.palletLoad.instanceMatrix.needsUpdate = true;
-    if (this.palletLoad.instanceColor) this.palletLoad.instanceColor.needsUpdate = true;
+    this.palletLoad.count = nl;
+    this.palletWrap.count = nw;
+    for (const m of [this.palletBase, this.palletLoad, this.palletWrap]) {
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    }
+  }
+
+  /* ---------------------------------------------------------------- day and night */
+
+  private skyDay = new THREE.Color("#e8ebf6");
+  private skyDusk = new THREE.Color("#f6c9a8");
+  private skyNight = new THREE.Color("#141a33");
+  private sunDay = new THREE.Color("#fff5e6");
+  private sunDusk = new THREE.Color("#ffb070");
+  private moon = new THREE.Color("#9fb4ff");
+
+  /** Sun, sky, lamps and floodlights for the time of day (game seconds). */
+  private syncSky(t: number) {
+    const h = (t % DAY) / HOUR;
+    // Elevation: sunrise at 5, noon at 13, sunset at 21.
+    const el = Math.sin((Math.PI * (h - 5)) / 16);
+    const day = Math.min(1, Math.max(0, el * 1.6 + 0.1));
+    const dusk = Math.max(0, 1 - Math.abs(el) * 3.2) * (h > 4 && h < 22 ? 1 : 0);
+    this.night = 1 - day;
+    const sky = this.col.copy(this.skyNight).lerp(this.skyDay, day);
+    sky.lerp(this.skyDusk, dusk * 0.6);
+    (this.scene.background as THREE.Color).copy(sky);
+    (this.scene.fog as THREE.Fog).color.copy(sky);
+    const az = (Math.PI * (h - 5)) / 16;
+    const tgt = this.rig.cur.target;
+    const sunOn = el > -0.05;
+    this.sun.position.set(tgt.x - Math.cos(az) * 70, sunOn ? 18 + Math.max(0, el) * 60 : 60, tgt.z + 40);
+    this.sun.target.position.set(tgt.x, 0, tgt.z);
+    if (sunOn) this.sun.color.copy(this.sunDay).lerp(this.sunDusk, dusk);
+    else this.sun.color.copy(this.moon);
+    this.sun.intensity = sunOn ? 0.5 + 1.9 * day : 0.35;
+    this.hemi.intensity = 0.28 + 0.62 * day;
+    this.hemi.color.set(day > 0.5 ? "#f6f7ff" : "#8ea2dc");
+    this.scene.environmentIntensity = 0.18 + 0.4 * day;
+    const night = Math.max(0, Math.min(1, (0.75 - day) / 0.6));
+    lampMat.emissiveIntensity = night * 1.5;
+    windowMat.emissiveIntensity = night * 0.6;
+    const spots: [number, number][] = [
+      [tgt.x - 14, DOCK_Z + 4],
+      [tgt.x + 14, DOCK_Z + 4],
+      [tgt.x - 10, 9],
+      [tgt.x + 10, 9],
+    ];
+    this.nightLights.forEach((l, i) => {
+      l.visible = night > 0.02;
+      l.intensity = night * 14;
+      l.position.set(spots[i][0], 6, spots[i][1]);
+    });
+    for (const o of this.scenery.children) if (o.userData.water) ((o as THREE.Mesh).material as THREE.MeshStandardMaterial).color.set(day > 0.4 ? "#86b8e8" : "#2a3a66");
+  }
+
+  /* ---------------------------------------------------------------- people */
+
+  private syncWorkers(s: State, dt: number) {
+    const want = Math.min(10, 3 + Math.floor(s.forks.length / 2) + (s.mega ? 3 : 0));
+    while (this.workers.length < want) {
+      const m = person(this.workers.length);
+      const x = 3 + ((this.workers.length * 7) % Math.max(4, width(s) - 5)) + 0.5;
+      m.group.position.set(x, 0, 2.5);
+      this.scene.add(m.group);
+      this.workers.push({ m, path: [], x, z: 2.5, wait: this.workers.length * 2, speed: 0.9 + (this.workers.length % 3) * 0.15 });
+    }
+    while (this.workers.length > want) this.scene.remove(this.workers.pop()!.m.group);
+    const W = width(s);
+    this.workers.forEach((w, i) => {
+      if (!w.path.length) {
+        w.wait -= dt;
+        w.m.legs.forEach((l) => (l.rotation.x *= 0.8));
+        if (w.wait > 0) return;
+        // Walk to somewhere on the walkway, the apron or the aisle.
+        const zs = [2, AISLE_Z[1], 19];
+        const tx = 2 + Math.floor(((Math.sin(this.time * 1.7 + i * 13.1) + 1) / 2) * (W - 3));
+        const tz = zs[(i + Math.floor(this.time)) % zs.length];
+        w.path = route(s, w.x, w.z, tx, tz);
+        w.wait = 2 + (i % 4);
+      }
+      let step = w.speed * dt;
+      while (step > 0 && w.path.length) {
+        const [px, pz] = w.path[0];
+        const dx = px - w.x;
+        const dz = pz - w.z;
+        const d = Math.hypot(dx, dz);
+        if (d < 1e-4) {
+          w.path.shift();
+          continue;
+        }
+        const m = Math.min(d, step);
+        w.x += (dx / d) * m;
+        w.z += (dz / d) * m;
+        w.m.group.rotation.y = Math.atan2(dx, dz);
+        step -= m;
+        if (m >= d) w.path.shift();
+      }
+      // Walk on the right of the lane so forklifts pass.
+      w.m.group.position.set(w.x + 0.3, 0, w.z + 0.3);
+      const swing = w.path.length ? Math.sin(this.time * 9 + i) * 0.5 : 0;
+      w.m.legs[0].rotation.x = swing;
+      w.m.legs[1].rotation.x = -swing;
+    });
   }
 
   /** The footprint and pin height of a selected thing. */
