@@ -342,7 +342,9 @@ export function GameStage({ game }: { game: Game }) {
             aria-label="Pause game"
             className={
               immersive
-                ? "absolute top-[max(0.5rem,env(safe-area-inset-top))] left-1/2 z-10 grid h-11 w-11 -translate-x-1/2 place-items-center rounded-full border border-white/15 bg-black/50 text-white/80 backdrop-blur"
+                ? game.pauseButton === "top-left"
+                  ? "absolute top-[max(0.75rem,calc(env(safe-area-inset-top)+0.25rem))] left-[max(0.75rem,env(safe-area-inset-left))] z-10 grid h-11 w-11 place-items-center rounded-full border border-white/15 bg-black/50 text-white/80 backdrop-blur"
+                  : "absolute top-[max(0.5rem,env(safe-area-inset-top))] left-1/2 z-10 grid h-11 w-11 -translate-x-1/2 place-items-center rounded-full border border-white/15 bg-black/50 text-white/80 backdrop-blur"
                 : "absolute right-3 bottom-3 grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/50 text-white/80 backdrop-blur hover:text-white"
             }
           >

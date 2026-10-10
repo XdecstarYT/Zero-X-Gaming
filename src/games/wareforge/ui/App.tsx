@@ -92,7 +92,7 @@ export function App({ game: g }: { game: Game }) {
       ) : (
         <>
           <TopBar g={g} s={s} />
-          <Kpis s={s} />
+          {g.prefs.kpis !== false && <Kpis s={s} />}
           {s.event && <EventBanner s={s} />}
           {g.sel && !g.tool && <Inspector g={g} s={s} f={g.sel} />}
           <Tracking g={g} s={s} />
@@ -204,6 +204,15 @@ function TopBar({ g, s }: { g: Game; s: State }) {
           </button>
         ))}
       </div>
+      <button
+        className={`wf-btn icon small wf-kpitoggle ${g.prefs.kpis !== false ? "on" : ""}`}
+        aria-label={g.prefs.kpis !== false ? "Hide the figures" : "Show the figures"}
+        aria-pressed={g.prefs.kpis !== false}
+        onClick={() => g.setPrefs({ kpis: g.prefs.kpis === false })}
+        data-testid="wf-kpitoggle"
+      >
+        📊
+      </button>
       <button className="wf-btn icon small wf-bell" aria-label={`Alerts${unread ? ` (${unread} new)` : ""}`} onClick={() => g.open("alerts")} data-testid="wf-bell">
         🔔{unread > 0 && <em>{unread}</em>}
       </button>
@@ -271,7 +280,7 @@ function Kpis({ s }: { s: State }) {
     <div className="wf-kpis" data-testid="wf-kpis">
       <div className="wf-kpi wf-glass">
         <div className="k">
-          <i>▤</i> Stock on hand
+          <i aria-hidden="true">▤</i> <span>Stock on hand</span>
         </div>
         <div className="v num">
           {k.stock.toLocaleString("en-US")} <small>pallets</small>
@@ -283,28 +292,28 @@ function Kpis({ s }: { s: State }) {
       </div>
       <div className="wf-kpi wf-glass">
         <div className="k">
-          <i>🚚</i> Trucks on site
+          <i aria-hidden="true">🚚</i> <span>Trucks on site</span>
         </div>
         <div className="v num">{k.onSite}</div>
         <div className="d">{k.inbound} en route</div>
       </div>
       <div className="wf-kpi wf-glass">
         <div className="k">
-          <i>⏱</i> On-time delivery
+          <i aria-hidden="true">⏱</i> <span>On-time delivery</span>
         </div>
         <div className={`v num ${k.onTime >= 95 ? "" : k.onTime >= 80 ? "" : "wf-down"}`}>{k.onTime.toFixed(1)}%</div>
         <div className="d">last {k.deliveries || 0} deliveries</div>
       </div>
       <div className="wf-kpi wf-glass">
         <div className="k">
-          <i>$</i> Cash
+          <i aria-hidden="true">$</i> <span>Cash</span>
         </div>
         <div className={`v num ${k.cash < 0 ? "wf-down" : ""}`}>{money(k.cash)}</div>
         <div className="d">worth {money(k.worth)}</div>
       </div>
       <div className="wf-kpi wf-glass">
         <div className="k">
-          <i>⚙</i> Made today
+          <i aria-hidden="true">⚙</i> <span>Made today</span>
         </div>
         <div className="v num">
           {k.made} <small>pallets</small>

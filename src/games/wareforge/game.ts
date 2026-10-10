@@ -22,6 +22,8 @@ export interface Prefs {
   sound: boolean;
   /** Follow the clock through day and night, or keep it daytime. */
   daylight: "cycle" | "day";
+  /** Show the row of figures under the top bar (phones can hide it for more view). */
+  kpis?: boolean;
 }
 
 export interface Hooks {

@@ -377,6 +377,7 @@ export const GAMES: Game[] = [
       { keys: ["R"], action: "Turn a rack you're placing" },
     ],
     orientation: "any",
+    pauseButton: "top-left",
     touchControls: "Drag to move, pinch to zoom and two fingers to turn the yard. Tap anything to inspect it, and use the dock along the bottom for orders, buying, building, the fleet, upgrades and goals.",
   },
   {

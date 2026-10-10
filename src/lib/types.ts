@@ -26,6 +26,8 @@ export interface Game {
   touchControls: string;
   /** Preferred phone orientation in immersive mode. */
   orientation?: "landscape" | "any";
+  /** Where the full-screen pause button sits (top centre unless the game's own top bar needs the middle). */
+  pauseButton?: "top-left";
   /** A one-time unlock needed to play (Sports+ games need the Sports+ pass; UBusiness needs an edition). */
   pass?: "sports-plus" | "ubusiness" | "zlink";
   /** A game on its way out: the date it closes, and where to go instead. */
