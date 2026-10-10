@@ -134,11 +134,13 @@ export class Game {
 
   /* ---------------------------------------------------------------- the stage */
 
+  /** Auto: phones and lighter machines get medium (sharp, with shadows), big screens high, weak devices low. */
   quality(): Quality {
     if (this.prefs.gfx !== "auto") return this.prefs.gfx;
-    const small = Math.min(window.innerWidth, window.innerHeight) < 600;
     const nav = navigator as Navigator & { deviceMemory?: number };
-    return small || (nav.deviceMemory !== undefined && nav.deviceMemory <= 4) ? "low" : "high";
+    if (nav.deviceMemory !== undefined && nav.deviceMemory <= 2) return "low";
+    const small = Math.min(window.innerWidth, window.innerHeight) < 600;
+    return small || (nav.deviceMemory !== undefined && nav.deviceMemory <= 4) ? "medium" : "high";
   }
 
   attach(canvas: HTMLCanvasElement) {

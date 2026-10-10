@@ -244,7 +244,8 @@ export const css = `
 /* ---- title ---- */
 .wf-title{position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px 16px calc(24px + env(safe-area-inset-bottom));overflow:auto;
   background:linear-gradient(180deg,rgba(232,235,246,0) 30%,rgba(232,235,246,.7) 70%,rgba(232,235,246,.92))}
-.wf-hero{text-align:center;margin-bottom:14px;margin-top:auto}
+.wf-hero{text-align:center;margin-bottom:14px;margin-top:auto;padding:14px 22px;border-radius:28px;
+  background:radial-gradient(closest-side,rgba(246,248,252,.92),rgba(246,248,252,.72) 62%,rgba(246,248,252,0))}
 .wf-hero .logo{display:inline-flex;align-items:center;gap:12px;font-size:clamp(34px,8vw,64px);font-weight:900;letter-spacing:-.035em;line-height:1}
 .wf-hero .logo svg{width:clamp(44px,9vw,72px);height:auto}
 .wf-hero p{margin:8px auto 0;max-width:520px;color:var(--ink2);font-size:15px;line-height:1.45}

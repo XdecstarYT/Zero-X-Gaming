@@ -4,9 +4,12 @@
  */
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { GRADE } from "@/nextx/look";
 import { World, type Quality } from "./world";
 
 export interface StageEvents {
@@ -30,30 +33,48 @@ export class Stage {
   private ro: ResizeObserver;
   private off: (() => void)[] = [];
   private disposed = false;
-  /** High quality: a soft bloom on lamps and lights, stronger at night. */
+  /**
+   * High quality runs a post chain: the scene into a multisampled buffer, ambient occlusion
+   * (contact shadows under and between things), a bloom on lamps and lights (stronger at night),
+   * tone mapping and the NextX colour grade.
+   */
   private composer: EffectComposer | null = null;
   private bloom: UnrealBloomPass | null = null;
+  private ao: GTAOPass | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
     readonly quality: Quality,
     private events: StageEvents,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality === "high", powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(quality === "high" ? Math.min(2, window.devicePixelRatio || 1) : 1);
+    // Medium (phones) draws straight to the screen with the browser's multisampling; high
+    // multisamples its own buffer for the post chain; low skips both.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality === "medium", powerPreference: "high-performance", stencil: false });
+    const dpr = window.devicePixelRatio || 1;
+    this.renderer.setPixelRatio(quality === "low" ? 1 : Math.min(2, dpr));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.08;
-    this.renderer.shadowMap.enabled = quality === "high";
+    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.shadowMap.enabled = quality !== "low";
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.world = new World(quality);
     this.world.bakeEnvironment(this.renderer);
     if (quality === "high") {
-      this.composer = new EffectComposer(this.renderer);
+      const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+      this.composer = new EffectComposer(this.renderer, target);
       this.composer.addPass(new RenderPass(this.world.scene, this.world.camera));
+      try {
+        this.ao = new GTAOPass(this.world.scene, this.world.camera, 256, 256);
+        this.ao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.6, thickness: 1.2, scale: 1.1, samples: 12 });
+        this.ao.blendIntensity = 0.85;
+        this.composer.addPass(this.ao);
+      } catch {
+        this.ao = null;
+      }
       this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.25, 0.5, 0.92);
       this.composer.addPass(this.bloom);
       this.composer.addPass(new OutputPass());
+      this.composer.addPass(new ShaderPass(GRADE));
     }
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(canvas);
@@ -81,11 +102,12 @@ export class Stage {
     this.events.frame(dt);
     this.world.update(dt);
     const night = this.world.nightness;
-    this.renderer.toneMappingExposure = 1.08 + night * 0.12;
+    // Without the glow pass (medium, low) nights are lifted a little more, so the lit hall reads.
+    this.renderer.toneMappingExposure = 1.0 + night * (this.composer ? 0.25 : 0.45);
     if (this.composer && this.bloom) {
       // Only real lights glow: by day the sunlit floor is bright, so the threshold sits high.
-      this.bloom.strength = 0.08 + night * 0.37;
-      this.bloom.threshold = 1.7 - night * 0.8;
+      this.bloom.strength = 0.1 + night * 0.4;
+      this.bloom.threshold = 1.6 - night * 0.75;
       this.composer.render(dt);
     } else this.renderer.render(this.world.scene, this.world.camera);
   };
@@ -181,6 +203,7 @@ export class Stage {
     this.ro.disconnect();
     this.off.forEach((f) => f());
     this.world.dispose();
+    this.ao?.dispose();
     this.composer?.dispose();
     this.renderer.dispose();
   }

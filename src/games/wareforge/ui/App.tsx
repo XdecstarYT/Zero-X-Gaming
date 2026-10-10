@@ -1586,9 +1586,9 @@ function MenuSheet({ g, s }: { g: Game; s: State }) {
     <div className="wf-list">
       <div className="wf-item">
         <h4>Graphics</h4>
-        <p>High has soft shadows and sharper edges; low runs lighter. Applies when you next open the game.</p>
+        <p>High adds ambient occlusion, a glow on the lights and the NextX colour grade; medium is sharp with sun shadows (phones); low runs lightest. Applies when you next open the game.</p>
         <div className="wf-seg" style={{ marginTop: 8 }}>
-          {(["auto", "high", "low"] as const).map((q) => (
+          {(["auto", "high", "medium", "low"] as const).map((q) => (
             <button key={q} className={`wf-btn small ${g.prefs.gfx === q ? "on" : ""}`} onClick={() => g.setPrefs({ gfx: q })}>
               {q[0].toUpperCase() + q.slice(1)}
             </button>
