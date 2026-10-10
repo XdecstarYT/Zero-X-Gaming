@@ -356,7 +356,8 @@ function EventBanner({ s }: { s: State }) {
 function Kpis({ s }: { s: State }) {
   const k = sim.kpis(s);
   return (
-    <div className="wf-kpis" data-testid="wf-kpis">
+    // Focusable: on a phone the row scrolls sideways.
+    <div className="wf-kpis" data-testid="wf-kpis" role="region" aria-label="Key figures" tabIndex={0}>
       <div className="wf-kpi wf-glass">
         <div className="k">
           <i aria-hidden="true">▤</i> <span>Stock on hand</span>
