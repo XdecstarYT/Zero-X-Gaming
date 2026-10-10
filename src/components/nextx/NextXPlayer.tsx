@@ -69,7 +69,8 @@ export function NextXPlayer({ game }: { game: Game }) {
       <main className="relative z-10 flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto grid max-w-[1500px] gap-6 px-3 pb-12 pt-4 sm:px-5 xl:grid-cols-[1fr_20rem]">
           <div className="min-w-0">
-            <div className="nx-glass overflow-hidden rounded-[28px] p-1.5 sm:p-2">
+            {/* No glass (backdrop-filter) round the stage: it would trap the game's full-window mode inside the panel. */}
+            <div className="rounded-[28px] border border-white/15 bg-black/30 p-1.5 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.7)] sm:p-2">
               <GameStage game={game} />
             </div>
             <section id="about" className="nx-glass mt-6 rounded-[28px] p-5 sm:p-7">

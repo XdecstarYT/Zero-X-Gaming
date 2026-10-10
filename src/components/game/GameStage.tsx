@@ -251,8 +251,19 @@ export function GameStage({ game }: { game: Game }) {
   }, [immersive]);
 
   function toggleFullscreen() {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void frameRef.current?.requestFullscreen?.();
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+      return;
+    }
+    if (immersive) {
+      setImmersive(false);
+      return;
+    }
+    // iPhones (and anything that refuses) have no element fullscreen: fill the window instead.
+    const frame = frameRef.current as (HTMLDivElement & { webkitRequestFullscreen?: () => void }) | null;
+    if (frame?.requestFullscreen) frame.requestFullscreen().catch(() => setImmersive(true));
+    else if (frame?.webkitRequestFullscreen) frame.webkitRequestFullscreen();
+    else setImmersive(true);
   }
 
   const showArt = phase === "idle" || phase === "loading" || phase === "error" || !playable;
@@ -426,15 +437,15 @@ export function GameStage({ game }: { game: Game }) {
       </div>
       <div className="mt-3 flex items-center justify-between gap-2">
         <p className="text-xs text-subtle">{playable ? `Press Esc or ${formatKeyCode(pauseKey)} to pause.` : " "}</p>
-        <Button variant="secondary" size="sm" onClick={toggleFullscreen} aria-pressed={isFullscreen}>
+        <Button variant="secondary" size="sm" onClick={toggleFullscreen} aria-pressed={isFullscreen || immersive} data-testid="game-fullscreen">
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            {isFullscreen ? (
+            {isFullscreen || immersive ? (
               <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
             ) : (
               <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
             )}
           </svg>
-          {isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          {isFullscreen || immersive ? "Exit fullscreen" : "Fullscreen"}
         </Button>
       </div>
     </div>
