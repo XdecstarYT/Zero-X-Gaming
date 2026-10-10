@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { GameStage } from "@/components/game/GameStage";
 import { LeaderboardTabs } from "@/components/game/LeaderboardTabs";
 import { cn } from "@/lib/cn";
@@ -22,6 +22,9 @@ export function NextXPlayer({ game }: { game: Game }) {
   const refract = useSyncExternalStore(noSubscribe, canRefract, () => false);
   const t = NEXTX_TITLES.find((x) => x.slug === game.slug);
   const accent = t?.accent ?? "#8a5cff";
+  // While the game fills the screen the NextX bar goes away completely (Safari would otherwise
+  // paint the blurred bar over the game).
+  const [gameFull, setGameFull] = useState(false);
 
   // An app of its own: the site behind it doesn't scroll.
   useEffect(() => {
@@ -38,7 +41,7 @@ export function NextXPlayer({ game }: { game: Game }) {
       <GlassDefs prefix="nx" />
       <div className="nx-grid pointer-events-none absolute inset-0" aria-hidden />
       <div className="nx-beam pointer-events-none absolute -top-40 left-1/2 h-[520px] w-[900px] -translate-x-1/2" aria-hidden />
-      <header className="relative z-10 px-3 pt-[calc(env(safe-area-inset-top)+0.6rem)] sm:px-5">
+      <header className={cn("relative z-10 px-3 pt-[calc(env(safe-area-inset-top)+0.6rem)] sm:px-5", gameFull && "hidden")} data-testid="nextx-player-bar">
         <div className="nx-glass nx-capsule flex items-center gap-2 rounded-full py-2 pl-3 pr-2 sm:gap-3 sm:pl-4">
           <Link href="/nextx" className="flex items-center gap-2" aria-label="NextX library" data-testid="nextx-back">
             <span className="hidden sm:inline">
@@ -66,12 +69,12 @@ export function NextXPlayer({ game }: { game: Game }) {
         </div>
       </header>
 
-      <main className="relative z-10 flex-1 overflow-y-auto overscroll-contain">
+      <main className={cn("relative flex-1 overscroll-contain", gameFull ? "z-30 overflow-visible" : "z-10 overflow-y-auto")}>
         <div className="mx-auto grid max-w-[1500px] gap-6 px-3 pb-12 pt-4 sm:px-5 xl:grid-cols-[1fr_20rem]">
           <div className="min-w-0">
             {/* No glass (backdrop-filter) round the stage: it would trap the game's full-window mode inside the panel. */}
             <div className="rounded-[28px] border border-white/15 bg-black/30 p-1.5 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.7)] sm:p-2">
-              <GameStage game={game} />
+              <GameStage game={game} onImmersiveChange={setGameFull} />
             </div>
             <section id="about" className="nx-glass mt-6 rounded-[28px] p-5 sm:p-7">
               <p className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.25em] text-white/60">

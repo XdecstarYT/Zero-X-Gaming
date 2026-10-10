@@ -43,10 +43,34 @@ test("NextX titles fill the screen, even where the browser has no element fullsc
   await page.goto("/nextx/play/wareforge");
   await page.getByTestId("zlink-lock-join").click();
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByTestId("nextx-player-bar")).toBeVisible();
   await page.getByTestId("game-fullscreen").click();
   await expect(page.getByTestId("game-stage")).toHaveAttribute("data-immersive", "true");
+  // The NextX bar gets out of the way while the game fills the screen.
+  await expect(page.getByTestId("nextx-player-bar")).toBeHidden();
   const vp = page.viewportSize()!;
   const box = (await page.getByTestId("game-stage").boundingBox())!;
   expect(box.width).toBeGreaterThanOrEqual(vp.width - 1);
   expect(box.height).toBeGreaterThanOrEqual(vp.height - 1);
+});
+
+test("On a phone, playing a NextX title clears the NextX bar away until you exit", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile", "phones go full screen on Play");
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("zx-season-s1"))
+      localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+    localStorage.setItem("zx-wareforge-prefs", JSON.stringify({ gfx: "low", sound: false }));
+  });
+  await page.goto("/nextx/play/wareforge");
+  await page.getByTestId("zlink-lock-join").click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByTestId("game-stage")).toHaveAttribute("data-immersive", "true");
+  await expect(page.getByTestId("nextx-player-bar")).toBeHidden();
+  // Nothing of the NextX page sits over the top of the game.
+  const top = await page.evaluate(() => document.elementFromPoint(window.innerWidth / 2, 30)?.closest("[data-testid=game-stage]") !== null);
+  expect(top).toBe(true);
+  await page.getByRole("button", { name: "Pause game" }).click();
+  await page.getByRole("button", { name: "Exit", exact: true }).click();
+  await expect(page.getByTestId("nextx-player-bar")).toBeVisible();
 });

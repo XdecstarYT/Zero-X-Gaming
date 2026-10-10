@@ -77,7 +77,7 @@ function isTyping(target: EventTarget | null) {
   return !["checkbox", "radio", "range", "button", "submit", "reset", "color", "file", "image"].includes(type);
 }
 
-export function GameStage({ game }: { game: Game }) {
+export function GameStage({ game, onImmersiveChange }: { game: Game; /** Told when the game fills (or leaves) the screen, so a host page can clear its own chrome away. */ onImmersiveChange?: (on: boolean) => void }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const moduleRef = useRef<GameModule | null>(null);
@@ -237,6 +237,12 @@ export function GameStage({ game }: { game: Game }) {
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, [immersive, pause]);
+
+  // Let the host page know when the game fills the screen (and when it stops).
+  const fullScreen = immersive || isFullscreen;
+  useEffect(() => {
+    onImmersiveChange?.(fullScreen);
+  }, [fullScreen, onImmersiveChange]);
 
   // Immersive mode: no page scroll or pull-to-refresh behind the game.
   useEffect(() => {
