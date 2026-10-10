@@ -5,7 +5,7 @@
  */
 import type { GameSettings } from "../types";
 import { Sound } from "./audio";
-import { CHARGER, FLOOR, FREEZER, GAME_SECS_PER_REAL, MACHINES, PREFS_KEY, RACK, SAVE_KEY, SITES, SPEEDS, type DoorType, type ItemId, type MachineType, type UpgradeId } from "./data";
+import { BELT, CHARGER, FLOOR, FREEZER, GAME_SECS_PER_REAL, MACHINES, PREFS_KEY, RACK, SAVE_KEY, SITES, SPEEDS, type DoorType, type ItemId, type MachineType, type UpgradeId } from "./data";
 import { Stage } from "./render/stage";
 import type { Ghost, Quality } from "./render/world";
 import * as sim from "./sim";
@@ -35,7 +35,7 @@ export const TIPS: { icon: string; text: string; done: (s: State, g: Game, b: Ti
   { icon: "⏩", text: "Speed up time at the top, and finish today's missions (in Goals) for bonus cash.", done: (_s, g) => g.speed > 1 },
 ];
 
-const STRUCT_NAME: Record<StructKind, string> = { rack: RACK.name, floor: FLOOR.name, charger: CHARGER.name, freezer: FREEZER.name, machine: "Machine" };
+const STRUCT_NAME: Record<StructKind, string> = { rack: RACK.name, floor: FLOOR.name, charger: CHARGER.name, freezer: FREEZER.name, machine: "Machine", belt: BELT.name };
 
 export interface Prefs {
   gfx: Quality | "auto";

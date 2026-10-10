@@ -23,7 +23,12 @@ export type ItemId =
   | "copper" | "cells"
   | "frame" | "shell" | "panel" | "board" | "motor" | "battery"
   | "bicycle" | "chair" | "helmet" | "phone" | "toolkit" | "ebike" | "drone" | "laptop"
-  | "icecream" | "vaccine" | "seafood";
+  | "icecream" | "vaccine" | "seafood"
+  // The industry update: food and drink, fashion, automotive, pharma and beauty.
+  | "wheat" | "milk" | "sugar" | "fruit" | "cocoa" | "flour" | "bread" | "cake" | "cheese" | "juice" | "chocolate"
+  | "cotton" | "dye" | "leather" | "cloth" | "tshirt" | "jeans" | "sneakers" | "jacket"
+  | "aluminium" | "glass" | "body" | "engine" | "tyres" | "car"
+  | "chemicals" | "herbs" | "compound" | "medicine" | "cosmetics" | "perfume";
 
 export type Tier = "raw" | "part" | "goods";
 
@@ -71,6 +76,41 @@ export const ITEMS: Record<ItemId, Item> = {
   icecream: { id: "icecream", name: "Ice cream", sku: "ICE", tier: "goods", price: 1400, units: 240, kg: 1, load: "#f7b6d2", icon: "🍦", frozen: true },
   vaccine: { id: "vaccine", name: "Vaccines", sku: "VAX", tier: "goods", price: 5200, units: 2000, kg: 0.05, load: "#bfe3f7", icon: "💉", frozen: true },
   seafood: { id: "seafood", name: "Frozen seafood", sku: "SEA", tier: "goods", price: 1900, units: 60, kg: 8, load: "#a9d6e5", icon: "🦐", frozen: true },
+  // Food and drink.
+  wheat: { id: "wheat", name: "Wheat", sku: "WHT", tier: "raw", price: 220, units: 40, kg: 25, load: "#e8c66a", icon: "🌾" },
+  milk: { id: "milk", name: "Milk", sku: "MLK", tier: "raw", price: 280, units: 48, kg: 20, load: "#f4f6fb", icon: "🥛" },
+  sugar: { id: "sugar", name: "Sugar", sku: "SUG", tier: "raw", price: 140, units: 50, kg: 20, load: "#fbf7ea", icon: "🍬" },
+  fruit: { id: "fruit", name: "Fresh fruit", sku: "FRT", tier: "raw", price: 180, units: 60, kg: 12, load: "#f08a3c", icon: "🍎" },
+  cocoa: { id: "cocoa", name: "Cocoa beans", sku: "COC", tier: "raw", price: 300, units: 30, kg: 25, load: "#7a4a2b", icon: "🫘" },
+  flour: { id: "flour", name: "Flour", sku: "FLR", tier: "part", price: 420, units: 40, kg: 25, load: "#f3ead8", icon: "🥣" },
+  bread: { id: "bread", name: "Bread", sku: "BRD", tier: "goods", price: 650, units: 240, kg: 0.6, load: "#d99a52", icon: "🍞" },
+  cake: { id: "cake", name: "Cakes", sku: "CAK", tier: "goods", price: 1500, units: 120, kg: 1, load: "#f2a7c3", icon: "🎂" },
+  cheese: { id: "cheese", name: "Cheese", sku: "CHS", tier: "goods", price: 900, units: 160, kg: 1, load: "#f5cf4f", icon: "🧀" },
+  juice: { id: "juice", name: "Fruit juice", sku: "JCE", tier: "goods", price: 900, units: 300, kg: 1.1, load: "#f7a43b", icon: "🧃" },
+  chocolate: { id: "chocolate", name: "Chocolate", sku: "CHO", tier: "goods", price: 1650, units: 600, kg: 0.2, load: "#8a5a3c", icon: "🍫" },
+  // Fashion.
+  cotton: { id: "cotton", name: "Raw cotton", sku: "CTN", tier: "raw", price: 220, units: 20, kg: 25, load: "#f6f3ec", icon: "☁️" },
+  dye: { id: "dye", name: "Dyes", sku: "DYE", tier: "raw", price: 260, units: 40, kg: 10, load: "#6d5be0", icon: "🎨" },
+  leather: { id: "leather", name: "Leather hides", sku: "LTH", tier: "raw", price: 420, units: 20, kg: 6, load: "#a2673f", icon: "🟫" },
+  cloth: { id: "cloth", name: "Woven cloth", sku: "CLT", tier: "part", price: 480, units: 30, kg: 12, load: "#7aa3e8", icon: "🪡" },
+  tshirt: { id: "tshirt", name: "T-shirts", sku: "TSH", tier: "goods", price: 950, units: 300, kg: 0.2, load: "#4fb3f0", icon: "👕" },
+  jeans: { id: "jeans", name: "Jeans", sku: "JNS", tier: "goods", price: 1450, units: 120, kg: 0.7, load: "#3b5ea8", icon: "👖" },
+  sneakers: { id: "sneakers", name: "Sneakers", sku: "SNK", tier: "goods", price: 1600, units: 60, kg: 1, load: "#eef1f6", icon: "👟" },
+  jacket: { id: "jacket", name: "Leather jackets", sku: "JKT", tier: "goods", price: 2100, units: 40, kg: 1.5, load: "#5a3a2a", icon: "🧥" },
+  // Automotive.
+  aluminium: { id: "aluminium", name: "Aluminium ingots", sku: "ALU", tier: "raw", price: 900, units: 10, kg: 50, load: "#c9d1db", icon: "🔳" },
+  glass: { id: "glass", name: "Glass sheets", sku: "GLS", tier: "raw", price: 400, units: 20, kg: 30, load: "#bfe4ef", icon: "🪟" },
+  body: { id: "body", name: "Car body", sku: "BDY", tier: "part", price: 2000, units: 1, kg: 380, load: "#d64545", icon: "🚙" },
+  engine: { id: "engine", name: "Engine", sku: "ENG", tier: "part", price: 2200, units: 2, kg: 160, load: "#5c6370", icon: "⛽" },
+  tyres: { id: "tyres", name: "Tyres", sku: "TYR", tier: "part", price: 380, units: 16, kg: 11, load: "#2a2d33", icon: "🛞" },
+  car: { id: "car", name: "Cars", sku: "CAR", tier: "goods", price: 9_000, units: 1, kg: 1300, load: "#e04848", icon: "🚗" },
+  // Pharma and beauty.
+  chemicals: { id: "chemicals", name: "Chemicals", sku: "CHM", tier: "raw", price: 900, units: 8, kg: 200, load: "#9ee0c8", icon: "⚗️" },
+  herbs: { id: "herbs", name: "Herbs", sku: "HRB", tier: "raw", price: 600, units: 40, kg: 5, load: "#7dbf6a", icon: "🌿" },
+  compound: { id: "compound", name: "Active compound", sku: "API", tier: "part", price: 1900, units: 20, kg: 25, load: "#e2f0ff", icon: "🧫" },
+  medicine: { id: "medicine", name: "Medicines", sku: "MED", tier: "goods", price: 3600, units: 4000, kg: 0.03, load: "#f7f9fc", icon: "💊" },
+  cosmetics: { id: "cosmetics", name: "Cosmetics", sku: "COS", tier: "goods", price: 2600, units: 600, kg: 0.15, load: "#f5b6d6", icon: "💄" },
+  perfume: { id: "perfume", name: "Perfume", sku: "PRF", tier: "goods", price: 2400, units: 400, kg: 0.2, load: "#e9c9ff", icon: "🌸" },
 };
 export const ITEM_IDS = Object.keys(ITEMS) as ItemId[];
 export const RAW: ItemId[] = ITEM_IDS.filter((i) => ITEMS[i].tier === "raw");
@@ -88,7 +128,12 @@ export const buyPrice = (item: ItemId) => Math.round(ITEMS[item].price * (ITEMS[
 
 /* ------------------------------------------------------------------ machines */
 
-export type MachineType = "press" | "saw" | "smt" | "assembly" | "winder" | "packline" | "robot";
+export type MachineType =
+  | "press" | "saw" | "smt" | "assembly" | "winder" | "packline" | "robot"
+  | "mill" | "oven" | "dairy" | "bottler" | "loom" | "sewing" | "shoes" | "bodyshop" | "engines" | "tyreplant" | "carline" | "reactor" | "tablet" | "filler";
+
+/** How a machine looks on the floor. */
+export type MachineStyle = "press" | "saw" | "smt" | "cell" | "oven" | "tank" | "loom" | "line";
 
 export interface Recipe {
   inputs: ItemId[];
@@ -109,11 +154,12 @@ export interface MachineDef {
   recipes: Recipe[];
   color: string;
   blurb: string;
+  style: MachineStyle;
 }
 
 export const MACHINES: Record<MachineType, MachineDef> = {
   press: {
-    type: "press", name: "Stamping Press", w: 4, d: 2, cost: 12_000, upkeep: 30, color: "#5b7cf6",
+    type: "press", name: "Stamping Press", w: 4, d: 2, cost: 12_000, upkeep: 30, color: "#5b7cf6", style: "press",
     blurb: "Presses steel into frames and moulds pellets into shells.",
     recipes: [
       { inputs: ["steel"], output: "frame", secs: 8 * MIN },
@@ -121,17 +167,17 @@ export const MACHINES: Record<MachineType, MachineDef> = {
     ],
   },
   saw: {
-    type: "saw", name: "CNC Saw", w: 3, d: 2, cost: 8_000, upkeep: 20, color: "#f59e3b",
+    type: "saw", name: "CNC Saw", w: 3, d: 2, cost: 8_000, upkeep: 20, color: "#f59e3b", style: "saw",
     blurb: "Cuts timber into panels.",
     recipes: [{ inputs: ["wood"], output: "panel", secs: 6 * MIN }],
   },
   smt: {
-    type: "smt", name: "SMT Line", w: 5, d: 2, cost: 22_000, upkeep: 45, color: "#22b8a6",
+    type: "smt", name: "SMT Line", w: 5, d: 2, cost: 22_000, upkeep: 45, color: "#22b8a6", style: "smt",
     blurb: "Places components on boards, fast and precise.",
     recipes: [{ inputs: ["electronics"], output: "board", secs: 10 * MIN }],
   },
   assembly: {
-    type: "assembly", name: "Assembly Cell", w: 4, d: 3, cost: 15_000, upkeep: 35, color: "#a46bf5",
+    type: "assembly", name: "Assembly Cell", w: 4, d: 3, cost: 15_000, upkeep: 35, color: "#a46bf5", style: "cell",
     blurb: "Puts parts together into finished goods.",
     recipes: [
       { inputs: ["frame", "rubber"], output: "bicycle", secs: 12 * MIN },
@@ -142,17 +188,17 @@ export const MACHINES: Record<MachineType, MachineDef> = {
     ],
   },
   winder: {
-    type: "winder", name: "Motor Winder", w: 3, d: 2, cost: 14_000, upkeep: 30, color: "#e0773c",
+    type: "winder", name: "Motor Winder", w: 3, d: 2, cost: 14_000, upkeep: 30, color: "#e0773c", style: "cell",
     blurb: "Winds copper into electric motors.",
     recipes: [{ inputs: ["copper"], output: "motor", secs: 9 * MIN }],
   },
   packline: {
-    type: "packline", name: "Cell Pack Line", w: 4, d: 2, cost: 18_000, upkeep: 40, color: "#2fae7e",
+    type: "packline", name: "Cell Pack Line", w: 4, d: 2, cost: 18_000, upkeep: 40, color: "#2fae7e", style: "cell",
     blurb: "Welds cells into battery packs.",
     recipes: [{ inputs: ["cells"], output: "battery", secs: 10 * MIN }],
   },
   robot: {
-    type: "robot", name: "Robot Cell", w: 5, d: 3, cost: 32_000, upkeep: 60, color: "#ef4f8b",
+    type: "robot", name: "Robot Cell", w: 5, d: 3, cost: 32_000, upkeep: 60, color: "#ef4f8b", style: "cell",
     blurb: "Three robot arms build the high-tech goods.",
     recipes: [
       { inputs: ["frame", "motor", "battery"], output: "ebike", secs: 14 * MIN },
@@ -160,8 +206,209 @@ export const MACHINES: Record<MachineType, MachineDef> = {
       { inputs: ["board", "battery", "shell"], output: "laptop", secs: 15 * MIN },
     ],
   },
+  // Food and drink.
+  mill: {
+    type: "mill", name: "Flour Mill", w: 3, d: 2, cost: 9_000, upkeep: 20, color: "#d9a441", style: "tank",
+    blurb: "Grinds wheat into flour.",
+    recipes: [{ inputs: ["wheat"], output: "flour", secs: 5 * MIN }],
+  },
+  oven: {
+    type: "oven", name: "Bakery Oven", w: 4, d: 3, cost: 14_000, upkeep: 35, color: "#e0773c", style: "oven",
+    blurb: "Bakes bread, and cakes with sugar and milk.",
+    recipes: [
+      { inputs: ["flour"], output: "bread", secs: 6 * MIN },
+      { inputs: ["flour", "sugar", "milk"], output: "cake", secs: 9 * MIN },
+    ],
+  },
+  dairy: {
+    type: "dairy", name: "Dairy & Chocolate Works", w: 4, d: 3, cost: 16_000, upkeep: 35, color: "#7fb7e8", style: "tank",
+    blurb: "Turns milk into cheese, and cocoa, milk and sugar into chocolate.",
+    recipes: [
+      { inputs: ["milk"], output: "cheese", secs: 10 * MIN },
+      { inputs: ["cocoa", "milk", "sugar"], output: "chocolate", secs: 11 * MIN },
+    ],
+  },
+  bottler: {
+    type: "bottler", name: "Juice Bottling Line", w: 4, d: 2, cost: 12_000, upkeep: 30, color: "#f2a33a", style: "tank",
+    blurb: "Presses fruit, sweetens it and bottles the juice.",
+    recipes: [{ inputs: ["fruit", "sugar"], output: "juice", secs: 7 * MIN }],
+  },
+  // Fashion.
+  loom: {
+    type: "loom", name: "Weaving Loom", w: 3, d: 2, cost: 11_000, upkeep: 25, color: "#6d7cf0", style: "loom",
+    blurb: "Weaves cotton and dye into cloth.",
+    recipes: [{ inputs: ["cotton", "dye"], output: "cloth", secs: 7 * MIN }],
+  },
+  sewing: {
+    type: "sewing", name: "Sewing Line", w: 4, d: 2, cost: 13_000, upkeep: 30, color: "#e66aa0", style: "loom",
+    blurb: "Sews T-shirts, jeans (with fabric lining) and leather jackets.",
+    recipes: [
+      { inputs: ["cloth"], output: "tshirt", secs: 6 * MIN },
+      { inputs: ["cloth", "fabric"], output: "jeans", secs: 8 * MIN },
+      { inputs: ["leather", "cloth"], output: "jacket", secs: 11 * MIN },
+    ],
+  },
+  shoes: {
+    type: "shoes", name: "Shoe Line", w: 4, d: 2, cost: 15_000, upkeep: 30, color: "#4bb38a", style: "loom",
+    blurb: "Stitches leather and rubber soles into sneakers.",
+    recipes: [{ inputs: ["leather", "rubber"], output: "sneakers", secs: 9 * MIN }],
+  },
+  // Automotive.
+  bodyshop: {
+    type: "bodyshop", name: "Body Shop", w: 5, d: 2, cost: 38_000, upkeep: 70, color: "#d64545", style: "press",
+    blurb: "Presses and welds steel and aluminium into car bodies.",
+    recipes: [{ inputs: ["steel", "aluminium"], output: "body", secs: 14 * MIN }],
+  },
+  engines: {
+    type: "engines", name: "Engine Plant", w: 5, d: 2, cost: 42_000, upkeep: 75, color: "#5b6b86", style: "line",
+    blurb: "Machines aluminium and copper into engines.",
+    recipes: [{ inputs: ["aluminium", "copper"], output: "engine", secs: 16 * MIN }],
+  },
+  tyreplant: {
+    type: "tyreplant", name: "Tyre Plant", w: 3, d: 2, cost: 16_000, upkeep: 30, color: "#3a3f4c", style: "oven",
+    blurb: "Moulds and cures rubber into tyres.",
+    recipes: [{ inputs: ["rubber"], output: "tyres", secs: 6 * MIN }],
+  },
+  carline: {
+    type: "carline", name: "Car Assembly Line", w: 6, d: 4, cost: 75_000, upkeep: 120, color: "#2f6fe4", style: "line",
+    blurb: "Robots marry a body, an engine, tyres and glass: out rolls a car.",
+    recipes: [{ inputs: ["body", "engine", "tyres", "glass"], output: "car", secs: 22 * MIN }],
+  },
+  // Pharma and beauty.
+  reactor: {
+    type: "reactor", name: "Chemical Reactor", w: 3, d: 2, cost: 24_000, upkeep: 45, color: "#3fb6a8", style: "tank",
+    blurb: "Synthesises the active compound from chemicals.",
+    recipes: [{ inputs: ["chemicals"], output: "compound", secs: 11 * MIN }],
+  },
+  tablet: {
+    type: "tablet", name: "Tablet Press", w: 4, d: 2, cost: 26_000, upkeep: 45, color: "#7c8cf5", style: "smt",
+    blurb: "Presses the compound into tablets and seals them in blister packs.",
+    recipes: [{ inputs: ["compound", "plastic"], output: "medicine", secs: 10 * MIN }],
+  },
+  filler: {
+    type: "filler", name: "Filling Line", w: 4, d: 2, cost: 20_000, upkeep: 35, color: "#e08ac9", style: "tank",
+    blurb: "Fills glass bottles with cosmetics and perfume.",
+    recipes: [
+      { inputs: ["compound", "glass"], output: "cosmetics", secs: 9 * MIN },
+      { inputs: ["herbs", "glass"], output: "perfume", secs: 8 * MIN },
+    ],
+  },
 };
 export const MACHINE_TYPES = Object.keys(MACHINES) as MachineType[];
+
+/* ------------------------------------------------------------------ industries */
+
+export type IndustryId = "goods" | "tech" | "food" | "fashion" | "pharma" | "auto";
+
+export interface Industry {
+  id: IndustryId;
+  name: string;
+  icon: string;
+  color: string;
+  /** The licence (general goods and electronics come with every site). */
+  cost: number;
+  blurb: string;
+  machines: MachineType[];
+  /** What customers in this trade order. */
+  goods: ItemId[];
+  /** Materials and parts its suppliers sell. */
+  inputs: ItemId[];
+}
+
+export const INDUSTRIES: Industry[] = [
+  {
+    id: "goods", name: "General goods", icon: "📦", color: "#2f6fe4", cost: 0,
+    blurb: "Bicycles, office chairs, safety helmets and tool kits: pressed, cut and assembled.",
+    machines: ["press", "saw", "assembly"], goods: ["bicycle", "chair", "helmet", "toolkit"],
+    inputs: ["steel", "plastic", "wood", "fabric", "rubber", "frame", "shell", "panel"],
+  },
+  {
+    id: "tech", name: "Electronics & e-mobility", icon: "📱", color: "#7c5cf0", cost: 0,
+    blurb: "Smartphones, then e-bikes, drones and laptops for premium accounts.",
+    machines: ["smt", "winder", "packline", "robot"], goods: ["phone", "ebike", "drone", "laptop"],
+    inputs: ["electronics", "copper", "cells", "board", "motor", "battery"],
+  },
+  {
+    id: "food", name: "Food & drink", icon: "🍞", color: "#e0a03c", cost: 18_000,
+    blurb: "Mill flour, bake bread and cakes, make cheese and chocolate, press and bottle juice. Cheap to start, quick to sell.",
+    machines: ["mill", "oven", "dairy", "bottler"], goods: ["bread", "cake", "cheese", "juice", "chocolate"],
+    inputs: ["wheat", "milk", "sugar", "fruit", "cocoa", "flour"],
+  },
+  {
+    id: "fashion", name: "Fashion", icon: "👕", color: "#e66aa0", cost: 22_000,
+    blurb: "Weave cloth and sew T-shirts, jeans and leather jackets; stitch sneakers. Boutiques love it.",
+    machines: ["loom", "sewing", "shoes"], goods: ["tshirt", "jeans", "sneakers", "jacket"],
+    inputs: ["cotton", "dye", "leather", "cloth"],
+  },
+  {
+    id: "pharma", name: "Pharma & beauty", icon: "💊", color: "#3fb6a8", cost: 40_000,
+    blurb: "Synthesise the active compound, press medicines, fill cosmetics and perfume. High value, high margin.",
+    machines: ["reactor", "tablet", "filler"], goods: ["medicine", "cosmetics", "perfume"],
+    inputs: ["chemicals", "herbs", "glass", "compound"],
+  },
+  {
+    id: "auto", name: "Automotive", icon: "🚗", color: "#d64545", cost: 65_000,
+    blurb: "Body shop, engine plant and tyre plant feed a car assembly line. Each car sells for $9,000.",
+    machines: ["bodyshop", "engines", "tyreplant", "carline"], goods: ["car"],
+    inputs: ["aluminium", "glass", "body", "engine", "tyres"],
+  },
+];
+export const industry = (id: IndustryId) => INDUSTRIES.find((x) => x.id === id)!;
+/** The industry a machine belongs to. */
+export const machineIndustry = (t: MachineType) => INDUSTRIES.find((x) => x.machines.includes(t))?.id ?? "goods";
+/** The industry whose customers order a finished good (or whose suppliers sell a material), if it isn't general. */
+export const itemIndustry = (item: ItemId): IndustryId | null => INDUSTRIES.find((x) => x.goods.includes(item) || x.inputs.includes(item))?.id ?? null;
+/** Pallets of an industry's goods you must make to reach levels 2 and 3 (customers pay 5% and 12% more). */
+export const INDUSTRY_LEVELS = [25, 80];
+
+/* ------------------------------------------------------------------ stores */
+
+export type StoreKind = "discount" | "gadget" | "bikes" | "grocery" | "fashion" | "pharmacy" | "cars";
+
+export interface StoreDef {
+  kind: StoreKind;
+  name: string;
+  icon: string;
+  ind: IndustryId;
+  goods: ItemId[];
+  /** To open one in an average city (bigger cities cost more and sell more). */
+  cost: number;
+  color: string;
+}
+export const STORES: Record<StoreKind, StoreDef> = {
+  discount: { kind: "discount", name: "Discount store", icon: "🏬", ind: "goods", goods: ["helmet", "chair", "toolkit", "bicycle"], cost: 20_000, color: "#2f6fe4" },
+  gadget: { kind: "gadget", name: "Gadget store", icon: "📱", ind: "tech", goods: ["phone", "laptop", "drone"], cost: 30_000, color: "#7c5cf0" },
+  bikes: { kind: "bikes", name: "Bike shop", icon: "🚲", ind: "tech", goods: ["bicycle", "ebike", "helmet"], cost: 22_000, color: "#1f9d74" },
+  grocery: { kind: "grocery", name: "Supermarket", icon: "🛒", ind: "food", goods: ["bread", "cake", "cheese", "juice", "chocolate", "icecream", "seafood"], cost: 26_000, color: "#e0a03c" },
+  fashion: { kind: "fashion", name: "Fashion boutique", icon: "👗", ind: "fashion", goods: ["tshirt", "jeans", "sneakers", "jacket"], cost: 24_000, color: "#e66aa0" },
+  pharmacy: { kind: "pharmacy", name: "Pharmacy", icon: "💊", ind: "pharma", goods: ["medicine", "cosmetics", "perfume", "vaccine"], cost: 30_000, color: "#3fb6a8" },
+  cars: { kind: "cars", name: "Car dealership", icon: "🚗", ind: "auto", goods: ["car"], cost: 60_000, color: "#d64545" },
+};
+export const STORE_KINDS = Object.keys(STORES) as StoreKind[];
+/** Shoppers pay this much over the wholesale price; staff are paid by the hour while the store's open. */
+export const RETAIL_MARKUP = 1.5;
+export const STORE_WAGE = 22;
+export const MAX_STORES = 12;
+/** Stores trade from 08:00 to 22:00. */
+export const STORE_HOURS: [number, number] = [8, 22];
+
+/* ------------------------------------------------------------------ managers */
+
+export type ManagerId = "sales" | "supply" | "retail" | "plant";
+export interface ManagerDef {
+  id: ManagerId;
+  name: string;
+  icon: string;
+  /** Salary per game hour. */
+  wage: number;
+  body: string;
+}
+export const MANAGERS: ManagerDef[] = [
+  { id: "sales", name: "Sales manager", icon: "🤝", wage: 35, body: "Accepts the offers you have the stock for, most valuable first." },
+  { id: "supply", name: "Supply manager", icon: "📋", wage: 35, body: "Keeps every machine's materials coming: orders them before they run out (parts too, if nothing here makes them)." },
+  { id: "retail", name: "Retail manager", icon: "🏪", wage: 30, body: "Restocks every store from the warehouse when its shelves run low." },
+  { id: "plant", name: "Plant engineer", icon: "👷", wage: 30, body: "Services machines before they wear out, and calls in repairs the moment one breaks." },
+];
 
 /* ------------------------------------------------------------------ storage */
 
@@ -177,6 +424,8 @@ export const CARRIER_FEE = 0.06;
 /** The bank: credit up to half your net worth, interest per game day. */
 export const LOAN_RATE = 0.03;
 export const CHARGER = { cost: 2_500, w: 2, d: 1, name: "Charging bay", blurb: "Two chargers. Forklifts drive in when their batteries run low." };
+/** A conveyor tile: carries a pallet to the next tile (game seconds a tile), from a machine's output to the next machine's input or to an end where forklifts collect. */
+export const BELT = { cost: 300, w: 1, d: 1, secs: 20, name: "Conveyor", blurb: "Carries pallets from a machine's output into the next machine, or to an end where forklifts collect them. Forklifts can't cross it." };
 /** Battery used per tile driven and per pallet handled; charge per game second. */
 export const BATTERY_PER_TILE = 0.0011;
 export const BATTERY_PER_LIFT = 0.003;
@@ -240,6 +489,10 @@ export interface SiteDef {
   cold?: boolean;
   /** Freezer racks at the start (origins). */
   freezers?: [number, number][];
+  /** Conveyors at the start: tile and direction (0 east, 1 south toward the docks, 2 west, 3 north). */
+  belts?: [number, number, number][];
+  /** Industry licences that come with the site. */
+  industries?: IndustryId[];
   /** How busy customers are here (orders per game hour, by day). */
   demand: number;
   goodsMix: ItemId[];
@@ -318,6 +571,72 @@ export const SITES: SiteDef[] = [
     stock: { icecream: 6, seafood: 5, vaccine: 2, helmet: 3, toolkit: 3 },
     demand: 2.8, goodsMix: ["icecream", "seafood", "vaccine", "helmet", "toolkit", "chair"], charger: [24, 13], theme: "snow",
   },
+  {
+    id: "wh20", code: "WH-20", name: "Greenfield Plot", difficulty: "Normal",
+    blurb: "An empty shell on a new business park: no racks, no machines, nothing but a clean floor, three doors and the bank's goodwill. Build your own factory from scratch.",
+    cash: 150_000, rent: 120, doors: ["out", "in", "flex"], forklifts: 2, expanded: true,
+    racks: [], machines: [], stock: {},
+    demand: 2.0, goodsMix: ["helmet", "chair", "toolkit", "bicycle"], charger: [3, 13], theme: "fields",
+  },
+  {
+    id: "wh21", code: "WH-21", name: "Harvest Bakery Works", difficulty: "Normal",
+    blurb: "A food factory in the fields: a flour mill feeding the oven on a conveyor, a juice line and a dairy. Grocers want bread, cakes, cheese and juice every day.",
+    cash: 80_000, rent: 150, doors: ["out", "out", "in", "flex", "flex"], forklifts: 3, expanded: true, industries: ["food"],
+    racks: [...rackRow(3, 3, 41), ...rackRow(12, 21, 41)],
+    machines: [
+      { type: "mill", x: 4, z: 8, recipe: 0 },
+      { type: "oven", x: 8, z: 8, recipe: 0 },
+      { type: "bottler", x: 21, z: 7, recipe: 0 },
+      { type: "dairy", x: 28, z: 7, recipe: 0 },
+    ],
+    belts: [[7, 8, 0]],
+    stock: { wheat: 4, sugar: 3, milk: 3, fruit: 3, bread: 4, juice: 3, cheese: 2 },
+    demand: 2.6, goodsMix: ["bread", "juice", "cheese", "cake", "chocolate"], charger: [3, 13], theme: "fields",
+  },
+  {
+    id: "wh22", code: "WH-22", name: "Atelier Row", difficulty: "Normal",
+    blurb: "A fashion house in an old mill: a loom, a sewing line and a shoe line, with boutiques waiting for T-shirts, jeans and sneakers.",
+    cash: 85_000, rent: 160, doors: ["out", "out", "in", "flex", "flex"], forklifts: 3, expanded: true, industries: ["fashion"],
+    racks: [...rackRow(3, 3, 41)],
+    machines: [
+      { type: "loom", x: 4, z: 8, recipe: 0 },
+      { type: "sewing", x: 8, z: 8, recipe: 0 },
+      { type: "shoes", x: 20, z: 8, recipe: 0 },
+    ],
+    belts: [[7, 8, 0]],
+    stock: { cotton: 4, dye: 4, leather: 3, rubber: 3, fabric: 2, tshirt: 4, sneakers: 2 },
+    demand: 2.5, goodsMix: ["tshirt", "jeans", "sneakers", "jacket"], charger: [36, 13], theme: "works",
+  },
+  {
+    id: "wh23", code: "WH-23", name: "Clearwater Labs", difficulty: "Hard",
+    blurb: "A clean-room pharma plant by the river: a reactor feeds the tablet press and the filling line. Pharmacies and beauty brands pay well, and on time.",
+    cash: 110_000, rent: 210, doors: ["out", "out", "in", "flex"], forklifts: 3, expanded: true, industries: ["pharma"],
+    racks: [...rackRow(3, 3, 41)],
+    machines: [
+      { type: "reactor", x: 4, z: 8, recipe: 0 },
+      { type: "tablet", x: 8, z: 8, recipe: 0 },
+      { type: "filler", x: 20, z: 8, recipe: 1 },
+    ],
+    belts: [[7, 8, 0]],
+    stock: { chemicals: 3, plastic: 3, herbs: 3, glass: 4, medicine: 2, perfume: 2 },
+    demand: 2.2, goodsMix: ["medicine", "cosmetics", "perfume", "vaccine"], charger: [36, 13], theme: "river",
+  },
+  {
+    id: "wh24", code: "WH-24", name: "Motor City Plant", difficulty: "Expert",
+    blurb: "A car plant: a body shop, an engine plant and a tyre plant around a car assembly line, rail in the back and dealers who want cars yesterday. Each one sells for $9,000.",
+    cash: 240_000, rent: 380, doors: ["out", "out", "out", "in", "in", "in", "flex", "flex", "in", "flex"], forklifts: 5, expanded: true, mega: true, rail: true, industries: ["auto"],
+    racks: [...rackRow(4, 45, 75), ...rackRow(8, 45, 75), ...rackRow(12, 45, 75)],
+    machines: [
+      { type: "bodyshop", x: 4, z: 5, recipe: 0 },
+      { type: "engines", x: 4, z: 9, recipe: 0 },
+      { type: "tyreplant", x: 4, z: 12, recipe: 0 },
+      { type: "carline", x: 14, z: 7, recipe: 0 },
+    ],
+    // Bodies and engines ride conveyors into the line; forklifts bring the tyres and glass.
+    belts: [[9, 5, 0], [10, 5, 0], [11, 5, 0], [12, 5, 0], [13, 5, 1], [13, 6, 1], [13, 7, 0], [9, 9, 0], [10, 9, 0], [11, 9, 0], [12, 9, 0], [13, 9, 0]],
+    stock: { steel: 4, aluminium: 6, copper: 3, rubber: 4, glass: 4, body: 1, engine: 1, tyres: 2, car: 1 },
+    demand: 1.8, goodsMix: ["car", "ebike", "bicycle"], charger: [41, 13], theme: "works",
+  },
 ];
 export const siteDef = (id: string) => SITES.find((s) => s.id === id) ?? SITES[0];
 
@@ -355,6 +674,10 @@ export const SUPPLIERS: Supplier[] = [
   { name: "Timberline", items: ["wood"], lead: [30, 60], factor: 1 },
   { name: "Circuitra", items: ["electronics"], lead: [60, 110], factor: 1 },
   { name: "Arctic Freight", items: FROZEN, lead: [50, 90], factor: 1 },
+  { name: "Harvest Farms", items: ["wheat", "milk", "sugar", "fruit", "cocoa"], lead: [30, 70], factor: 1 },
+  { name: "Cotton & Hide Co.", items: ["cotton", "dye", "leather"], lead: [40, 80], factor: 1 },
+  { name: "Alutech Metals", items: ["aluminium", "glass"], lead: [50, 100], factor: 1 },
+  { name: "Chemix Labs", items: ["chemicals", "herbs"], lead: [50, 100], factor: 1 },
   { name: "Wholesale Direct", items: [...PARTS, ...GOODS], lead: [50, 100], factor: 1 },
 ];
 export const supplierFor = (item: ItemId) => SUPPLIERS.find((s) => s.items.includes(item)) ?? SUPPLIERS[SUPPLIERS.length - 1];
@@ -375,32 +698,44 @@ export const CUSTOMERS: Customer[] = [
   { name: "Voltway E-Bikes", likes: ["ebike", "bicycle"] },
   { name: "SkyLens Drones", likes: ["drone"] },
   { name: "Nimbus Computers", likes: ["laptop", "phone"] },
-  { name: "MegaMart", likes: ["chair", "toolkit", "laptop", "drone", "ebike", "icecream"] },
+  { name: "MegaMart", likes: ["chair", "toolkit", "laptop", "drone", "ebike", "icecream", "bread", "juice", "tshirt", "sneakers"] },
   { name: "FreshCo Foods", likes: ["icecream", "seafood"] },
   { name: "MedLine Pharma", likes: ["vaccine"] },
-  { name: "Harbour Bistro Group", likes: ["seafood", "icecream"] },
+  { name: "Harbour Bistro Group", likes: ["seafood", "icecream", "cheese", "bread"] },
+  { name: "GreenGrocer Markets", likes: ["bread", "cheese", "juice", "cake"] },
+  { name: "CityBake Cafés", likes: ["bread", "cake", "chocolate"] },
+  { name: "Sweet Tooth Co.", likes: ["chocolate", "cake", "icecream"] },
+  { name: "Urban Threads", likes: ["tshirt", "jeans", "jacket"] },
+  { name: "StrideRun Sports", likes: ["sneakers", "tshirt", "bicycle"] },
+  { name: "Northway Motors", likes: ["car"] },
+  { name: "Fleetline Rentals", likes: ["car", "ebike"] },
+  { name: "CarePlus Pharmacies", likes: ["medicine", "cosmetics", "vaccine"] },
+  { name: "Glow Beauty", likes: ["cosmetics", "perfume"] },
 ];
 
 export interface City {
   name: string;
   /** Transit time in game minutes. */
   transit: number;
+  /** How many shoppers (1 is an average city): stores sell more, and cost more, in big ones. */
+  pop: number;
 }
 export const CITIES: City[] = [
-  { name: "Philadelphia", transit: 70 },
-  { name: "Baltimore", transit: 110 },
-  { name: "Newark", transit: 90 },
-  { name: "Boston", transit: 200 },
-  { name: "Pittsburgh", transit: 210 },
-  { name: "Hartford", transit: 150 },
-  { name: "Richmond", transit: 180 },
-  { name: "Albany", transit: 170 },
-  { name: "Buffalo", transit: 260 },
-  { name: "Cleveland", transit: 280 },
-  { name: "New York", transit: 100 },
-  { name: "Washington", transit: 150 },
-  { name: "Providence", transit: 170 },
+  { name: "Philadelphia", transit: 70, pop: 1.25 },
+  { name: "Baltimore", transit: 110, pop: 1 },
+  { name: "Newark", transit: 90, pop: 0.9 },
+  { name: "Boston", transit: 200, pop: 1.25 },
+  { name: "Pittsburgh", transit: 210, pop: 0.95 },
+  { name: "Hartford", transit: 150, pop: 0.75 },
+  { name: "Richmond", transit: 180, pop: 0.85 },
+  { name: "Albany", transit: 170, pop: 0.7 },
+  { name: "Buffalo", transit: 260, pop: 0.8 },
+  { name: "Cleveland", transit: 280, pop: 0.9 },
+  { name: "New York", transit: 100, pop: 1.6 },
+  { name: "Washington", transit: 150, pop: 1.15 },
+  { name: "Providence", transit: 170, pop: 0.75 },
 ];
+export const city = (name: string) => CITIES.find((c) => c.name === name) ?? CITIES[0];
 
 /* ------------------------------------------------------------------ upgrades */
 
@@ -408,7 +743,8 @@ export type UpgradeId =
   | "fast1" | "fast2" | "levellers" | "crew" | "lean" | "slotting" | "highbay" | "scanner"
   | "express" | "buyer" | "door" | "expand" | "sales" | "night"
   | "mega" | "rail" | "agv" | "solar" | "wms" | "robotics" | "quality" | "insurance" | "training" | "crossdock" | "brand" | "premium" | "fastcharge"
-  | "cold" | "depot" | "bank" | "academy" | "care" | "vip" | "reefer" | "autopilot";
+  | "cold" | "depot" | "bank" | "academy" | "care" | "vip" | "reefer" | "autopilot"
+  | "pos" | "fastbelt";
 
 export interface Upgrade {
   id: UpgradeId;
@@ -455,6 +791,8 @@ export const UPGRADES: Upgrade[] = [
   { id: "care", name: "Customer care", cost: 8_000, icon: "💬", body: "A team for your accounts: customers become loyal twice as fast." },
   { id: "vip", name: "VIP accounts", cost: 12_000, icon: "👑", needs: "care", body: "More VIP orders: half again the price, tight deadlines, big reputation." },
   { id: "autopilot", name: "Autopilot purchasing", cost: 10_000, icon: "🧠", needs: "buyer", body: "Auto-replenish orders by rail when it's cheaper, and never lets cash fall below $5,000." },
+  { id: "pos", name: "Point of sale", cost: 9_000, icon: "🧾", body: "Fast tills, loyalty cards and self-checkout: every store sells 15% more." },
+  { id: "fastbelt", name: "Fast conveyors", cost: 8_000, icon: "⏩", body: "Conveyor belts run twice as fast." },
 ];
 export const upgrade = (id: UpgradeId) => UPGRADES.find((u) => u.id === id)!;
 
@@ -499,11 +837,22 @@ export const GOALS: GoalDef[] = [
   { id: "vipship", name: "Red carpet", body: "Deliver a VIP order on time.", reward: 5_000 },
   { id: "mk2", name: "Mark II", body: "Upgrade a machine to Mk II.", reward: 3_000 },
   { id: "veteran", name: "Veteran driver", body: "Get a forklift driver to level 5.", reward: 4_000 },
+  { id: "licence", name: "Diversified", body: "Get a licence for a new industry.", reward: 4_000 },
+  { id: "bread", name: "Daily bread", body: "Bake a pallet of bread.", reward: 2_500 },
+  { id: "runway", name: "Runway ready", body: "Make a pallet of sneakers or leather jackets.", reward: 5_000 },
+  { id: "pharma", name: "Prescribed", body: "Make a pallet of medicines.", reward: 7_000 },
+  { id: "car", name: "Off the line", body: "Build a car.", reward: 12_000 },
+  { id: "belt", name: "On the belt", body: "Carry a pallet into a machine on a conveyor.", reward: 2_500 },
+  { id: "store1", name: "Open for business", body: "Open your first store.", reward: 3_000 },
+  { id: "retail10k", name: "Shopkeeper", body: "Sell $10,000 in your stores.", reward: 5_000 },
+  { id: "stores5", name: "High-street chain", body: "Run five stores at once.", reward: 12_000 },
+  { id: "manager", name: "Delegation", body: "Hire a manager.", reward: 2_000 },
+  { id: "allind", name: "Conglomerate", body: "Hold every industry licence.", reward: 25_000 },
 ];
 
 /* ------------------------------------------------------------------ daily missions */
 
-export type MissionKind = "ship" | "unload" | "make" | "revenue" | "ontime" | "moves";
+export type MissionKind = "ship" | "unload" | "make" | "revenue" | "ontime" | "moves" | "retail";
 export interface MissionDef {
   kind: MissionKind;
   /** Name with {n} for the target. */
@@ -520,6 +869,7 @@ export const MISSIONS: MissionDef[] = [
   { kind: "revenue", icon: "💵", name: "Take ${n} in revenue today", target: (d) => 15_000 + d * 5_000, reward: (d) => 3_000 + d * 600 },
   { kind: "ontime", icon: "⏱", name: "Deliver {n} orders on time today", target: (d) => 2 + d, reward: (d) => 2_500 + d * 400 },
   { kind: "moves", icon: "🚜", name: "Move {n} pallets today", target: (d) => 40 + d * 15, reward: (d) => 1_500 + d * 300 },
+  { kind: "retail", icon: "🏪", name: "Sell ${n} in your stores today", target: (d) => 2_500 + d * 1_500, reward: (d) => 2_500 + d * 500 },
 ];
 
 /* ------------------------------------------------------------------ events */
