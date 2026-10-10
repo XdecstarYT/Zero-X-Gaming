@@ -4,14 +4,24 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { PoweredBy } from "@/nextx/PoweredBy";
 import { GlassDefs, canRefract, trackSheen } from "@/nextx/glass";
 import {
-  CARRIERS, CHARGER, EVENTS, FORKLIFT_COST, GOALS, HIGH_TECH, ITEMS, MACHINES, MACHINE_TYPES, MAX_FORKLIFTS, RACK, FLOOR, RAIL_CAP, RAW, PARTS, GOODS, SEASON_DAYS, SPEEDS, UPGRADES,
+  CARRIERS, CARRIER_FEE, CHARGER, EVENTS, FORKLIFT_COST, FREEZER, FROZEN, GOALS, HIGH_TECH, ITEMS, MACHINES, MACHINE_TYPES, MAX_FORKLIFTS, MAX_OWN_TRUCKS, OWN_TRUCK_COST, OWN_TRUCK_WAGE,
+  RACK, FLOOR, RAIL_CAP, RAW, PARTS, GOODS, SEASON_DAYS, SPEEDS, THAW_SECS, UPGRADES,
   buyPrice, siteDef, supplierFor, type DoorType, type ItemId,
 } from "../data";
-import type { Game, Sheet } from "../game";
+import { TIPS, type Game, type Sheet } from "../game";
 import * as sim from "../sim";
-import type { Focus, Order, State } from "../sim";
+import type { Focus, Order, Pallet, State } from "../sim";
 
 const money = (n: number) => `${n < 0 ? "−" : ""}$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
+/** Short money for tight spots: $950, $12.4k, $1.25M. */
+const short = (n: number) => {
+  const a = Math.abs(n);
+  const trim = (x: string) => (x.includes(".") ? x.replace(/0+$/, "").replace(/\.$/, "") : x);
+  const v = a >= 1e6 ? `$${trim((a / 1e6).toFixed(a >= 1e7 ? 1 : 2))}M` : a >= 1e4 ? `$${trim((a / 1e3).toFixed(a >= 1e5 ? 0 : 1))}k` : `$${Math.round(a).toLocaleString("en-US")}`;
+  return `${n < 0 ? "−" : ""}${v}`;
+};
+/** Cash on the top bar: in full up to a million. */
+const cashText = (n: number) => (Math.abs(n) >= 1e6 ? short(n) : money(n));
 const mins = (secs: number) => {
   const m = Math.max(0, Math.round(secs / 60));
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m} min`;
@@ -89,6 +99,10 @@ export function App({ game: g }: { game: Game }) {
       <canvas ref={canvas} className="wf-canvas" aria-label="The warehouse in 3D: drag to move, pinch or scroll to zoom, tap to inspect" tabIndex={0} />
       {g.screen === "title" || !s ? (
         <Title g={g} />
+      ) : g.photo ? (
+        <button className="wf-btn wf-photo-exit" onClick={() => g.togglePhoto()} data-testid="wf-photo-exit">
+          ✕ Exit photo mode
+        </button>
       ) : (
         <>
           <TopBar g={g} s={s} />
@@ -99,6 +113,8 @@ export function App({ game: g }: { game: Game }) {
           <Table g={g} s={s} />
           {g.tool ? <Toolbar g={g} /> : g.sheet && <Sheets g={g} s={s} sheet={g.sheet} />}
           <Dock g={g} s={s} />
+          {s.report && !g.sheet && !g.tool && <DayReport g={g} s={s} />}
+          {!s.report && !g.sheet && !g.sel && !g.tool && !s.tipsOff && s.tip < TIPS.length && <TipCard g={g} s={s} />}
           {(s.bankrupt || (s.seasonOver && !s.goals.__seen)) && <Over g={g} s={s} />}
         </>
       )}
@@ -178,6 +194,7 @@ function TopBar({ g, s }: { g: Game; s: State }) {
       <div className="wf-brand">
         <Mark /> <span>WareForge</span>
       </div>
+      <CashPill g={g} s={s} />
       <Search g={g} s={s} />
       <div className="wf-spacer" />
       <div className="wf-chip" title={`${def.code} ${def.name}`}>
@@ -192,17 +209,26 @@ function TopBar({ g, s }: { g: Game; s: State }) {
         </div>
       </div>
       <div className={`wf-live${g.hold ? " held" : ""}`} data-testid="wf-clock">
-        <i /> <span className="num">Day {sim.day(s.time)} · {sim.clock(s.time)}</span>
+        <i />{" "}
+        <span className="num">
+          <span className="wf-long">Day </span>
+          <span className="wf-short">D</span>
+          {sim.day(s.time)}
+          <span className="wf-long"> ·</span> {sim.clock(s.time)}
+        </span>
       </div>
       <div className="wf-speeds" role="group" aria-label="Speed">
         <button className={g.hold ? "on" : ""} onClick={() => g.togglePause()} aria-label={g.hold ? "Resume" : "Pause"} data-testid="wf-pause">
           {g.hold ? "▶" : "❚❚"}
         </button>
         {SPEEDS.map((v, i) => (
-          <button key={v} className={!g.hold && g.speed === v ? "on" : ""} onClick={() => g.setSpeed(i)} aria-label={`${v} times speed`} data-testid={`wf-speed-${v}`}>
+          <button key={v} className={`sp${!g.hold && g.speed === v ? " on" : ""}`} onClick={() => g.setSpeed(i)} aria-label={`${v} times speed`} data-testid={`wf-speed-${v}`}>
             {v}×
           </button>
         ))}
+        <button className={`cyc${!g.hold ? " on" : ""}`} onClick={() => g.cycleSpeed()} aria-label={`Speed ${g.speed} times: tap for faster`} data-testid="wf-speed-cycle">
+          {g.speed}×
+        </button>
       </div>
       <button
         className={`wf-btn icon small wf-kpitoggle ${g.prefs.kpis !== false ? "on" : ""}`}
@@ -224,6 +250,42 @@ function TopBar({ g, s }: { g: Game; s: State }) {
         </div>
       </div>
     </header>
+  );
+}
+
+/** The money, always on show: tap it for the bank. It flashes and pops "+$1,240" as money comes and goes. */
+function CashPill({ g, s }: { g: Game; s: State }) {
+  const trend = sim.cashTrend(s);
+  const [base] = useState(() => (s.fx.length ? s.fx[s.fx.length - 1].id : 0));
+  const pops = s.fx.filter((f) => f.id > base && f.amount !== 0).slice(-3);
+  const last = pops[pops.length - 1];
+  const tone = s.cash < 0 ? " neg" : s.cash < 5_000 ? " low" : "";
+  return (
+    <button
+      className={`wf-cash${tone}${g.sheet === "bank" ? " on" : ""}`}
+      onClick={() => g.open("bank")}
+      data-testid="wf-cash"
+      aria-label={`Cash ${money(s.cash)}${s.loan ? `, owing ${money(s.loan)}` : ""}. Open the bank`}
+      title="Cash: tap for the bank"
+    >
+      <i aria-hidden="true">$</i>
+      <span key={last?.id ?? 0} className={`v num${last ? (last.amount > 0 ? " flash up" : " flash down") : ""}`} data-testid="wf-cash-value">
+        {cashText(s.cash)}
+      </span>
+      {trend !== 0 && (
+        <small className={`t num ${trend > 0 ? "wf-up" : "wf-down"}`} aria-hidden="true">
+          {trend > 0 ? "▲" : "▼"} {short(Math.abs(trend))}
+        </small>
+      )}
+      <span className="wf-pops" aria-hidden="true">
+        {pops.map((f) => (
+          <span key={f.id} className={f.amount > 0 ? "up" : "down"} style={{ top: 6 + (f.id % 3) * 24 }}>
+            {f.amount > 0 ? "+" : "−"}
+            {money(Math.abs(f.amount)).replace("−", "")} <small>{f.text}</small>
+          </span>
+        ))}
+      </span>
+    </button>
   );
 }
 
@@ -306,10 +368,10 @@ function Kpis({ s }: { s: State }) {
       </div>
       <div className="wf-kpi wf-glass">
         <div className="k">
-          <i aria-hidden="true">$</i> <span>Cash</span>
+          <i aria-hidden="true">📈</i> <span>Net worth</span>
         </div>
-        <div className={`v num ${k.cash < 0 ? "wf-down" : ""}`}>{money(k.cash)}</div>
-        <div className="d">worth {money(k.worth)}</div>
+        <div className={`v num ${k.worth < 0 ? "wf-down" : ""}`}>{short(k.worth)}</div>
+        <div className="d">{s.loan ? `owes ${money(s.loan)}` : "no debt"}</div>
       </div>
       <div className="wf-kpi wf-glass">
         <div className="k">
@@ -330,7 +392,7 @@ function Inspector({ g, s, f }: { g: Game; s: State; f: Focus }) {
   const close = () => g.select(null);
   let body: React.ReactNode = null;
   if (f.k === "pallet") body = <PalletInfo g={g} s={s} id={f.id} />;
-  else if (f.k === "fork") body = <ForkInfo s={s} id={f.id} />;
+  else if (f.k === "fork") body = <ForkInfo g={g} s={s} id={f.id} />;
   else if (f.k === "truck") body = <TruckInfo g={g} s={s} id={f.id} />;
   else if (f.k === "door") body = <DoorInfo g={g} s={s} i={f.id} />;
   else if (f.k === "struct") body = <StructInfo g={g} s={s} id={f.id} />;
@@ -356,7 +418,9 @@ function slotLabel(s: State, slotId: number) {
   const t = s.structs[sl.owner];
   if (sl.kind === "in" || sl.kind === "out") return `${MACHINES[t.m!.type].name} ${sl.kind === "in" ? "input" : "output"}`;
   const lv = Math.round(sl.y / sim.LEVEL_H);
-  return `${t.kind === "rack" ? `Rack R-${String(t.id + 1).padStart(2, "0")}` : `Block F-${String(t.id + 1).padStart(2, "0")}`}${t.kind === "rack" ? ` · level ${lv + 1}` : ""}`;
+  const n = String(t.id + 1).padStart(2, "0");
+  if (t.kind === "freezer") return `Freezer FZ-${n} · level ${lv + 1}`;
+  return `${t.kind === "rack" ? `Rack R-${n}` : `Block F-${n}`}${t.kind === "rack" ? ` · level ${lv + 1}` : ""}`;
 }
 
 function PalletInfo({ g, s, id }: { g: Game; s: State; id: number }) {
@@ -374,7 +438,9 @@ function PalletInfo({ g, s, id }: { g: Game; s: State; id: number }) {
         <span className="wf-pill">{status}</span>
         <span className="wf-pill grey">{siteDef(s.site).code}</span>
         {o && <span className="wf-pill violet">#{o.code}</span>}
+        {it.frozen && <span className="wf-pill cold">❄ Frozen</span>}
       </div>
+      {it.frozen && <ColdInfo s={s} p={p} />}
       <div className="wf-kv">
         <div>
           <small>Location</small>
@@ -412,9 +478,29 @@ function PalletInfo({ g, s, id }: { g: Game; s: State; id: number }) {
   );
 }
 
-function ForkInfo({ s, id }: { s: State; id: number }) {
+/** How long a frozen pallet has left out of the cold. */
+function ColdInfo({ s, p }: { s: State; p: Pallet }) {
+  const warm = p.warm ?? 0;
+  const sl = p.loc === "slot" ? s.slots[p.ref] : null;
+  const rate = sl?.kind === "stage" && sim.up(s, "reefer") ? 1 / 3 : 1;
+  const pct = Math.min(1, warm / THAW_SECS);
+  return (
+    <>
+      <div className="wf-section">Cold chain</div>
+      <div className="wf-bar" role="img" aria-label={`Warmed ${Math.round(pct * 100)}%`}>
+        <i style={{ width: `${Math.max(3, pct * 100)}%`, background: pct > 0.66 ? "linear-gradient(90deg,#f06c70,#d83d43)" : pct > 0.33 ? "linear-gradient(90deg,#f5a524,#e08a00)" : "linear-gradient(90deg,#8fd3ff,#3d8bff)" }} />
+      </div>
+      <small className="dim">
+        {sl?.cold ? (warm > 0 ? "Back in the freezer: cooling down" : "In the freezer at −20 °C") : !sl ? "On the move: it keeps cold in transit" : `Out of the cold: spoils in ${mins((THAW_SECS - warm) / rate)}`}
+      </small>
+    </>
+  );
+}
+
+function ForkInfo({ g, s, id }: { g: Game; s: State; id: number }) {
   const f = s.forks[id];
   if (!f) return null;
+  const lv = sim.forkLevel(s, f);
   const j = f.job;
   const p = j ? s.pallets[j.pallet] : null;
   const verb: Record<string, string> = { charge: "Charging", load: "Loading a truck", unload: "Unloading a truck", output: "Clearing a machine", pick: "Picking an order", feed: "Feeding a machine", putaway: "Putting away" };
@@ -424,6 +510,9 @@ function ForkInfo({ s, id }: { s: State; id: number }) {
       <div className="title">{f.name}</div>
       <div className="wf-chips">
         <span className={`wf-pill ${j ? "good" : "grey"}`}>{j ? verb[j.kind] : f.phase === "charge" ? "Charging" : f.phase === "park" ? "Parking" : "Idle"}</span>
+        <span className="wf-pill violet" title="Drivers get quicker with experience: 3% a level">
+          ★ Level {lv}
+        </span>
       </div>
       <div className="wf-kv">
         <div>
@@ -447,7 +536,17 @@ function ForkInfo({ s, id }: { s: State; id: number }) {
       <div className="wf-bar">
         <i style={{ width: `${f.battery * 100}%`, background: f.battery < 0.22 ? "linear-gradient(90deg,#f06c70,#d83d43)" : "linear-gradient(90deg,#2fc488,#159a63)" }} />
       </div>
+      <FollowButton g={g} f={{ k: "fork", id }} />
     </>
+  );
+}
+
+function FollowButton({ g, f }: { g: Game; f: Focus }) {
+  const on = g.following?.k === f.k && g.following.id === f.id;
+  return (
+    <button className={`wf-btn small wide ${on ? "on" : ""}`} style={{ marginTop: 10 }} onClick={() => g.toggleFollow(f)} aria-pressed={on} data-testid="wf-follow">
+      {on ? "📍 Following: tap to stop" : "📍 Follow with the camera"}
+    </button>
   );
 }
 
@@ -465,6 +564,8 @@ function TruckInfo({ g, s, id }: { g: Game; s: State; id: number }) {
       <div className="wf-chips">
         <span className={`wf-pill ${t.state === "docked" ? "good" : t.state === "queued" ? "warn" : ""}`}>{STATE_LABEL[t.state]}</span>
         {t.door >= 0 && <span className="wf-pill grey">{t.rail ? `Rail ${t.door + 1}` : sim.doorName(s, t.door)}</span>}
+        {t.own !== undefined && <span className="wf-pill good">Your fleet</span>}
+        {o?.vip && <span className="wf-pill gold">⭐ VIP</span>}
       </div>
       <div className="wf-kv">
         <div>
@@ -492,6 +593,7 @@ function TruckInfo({ g, s, id }: { g: Game; s: State; id: number }) {
           Open shipment #{o.code}
         </button>
       )}
+      <FollowButton g={g} f={{ k: "truck", id }} />
     </>
   );
 }
@@ -571,6 +673,7 @@ function StructInfo({ g, s, id }: { g: Game; s: State; id: number }) {
         <div className="wf-chips">
           <span className={`wf-pill ${cls}`}>{label}</span>
           <span className="wf-pill grey">Made {m.made}</span>
+          {m.mk && <span className="wf-pill violet">Mk II</span>}
         </div>
         {m.state === "running" && (
           <div className="wf-bar" style={{ marginTop: 10 }}>
@@ -613,6 +716,11 @@ function StructInfo({ g, s, id }: { g: Game; s: State; id: number }) {
           <button className="wf-btn small" onClick={() => g.toggleMachine(t.id)}>
             {m.on ? "Switch off" : "Switch on"}
           </button>
+          {!m.mk && (
+            <button className="wf-btn small primary" disabled={s.cash < sim.mk2Cost(t)} onClick={() => g.upgradeMachine(t.id)} data-testid="wf-mk2" title="A quarter faster, and wears 20% slower">
+              ⬆ Mk II · {money(sim.mk2Cost(t))}
+            </button>
+          )}
           <button className="wf-btn small" onClick={() => g.removeStruct(t.id)}>
             Sell
           </button>
@@ -648,15 +756,16 @@ function StructInfo({ g, s, id }: { g: Game; s: State; id: number }) {
   }
   return (
     <>
-      <div className="wf-eyebrow">{t.kind === "rack" ? "Pallet rack" : "Floor block"}</div>
+      <div className="wf-eyebrow">{t.kind === "rack" ? "Pallet rack" : t.kind === "freezer" ? "Freezer rack" : "Floor block"}</div>
       <div className="title">
-        {t.kind === "rack" ? "R" : "F"}-{String(t.id + 1).padStart(2, "0")}
+        {t.kind === "rack" ? "R" : t.kind === "freezer" ? "FZ" : "F"}-{String(t.id + 1).padStart(2, "0")}
       </div>
       <div className="wf-chips">
         <span className="wf-pill">
           {pallets.length}/{t.slots.length} full
         </span>
-        {t.kind === "rack" && <span className="wf-pill grey">Picked from the {t.rot ? "north" : "south"}</span>}
+        {t.kind === "freezer" && <span className="wf-pill cold">❄ −20 °C</span>}
+        {(t.kind === "rack" || t.kind === "freezer") && <span className="wf-pill grey">Picked from the {t.rot ? "north" : "south"}</span>}
       </div>
       <div className="wf-section">Pallets</div>
       {chips}
@@ -867,14 +976,14 @@ function Dock({ g, s }: { g: Game; s: State }) {
 
 function Toolbar({ g }: { g: Game }) {
   const t = g.tool!;
-  const name = t.kind === "remove" ? "Remove: tap a rack or machine" : t.kind === "machine" ? MACHINES[t.type!].name : t.kind === "rack" ? "Pallet rack" : "Floor block";
+  const name = t.kind === "remove" ? "Remove: tap a rack or machine" : t.kind === "machine" ? MACHINES[t.type!].name : t.kind === "rack" ? "Pallet rack" : t.kind === "freezer" ? FREEZER.name : t.kind === "charger" ? CHARGER.name : "Floor block";
   return (
     <div className="wf-toolbar wf-glass wf-capsule" data-testid="wf-toolbar">
       <span>{name}</span>
       <span className="dim" style={{ fontWeight: 600 }}>
         {t.kind !== "remove" ? "tap the floor to build" : ""}
       </span>
-      {t.kind === "rack" && (
+      {(t.kind === "rack" || t.kind === "freezer") && (
         <button className="wf-btn small" onClick={() => g.rotateTool()}>
           ↻ Face {t.rot ? "north" : "south"}
         </button>
@@ -889,7 +998,7 @@ function Toolbar({ g }: { g: Game }) {
 /* ====================================================================== sheets */
 
 function Sheets({ g, s, sheet }: { g: Game; s: State; sheet: Exclude<Sheet, null> }) {
-  const titles: Record<string, string> = { site: "Site", orders: "Orders", buy: "Buy stock", build: "Build", fleet: "Fleet & docks", upgrades: "Upgrades", goals: "Goals", stats: "The books", menu: "Menu", alerts: "Alerts", help: "How to play" };
+  const titles: Record<string, string> = { site: "Site", orders: "Orders", buy: "Buy stock", build: "Build", fleet: "Fleet & docks", upgrades: "Upgrades", goals: "Goals & missions", stats: "The books", menu: "Menu", alerts: "Alerts", help: "How to play", bank: "Cash & bank" };
   return (
     <section className="wf-sheet wf-glass" aria-label={titles[sheet]} data-testid={`wf-sheet-${sheet}`}>
       <header>
@@ -915,6 +1024,7 @@ function Sheets({ g, s, sheet }: { g: Game; s: State; sheet: Exclude<Sheet, null
         {sheet === "stats" && <StatsSheet s={s} />}
         {sheet === "menu" && <MenuSheet g={g} s={s} />}
         {sheet === "alerts" && <AlertsSheet g={g} s={s} />}
+        {sheet === "bank" && <BankSheet g={g} s={s} />}
       </div>
     </section>
   );
@@ -975,19 +1085,26 @@ function OrdersSheet({ g, s }: { g: Game; s: State }) {
       <div className="wf-list">
         {offers.map((o) => {
           const can = o.lines.every((l) => sim.availableCount(s, l.item) >= l.n);
+          const tier = sim.loyalty(s, o.customer);
           return (
-            <div key={o.id} className="wf-item" data-testid="wf-offer">
+            <div key={o.id} className={`wf-item${o.vip ? " vip" : ""}`} data-testid="wf-offer">
               <div className="wf-between">
                 <h4>
-                  {o.customer} <span className="muted" style={{ fontWeight: 600 }}>· {o.city}</span>
+                  {o.vip && <span className="wf-pill gold">⭐ VIP</span>} {o.customer} <span className="muted" style={{ fontWeight: 600 }}>· {o.city}</span>
                 </h4>
                 <b>{money(o.value)}</b>
               </div>
+              {tier > 0 && (
+                <span className={`wf-pill tier${tier}`} style={{ marginTop: 4 }}>
+                  {sim.LOYALTY[tier]} customer · pays {[0, 3, 6, 10][tier]}% more
+                </span>
+              )}
               <p>
                 {o.lines.map((l) => `${l.n} × ${ITEMS[l.item].icon} ${ITEMS[l.item].name}`).join(" · ")}
                 <br />
                 Deliver within {mins(o.due - s.time)} ({mins(o.transit * 60)} on the road){o.rush ? " · RUSH +25%" : ""}
                 {o.lines.some((l) => HIGH_TECH.includes(l.item)) ? " · high tech" : ""}
+                {o.lines.some((l) => FROZEN.includes(l.item)) ? " · ❄ frozen" : ""}
               </p>
               <div className="wf-between" style={{ marginTop: 8 }}>
                 <span className={`wf-pill ${can ? "good" : "warn"}`}>{can ? "In stock" : "Need stock"}</span>
@@ -1017,6 +1134,7 @@ function OrdersSheet({ g, s }: { g: Game; s: State }) {
         ))}
         {!active.length && <p className="dim" style={{ fontSize: 13 }}>Nothing on the go.</p>}
       </div>
+      <Customers s={s} />
       {done.length > 0 && (
         <>
           <div className="wf-section">Recent</div>
@@ -1032,6 +1150,36 @@ function OrdersSheet({ g, s }: { g: Game; s: State }) {
           </div>
         </>
       )}
+    </>
+  );
+}
+
+/** Who you deliver to, and how loyal they are (on-time deliveries make them Bronze, Silver, then Gold). */
+function Customers({ s }: { s: State }) {
+  const rows = Object.entries(s.customers)
+    .map(([name, c]) => ({ name, ...c, tier: sim.loyalty(s, name) }))
+    .sort((a, b) => b.tier - a.tier || b.onTime - a.onTime)
+    .slice(0, 8);
+  if (!rows.length) return null;
+  return (
+    <>
+      <div className="wf-section">Customers</div>
+      <div className="wf-list" data-testid="wf-customers">
+        {rows.map((c) => (
+          <div key={c.name} className="wf-between" style={{ fontSize: 12.5 }}>
+            <span>
+              <b>{c.name}</b>{" "}
+              <span className="dim">
+                {c.onTime} on time{c.late ? ` · ${c.late} late` : ""}
+              </span>
+            </span>
+            <span className={`wf-pill ${c.tier ? `tier${c.tier}` : "grey"}`}>{c.tier ? sim.LOYALTY[c.tier] : "New"}</span>
+          </div>
+        ))}
+      </div>
+      <p className="dim" style={{ fontSize: 11.5, margin: "6px 0 0" }}>
+        Deliver on time to make customers loyal: Bronze pays 3% more, Silver 6% and orders more, Gold 10%.
+      </p>
     </>
   );
 }
@@ -1111,7 +1259,8 @@ function BuySheet({ g, s }: { g: Game; s: State }) {
       <p className="dim" style={{ fontSize: 12, margin: "6px 0 0" }}>
         Plus {rail ? "$60 freight a train" : "$120 freight a truck"}. Prices move with the market every day. Auto keeps four pallets in stock and reorders when you fall below.
       </p>
-      {group("Finished goods (wholesale)", GOODS)}
+      {group("Finished goods (wholesale)", GOODS.filter((id) => !FROZEN.includes(id)))}
+      {sim.up(s, "cold") && group("Frozen (keep in freezer racks)", FROZEN)}
       {group("Raw materials", RAW)}
       {group("Parts", PARTS)}
     </>
@@ -1138,6 +1287,14 @@ function BuildSheet({ g, s }: { g: Game; s: State }) {
           <small>{FLOOR.blurb}</small>
           <b>{money(FLOOR.cost)}</b>
         </button>
+        {sim.up(s, "cold") && (
+          <button className="wf-tile" onClick={() => g.setTool({ kind: "freezer", rot: 0 })} disabled={s.cash < FREEZER.cost} data-testid="wf-build-freezer">
+            <span className="big">❄️</span>
+            <b>{FREEZER.name}</b>
+            <small>{FREEZER.blurb}</small>
+            <b>{money(FREEZER.cost)}</b>
+          </button>
+        )}
         <button className="wf-tile" onClick={() => g.setTool({ kind: "charger", rot: 0 })} disabled={s.cash < CHARGER.cost} data-testid="wf-build-charger">
           <span className="big">🔌</span>
           <b>{CHARGER.name}</b>
@@ -1193,11 +1350,17 @@ function FleetSheet({ g, s }: { g: Game; s: State }) {
         {s.forks.map((f) => (
           <button key={f.id} className="wf-trow" onClick={() => g.select({ k: "fork", id: f.id }, true)}>
             <b>{f.name}</b>
-            <span>{f.job ? f.job.kind : "Idle"}</span>
-            <span className={`wf-pill ${f.job ? "good" : "grey"}`}>{f.trips} trips</span>
+            <span>
+              {f.job ? f.job.kind : "Idle"}
+              <span className="sub">
+                ★ Level {sim.forkLevel(s, f)} · {f.trips} trips
+              </span>
+            </span>
+            <span className={`wf-pill ${f.job ? "good" : "grey"}`}>{Math.round(f.battery * 100)}%</span>
           </button>
         ))}
       </div>
+      <OwnFleet g={g} s={s} />
       <div className="wf-section">Dock doors</div>
       <div className="wf-list">
         {s.doors.map((d) => (
@@ -1213,6 +1376,49 @@ function FleetSheet({ g, s }: { g: Game; s: State }) {
           </div>
         ))}
       </div>
+    </>
+  );
+}
+
+/** Your own trucks: no carrier's cut on the shipments they carry. */
+function OwnFleet({ g, s }: { g: Game; s: State }) {
+  const depot = sim.up(s, "depot");
+  return (
+    <>
+      <div className="wf-section">Your trucks</div>
+      {!depot ? (
+        <p className="dim" style={{ fontSize: 12.5, margin: 0 }}>
+          Carriers keep {Math.round(CARRIER_FEE * 100)}% of every shipment. Build the 🚛 Transport depot (Upgrades) to run your own trucks and keep it.
+        </p>
+      ) : (
+        <>
+          <div className="wf-between">
+            <div className="dim" style={{ fontSize: 12 }}>
+              {s.ownTrucks.length}/{MAX_OWN_TRUCKS} trucks · ${OWN_TRUCK_WAGE} an hour each with a driver
+            </div>
+            <button className="wf-btn small primary" onClick={() => g.buyOwnTruck()} disabled={s.cash < OWN_TRUCK_COST || s.ownTrucks.length >= MAX_OWN_TRUCKS} data-testid="wf-buy-truck">
+              Buy truck · {money(OWN_TRUCK_COST)}
+            </button>
+          </div>
+          <div className="wf-list" style={{ marginTop: 8 }}>
+            {s.ownTrucks.map((t) => {
+              const out = t.free > s.time;
+              const truck = s.trucks.find((x) => x.own === t.id && x.state !== "gone");
+              return (
+                <button key={t.id} className="wf-trow" onClick={() => truck && g.select({ k: "truck", id: truck.id }, true)} disabled={!truck}>
+                  <b>{t.name}</b>
+                  <span>
+                    {truck ? STATE_LABEL[truck.state] : out ? (Number.isFinite(t.free) ? `Driving back · ${mins(t.free - s.time)}` : "Out on a job") : "At the depot"}
+                    <span className="sub">{t.trips} trips</span>
+                  </span>
+                  <span className={`wf-pill ${out || truck ? "good" : "grey"}`}>{out || truck ? "Busy" : "Free"}</span>
+                </button>
+              );
+            })}
+            {!s.ownTrucks.length && <p className="dim" style={{ fontSize: 12.5, margin: 0 }}>No trucks yet: buy one and it takes your next shipment.</p>}
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -1237,10 +1443,44 @@ function UpgradesSheet({ g, s }: { g: Game; s: State }) {
   );
 }
 
+function Missions({ s }: { s: State }) {
+  return (
+    <div className="wf-list" data-testid="wf-missions">
+      {s.missions.map((m, i) => {
+        const p = Math.min(m.target, sim.missionProgress(s, m));
+        return (
+          <div key={i} className={`wf-item${m.done ? " done" : ""}`}>
+            <div className="wf-between">
+              <h4>
+                {m.done ? "✅" : m.icon} {m.name}
+              </h4>
+              <span className={`wf-pill ${m.done ? "good" : ""}`}>{money(m.reward)}</span>
+            </div>
+            <div className="wf-bar" style={{ marginTop: 8 }}>
+              <i style={{ width: `${(p / m.target) * 100}%` }} />
+            </div>
+            <small className="dim num">
+              {m.kind === "revenue" ? `${money(p)} of ${money(m.target)}` : `${p.toLocaleString("en-US")} of ${m.target.toLocaleString("en-US")}`}
+            </small>
+          </div>
+        );
+      })}
+      {!s.missions.length && <p className="dim" style={{ fontSize: 12.5, margin: 0 }}>New missions arrive at midnight.</p>}
+    </div>
+  );
+}
+
 function GoalsSheet({ s }: { s: State }) {
   const n = GOALS.filter((x) => s.goals[x.id]).length;
   return (
     <>
+      <div className="wf-section" style={{ marginTop: 0 }}>
+        Today&apos;s missions · {s.stats.missions} done this season
+      </div>
+      <Missions s={s} />
+      <div className="wf-section">
+        Goals · {n}/{GOALS.length}
+      </div>
       <div className="wf-bar" style={{ marginBottom: 10 }}>
         <i style={{ width: `${(n / GOALS.length) * 100}%` }} />
       </div>
@@ -1320,6 +1560,9 @@ function StatsSheet({ s }: { s: State }) {
             ["Machine upkeep and repairs", -L.upkeep],
             ["Rent", -L.rent],
             ["Penalties and detention", -L.penalties],
+            ["Carriers' fees", -L.carriers],
+            ["Loan interest", -L.interest],
+            ["Spoiled stock", -L.spoilage],
             ["Equipment and building", -L.capex],
           ] as [string, number][]
         ).map(([k, v]) => (
@@ -1356,6 +1599,25 @@ function MenuSheet({ g, s }: { g: Game; s: State }) {
           </button>
           <button className={`wf-btn small ${g.prefs.daylight === "day" ? "on" : ""}`} onClick={() => g.setPrefs({ daylight: "day" })}>
             Always day
+          </button>
+        </div>
+      </div>
+      <div className="wf-item">
+        <h4>Sound and help</h4>
+        <p>A till ding when money comes in, a horn at the gate, an alarm for trouble. Tips walk you through the first shift.</p>
+        <div className="wf-seg" style={{ marginTop: 8 }}>
+          <button className={`wf-btn small ${g.prefs.sound ? "on" : ""}`} onClick={() => g.setPrefs({ sound: !g.prefs.sound })} aria-pressed={g.prefs.sound} data-testid="wf-sound">
+            {g.prefs.sound ? "🔊 Sound on" : "🔇 Sound off"}
+          </button>
+          <button
+            className={`wf-btn small ${!s.tipsOff ? "on" : ""}`}
+            aria-pressed={!s.tipsOff}
+            onClick={() => g.toggleTips()}
+          >
+            💡 Tips {s.tipsOff ? "off" : "on"}
+          </button>
+          <button className="wf-btn small" onClick={() => g.togglePhoto()} data-testid="wf-photo">
+            📷 Photo mode
           </button>
         </div>
       </div>
@@ -1410,7 +1672,7 @@ function Over({ g, s }: { g: Game; s: State }) {
         <div style={{ fontSize: 40 }}>{s.bankrupt ? "📉" : "🏁"}</div>
         <h3 style={{ fontSize: 22 }}>{s.bankrupt ? "Bankrupt" : "Season over"}</h3>
         <p className="muted">
-          Net worth {money(sim.worth(s))} · {s.stats.delivered} shipments, {s.stats.onTime} on time · {s.stats.madeGoods} pallets made.
+          Net worth {money(sim.worth(s))} · {s.stats.delivered} shipments, {s.stats.onTime} on time · {s.stats.madeGoods} pallets made · {s.stats.missions} missions.
         </p>
         <p style={{ fontSize: 28, fontWeight: 900, margin: "6px 0" }} className="num">
           {sim.score(s).toLocaleString("en-US")}
@@ -1433,5 +1695,235 @@ function Over({ g, s }: { g: Game; s: State }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ====================================================================== the bank */
+
+/** Cash by the hour: one line, a zero line when it dips below, and a readout under your finger. */
+function CashChart({ s }: { s: State }) {
+  const data = [...s.cashLog, Math.round(s.cash)];
+  const [at, setAt] = useState<number | null>(null);
+  const hourNow = Math.floor(s.time / 3600);
+  if (data.length < 2) return <p className="dim" style={{ fontSize: 12.5, margin: 0 }}>The chart fills in hour by hour.</p>;
+  const lo = Math.min(0, ...data);
+  const hi = Math.max(1, ...data);
+  const W = 300;
+  const H = 100;
+  const x = (i: number) => (i / (data.length - 1)) * W;
+  const y = (v: number) => H - ((v - lo) / (hi - lo)) * H;
+  const line = data.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const label = (i: number) => {
+    if (i === data.length - 1) return "Now";
+    const h = hourNow - (data.length - 2 - i);
+    return `Day ${Math.floor(h / 24) + 1} ${String(h % 24).padStart(2, "0")}:00`;
+  };
+  const pick = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const u = (e.clientX - r.left - 8) / Math.max(1, r.width - 16);
+    setAt(Math.max(0, Math.min(data.length - 1, Math.round(u * (data.length - 1)))));
+  };
+  const i = at ?? data.length - 1;
+  return (
+    <div className="wf-chart" onPointerMove={pick} onPointerDown={pick} onPointerLeave={() => setAt(null)} role="img" aria-label={`Cash over the last ${data.length - 1} hours, from ${money(data[0])} to ${money(data[data.length - 1])}`} data-testid="wf-cash-chart">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+        <path d={`${line}L${W},${y(lo)}L0,${y(lo)}Z`} fill="rgba(47,111,228,.12)" />
+        {lo < 0 && <line x1="0" x2={W} y1={y(0)} y2={y(0)} stroke="#8a93a8" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />}
+        <path d={line} fill="none" stroke="#2f6fe4" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <line x1={x(i)} x2={x(i)} y1="0" y2={H} stroke="rgba(27,34,54,.25)" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <span className="dot" style={{ left: `calc(8px + (100% - 16px) * ${x(i) / W})`, top: `calc(8px + (100% - 26px) * ${y(data[i]) / H})` }} />
+      <span className="lab hi num">{short(hi)}</span>
+      <span className="lab lo num">{short(lo)}</span>
+      <span className="readout num">
+        <b className={data[i] < 0 ? "wf-down" : ""}>{money(data[i])}</b> <span className="dim">{label(i)}</span>
+      </span>
+    </div>
+  );
+}
+
+function BankSheet({ g, s }: { g: Game; s: State }) {
+  const limit = sim.creditLimit(s);
+  const rate = sim.loanRate(s);
+  const t = s.today;
+  const profit = t.revenue - t.costs;
+  const trend = sim.cashTrend(s);
+  const part = Math.min(10_000, s.loan);
+  return (
+    <>
+      <div className="wf-bankhead">
+        <div className="cash">
+          <small>Cash</small>
+          <b className={`num ${s.cash < 0 ? "wf-down" : ""}`} data-testid="wf-bank-cash">
+            {money(s.cash)}
+          </b>
+          <span className={`num ${trend > 0 ? "wf-up" : trend < 0 ? "wf-down" : "dim"}`} style={{ fontSize: 12.5, fontWeight: 700 }}>
+            {trend > 0 ? "▲ +" : trend < 0 ? "▼ " : ""}
+            {money(trend)} this hour
+          </span>
+        </div>
+        <div>
+          <small>Net worth</small>
+          <b className="num">{money(sim.worth(s))}</b>
+        </div>
+        <div>
+          <small>Loan</small>
+          <b className={`num ${s.loan ? "wf-down" : ""}`} data-testid="wf-loan">
+            {money(s.loan)}
+          </b>
+        </div>
+      </div>
+      {s.cash < 0 && (
+        <p className="wf-pill bad" style={{ marginTop: 10, height: "auto", padding: "6px 10px", whiteSpace: "normal" }}>
+          You&apos;re overdrawn. Below −$25,000 the bank calls it in and the business goes bankrupt: borrow, or sell something.
+        </p>
+      )}
+      <div className="wf-section">Cash by the hour</div>
+      <CashChart s={s} />
+      <div className="wf-section">Today so far</div>
+      <div className="wf-kv" style={{ marginTop: 0, gridTemplateColumns: "1fr 1fr 1fr" }}>
+        <div>
+          <small>Money in</small>
+          <b className="num wf-up">{money(t.revenue)}</b>
+        </div>
+        <div>
+          <small>Money out</small>
+          <b className="num wf-down">{money(-t.costs)}</b>
+        </div>
+        <div>
+          <small>Profit</small>
+          <b className={`num ${profit < 0 ? "wf-down" : "wf-up"}`}>{money(profit)}</b>
+        </div>
+      </div>
+      <div className="wf-section">Borrow</div>
+      <p className="dim" style={{ fontSize: 12, margin: "0 0 8px" }}>
+        The bank lends up to {sim.up(s, "bank") ? "three quarters" : "half"} of what the business is worth: {money(limit)} more right now. Interest is {(rate * 100).toFixed(1)}% a day, taken every hour
+        {s.loan ? ` (about ${money(s.loan * rate)} a day on what you owe)` : ""}.
+      </p>
+      <div className="wf-seg">
+        {[10_000, 25_000, 50_000].map((n) => (
+          <button key={n} className="wf-btn small" disabled={n > limit} onClick={() => g.borrow(n)} data-testid={`wf-borrow-${n}`}>
+            + {short(n)}
+          </button>
+        ))}
+      </div>
+      {s.loan > 0 && (
+        <>
+          <div className="wf-section">Pay back</div>
+          <div className="wf-seg">
+            <button className="wf-btn small" disabled={s.cash < part} onClick={() => g.repay(part)} data-testid="wf-repay">
+              Pay {short(part)}
+            </button>
+            <button className="wf-btn small primary" disabled={s.cash <= 0} onClick={() => g.repay("all")} data-testid="wf-repay-all">
+              {s.cash >= s.loan ? `Pay it all · ${money(s.loan)}` : `Pay what you can · ${money(Math.floor(s.cash))}`}
+            </button>
+          </div>
+        </>
+      )}
+      <div className="wf-section">Running costs</div>
+      <p className="dim" style={{ fontSize: 12, margin: 0 }}>
+        Rent {money(siteDef(s.site).rent)}/h · {s.forks.length} forklift drivers {money(s.forks.length * (sim.up(s, "agv") ? 16 : 40))}/h
+        {s.ownTrucks.length ? ` · ${s.ownTrucks.length} truck drivers ${money(s.ownTrucks.length * OWN_TRUCK_WAGE)}/h` : ""}. The Books panel has the full ledger.
+      </p>
+    </>
+  );
+}
+
+/* ====================================================================== the day's report and tips */
+
+function DayReport({ g, s }: { g: Game; s: State }) {
+  const r = s.report!;
+  return (
+    <div className="wf-report wf-glass wf-card" role="dialog" aria-label={`Day ${r.day} report`} data-testid="wf-report">
+      <div className="wf-eyebrow">End of day {r.day}</div>
+      <h3>{r.profit >= 0 ? "A profitable day" : "A loss-making day"}</h3>
+      <div className={`big num ${r.profit < 0 ? "wf-down" : "wf-up"}`}>
+        {r.profit >= 0 ? "+" : ""}
+        {money(r.profit)}
+      </div>
+      <div className="wf-kv" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+        <div>
+          <small>Money in</small>
+          <b className="num">{short(r.revenue)}</b>
+        </div>
+        <div>
+          <small>Money out</small>
+          <b className="num">{short(r.costs)}</b>
+        </div>
+        <div>
+          <small>Cash now</small>
+          <b className="num">{short(s.cash)}</b>
+        </div>
+        <div>
+          <small>Delivered</small>
+          <b className="num">{r.orders}</b>
+        </div>
+        <div>
+          <small>On time</small>
+          <b className="num">
+            {r.onTime}/{r.onTime + r.late}
+          </b>
+        </div>
+        <div>
+          <small>Unloaded</small>
+          <b className="num">{r.unloads}</b>
+        </div>
+        <div>
+          <small>Made</small>
+          <b className="num">{r.made}</b>
+        </div>
+        <div>
+          <small>Moves</small>
+          <b className="num">{r.moves}</b>
+        </div>
+        <div>
+          <small>Reputation</small>
+          <b className="num">{Math.round(s.rep)}/100</b>
+        </div>
+      </div>
+      {s.missions.length > 0 && (
+        <>
+          <div className="wf-section">Today&apos;s missions</div>
+          <div className="wf-list" style={{ gap: 4 }}>
+            {s.missions.map((m, i) => (
+              <div key={i} className="wf-between" style={{ fontSize: 12.5 }}>
+                <span>
+                  {m.icon} {m.name}
+                </span>
+                <b className="num">{short(m.reward)}</b>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <button className="wf-btn primary wide" style={{ marginTop: 12 }} onClick={() => g.dismissReport()} data-testid="wf-report-close">
+        On to day {r.day + 1}
+      </button>
+    </div>
+  );
+}
+
+function TipCard({ g, s }: { g: Game; s: State }) {
+  const t = TIPS[s.tip];
+  return (
+    <aside className="wf-tip wf-glass wf-card" aria-label="Tip" data-testid="wf-tip">
+      <span className="ic" aria-hidden="true">
+        {t.icon}
+      </span>
+      <p>{t.text}</p>
+      <div className="wf-between">
+        <small className="dim">
+          Tip {s.tip + 1} of {TIPS.length}
+        </small>
+        <div className="wf-seg">
+          <button className="wf-btn small" onClick={() => g.hideTips()}>
+            Hide tips
+          </button>
+          <button className="wf-btn small primary" onClick={() => g.nextTip()} data-testid="wf-tip-next">
+            {s.tip + 1 < TIPS.length ? "Next" : "Done"}
+          </button>
+        </div>
+      </div>
+    </aside>
   );
 }

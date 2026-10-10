@@ -62,6 +62,32 @@ export const css = `
 .wf-speeds button{min-width:30px;height:28px;border-radius:999px;font-size:12px;font-weight:700;color:var(--ink2)}
 .wf-speeds button.on{background:#fff;color:var(--blue);box-shadow:0 1px 3px rgba(27,34,54,.15)}
 .wf-bell{position:relative}
+.wf-speeds .cyc{display:none}
+.wf-short{display:none}
+
+/* ---- cash: always on the top bar ---- */
+.wf .wf-cash{position:relative;display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 12px 0 5px;border-radius:999px;flex:none;color:#0b6e47;font-weight:800;
+  background:linear-gradient(180deg,rgba(238,251,245,.96),rgba(212,243,228,.88));border:1px solid rgba(22,163,107,.3)!important;box-shadow:inset 0 1px 0 #fff,0 2px 8px -4px rgba(22,163,107,.4);transition:transform .15s ease}
+.wf-cash:hover{transform:translateY(-1px)}
+.wf-cash:active{transform:scale(.97)}
+.wf-cash.on{box-shadow:0 0 0 3px rgba(22,163,107,.22),inset 0 1px 0 #fff}
+.wf-cash>i{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;flex:none;background:linear-gradient(180deg,#2fc488,#159a63);color:#fff;font-style:normal;font-size:14px;font-weight:900;box-shadow:inset 0 1px 0 rgba(255,255,255,.4)}
+.wf-cash .v{font-size:15.5px;font-weight:850;letter-spacing:-.01em;display:inline-block}
+.wf-cash .t{font-size:11px;font-weight:750}
+.wf .wf-cash.low{color:#94560a;background:linear-gradient(180deg,#fff7e8,#ffe7bd);border-color:rgba(224,138,0,.38)!important}
+.wf-cash.low>i{background:linear-gradient(180deg,#f5a524,#e08a00)}
+.wf .wf-cash.neg{color:#c4282e;background:linear-gradient(180deg,#fff0f0,#ffd5d6);border-color:rgba(229,72,77,.45)!important}
+.wf-cash.neg>i{background:linear-gradient(180deg,#f06c70,#d83d43)}
+.wf-cash .flash.up{animation:wf-flash-up .8s ease}
+.wf-cash .flash.down{animation:wf-flash-down .8s ease}
+@keyframes wf-flash-up{0%{transform:scale(1.14);color:#05a35e;text-shadow:0 0 12px rgba(22,163,107,.55)}100%{transform:none}}
+@keyframes wf-flash-down{0%{transform:scale(.92);color:var(--bad)}100%{transform:none}}
+.wf-pops{position:absolute;left:50%;top:100%;width:0;height:0;pointer-events:none;z-index:8}
+.wf-pops span{position:absolute;left:0;transform:translateX(-50%);white-space:nowrap;font-size:13px;font-weight:850;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.95);box-shadow:0 6px 16px -6px rgba(27,34,54,.35);animation:wf-pop 1.9s ease-out forwards}
+.wf-pops span small{font-size:10.5px;font-weight:700;color:var(--ink3)}
+.wf-pops span.up{color:#0b8a55}
+.wf-pops span.down{color:var(--bad)}
+@keyframes wf-pop{0%{opacity:0;transform:translate(-50%,-8px) scale(.7)}12%{opacity:1;transform:translate(-50%,0) scale(1.06)}20%{transform:translate(-50%,0) scale(1)}72%{opacity:1}100%{opacity:0;transform:translate(-50%,22px)}}
 .wf-kpitoggle{display:none!important}
 /* Full window: the platform's pause button sits at the top bar's left end. */
 [data-immersive] .wf-top{padding-left:58px}
@@ -101,6 +127,12 @@ export const css = `
 .wf-pill.bad{background:rgba(229,72,77,.12);color:var(--bad)}
 .wf-pill.grey{background:rgba(27,34,54,.06);color:var(--ink2)}
 .wf-pill.violet{background:rgba(124,92,240,.12);color:var(--violet)}
+.wf-pill.cold{background:rgba(61,139,255,.12);color:#1f6fd6}
+.wf-pill.gold,.wf-pill.tier3{background:linear-gradient(180deg,#fff3c4,#ffe08a);color:#8a5a00}
+.wf-pill.tier2{background:linear-gradient(180deg,#f3f5fa,#dfe3ec);color:#4c5568}
+.wf-pill.tier1{background:linear-gradient(180deg,#fde9da,#f6cfb2);color:#8a4b1f}
+.wf-item.vip{border-color:rgba(240,180,41,.55);box-shadow:0 0 0 2px rgba(240,180,41,.18)}
+.wf-item.done{opacity:.7}
 .wf-bar{height:6px;border-radius:3px;background:rgba(27,34,54,.08);overflow:hidden}
 .wf-bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#5b8ff7,#2f6fe4)}
 .wf-sep{height:1px;background:var(--line);margin:10px 0}
@@ -184,6 +216,31 @@ export const css = `
 @keyframes wf-toast{0%{opacity:0;transform:translate(-50%,-8px)}10%,80%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-6px)}}
 .wf-toolbar{position:absolute;left:50%;bottom:76px;transform:translateX(-50%);display:flex;align-items:center;gap:6px;padding:6px 6px 6px 14px;z-index:7;font-size:13px;font-weight:700;white-space:nowrap}
 
+/* ---- the bank ---- */
+.wf-bankhead{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.wf-bankhead>div{padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.72);border:1px solid var(--line);min-width:0}
+.wf-bankhead small{display:block;font-size:11px;font-weight:700;color:var(--ink3)}
+.wf-bankhead b{display:block;font-size:17px;font-weight:800;letter-spacing:-.01em}
+.wf-bankhead .cash{grid-column:1/-1;background:linear-gradient(180deg,rgba(238,251,245,.95),rgba(222,246,234,.85))}
+.wf-bankhead .cash b{font-size:30px;font-weight:900;letter-spacing:-.025em;line-height:1.1}
+.wf-chart{position:relative;height:132px;border-radius:16px;background:rgba(255,255,255,.65);border:1px solid var(--line);touch-action:pan-y;cursor:crosshair}
+.wf-chart svg{position:absolute;left:8px;right:8px;top:8px;width:calc(100% - 16px);height:calc(100% - 34px);overflow:visible}
+.wf-chart .dot{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:#2f6fe4;box-shadow:0 0 0 2px #fff;pointer-events:none}
+.wf-chart .lab{position:absolute;left:12px;font-size:10.5px;font-weight:700;color:var(--ink3);pointer-events:none}
+.wf-chart .lab.hi{top:6px}
+.wf-chart .lab.lo{bottom:24px}
+.wf-chart .readout{position:absolute;left:12px;right:12px;bottom:5px;font-size:12px;display:flex;gap:6px;align-items:baseline;pointer-events:none}
+
+/* ---- the day's report, tips, photo mode ---- */
+@keyframes wf-fade{from{opacity:0}}
+.wf-report{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(400px,calc(100% - 24px));max-height:calc(100% - 180px);overflow:auto;z-index:8;animation:wf-fade .35s ease both}
+.wf-report h3{font-size:18px;margin-top:2px}
+.wf-report .big{font-size:32px;font-weight:900;letter-spacing:-.025em;margin:2px 0}
+.wf-tip{position:absolute;left:50%;bottom:76px;transform:translateX(-50%);width:min(460px,calc(100% - 24px));z-index:5;display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:start;padding:12px 14px;animation:wf-fade .35s ease both}
+.wf-tip .ic{font-size:24px;line-height:1;grid-row:span 2}
+.wf-tip p{margin:0;font-size:13px;line-height:1.4;font-weight:600}
+.wf-photo-exit{position:absolute;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:9}
+
 /* ---- title ---- */
 .wf-title{position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px 16px calc(24px + env(safe-area-inset-bottom));overflow:auto;
   background:linear-gradient(180deg,rgba(232,235,246,0) 30%,rgba(232,235,246,.7) 70%,rgba(232,235,246,.92))}
@@ -208,6 +265,7 @@ export const css = `
   .wf-event{top:182px}
 }
 @container wf (max-width:1180px) or (max-height:720px){
+  .wf-brand span{display:none}
   .wf-event{top:150px}
   .wf-track,.wf-table{display:none}
   .wf-dock .site{display:flex}
@@ -215,6 +273,11 @@ export const css = `
   .wf-kpi .v{font-size:18px}
   .wf-me{display:none}
   .wf-insp{max-height:calc(100% - 150px)}
+}
+@container wf (max-width:1000px){
+  .wf-top .wf-search{display:none}
+  .wf-search-inline{display:block}
+  .wf-cash .t{display:none}
 }
 @container wf (max-height:560px){
   .wf-kpis{display:none}
@@ -254,12 +317,40 @@ export const css = `
   .wf-event{top:calc(64px + env(safe-area-inset-top));font-size:12px}
   .wf-kpis ~ .wf-toast,.wf-kpis ~ .wf-event{top:calc(104px + env(safe-area-inset-top))}
   .wf-event .muted{display:none}
+  .wf-report{top:auto;bottom:calc(76px + env(safe-area-inset-bottom));left:8px;right:8px;width:auto;transform:none;max-height:calc(100% - 150px)}
+  .wf-tip{left:8px;right:8px;width:auto;transform:none;bottom:calc(76px + env(safe-area-inset-bottom))}
+  .wf-cash .t{display:none}
 }
 @container wf (max-width:520px){
   .wf-chip{display:none}
   .wf-top .wf-search{display:none}
   .wf-search-inline{display:block}
   .wf-speeds button{min-width:26px}
+  /* One speed button that steps up, a short clock, and the cash first. */
+  .wf-speeds .sp{display:none}
+  .wf-speeds .cyc{display:block;min-width:34px}
+  .wf-long{display:none}
+  .wf-short{display:inline}
+  .wf-live{font-size:12px;gap:5px;padding:0}
+  .wf-live i{width:7px;height:7px}
+  .wf-top{gap:5px}
+  .wf-top .wf-spacer{min-width:0}
+  .wf-cash{height:34px;padding:0 10px 0 4px;gap:5px}
+  .wf-cash>i{width:26px;height:26px;font-size:13px}
+  .wf-cash .v{font-size:14.5px}
+  .wf-btn.icon.small.wf-bell,.wf-btn.icon.small.wf-kpitoggle{width:28px}
 }
-@media (prefers-reduced-motion:reduce){.wf *{animation:none!important;transition:none!important}}
+@container wf (max-width:380px){
+  .wf-brand{display:none}
+  .wf-live i{display:none}
+  .wf-top{gap:4px;padding-right:5px}
+  .wf .wf-cash{padding:0 9px}
+  .wf-cash>i{display:none}
+  .wf-speeds{padding:2px}
+  .wf-btn.icon.small.wf-bell,.wf-btn.icon.small.wf-kpitoggle{width:26px}
+}
+@container wf (max-width:340px){
+  .wf-kpitoggle{display:none!important}
+}
+@media (prefers-reduced-motion:reduce){.wf *{animation:none!important;transition:none!important}.wf-pops{display:none}}
 `;

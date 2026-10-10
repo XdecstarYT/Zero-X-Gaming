@@ -3,7 +3,9 @@
  * selection and build tool, saving, and the score. The React UI reads it through
  * subscribe/getVersion and calls its methods.
  */
-import { GAME_SECS_PER_REAL, MACHINES, PREFS_KEY, SAVE_KEY, SITES, SPEEDS, type DoorType, type ItemId, type MachineType, type UpgradeId } from "./data";
+import type { GameSettings } from "../types";
+import { Sound } from "./audio";
+import { CHARGER, FLOOR, FREEZER, GAME_SECS_PER_REAL, MACHINES, PREFS_KEY, RACK, SAVE_KEY, SITES, SPEEDS, type DoorType, type ItemId, type MachineType, type UpgradeId } from "./data";
 import { Stage } from "./render/stage";
 import type { Ghost, Quality } from "./render/world";
 import * as sim from "./sim";
@@ -15,7 +17,25 @@ export interface Tool {
   rot: number;
 }
 
-export type Sheet = null | "site" | "orders" | "buy" | "build" | "fleet" | "upgrades" | "goals" | "stats" | "menu" | "alerts" | "help";
+export type Sheet = null | "site" | "orders" | "buy" | "build" | "fleet" | "upgrades" | "goals" | "stats" | "menu" | "alerts" | "help" | "bank";
+
+/** What a tutorial step counts from (taken when the step starts). */
+interface TipBase {
+  orders: number;
+  pos: number;
+  structs: number;
+}
+
+/** The first-shift tips: one at a time, each done when the player has tried it. */
+export const TIPS: { icon: string; text: string; done: (s: State, g: Game, b: TipBase) => boolean }[] = [
+  { icon: "💰", text: "Your cash is always at the top. Tap it to open the bank: see where the money goes, and borrow if you run short.", done: (_s, g) => g.sheet === "bank" },
+  { icon: "📦", text: "Open Orders and accept an offer: forklifts pick the pallets to a door and a truck takes them away.", done: (s, _g, b) => s.orders.filter((o) => o.state !== "offer" && o.state !== "declined").length > b.orders },
+  { icon: "🛒", text: "Short of something? Buy brings pallets in by truck. Frozen goods need freezer racks.", done: (s, _g, b) => s.pos.length > b.pos },
+  { icon: "🏗️", text: "Build racks for more room, and machines that turn materials into goods that sell for more.", done: (s, _g, b) => s.structs.length > b.structs },
+  { icon: "⏩", text: "Speed up time at the top, and finish today's missions (in Goals) for bonus cash.", done: (_s, g) => g.speed > 1 },
+];
+
+const STRUCT_NAME: Record<StructKind, string> = { rack: RACK.name, floor: FLOOR.name, charger: CHARGER.name, freezer: FREEZER.name, machine: "Machine" };
 
 export interface Prefs {
   gfx: Quality | "auto";
@@ -57,6 +77,16 @@ export class Game {
   /** The newest alert the player has seen. */
   seenAlert = 0;
   activeMs = 0;
+  /** The camera rides along with this (a truck or a forklift). */
+  following: Focus | null = null;
+  /** Photo mode: the interface hides. */
+  photo = false;
+  readonly sound = new Sound();
+  private tipBase: TipBase = { orders: 0, pos: 0, structs: 0 };
+  private tipAt = -1;
+  private heardFx = 0;
+  private heardAlert = 0;
+  private heardTruck = 0;
   private stage: Stage | null = null;
   private ghost: Ghost | null = null;
   private version = 0;
@@ -66,7 +96,17 @@ export class Game {
   private toastId = 0;
   private finalSent = false;
 
-  constructor(private hooks: Hooks) {}
+  constructor(
+    private hooks: Hooks,
+    private settings?: Pick<GameSettings, "sound" | "volume">,
+  ) {
+    this.applySound();
+  }
+
+  private applySound() {
+    this.sound.enabled = this.prefs.sound && (this.settings?.sound ?? true);
+    this.sound.volume = Math.max(0, Math.min(1, this.settings?.volume ?? 1));
+  }
 
   /* ---------------------------------------------------------------- React glue */
 
@@ -128,7 +168,10 @@ export class Game {
     else if (live) {
       sim.tick(s, dt * GAME_SECS_PER_REAL * this.speed);
       this.activeMs += dt * 1000;
+      this.listen(s);
+      this.stepTips(s);
     }
+    if (this.following && this.stage && this.screen === "play" && !this.stage.world.follow(s, this.following)) this.following = null;
     this.stage?.world.sync(s, dt, this.screen === "play" ? this.sel : null, this.tool ? this.ghost : null, {
       daylight: this.screen === "title" ? "day" : this.prefs.daylight,
       speed: this.screen === "play" && !this.hold && !this.paused ? this.speed : 0,
@@ -148,6 +191,40 @@ export class Game {
     }
   }
 
+  /** Sounds for what just happened: money in and out, trucks at the gate, trouble, goals. */
+  private listen(s: State) {
+    const fx = s.fx[s.fx.length - 1];
+    if (fx && fx.id > this.heardFx) {
+      const fresh = s.fx.filter((f) => f.id > this.heardFx);
+      this.heardFx = fx.id;
+      if (fresh.some((f) => f.text === "Mission" || f.text === "Goal")) this.sound.play("chime");
+      else if (fresh.some((f) => f.amount > 0)) this.sound.play("cash");
+      else if (fresh.some((f) => f.amount <= -1000)) this.sound.play("spend");
+    }
+    const a = s.alerts[s.alerts.length - 1];
+    if (a && a.id > this.heardAlert) {
+      if (s.alerts.some((x) => x.id > this.heardAlert && x.kind === "bad")) this.sound.play("alarm");
+      this.heardAlert = a.id;
+    }
+    for (const t of s.trucks)
+      if (!t.rail && t.state === "arriving" && t.id > this.heardTruck) {
+        this.heardTruck = t.id;
+        this.sound.play("horn");
+      }
+  }
+
+  private stepTips(s: State) {
+    if (s.tipsOff || s.tip >= TIPS.length) return;
+    if (this.tipAt !== s.tip) {
+      this.tipAt = s.tip;
+      this.tipBase = { orders: s.orders.filter((o) => o.state !== "offer" && o.state !== "declined").length, pos: s.pos.length, structs: s.structs.length };
+    }
+    if (TIPS[s.tip].done(s, this, this.tipBase)) {
+      s.tip++;
+      this.sound.play("click");
+    }
+  }
+
   private click(nx: number, ny: number) {
     if (this.screen !== "play" || !this.stage || !this.s) return;
     const w = this.stage.world;
@@ -160,7 +237,7 @@ export class Game {
         return;
       }
       const p = this.placement(g.x, g.z);
-      this.result(sim.place(this.s, p), `${p.kind === "machine" ? MACHINES[p.type!].name : p.kind === "rack" ? "Rack" : "Floor block"} built`);
+      this.result(sim.place(this.s, p), `${p.kind === "machine" ? MACHINES[p.type!].name : STRUCT_NAME[p.kind]} built`);
       this.hover(nx, ny);
       return;
     }
@@ -214,6 +291,12 @@ export class Game {
     this.speed = 1;
     this.hold = false;
     this.seenAlert = this.s!.alerts.length ? this.s!.alerts[this.s!.alerts.length - 1].id - 1 : 0;
+    this.following = null;
+    this.photo = false;
+    this.tipAt = -1;
+    this.heardFx = this.s!.fx.length ? this.s!.fx[this.s!.fx.length - 1].id : 0;
+    this.heardAlert = this.s!.alerts.length ? this.s!.alerts[this.s!.alerts.length - 1].id : 0;
+    this.heardTruck = this.s!.trucks.reduce((m, t) => (t.state !== "transit" ? Math.max(m, t.id) : m), 0);
     if (this.stage) {
       this.stage.spin = 0;
       const w = sim.width(this.s!);
@@ -230,6 +313,8 @@ export class Game {
     if (this.s?.seasonOver || this.s?.bankrupt) this.submitFinal();
     this.screen = "title";
     this.s = null;
+    this.following = null;
+    this.photo = false;
     this.sel = null;
     this.tool = null;
     this.sheet = null;
@@ -266,6 +351,7 @@ export class Game {
     } catch {
       /* ignore */
     }
+    this.applySound();
     this.bump();
   }
 
@@ -278,11 +364,17 @@ export class Game {
     this.hold = !this.hold;
     this.bump();
   }
+  /** One button for phones: 1× → 2× → 4× → 8× → 1×. */
+  cycleSpeed() {
+    const i = SPEEDS.indexOf(this.speed as (typeof SPEEDS)[number]);
+    this.setSpeed(this.hold ? Math.max(0, i) : (i + 1) % SPEEDS.length);
+  }
 
   /* ---------------------------------------------------------------- UI state */
 
   select(f: Focus | null, fly = false) {
     this.sel = f;
+    if (!f || (this.following && (f.k !== this.following.k || f.id !== this.following.id))) this.following = null;
     if (f && fly && this.s) this.stage?.world.focusOn(this.s, f);
     this.bump();
   }
@@ -391,11 +483,65 @@ export class Game {
     this.say("Rack turned round", "good");
   }
 
+  /* ---------------------------------------------------------------- money, fleet, camera */
+
+  borrow(amount: number) {
+    if (this.s) this.result(sim.borrow(this.s, amount), `Borrowed $${amount.toLocaleString("en-US")}`);
+  }
+  repay(amount: number | "all") {
+    if (!this.s) return;
+    const n = amount === "all" ? Math.min(this.s.loan, Math.floor(this.s.cash)) : amount;
+    const clears = n >= this.s.loan;
+    this.result(sim.repay(this.s, n), clears ? "Loan paid off" : `Repaid $${n.toLocaleString("en-US")}`);
+  }
+  buyOwnTruck() {
+    if (this.s) this.result(sim.buyOwnTruck(this.s), "Truck bought: it carries your next shipment");
+  }
+  upgradeMachine(id: number) {
+    if (this.s) this.result(sim.upgradeMachine(this.s, id), "Upgraded to Mk II");
+  }
+  dismissReport() {
+    if (this.s) this.s.report = null;
+    this.bump();
+  }
+  nextTip() {
+    if (this.s) this.s.tip++;
+    this.bump();
+  }
+  hideTips() {
+    if (this.s) this.s.tipsOff = true;
+    this.bump();
+  }
+  /** Tips back on start again from the first. */
+  toggleTips() {
+    const s = this.s;
+    if (!s) return;
+    s.tipsOff = !s.tipsOff;
+    if (!s.tipsOff && s.tip >= TIPS.length) s.tip = 0;
+    this.bump();
+  }
+  /** Ride along with a truck or a forklift (again to stop). */
+  toggleFollow(f: Focus) {
+    const same = this.following && this.following.k === f.k && this.following.id === f.id;
+    this.following = same ? null : f;
+    if (!same && this.s) this.stage?.world.rig.fly({ dist: Math.min(this.stage.world.rig.goal.dist, 26) });
+    this.bump();
+  }
+  togglePhoto() {
+    this.photo = !this.photo;
+    if (this.photo) {
+      this.sheet = null;
+      this.sel = null;
+    }
+    this.bump();
+  }
+
   sites = SITES;
 
   dispose() {
     this.save();
     this.detach();
+    this.sound.dispose();
     this.listeners.clear();
   }
 }

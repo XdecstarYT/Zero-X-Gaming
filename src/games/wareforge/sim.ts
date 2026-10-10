@@ -14,7 +14,8 @@ import {
   DOCK_Z, EVENTS, FLOOR, FORK_HANDLE, FORK_SPEED, FORKLIFT_COST, FORKLIFT_WAGE, GOALS, GRID_H, GRID_W, HIGH_TECH, HOUR, ITEM_IDS,
   ITEMS, MACHINES, MAX_DOORS, MAX_FORKLIFTS, MIN, RACK, RAIL_CAP, RAIL_DOORS, RAIL_Z, SEASON_DAYS, STAGE_Z, TRUCK_PHASE, UPGRADES,
   WIDTH_BASE, WIDTH_FULL, WIDTH_MEGA, buyPrice, doorX0, siteDef, supplierFor,
-  type DoorType, type EventKind, type ItemId, type MachineType, type UpgradeId,
+  CARRIER_FEE, FREEZER, FROZEN, LOAN_RATE, MAX_OWN_TRUCKS, MISSIONS, OWN_CARRIER, OWN_TRUCK_COST, OWN_TRUCK_WAGE, THAW_SECS,
+  type DoorType, type EventKind, type ItemId, type MachineType, type MissionKind, type UpgradeId,
 } from "./data";
 
 /* ------------------------------------------------------------------ state */
@@ -35,9 +36,11 @@ export interface Slot {
   /** A pallet on its way here (or -2: a machine's next output). */
   res: number;
   dead?: boolean;
+  /** A freezer bay. */
+  cold?: boolean;
 }
 
-export type StructKind = "rack" | "floor" | "machine" | "charger";
+export type StructKind = "rack" | "floor" | "machine" | "charger" | "freezer";
 
 export interface Machine {
   type: MachineType;
@@ -47,6 +50,8 @@ export interface Machine {
   wear: number;
   made: number;
   on: boolean;
+  /** Mk II: faster and wears less. */
+  mk?: number;
   /** Where the running cycle's pallet will land. */
   outSlot: number;
 }
@@ -86,6 +91,8 @@ export interface Pallet {
   busy: number;
   /** The order it's been picked for, or -1. */
   order: number;
+  /** Frozen goods: game seconds spent out of the cold (it spoils at THAW_SECS). */
+  warm?: number;
 }
 
 export type JobKind = "load" | "unload" | "output" | "pick" | "feed" | "putaway";
@@ -133,6 +140,8 @@ export interface Truck {
   docked: number;
   /** A train at the rail siding (door is then a rail door). */
   rail?: boolean;
+  /** One of your own trucks (its id in the fleet). */
+  own?: number;
 }
 
 export type OrderState = "offer" | "confirmed" | "picked" | "loading" | "transit" | "delivered" | "failed" | "declined";
@@ -159,6 +168,34 @@ export interface Order {
   paid: number;
   /** The contract it belongs to, if any. */
   contract?: number;
+  /** A VIP order: half again the price, a tight deadline. */
+  vip?: boolean;
+  /** Carried by one of your own trucks. */
+  own?: number;
+}
+
+export interface OwnTruck {
+  id: number;
+  name: string;
+  /** When it's back at the depot and free (Infinity while out). */
+  free: number;
+  trips: number;
+}
+
+export interface Mission {
+  kind: MissionKind;
+  name: string;
+  icon: string;
+  target: number;
+  reward: number;
+  done: boolean;
+}
+
+/** Something for the renderer to show once (a money pop over the office). */
+export interface Fx {
+  id: number;
+  amount: number;
+  text: string;
 }
 
 export interface Contract {
@@ -216,6 +253,9 @@ export interface Ledger {
   penalties: number;
   capex: number;
   rewards: number;
+  carriers: number;
+  interest: number;
+  spoilage: number;
 }
 
 export interface DayStat {
@@ -227,6 +267,10 @@ export interface DayStat {
   made: number;
   onTime: number;
   late: number;
+  /** Orders delivered, trucks and trains unloaded, pallets moved. */
+  orders: number;
+  unloads: number;
+  moves: number;
 }
 
 export interface State {
@@ -246,6 +290,20 @@ export interface State {
   market: Partial<Record<ItemId, number>>;
   contracts: Contract[];
   event: WorldEvent | null;
+  /** The bank loan outstanding. */
+  loan: number;
+  /** Cash at the end of each game hour (the last three days). */
+  cashLog: number[];
+  /** Yesterday's report, waiting to be read. */
+  report: (DayStat & { profit: number }) | null;
+  missions: Mission[];
+  /** How each customer rates you. */
+  customers: Record<string, { onTime: number; late: number }>;
+  ownTrucks: OwnTruck[];
+  fx: Fx[];
+  /** The tutorial step (and whether it's switched off). */
+  tip: number;
+  tipsOff?: boolean;
   slots: Slot[];
   structs: Struct[];
   doors: Door[];
@@ -264,7 +322,7 @@ export interface State {
   today: DayStat;
   days: DayStat[];
   history: boolean[];
-  stats: { delivered: number; onTime: number; late: number; failed: number; revenue: number; made: number; madeGoods: number; unloaded: number; moves: number; rushOnTime: number; phones: number; peakStock: number; trains: number; charges: number; contractsDone: number; events: number; madeItems: Partial<Record<ItemId, number>> };
+  stats: { delivered: number; onTime: number; late: number; failed: number; revenue: number; made: number; madeGoods: number; unloaded: number; moves: number; rushOnTime: number; phones: number; peakStock: number; trains: number; charges: number; contractsDone: number; events: number; madeItems: Partial<Record<ItemId, number>>; borrowed: number; repaid: number; coldShipped: number; ownShipped: number; missions: number; vipOnTime: number; spoiled: number };
   seasonOver: boolean;
   bankrupt: boolean;
 }
@@ -295,6 +353,15 @@ export const LEVEL_H = 1.15;
 export const eventOn = (s: State, k: EventKind) => s.event?.kind === k;
 /** Today's price factor for an item. */
 export const marketOf = (s: State, item: ItemId) => s.market[item] ?? 1;
+/** A forklift driver's level (1–5), from trips driven. */
+export const forkLevel = (s: State, f: Forklift) => Math.min(5, 1 + Math.floor(Math.sqrt((f.trips * (up(s, "academy") ? 2 : 1)) / 12)));
+/** A customer's loyalty: 0 none, 1 bronze, 2 silver, 3 gold. */
+export function loyalty(s: State, name: string) {
+  const c = s.customers[name];
+  const n = c ? c.onTime : 0;
+  return n >= 10 ? 3 : n >= 5 ? 2 : n >= 2 ? 1 : 0;
+}
+export const LOYALTY = ["", "Bronze", "Silver", "Gold"] as const;
 
 export function alert(s: State, kind: AlertKind, text: string, focus?: Focus) {
   s.alerts.push({ id: nid(s), t: s.time, kind, text, focus });
@@ -315,7 +382,22 @@ function earn(s: State, amount: number, k: keyof Ledger) {
   }
 }
 
-const newDay = (d: number): DayStat => ({ day: d, revenue: 0, costs: 0, shipped: 0, received: 0, made: 0, onTime: 0, late: 0 });
+const newDay = (d: number): DayStat => ({ day: d, revenue: 0, costs: 0, shipped: 0, received: 0, made: 0, onTime: 0, late: 0, orders: 0, unloads: 0, moves: 0 });
+
+/** A money pop for the renderer (and a flash on the cash counter). */
+function pop(s: State, amount: number, text: string) {
+  s.fx.push({ id: nid(s), amount: Math.round(amount), text });
+  if (s.fx.length > 30) s.fx.splice(0, s.fx.length - 30);
+}
+
+/** The goods customers here may order. */
+function mixOf(s: State) {
+  const def = siteDef(s.site);
+  const mix = new Set(def.goodsMix);
+  if (up(s, "premium")) for (const i of HIGH_TECH) mix.add(i);
+  if (up(s, "cold")) for (const i of FROZEN) mix.add(i);
+  return [...mix];
+}
 
 /* ------------------------------------------------------------------ the floor */
 
@@ -352,7 +434,7 @@ function accessCandidates(s: State, sl: Slot): [number, number][] {
   if (sl.kind === "stage") return sl.z === STAGE_Z[0] ? [[sl.x, sl.z - 1]] : [[sl.x, sl.z + 1]];
   const t = s.structs[sl.owner];
   if (!t) return [];
-  if (t.kind === "rack") return [[sl.x, t.rot === 0 ? t.z + 1 : t.z - 1]];
+  if (t.kind === "rack" || t.kind === "freezer") return [[sl.x, t.rot === 0 ? t.z + 1 : t.z - 1]];
   if (t.kind === "machine") {
     const out: [number, number][] = [];
     const left = sl.kind === "in";
@@ -548,11 +630,12 @@ export function footprint(p: Placement) {
     return { w: m.w, d: m.d };
   }
   if (p.kind === "charger") return { w: CHARGER.w, d: CHARGER.d };
+  if (p.kind === "freezer") return { w: FREEZER.w, d: FREEZER.d };
   return p.kind === "rack" ? { w: RACK.w, d: RACK.d } : { w: FLOOR.w, d: FLOOR.d };
 }
 
 export const structCost = (p: Placement) =>
-  p.kind === "machine" ? MACHINES[p.type ?? "press"].cost : p.kind === "rack" ? RACK.cost : p.kind === "charger" ? CHARGER.cost : FLOOR.cost;
+  p.kind === "machine" ? MACHINES[p.type ?? "press"].cost : p.kind === "rack" ? RACK.cost : p.kind === "charger" ? CHARGER.cost : p.kind === "freezer" ? FREEZER.cost : FLOOR.cost;
 
 /** The tiles in front of a charging bay where forklifts park to charge. */
 export const chargePoints = (t: Struct): [number, number][] => [
@@ -566,6 +649,13 @@ function makeStruct(s: State, p: Placement): Struct {
   s.structs.push(t);
   if (p.kind === "rack") {
     for (let lv = 0; lv < rackLevels(s); lv++) for (let c = 0; c < w; c++) t.slots.push(addSlot(s, "store", p.x + c, p.z, lv * LEVEL_H, t.id));
+  } else if (p.kind === "freezer") {
+    for (let lv = 0; lv < FREEZER.levels; lv++)
+      for (let c = 0; c < w; c++) {
+        const id = addSlot(s, "store", p.x + c, p.z, lv * LEVEL_H, t.id);
+        s.slots[id].cold = true;
+        t.slots.push(id);
+      }
   } else if (p.kind === "floor") {
     for (let dz = 0; dz < d; dz++) for (let dx = 0; dx < w; dx++) t.slots.push(addSlot(s, "store", p.x + dx, p.z + dz, 0, t.id));
   } else if (p.kind === "machine") {
@@ -627,6 +717,8 @@ export function place(s: State, p: Placement): string | null {
   const t = makeStruct(s, p);
   if (t.kind === "machine") alert(s, "good", `${MACHINES[t.m!.type].name} installed`, { k: "struct", id: t.id });
   if (t.kind === "charger") alert(s, "good", "Charging bay installed", { k: "struct", id: t.id });
+  if (t.kind === "freezer") alert(s, "good", "Freezer rack installed", { k: "struct", id: t.id });
+  pop(s, -cost, "Built");
   return null;
 }
 
@@ -683,13 +775,15 @@ export const availableCount = (s: State, item: ItemId) => available(s, item).len
 export const slotPos = (sl: Slot) => ({ x: sl.x + 0.5, z: sl.z + 0.5 });
 const dist = (ax: number, az: number, bx: number, bz: number) => Math.abs(ax - bx) + Math.abs(az - bz);
 
-function nearestStore(s: State, x: number, z: number, nearDocks: boolean): Slot | null {
+function nearestStore(s: State, x: number, z: number, nearDocks: boolean, item?: ItemId): Slot | null {
   let best: Slot | null = null;
   let bd = Infinity;
+  const frozen = !!item && !!ITEMS[item].frozen;
   for (const sl of s.slots) {
     if (sl.kind !== "store" || !freeSlot(sl) || !access(s, sl)) continue;
     // Without smart slotting stock goes in the first free bay; with it, as near as can be.
-    const d = nearDocks ? dist(sl.x, sl.z, x, z) + sl.y * 2 : sl.id;
+    // Frozen goods go in the freezers if there's room; everything else leaves the freezers free.
+    const d = (nearDocks ? dist(sl.x, sl.z, x, z) + sl.y * 2 : sl.id) + (frozen !== !!sl.cold ? 100_000 : 0);
     if (d < bd) {
       bd = d;
       best = sl;
@@ -707,27 +801,32 @@ export function newGame(siteId: string, seed = 1): State {
   const s: State = {
     v: 1, site: def.id, seed, rng: seed >>> 0, time: 7 * HOUR, cash: def.cash, startWorth: 0, rep: 60, expanded: def.expanded,
     mega: !!def.mega, rail: !!def.rail, market: {}, contracts: [], event: null,
+    loan: 0, cashLog: [], report: null, missions: [], customers: {}, ownTrucks: [], fx: [], tip: 0,
     slots: [], structs: [], doors: [], pallets: {}, forks: [], trucks: [], orders: [], pos: [], alerts: [], up: {}, goals: {}, auto: {},
     next: 0, lot: 0,
-    ledger: { revenue: 0, purchases: 0, wages: 0, upkeep: 0, rent: 0, penalties: 0, capex: 0, rewards: 0 },
+    ledger: { revenue: 0, purchases: 0, wages: 0, upkeep: 0, rent: 0, penalties: 0, capex: 0, rewards: 0, carriers: 0, interest: 0, spoilage: 0 },
     today: newDay(1), days: [], history: [],
-    stats: { delivered: 0, onTime: 0, late: 0, failed: 0, revenue: 0, made: 0, madeGoods: 0, unloaded: 0, moves: 0, rushOnTime: 0, phones: 0, peakStock: 0, trains: 0, charges: 0, contractsDone: 0, events: 0, madeItems: {} },
+    stats: { delivered: 0, onTime: 0, late: 0, failed: 0, revenue: 0, made: 0, madeGoods: 0, unloaded: 0, moves: 0, rushOnTime: 0, phones: 0, peakStock: 0, trains: 0, charges: 0, contractsDone: 0, events: 0, madeItems: {}, borrowed: 0, repaid: 0, coldShipped: 0, ownShipped: 0, missions: 0, vipOnTime: 0, spoiled: 0 },
     seasonOver: false, bankrupt: false,
   };
   for (const id of ITEM_IDS) s.market[id] = 1;
+  if (def.cold) s.up.cold = 1;
   for (const d of def.doors) addDoor(s, d);
   for (const [x, z] of def.racks) makeStruct(s, { kind: "rack", x, z, rot: 0 });
   for (const m of def.machines) {
     const t = makeStruct(s, { kind: "machine", type: m.type, x: m.x, z: m.z });
     t.m!.recipe = m.recipe;
   }
+  for (const [x, z] of def.freezers ?? []) makeStruct(s, { kind: "freezer", x, z, rot: 0 });
   makeStruct(s, { kind: "charger", x: def.charger[0], z: def.charger[1] });
   // Opening stock, spread through the racks.
-  const store = s.slots.filter((sl) => sl.kind === "store");
   let k = 0;
   for (const [item, n] of Object.entries(def.stock) as [ItemId, number][])
-    for (let i = 0; i < n && k < store.length; i++) {
-      const sl = store[(k * 7) % store.length].pallet < 0 ? store[(k * 7) % store.length] : store.find((x) => x.pallet < 0)!;
+    for (let i = 0; i < n; i++) {
+      const store = s.slots.filter((sl) => sl.kind === "store" && !!sl.cold === !!ITEMS[item].frozen);
+      if (!store.length) break;
+      const sl = store[(k * 7) % store.length].pallet < 0 ? store[(k * 7) % store.length] : store.find((x) => x.pallet < 0);
+      if (!sl) break;
       k++;
       const p = newPallet(s, item);
       p.born = s.time - ri(s, 1, 5) * HOUR - ri(s, 0, 59) * MIN;
@@ -748,6 +847,7 @@ export function newGame(siteId: string, seed = 1): State {
     tr.plate = "TRK-2287";
   }
   offer(s);
+  newMissions(s);
   s.startWorth = worth(s);
   alert(s, "info", `Welcome to ${def.code} ${def.name}. Shift starts 07:00.`);
   return s;
@@ -770,7 +870,8 @@ export function buyForklift(s: State): string | null {
   return null;
 }
 
-const forkSpeed = (s: State, f?: Forklift) => FORK_SPEED * (up(s, "fast2") ? 1.4 : up(s, "fast1") ? 1.2 : 1) * (f && f.battery <= 0.02 ? 0.4 : 1);
+const forkSpeed = (s: State, f?: Forklift) =>
+  FORK_SPEED * (up(s, "fast2") ? 1.4 : up(s, "fast1") ? 1.2 : 1) * (f && f.battery <= 0.02 ? 0.4 : 1) * (f ? 1 + (forkLevel(s, f) - 1) * 0.03 : 1);
 const handleTime = (s: State, atDock: boolean) => FORK_HANDLE * (up(s, "scanner") ? 0.5 : 1) * (atDock && up(s, "levellers") ? 0.6 : 1) * (up(s, "training") ? 0.75 : 1);
 const drainFactor = (s: State) => (eventOn(s, "heat") ? 1.5 : 1) * (up(s, "training") ? 0.8 : 1);
 function drain(s: State, f: Forklift, amount: number) {
@@ -901,7 +1002,7 @@ function findJob(s: State, f: Forklift): boolean {
       }
     }
     const [ax, az] = truckAccess(t)!;
-    const dst = nearestStore(s, ax, az, up(s, "slotting")) ?? (t.rail ? null : (s.slots.find((sl) => s.doors[t.door].stage.includes(sl.id) && freeSlot(sl)) ?? null));
+    const dst = nearestStore(s, ax, az, up(s, "slotting"), p.item) ?? (t.rail ? null : (s.slots.find((sl) => s.doors[t.door].stage.includes(sl.id) && freeSlot(sl)) ?? null));
     if (!dst) continue;
     claim(s, f, "unload", p, { k: "slot", id: dst.id });
     return true;
@@ -916,7 +1017,7 @@ function findJob(s: State, f: Forklift): boolean {
       if (p.busy >= 0) continue;
       // Straight to a machine that needs it, if one does.
       const feed = feedTarget(s, p.item);
-      const dst = feed ?? nearestStore(s, sl.x, sl.z, true);
+      const dst = feed ?? nearestStore(s, sl.x, sl.z, true, p.item);
       if (!dst) continue;
       claim(s, f, feed ? "feed" : "output", p, { k: "slot", id: dst.id });
       return true;
@@ -965,8 +1066,11 @@ function findJob(s: State, f: Forklift): boolean {
       const t = s.structs[sl.owner];
       stray = !MACHINES[t.m!.type].recipes[t.m!.recipe].inputs.includes(p.item);
     }
+    // Frozen pallets out of the cold go back in a freezer if one has room.
+    const coldFree = () => s.slots.some((x) => x.cold && freeSlot(x) && !x.dead);
+    if (!stray && ITEMS[p.item].frozen && sl.kind === "store" && !sl.cold && coldFree()) stray = true;
     if (!stray) continue;
-    const dst = nearestStore(s, sl.x, sl.z, true);
+    const dst = nearestStore(s, sl.x, sl.z, true, p.item);
     if (!dst) continue;
     claim(s, f, "putaway", p, { k: "slot", id: dst.id });
     return true;
@@ -1162,7 +1266,7 @@ function stepFork(s: State, f: Forklift, dt: number) {
       const a = destAccess(s, j.to);
       if (!a) {
         // The destination went away: put it in storage instead.
-        const dst = nearestStore(s, f.x, f.z, true);
+        const dst = nearestStore(s, f.x, f.z, true, p.item);
         if (j.to.k === "slot" && s.slots[j.to.id].res === p.id) s.slots[j.to.id].res = -1;
         if (!dst) return;
         dst.res = p.id;
@@ -1199,6 +1303,7 @@ function stepFork(s: State, f: Forklift, dt: number) {
       drain(s, f, BATTERY_PER_LIFT);
       if (j.kind === "unload") s.today.received++;
       s.stats.moves++;
+      s.today.moves++;
       f.trips++;
       f.job = null;
       f.phase = "idle";
@@ -1216,6 +1321,7 @@ function newTruck(s: State, dir: "in" | "out", ref: number, eta: number, cap = 1
     id: nid(s), plate: rail ? `TRN-${400 + ri(s, 0, 499)}` : `TRK-${PLATE_BASE + ri(s, 0, 7999)}`, carrier: ri(s, 0, CARRIERS.length - 1), dir, state: "transit", t: 0, eta, door: -1, cap,
     cargo: new Array(cap).fill(-1), ref, arrived: -1, docked: -1, ...(rail ? { rail: true } : {}),
   };
+  if (t.carrier === OWN_CARRIER) t.carrier = 0;
   s.trucks.push(t);
   return t;
 }
@@ -1275,6 +1381,7 @@ function stepTruck(s: State, t: Truck, dt: number) {
           const po = s.pos.find((p) => p.id === t.ref);
           if (po) po.done = true;
           s.stats.unloaded++;
+          s.today.unloads++;
           if (t.rail) s.stats.trains++;
           alert(s, "info", `${t.plate} unloaded at ${t.rail ? `Rail ${t.door + 1}` : doorName(s, t.door)}`, { k: "truck", id: t.id });
         }
@@ -1289,6 +1396,11 @@ function stepTruck(s: State, t: Truck, dt: number) {
         t.cargo.fill(-1);
         o.state = "transit";
         o.departed = s.time;
+        // Carriers take their cut; your own trucks don't.
+        if (t.own === undefined) {
+          const fee = Math.round(o.value * CARRIER_FEE);
+          spend(s, fee, "carriers");
+        }
         o.delivers = s.time + o.transit * MIN * (up(s, "express") ? 0.75 : 1);
         s.doors[o.door].order = -1;
         o.door = -1;
@@ -1328,15 +1440,19 @@ export function setDoorType(s: State, i: number, type: DoorType): string | null 
 
 /* ------------------------------------------------------------------ orders */
 
-function makeOrder(s: State, o: { customer: string; city: string; lines: { item: ItemId; n: number }[]; due: number; rush: boolean }): Order {
+function makeOrder(s: State, o: { customer: string; city: string; lines: { item: ItemId; n: number }[]; due: number; rush: boolean; vip?: boolean }): Order {
   const city = CITIES.find((c) => c.name === o.city) ?? CITIES[0];
   const total = o.lines.reduce((a, l) => a + l.n, 0);
   const prem = 0.97 + rand(s) * 0.15;
   const base = o.lines.reduce((a, l) => a + ITEMS[l.item].price * marketOf(s, l.item) * l.n * (eventOn(s, "boom") && HIGH_TECH.includes(l.item) ? 1.2 : 1), 0);
-  const value = Math.round(base * prem * (up(s, "sales") ? 1.06 : 1) * (up(s, "quality") ? 1.05 : 1) * (eventOn(s, "rush") ? 1.1 : 1) * (o.rush ? 1.25 : 1));
+  const loyal = [1, 1.03, 1.06, 1.1][loyalty(s, o.customer)];
+  const value = Math.round(
+    base * prem * loyal * (up(s, "sales") ? 1.06 : 1) * (up(s, "quality") ? 1.05 : 1) * (eventOn(s, "rush") ? 1.1 : 1) * (o.rush ? 1.25 : 1) * (o.vip ? 1.5 : 1),
+  );
   const order: Order = {
     id: nid(s), code: `SHP-${78000 + ri(s, 100, 999) + s.orders.length * 7}`, customer: o.customer, city: city.name, lines: o.lines, total, value,
     offered: s.time, expires: s.time + ri(s, 45, 80) * MIN, due: o.due, transit: city.transit, state: "offer", door: -1, truck: -1, departed: -1, delivers: -1, rush: o.rush, paid: 0,
+    ...(o.vip ? { vip: true } : {}),
   };
   s.orders.push(order);
   return order;
@@ -1344,22 +1460,23 @@ function makeOrder(s: State, o: { customer: string; city: string; lines: { item:
 
 /** A customer asks for something. */
 export function offer(s: State) {
-  const def = siteDef(s.site);
   const cust = pick(s, CUSTOMERS);
   const city = pick(s, CITIES);
-  const mix = up(s, "premium") ? [...new Set([...def.goodsMix, ...HIGH_TECH])] : def.goodsMix;
+  const mix = mixOf(s);
   const pool = cust.likes.filter((i) => mix.includes(i));
   const items = pool.length ? pool : mix;
   const d = day(s.time);
-  const maxN = Math.min(6, 2 + d);
+  // Loyal customers order a little more.
+  const maxN = Math.min(8, 2 + d + (loyalty(s, cust.name) >= 2 ? 1 : 0));
   const lines: { item: ItemId; n: number }[] = [{ item: pick(s, items), n: ri(s, 1, maxN) }];
   if (rand(s) < 0.3 && items.length > 1) {
     const other = items.find((i) => i !== lines[0].item)!;
     lines.push({ item: other, n: ri(s, 1, Math.max(1, maxN - 2)) });
   }
-  const rush = rand(s) < 0.15;
-  const due = s.time + city.transit * MIN + (rush ? ri(s, 80, 110) : ri(s, 160, 320)) * MIN;
-  return makeOrder(s, { customer: cust.name, city: city.name, lines, due, rush });
+  const vip = rand(s) < (up(s, "vip") ? 0.12 : 0.05);
+  const rush = !vip && rand(s) < 0.15;
+  const due = s.time + city.transit * MIN + (rush ? ri(s, 80, 110) : vip ? ri(s, 110, 170) : ri(s, 160, 320)) * MIN;
+  return makeOrder(s, { customer: cust.name, city: city.name, lines, due, rush, vip });
 }
 
 function assignDoor(s: State, o: Order) {
@@ -1383,6 +1500,15 @@ function confirm(s: State, o: Order) {
   // Book the collection in time to make the deadline, with a margin.
   const eta = Math.max(s.time + 35 * MIN, o.due - o.transit * MIN * (up(s, "express") ? 0.75 : 1) - 100 * MIN);
   const t = newTruck(s, "out", o.id, eta, 12);
+  // One of your own trucks if one is back at the depot.
+  const own = up(s, "depot") ? s.ownTrucks.find((x) => x.free <= s.time) : undefined;
+  if (own) {
+    own.free = Infinity;
+    t.own = own.id;
+    t.carrier = OWN_CARRIER;
+    t.plate = own.name;
+    o.own = own.id;
+  }
   o.truck = t.id;
   assignDoor(s, o);
 }
@@ -1392,7 +1518,8 @@ function confirm(s: State, o: Order) {
 /** A customer offers a run of shipments of one item, with a bonus if every one is on time. */
 export function offerContract(s: State) {
   const def = siteDef(s.site);
-  const mix = up(s, "premium") ? [...new Set([...def.goodsMix, ...HIGH_TECH])] : def.goodsMix;
+  void def;
+  const mix = mixOf(s);
   const cust = pick(s, CUSTOMERS);
   const items = cust.likes.filter((i) => mix.includes(i));
   const item = pick(s, items.length ? items : mix);
@@ -1465,6 +1592,10 @@ export function cancel(s: State, id: number, why: "player" | "late" = "player") 
   s.stats.failed++;
   s.history.push(false);
   contractResult(s, o, false);
+  if (o.own !== undefined) {
+    const own = s.ownTrucks.find((x) => x.id === o.own);
+    if (own) own.free = s.time;
+  }
   for (const p of Object.values(s.pallets)) if (p.order === o.id) p.order = -1;
   // Anything already in the trailer comes back off.
   const t = s.trucks.find((x) => x.id === o.truck);
@@ -1544,18 +1675,36 @@ function stepOrders(s: State) {
       const pay = Math.round(o.value * (o.onTime ? 1 : up(s, "insurance") ? 0.75 : 0.6));
       o.paid = pay;
       earn(s, pay, "revenue");
+      pop(s, pay, `#${o.code}`);
       s.stats.delivered++;
+      s.today.orders++;
+      const cu = (s.customers[o.customer] ??= { onTime: 0, late: 0 });
+      const before = loyalty(s, o.customer);
+      if (o.onTime) cu.onTime += up(s, "care") ? 2 : 1;
+      else cu.late++;
+      const after = loyalty(s, o.customer);
+      if (after > before) alert(s, "good", `${o.customer} is now a ${LOYALTY[after]} customer: bigger orders and better prices`);
+      if (o.lines.some((l) => ITEMS[l.item].frozen)) s.stats.coldShipped++;
+      if (o.own !== undefined) {
+        s.stats.ownShipped++;
+        const own = s.ownTrucks.find((x) => x.id === o.own);
+        if (own) {
+          own.free = s.time + o.transit * MIN * (up(s, "express") ? 0.75 : 1);
+          own.trips++;
+        }
+      }
+      if (o.vip && o.onTime) s.stats.vipOnTime++;
       s.history.push(o.onTime);
       if (s.history.length > 30) s.history.shift();
       if (o.onTime) {
         s.stats.onTime++;
         s.today.onTime++;
         if (o.rush) s.stats.rushOnTime++;
-        s.rep = Math.min(100, s.rep + (o.rush ? 3 : 1.5));
+        s.rep = Math.min(100, s.rep + (o.vip ? 6 : o.rush ? 3 : 1.5));
       } else {
         s.stats.late++;
         s.today.late++;
-        s.rep = Math.max(0, s.rep - 4);
+        s.rep = Math.max(0, s.rep - (o.vip ? 8 : 4));
       }
       contractResult(s, o, o.onTime);
       alert(s, o.onTime ? "good" : "warn", `#${o.code} delivered to ${o.customer}, ${o.city}${o.onTime ? "" : " (late)"}: +$${pay.toLocaleString("en-US")}`, { k: "order", id: o.id });
@@ -1581,7 +1730,10 @@ export function buy(s: State, item: ItemId, n: number, free = false, rail = fals
   n = Math.max(1, Math.min(rail ? RAIL_CAP : 12, Math.round(n)));
   const cost = free ? 0 : purchaseCost(s, item, n, rail);
   if (!free && s.cash < cost) return null;
-  if (!free) spend(s, cost, "purchases");
+  if (!free) {
+    spend(s, cost, "purchases");
+    pop(s, -cost, `${n} × ${ITEMS[item].name}`);
+  }
   const sup = supplierFor(item);
   const po: PO = { id: nid(s), code: `PO-${1200 + s.pos.length + 1}`, supplier: sup.name, item, n, cost, ordered: s.time, truck: -1, done: false };
   s.pos.push(po);
@@ -1613,14 +1765,20 @@ export function setAuto(s: State, item: ItemId, min: number, qty: number) {
 function stepAuto(s: State) {
   for (const [item, rule] of Object.entries(s.auto) as [ItemId, { min: number; qty: number }][]) {
     if (stock(s, item) + incoming(s, item) >= rule.min) continue;
-    if (buy(s, item, rule.qty)) alert(s, "info", `Auto-replenish: ${rule.qty} × ${ITEMS[item].name} ordered`);
+    // Autopilot: by rail when the siding's there, and never below $5,000.
+    const rail = up(s, "autopilot") && s.rail;
+    if (up(s, "autopilot") && s.cash - purchaseCost(s, item, rule.qty, rail) < 5_000) continue;
+    if (buy(s, item, rule.qty, false, rail)) alert(s, "info", `Auto-replenish: ${rule.qty} × ${ITEMS[item].name} ordered${rail ? " by rail" : ""}`);
   }
 }
 
 /* ------------------------------------------------------------------ machines */
 
 const cycleTime = (s: State, t: Struct) =>
-  MACHINES[t.m!.type].recipes[t.m!.recipe].secs * (up(s, "lean") ? 0.8 : 1) * (up(s, "robotics") && (t.m!.type === "assembly" || t.m!.type === "robot") ? 0.7 : 1);
+  MACHINES[t.m!.type].recipes[t.m!.recipe].secs *
+  (up(s, "lean") ? 0.8 : 1) *
+  (up(s, "robotics") && (t.m!.type === "assembly" || t.m!.type === "robot") ? 0.7 : 1) *
+  (t.m!.mk === 2 ? 0.75 : 1);
 export const cycleSecs = cycleTime;
 
 function stepMachine(s: State, t: Struct, dt: number) {
@@ -1648,7 +1806,7 @@ function stepMachine(s: State, t: Struct, dt: number) {
       }
       if (r.output === "phone") s.stats.phones++;
       s.stats.madeItems[r.output] = (s.stats.madeItems[r.output] ?? 0) + 1;
-      m.wear = Math.min(1, m.wear + 0.035 * (up(s, "crew") ? 0.6 : 1));
+      m.wear = Math.min(1, m.wear + 0.035 * (up(s, "crew") ? 0.6 : 1) * (m.mk === 2 ? 0.8 : 1));
       m.t = 0;
       m.state = "idle";
       if (rand(s) < Math.max(0, m.wear - 0.45) * 0.5) {
@@ -1721,6 +1879,22 @@ export function toggleMachine(s: State, id: number) {
 }
 
 export const REPAIR_COST = 900;
+export const mk2Cost = (t: Struct) => Math.round(MACHINES[t.m!.type].cost * 0.6);
+
+/** Rebuild a machine as a Mk II: 25% faster cycles, less wear. */
+export function upgradeMachine(s: State, id: number): string | null {
+  const t = s.structs[id];
+  if (!t?.m) return "Not a machine";
+  if (t.m.mk === 2) return "Already a Mk II";
+  if (t.m.state === "running") return "Wait for the cycle to finish";
+  const cost = mk2Cost(t);
+  if (s.cash < cost) return "Not enough cash";
+  spend(s, cost, "capex");
+  pop(s, -cost, "Mk II");
+  t.m.mk = 2;
+  alert(s, "good", `${MACHINES[t.m.type].name} rebuilt as a Mk II`, { k: "struct", id });
+  return null;
+}
 export const SERVICE_COST = 350;
 
 export function repair(s: State, id: number): string | null {
@@ -1778,6 +1952,106 @@ export const upgradeCost = (s: State, id: UpgradeId) => {
   return id === "door" ? u.cost * (1 + (s.up.door ?? 0) * 0.5) : u.cost;
 };
 
+/* ------------------------------------------------------------------ the bank */
+
+/** How much more the bank will lend: half your net worth (three quarters with a bank partner), less what you owe. */
+export function creditLimit(s: State) {
+  const gross = s.cash + stockValue(s) + assets(s);
+  const cap = Math.floor((Math.max(0, gross) * (up(s, "bank") ? 0.75 : 0.5)) / 5_000) * 5_000;
+  return Math.max(0, Math.min(500_000, cap) - s.loan);
+}
+export const loanRate = (s: State) => LOAN_RATE * (up(s, "bank") ? 0.5 : 1);
+
+export function borrow(s: State, amount: number): string | null {
+  amount = Math.round(amount);
+  if (amount <= 0) return "Nothing to borrow";
+  if (amount > creditLimit(s)) return "Over your credit limit";
+  s.loan += amount;
+  s.cash += amount;
+  s.stats.borrowed += amount;
+  pop(s, amount, "Loan");
+  alert(s, "info", `Borrowed $${amount.toLocaleString("en-US")} at ${(loanRate(s) * 100).toFixed(1)}% a day`);
+  return null;
+}
+
+export function repay(s: State, amount: number): string | null {
+  amount = Math.round(Math.min(amount, s.loan));
+  if (amount <= 0) return "Nothing owed";
+  if (s.cash < amount) return "Not enough cash";
+  s.loan -= amount;
+  s.cash -= amount;
+  s.stats.repaid += amount;
+  pop(s, -amount, "Repaid");
+  if (s.loan === 0) alert(s, "good", "Loan paid off");
+  return null;
+}
+
+/* ------------------------------------------------------------------ your own fleet */
+
+export function buyOwnTruck(s: State): string | null {
+  if (!up(s, "depot")) return "Build the Transport depot first";
+  if (s.ownTrucks.length >= MAX_OWN_TRUCKS) return "The depot is full";
+  if (s.cash < OWN_TRUCK_COST) return "Not enough cash";
+  spend(s, OWN_TRUCK_COST, "capex");
+  pop(s, -OWN_TRUCK_COST, "Truck");
+  const n = s.ownTrucks.length + 1;
+  s.ownTrucks.push({ id: n, name: `WF-${String(n).padStart(2, "0")}`, free: s.time, trips: 0 });
+  alert(s, "good", `WF-${String(n).padStart(2, "0")} joins your fleet`);
+  return null;
+}
+
+/* ------------------------------------------------------------------ missions */
+
+function newMissions(s: State) {
+  const d = day(s.time);
+  const pool = [...MISSIONS];
+  s.missions = [];
+  for (let k = 0; k < 3 && pool.length; k++) {
+    const m = pool.splice(Math.floor(rand(s) * pool.length), 1)[0];
+    const target = m.target(d);
+    s.missions.push({ kind: m.kind, icon: m.icon, name: m.name.replace("{n}", target.toLocaleString("en-US")), target, reward: m.reward(d), done: false });
+  }
+}
+
+export function missionProgress(s: State, m: Mission) {
+  const t = s.today;
+  return { ship: t.orders, unload: t.unloads, make: t.made, revenue: t.revenue, ontime: t.onTime, moves: t.moves }[m.kind];
+}
+
+function stepMissions(s: State) {
+  for (const m of s.missions) {
+    if (m.done || missionProgress(s, m) < m.target) continue;
+    m.done = true;
+    earn(s, m.reward, "rewards");
+    pop(s, m.reward, "Mission");
+    s.stats.missions++;
+    alert(s, "good", `Mission done: ${m.name} (+$${m.reward.toLocaleString("en-US")})`);
+  }
+}
+
+/* ------------------------------------------------------------------ the cold chain */
+
+/** Frozen pallets out of a freezer warm up (staging lanes slower with reefer lanes); too warm and they spoil. */
+function stepCold(s: State, secs: number) {
+  for (const p of Object.values(s.pallets)) {
+    if (!ITEMS[p.item].frozen || p.loc !== "slot") continue;
+    const sl = s.slots[p.ref];
+    if (sl.cold) {
+      p.warm = Math.max(0, (p.warm ?? 0) - secs * 2);
+      continue;
+    }
+    p.warm = (p.warm ?? 0) + secs * (sl.kind === "stage" && up(s, "reefer") ? 1 / 3 : 1);
+    if (p.warm < THAW_SECS || p.busy >= 0) continue;
+    // Spoiled: it goes in the skip.
+    sl.pallet = -1;
+    delete s.pallets[p.id];
+    const loss = buyPrice(p.item);
+    s.ledger.spoilage += loss;
+    s.stats.spoiled++;
+    alert(s, "bad", `A pallet of ${ITEMS[p.item].name} spoiled out of the cold (−$${loss.toLocaleString("en-US")} of stock)`);
+  }
+}
+
 /* ------------------------------------------------------------------ the books */
 
 export function stockValue(s: State) {
@@ -1792,7 +2066,9 @@ export function assets(s: State) {
   return v;
 }
 
-export const worth = (s: State) => Math.round(s.cash + stockValue(s) + assets(s));
+export const worth = (s: State) => Math.round(s.cash + stockValue(s) + assets(s) - s.loan);
+/** Money in and out over the last game hour (from the hourly log). */
+export const cashTrend = (s: State) => (s.cashLog.length ? Math.round(s.cash - s.cashLog[s.cashLog.length - 1]) : 0);
 export const score = (s: State) => Math.max(0, Math.round((worth(s) - s.startWorth) / 10) + s.stats.onTime * 25 + s.stats.madeGoods * 5);
 
 export function kpis(s: State) {
@@ -1842,13 +2118,24 @@ const GOAL_CHECKS: Record<string, (s: State) => boolean> = {
   fleet8: (s) => s.forks.length >= 8,
   event: (s) => s.stats.events >= 1,
   worth1m: (s) => worth(s) >= 1_000_000,
+  debtfree: (s) => s.stats.borrowed > 0 && s.loan === 0,
+  coldship: (s) => s.stats.coldShipped >= 1,
+  ownfleet: (s) => s.stats.ownShipped >= 1,
+  missions10: (s) => s.stats.missions >= 10,
+  gold: (s) => Object.keys(s.customers).some((c) => loyalty(s, c) === 3),
+  vipship: (s) => s.stats.vipOnTime >= 1,
+  mk2: (s) => s.structs.some((t) => !t.dead && t.m?.mk === 2),
+  veteran: (s) => s.forks.some((f) => forkLevel(s, f) >= 5),
 };
 
 function stepGoals(s: State) {
   for (const g of GOALS) {
     if (s.goals[g.id] || !GOAL_CHECKS[g.id]?.(s)) continue;
     s.goals[g.id] = true;
-    if (g.reward) earn(s, g.reward, "rewards");
+    if (g.reward) {
+      earn(s, g.reward, "rewards");
+      pop(s, g.reward, "Goal");
+    }
     alert(s, "good", `Goal: ${g.name}${g.reward ? ` (+$${g.reward.toLocaleString("en-US")})` : ""}`);
   }
 }
@@ -1871,6 +2158,10 @@ export function startEvent(s: State, kind: EventKind) {
 }
 
 function stepHour(s: State) {
+  s.cashLog.push(Math.round(s.cash));
+  if (s.cashLog.length > 72) s.cashLog.shift();
+  if (s.cash < 5_000 && s.cash >= -25_000 && !s.alerts.some((a) => a.text.startsWith("Cash is low") && s.time - a.t < 6 * HOUR))
+    alert(s, "warn", "Cash is low: take fewer risks, sell stock, or borrow from the bank (tap your cash)");
   if (s.event && s.time >= s.event.until) {
     const def = EVENTS.find((e) => e.kind === s.event!.kind)!;
     alert(s, "info", `${def.name} is over`);
@@ -1900,7 +2191,8 @@ function stepOnce(s: State, dt: number) {
   const machines = s.structs.filter((t) => !t.dead && t.m);
   const solar = up(s, "solar") ? 0.75 : 1;
   spend(s, (def.rent * solar * (s.mega && !def.mega ? 1.8 : s.expanded && !def.expanded ? 1.35 : 1) * dt) / HOUR, "rent");
-  spend(s, (FORKLIFT_WAGE * (up(s, "agv") ? 0.4 : 1) * s.forks.length * dt) / HOUR, "wages");
+  spend(s, ((FORKLIFT_WAGE * (up(s, "agv") ? 0.4 : 1) * s.forks.length + OWN_TRUCK_WAGE * s.ownTrucks.length) * dt) / HOUR, "wages");
+  if (s.loan > 0) spend(s, (s.loan * loanRate(s) * dt) / DAY, "interest");
   spend(s, (machines.reduce((a, t) => a + MACHINES[t.m!.type].upkeep * (t.m!.on ? 1 : 0.3), 0) * solar * dt) / HOUR, "upkeep");
   // Trucks kept waiting cost money.
   for (const t of s.trucks)
@@ -1920,6 +2212,8 @@ function stepOnce(s: State, dt: number) {
     stepOrders(s);
     const held = stock(s);
     s.stats.peakStock = Math.max(s.stats.peakStock, held);
+    stepCold(s, MIN);
+    stepMissions(s);
     stepGoals(s);
   }
   if (Math.floor(before / (10 * MIN)) !== Math.floor(s.time / (10 * MIN))) stepAuto(s);
@@ -1929,7 +2223,9 @@ function stepOnce(s: State, dt: number) {
   if (day(before) !== day(s.time)) {
     s.days.push(s.today);
     if (s.days.length > 14) s.days.shift();
+    s.report = { ...s.today, profit: Math.round(s.today.revenue - s.today.costs) };
     s.today = newDay(day(s.time));
+    newMissions(s);
     stepMarket(s);
     alert(s, "info", `Day ${day(s.time)}`);
     if (day(s.time) > SEASON_DAYS && !s.seasonOver) {
@@ -1994,6 +2290,23 @@ export function deserialize(json: string): State | null {
       f.battery ??= 1;
       f.charger ??= -1;
     }
+    // Saves from before the mega super update.
+    s.loan ??= 0;
+    s.cashLog ??= [];
+    s.report ??= null;
+    s.missions ??= [];
+    s.customers ??= {};
+    s.ownTrucks ??= [];
+    s.fx ??= [];
+    s.tip ??= 99;
+    s.ledger.carriers ??= 0;
+    s.ledger.interest ??= 0;
+    s.ledger.spoilage ??= 0;
+    s.today.orders ??= 0;
+    s.today.unloads ??= 0;
+    s.today.moves ??= 0;
+    for (const k of ["borrowed", "repaid", "coldShipped", "ownShipped", "missions", "vipOnTime", "spoiled"] as const) s.stats[k] ??= 0;
+    if (!s.missions.length) newMissions(s);
     gridCache = null;
     return s;
   } catch {

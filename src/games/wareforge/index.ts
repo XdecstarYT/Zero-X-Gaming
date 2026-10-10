@@ -32,7 +32,7 @@ class WareForge implements GameModule {
     this.game = new Game({
       progress: (n) => this.emitter.progress(n, performance.now(), 1000),
       final: (n) => this.emitter.emit({ kind: "final", score: n, durationMs: Math.min(2 * 3600_000 - 1000, Math.max(60_000, this.game?.activeMs ?? 60_000)) }),
-    });
+    }, options.settings);
     this.root = createRoot(el);
     this.root.render(createElement(App, { game: this.game }));
     if (new URLSearchParams(window.location.search).has("wf")) (window as unknown as { __wf?: Game }).__wf = this.game;

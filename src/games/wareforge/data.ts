@@ -22,7 +22,8 @@ export type ItemId =
   | "steel" | "plastic" | "wood" | "fabric" | "electronics" | "rubber"
   | "copper" | "cells"
   | "frame" | "shell" | "panel" | "board" | "motor" | "battery"
-  | "bicycle" | "chair" | "helmet" | "phone" | "toolkit" | "ebike" | "drone" | "laptop";
+  | "bicycle" | "chair" | "helmet" | "phone" | "toolkit" | "ebike" | "drone" | "laptop"
+  | "icecream" | "vaccine" | "seafood";
 
 export type Tier = "raw" | "part" | "goods";
 
@@ -40,6 +41,8 @@ export interface Item {
   /** The colour of the load (cardboard, wrap, coil…). */
   load: string;
   icon: string;
+  /** Frozen: must be kept in a freezer rack, or it spoils. */
+  frozen?: boolean;
 }
 
 export const ITEMS: Record<ItemId, Item> = {
@@ -65,6 +68,9 @@ export const ITEMS: Record<ItemId, Item> = {
   ebike: { id: "ebike", name: "E-bike", sku: "EBK", tier: "goods", price: 3300, units: 8, kg: 24, load: "#7b6cf2", icon: "🛵" },
   drone: { id: "drone", name: "Camera drone", sku: "DRN", tier: "goods", price: 3000, units: 30, kg: 1.4, load: "#8a6ff0", icon: "🚁" },
   laptop: { id: "laptop", name: "Laptop", sku: "LPT", tier: "goods", price: 3900, units: 50, kg: 2.2, load: "#6a5ce6", icon: "💻" },
+  icecream: { id: "icecream", name: "Ice cream", sku: "ICE", tier: "goods", price: 1400, units: 240, kg: 1, load: "#f7b6d2", icon: "🍦", frozen: true },
+  vaccine: { id: "vaccine", name: "Vaccines", sku: "VAX", tier: "goods", price: 5200, units: 2000, kg: 0.05, load: "#bfe3f7", icon: "💉", frozen: true },
+  seafood: { id: "seafood", name: "Frozen seafood", sku: "SEA", tier: "goods", price: 1900, units: 60, kg: 8, load: "#a9d6e5", icon: "🦐", frozen: true },
 };
 export const ITEM_IDS = Object.keys(ITEMS) as ItemId[];
 export const RAW: ItemId[] = ITEM_IDS.filter((i) => ITEMS[i].tier === "raw");
@@ -72,6 +78,10 @@ export const GOODS: ItemId[] = ITEM_IDS.filter((i) => ITEMS[i].tier === "goods")
 export const PARTS: ItemId[] = ITEM_IDS.filter((i) => ITEMS[i].tier === "part");
 /** The high-tech goods: premium customers order them, the Robot Cell makes them. */
 export const HIGH_TECH: ItemId[] = ["ebike", "drone", "laptop"];
+/** Frozen goods: the cold chain carries them, freezer racks keep them. */
+export const FROZEN: ItemId[] = ITEM_IDS.filter((i) => ITEMS[i].frozen);
+/** How long a frozen pallet lasts out of a freezer (game seconds) before it spoils. */
+export const THAW_SECS = 150 * 60;
 
 /** What a pallet costs to buy: raw at list price, parts and finished goods from the wholesaler at a markup over making them. */
 export const buyPrice = (item: ItemId) => Math.round(ITEMS[item].price * (ITEMS[item].tier === "raw" ? 1 : 0.8));
@@ -157,6 +167,15 @@ export const MACHINE_TYPES = Object.keys(MACHINES) as MachineType[];
 
 export const RACK = { cost: 600, w: 2, d: 1, levels: 2, name: "Pallet rack", blurb: "Two bays, two levels: four pallets. Picked from the front." };
 export const FLOOR = { cost: 150, w: 2, d: 2, name: "Floor block", blurb: "A marked 2×2 block for four pallets, picked from any side." };
+export const FREEZER = { cost: 2_400, w: 2, d: 1, levels: 2, name: "Freezer rack", blurb: "An insulated rack at −20 °C for four frozen pallets. Frozen goods out of the cold spoil." };
+/** Your own trucks (with the Transport depot): no carrier fee, back after each run. */
+export const OWN_TRUCK_COST = 28_000;
+export const OWN_TRUCK_WAGE = 45; // per game hour
+export const MAX_OWN_TRUCKS = 6;
+/** Carriers charge a share of each shipment's value. */
+export const CARRIER_FEE = 0.06;
+/** The bank: credit up to half your net worth, interest per game day. */
+export const LOAN_RATE = 0.03;
 export const CHARGER = { cost: 2_500, w: 2, d: 1, name: "Charging bay", blurb: "Two chargers. Forklifts drive in when their batteries run low." };
 /** Battery used per tile driven and per pallet handled; charge per game second. */
 export const BATTERY_PER_TILE = 0.0011;
@@ -216,7 +235,11 @@ export interface SiteDef {
   /** Where the charging bay starts (x, z). */
   charger: [number, number];
   /** What's round the site. */
-  theme: "river" | "fields" | "works" | "harbor" | "summit";
+  theme: "river" | "fields" | "works" | "harbor" | "summit" | "snow";
+  /** The cold chain already in place. */
+  cold?: boolean;
+  /** Freezer racks at the start (origins). */
+  freezers?: [number, number][];
   /** How busy customers are here (orders per game hour, by day). */
   demand: number;
   goodsMix: ItemId[];
@@ -285,6 +308,16 @@ export const SITES: SiteDef[] = [
     stock: { steel: 4, copper: 4, cells: 4, electronics: 3, plastic: 4, fabric: 4, ebike: 2, laptop: 2, chair: 4, bicycle: 4 },
     demand: 5.5, goodsMix: ["ebike", "laptop", "drone", "bicycle", "chair", "helmet", "phone", "toolkit"], charger: [41, 13], theme: "summit",
   },
+  {
+    id: "wh15", code: "WH-15", name: "Polar Cold Store", difficulty: "Hard",
+    blurb: "A cold store in the snow: freezer racks, ice cream, seafood and vaccines that spoil if they warm up. Keep the cold chain unbroken.",
+    cash: 85_000, rent: 230, doors: ["out", "out", "in", "in", "flex", "flex"], forklifts: 3, expanded: true, cold: true,
+    racks: [...rackRow(3, 21, 41), ...rackRow(7, 21, 41)],
+    freezers: [...rackRow(3, 3, 19), ...rackRow(7, 3, 19), ...rackRow(11, 3, 19)],
+    machines: [],
+    stock: { icecream: 6, seafood: 5, vaccine: 2, helmet: 3, toolkit: 3 },
+    demand: 2.8, goodsMix: ["icecream", "seafood", "vaccine", "helmet", "toolkit", "chair"], charger: [24, 13], theme: "snow",
+  },
 ];
 export const siteDef = (id: string) => SITES.find((s) => s.id === id) ?? SITES[0];
 
@@ -301,7 +334,11 @@ export const CARRIERS: Carrier[] = [
   { name: "Northline", color: "#1f9d74", stripe: "#a8ecd2" },
   { name: "Redfox Freight", color: "#d94848", stripe: "#ffc0c0" },
   { name: "Gullwing", color: "#7c5cf0", stripe: "#d6c9ff" },
+  // Your own fleet (never picked at random).
+  { name: "WareForge Fleet", color: "#2f6fe4", stripe: "#f6c21c" },
 ];
+/** The livery your own trucks wear. */
+export const OWN_CARRIER = CARRIERS.length - 1;
 
 export interface Supplier {
   name: string;
@@ -317,6 +354,7 @@ export const SUPPLIERS: Supplier[] = [
   { name: "Polymer & Co.", items: ["plastic", "fabric"], lead: [30, 60], factor: 1 },
   { name: "Timberline", items: ["wood"], lead: [30, 60], factor: 1 },
   { name: "Circuitra", items: ["electronics"], lead: [60, 110], factor: 1 },
+  { name: "Arctic Freight", items: FROZEN, lead: [50, 90], factor: 1 },
   { name: "Wholesale Direct", items: [...PARTS, ...GOODS], lead: [50, 100], factor: 1 },
 ];
 export const supplierFor = (item: ItemId) => SUPPLIERS.find((s) => s.items.includes(item)) ?? SUPPLIERS[SUPPLIERS.length - 1];
@@ -337,7 +375,10 @@ export const CUSTOMERS: Customer[] = [
   { name: "Voltway E-Bikes", likes: ["ebike", "bicycle"] },
   { name: "SkyLens Drones", likes: ["drone"] },
   { name: "Nimbus Computers", likes: ["laptop", "phone"] },
-  { name: "MegaMart", likes: ["chair", "toolkit", "laptop", "drone", "ebike"] },
+  { name: "MegaMart", likes: ["chair", "toolkit", "laptop", "drone", "ebike", "icecream"] },
+  { name: "FreshCo Foods", likes: ["icecream", "seafood"] },
+  { name: "MedLine Pharma", likes: ["vaccine"] },
+  { name: "Harbour Bistro Group", likes: ["seafood", "icecream"] },
 ];
 
 export interface City {
@@ -366,7 +407,8 @@ export const CITIES: City[] = [
 export type UpgradeId =
   | "fast1" | "fast2" | "levellers" | "crew" | "lean" | "slotting" | "highbay" | "scanner"
   | "express" | "buyer" | "door" | "expand" | "sales" | "night"
-  | "mega" | "rail" | "agv" | "solar" | "wms" | "robotics" | "quality" | "insurance" | "training" | "crossdock" | "brand" | "premium" | "fastcharge";
+  | "mega" | "rail" | "agv" | "solar" | "wms" | "robotics" | "quality" | "insurance" | "training" | "crossdock" | "brand" | "premium" | "fastcharge"
+  | "cold" | "depot" | "bank" | "academy" | "care" | "vip" | "reefer" | "autopilot";
 
 export interface Upgrade {
   id: UpgradeId;
@@ -405,6 +447,14 @@ export const UPGRADES: Upgrade[] = [
   { id: "crossdock", name: "Cross-docking", cost: 11_000, icon: "🔀", body: "Inbound pallets an order needs go straight onto its lane." },
   { id: "brand", name: "Brand campaign", cost: 14_000, icon: "📣", body: "Your name on every trailer: +10 reputation and more offers." },
   { id: "premium", name: "Premium customers", cost: 16_000, icon: "💎", body: "Win accounts that order e-bikes, drones and laptops (buy them wholesale or make them)." },
+  { id: "cold", name: "Cold chain", cost: 15_000, icon: "❄️", body: "Freezer racks to build, and customers who order ice cream, seafood and vaccines." },
+  { id: "reefer", name: "Reefer lanes", cost: 7_000, icon: "🧊", needs: "cold", body: "Chilled staging lanes: frozen pallets waiting at the doors warm up three times slower." },
+  { id: "depot", name: "Transport depot", cost: 20_000, icon: "🚛", body: "Run your own trucks: no 6% carrier fee on the shipments they carry." },
+  { id: "bank", name: "Bank partner", cost: 6_000, icon: "🏦", body: "A better relationship with the bank: half the interest and a bigger credit line." },
+  { id: "academy", name: "Training academy", cost: 9_000, icon: "🏅", body: "Forklift drivers gain experience twice as fast." },
+  { id: "care", name: "Customer care", cost: 8_000, icon: "💬", body: "A team for your accounts: customers become loyal twice as fast." },
+  { id: "vip", name: "VIP accounts", cost: 12_000, icon: "👑", needs: "care", body: "More VIP orders: half again the price, tight deadlines, big reputation." },
+  { id: "autopilot", name: "Autopilot purchasing", cost: 10_000, icon: "🧠", needs: "buyer", body: "Auto-replenish orders by rail when it's cheaper, and never lets cash fall below $5,000." },
 ];
 export const upgrade = (id: UpgradeId) => UPGRADES.find((u) => u.id === id)!;
 
@@ -441,6 +491,35 @@ export const GOALS: GoalDef[] = [
   { id: "fleet8", name: "Armada", body: "Run eight forklifts.", reward: 6_000 },
   { id: "event", name: "Weathered", body: "Get through a storm, a strike or a power cut.", reward: 3_000 },
   { id: "worth1m", name: "Millionaire", body: "Reach $1,000,000 net worth.", reward: 0 },
+  { id: "debtfree", name: "Debt free", body: "Borrow from the bank and pay it all back.", reward: 3_000 },
+  { id: "coldship", name: "Cold chain", body: "Deliver an order of frozen goods.", reward: 4_000 },
+  { id: "ownfleet", name: "Our own wheels", body: "Deliver an order with one of your own trucks.", reward: 4_000 },
+  { id: "missions10", name: "Mission ready", body: "Complete 10 daily missions.", reward: 8_000 },
+  { id: "gold", name: "Gold standard", body: "Make a customer Gold (10 on-time deliveries).", reward: 6_000 },
+  { id: "vipship", name: "Red carpet", body: "Deliver a VIP order on time.", reward: 5_000 },
+  { id: "mk2", name: "Mark II", body: "Upgrade a machine to Mk II.", reward: 3_000 },
+  { id: "veteran", name: "Veteran driver", body: "Get a forklift driver to level 5.", reward: 4_000 },
+];
+
+/* ------------------------------------------------------------------ daily missions */
+
+export type MissionKind = "ship" | "unload" | "make" | "revenue" | "ontime" | "moves";
+export interface MissionDef {
+  kind: MissionKind;
+  /** Name with {n} for the target. */
+  name: string;
+  /** Target on day d. */
+  target: (d: number) => number;
+  reward: (d: number) => number;
+  icon: string;
+}
+export const MISSIONS: MissionDef[] = [
+  { kind: "ship", icon: "🚚", name: "Deliver {n} orders today", target: (d) => 3 + d, reward: (d) => 2_000 + d * 500 },
+  { kind: "unload", icon: "📥", name: "Unload {n} trucks or trains today", target: (d) => 2 + Math.floor(d / 2), reward: (d) => 1_500 + d * 300 },
+  { kind: "make", icon: "⚙️", name: "Make {n} pallets of goods today", target: (d) => 2 + d, reward: (d) => 2_500 + d * 500 },
+  { kind: "revenue", icon: "💵", name: "Take ${n} in revenue today", target: (d) => 15_000 + d * 5_000, reward: (d) => 3_000 + d * 600 },
+  { kind: "ontime", icon: "⏱", name: "Deliver {n} orders on time today", target: (d) => 2 + d, reward: (d) => 2_500 + d * 400 },
+  { kind: "moves", icon: "🚜", name: "Move {n} pallets today", target: (d) => 40 + d * 15, reward: (d) => 1_500 + d * 300 },
 ];
 
 /* ------------------------------------------------------------------ events */

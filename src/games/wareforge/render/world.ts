@@ -7,10 +7,10 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Rig } from "@/nextx/rig";
-import { AISLE_Z, DAY, DOCK_Z, GRID_W, HOUR, ITEMS, MACHINES, RAIL_DOORS, RAIL_Z, ROAD_Z, STAGE_Z, TRUCK_PHASE, WIDTH_FULL, WIDTH_MEGA, doorX0, siteDef, type SiteDef } from "../data";
-import { LEVEL_H, doorName, rackLevels, route, width, type Focus, type Pallet, type State, type Truck } from "../sim";
+import { AISLE_Z, DAY, DOCK_Z, FREEZER, GRID_W, HOUR, ITEMS, MACHINES, RAIL_DOORS, RAIL_Z, ROAD_Z, STAGE_Z, TRUCK_PHASE, WIDTH_FULL, WIDTH_MEGA, doorX0, siteDef, type SiteDef } from "../data";
+import { LEVEL_H, doorName, eventOn, rackLevels, route, width, type Focus, type Pallet, type State, type Truck } from "../sim";
 import {
-  COL, CONTAINER_COLORS, TRAILER_LEN, asphaltTexture, box, car, charger, crane, floorTexture, forklift, gatehouse, lampMat, loadTexture, machine, mat, office, person, pin,
+  COL, CONTAINER_COLORS, TRAILER_LEN, asphaltTexture, box, boxGeo, car, charger, crane, floorTexture, forklift, gatehouse, lampMat, loadTexture, machine, mat, office, person, pin,
   signTexture, streetLamp, train, tree, truck, windowMat, type ForkModel, type MachineModel, type PersonModel, type TrainModel, type TruckModel,
 } from "./models";
 
@@ -99,6 +99,9 @@ export function truckPose(s: State, t: Truck): { x: number; z: number; rot: numb
   }
 }
 
+const iceGlow = new THREE.MeshBasicMaterial({ color: "#8fd3ff" });
+const frostMat = new THREE.MeshBasicMaterial({ color: "#dff1ff", transparent: true, opacity: 0.55 });
+
 /** A trailer's cargo position, relative to its rear. */
 const cargoLocal = (ci: number) => ({ x: ci % 2 ? 0.55 : -0.55, z: 1.4 + Math.floor(ci / 2) * 1.0 });
 
@@ -125,6 +128,9 @@ export class World {
   private barrier: THREE.Group | null = null;
   private palletWrap!: THREE.InstancedMesh;
   private spots: THREE.Mesh[] = [];
+  private grass: THREE.Mesh | null = null;
+  /** Falling snow at the cold store, rain in a storm. */
+  private weather: { kind: "snow" | "rain"; obj: THREE.Points | THREE.LineSegments; pos: Float32Array; n: number; speed: Float32Array } | null = null;
   /** How bright the night is (0 day … 1 night), for bloom and exposure. */
   get nightness() {
     return this.night;
@@ -235,6 +241,7 @@ export class World {
     grass.position.set(22, -0.03, 17);
     grass.receiveShadow = true;
     S.add(grass);
+    this.grass = grass;
     // Yard.
     const yardTex = asphaltTexture("#dfe2ec");
     yardTex.repeat.set(8, 2);
@@ -361,6 +368,7 @@ export class World {
     this.disposeGroup(G);
     let seed = def.id.charCodeAt(3) * 97 + 13;
     const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    if (this.grass) this.grass.visible = def.theme !== "snow";
     const water = (x: number, z: number, w: number, d: number) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d, 1, 1), new THREE.MeshStandardMaterial({ color: "#86b8e8", roughness: 0.08, metalness: 0.2, envMapIntensity: 1.4 }));
       m.rotation.x = -Math.PI / 2;
@@ -424,6 +432,43 @@ export class World {
       }
       const barn = box(8, 5, 6, mat("#d94848", 0.8), -30, 0, 52);
       G.add(barn);
+    } else if (def.theme === "snow") {
+      // The cold store: snow on the ground, drifts, snowy pines and fells behind.
+      const snow = new THREE.Mesh(new THREE.PlaneGeometry(420, 420), mat("#f4f7fc", 0.92));
+      snow.rotation.x = -Math.PI / 2;
+      snow.position.set(22, -0.03, 17);
+      snow.receiveShadow = true;
+      snow.userData.own = true;
+      G.add(snow);
+      for (let i = 0; i < 9; i++) {
+        const h = 14 + r() * 18;
+        const fell = new THREE.Mesh(new THREE.ConeGeometry(18 + r() * 14, h, 7), mat(["#eef3fb", "#e3ebf7", "#f6f9fd"][i % 3], 0.9));
+        fell.position.set(-50 + i * 24, h / 2 - 1, -34 - r() * 10);
+        fell.userData.own = true;
+        G.add(fell);
+      }
+      const needles = mat("#3f7a63", 0.85);
+      const caps = mat("#ffffff", 0.7);
+      for (let i = 0; i < 70; i++) {
+        const x = i % 2 ? -40 + r() * 160 : -30 + r() * 20;
+        const z = i % 2 ? -12 - r() * 12 : 30 + r() * 40;
+        const sc = 0.8 + r() * 0.7;
+        for (const [rad, hh, y, m] of [[0.95, 2.4, 1.2, needles], [0.7, 1.8, 2.3, needles], [0.42, 0.9, 3.1, caps]] as [number, number, number, THREE.Material][]) {
+          const c = new THREE.Mesh(new THREE.ConeGeometry(rad * sc, hh * sc, 7), m);
+          c.position.set(x, y * sc, z);
+          c.castShadow = true;
+          c.userData.own = true;
+          G.add(c);
+        }
+      }
+      // Drifts along the fence and the road.
+      for (let i = 0; i < 26; i++) {
+        const d = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6), mat("#ffffff", 0.8));
+        d.scale.set(2 + r() * 3, 0.35 + r() * 0.3, 1 + r() * 1.2);
+        d.position.set(-24 + r() * 130, 0, i % 2 ? -3.2 : ROAD_Z + 5.5 + r() * 3);
+        d.userData.own = true;
+        G.add(d);
+      }
     } else {
       // Summit: rolling hills and pines behind.
       for (let i = 0; i < 9; i++) {
@@ -635,6 +680,24 @@ export class World {
           m.userData.own = true;
           G.add(m);
         }
+      } else if (t.kind === "freezer") {
+        // An insulated white cabinet, open to the picking side, with an ice-blue light along the top.
+        const h = (FREEZER.levels - 1) * LEVEL_H + 1.25;
+        const south = t.rot === 0;
+        const wall = mat("#f3f6fb", 0.35, 0.1);
+        G.add(box(t.w, h, 0.08, wall, t.x + t.w / 2, 0, south ? t.z + 0.04 : t.z + t.d - 0.04));
+        for (const sx of [t.x + 0.04, t.x + t.w - 0.04]) G.add(box(0.08, h, t.d, wall, sx, 0, t.z + t.d / 2));
+        G.add(box(t.w + 0.08, 0.14, t.d + 0.08, mat("#dfe8f5", 0.4, 0.2), t.x + t.w / 2, h, t.z + t.d / 2));
+        G.add(box(t.w - 0.16, 0.06, t.d - 0.12, mat("#cfe3f7", 0.25, 0.3), t.x + t.w / 2, LEVEL_H - 0.08, t.z + t.d / 2, false));
+        const glow = new THREE.Mesh(boxGeo(t.w - 0.1, 0.09, 0.05), iceGlow);
+        glow.position.set(t.x + t.w / 2, h - 0.12, south ? t.z + t.d - 0.02 : t.z + 0.02);
+        G.add(glow);
+        // Frost on the floor in front.
+        const frost = new THREE.Mesh(new THREE.PlaneGeometry(t.w, 0.5), frostMat);
+        frost.rotation.x = -Math.PI / 2;
+        frost.position.set(t.x + t.w / 2, 0.012, south ? t.z + t.d + 0.25 : t.z - 0.25);
+        frost.userData.own = true;
+        G.add(frost);
       } else if (t.kind === "charger") {
         const ch = charger();
         ch.group.position.set(t.x, 0, t.z);
@@ -675,8 +738,9 @@ export class World {
       this.buildLayout(s);
     }
     this.picks = [];
-    this.syncSky(opts.daylight === "day" ? 11 * HOUR : s.time);
+    this.syncSky(opts.daylight === "day" ? 11 * HOUR : s.time, eventOn(s, "storm"));
     this.syncWorkers(s, dt * Math.min(3, opts.speed ?? 1));
+    this.syncWeather(s, dt);
     // Charging bays: green when free, amber while charging.
     for (const [id, ch] of this.chargers) {
       ch.leds.forEach((led, k) => {
@@ -713,7 +777,7 @@ export class World {
     }
     for (const t of s.structs) {
       if (t.dead || t.kind === "machine") continue;
-      const h = t.kind === "rack" ? rackLevels(s) * LEVEL_H : t.kind === "charger" ? 1.4 : 0.9;
+      const h = t.kind === "rack" ? rackLevels(s) * LEVEL_H : t.kind === "freezer" ? FREEZER.levels * LEVEL_H : t.kind === "charger" ? 1.4 : 0.9;
       this.picks.push({ box: new THREE.Box3(new THREE.Vector3(t.x, 0, t.z), new THREE.Vector3(t.x + t.w, h, t.z + t.d)), focus: { k: "struct", id: t.id } });
     }
     // Shutters open for a truck.
@@ -901,7 +965,9 @@ export class World {
   private moon = new THREE.Color("#9fb4ff");
 
   /** Sun, sky, lamps and floodlights for the time of day (game seconds). */
-  private syncSky(t: number) {
+  private skyStorm = new THREE.Color("#8d96aa");
+
+  private syncSky(t: number, storm = false) {
     const h = (t % DAY) / HOUR;
     // Elevation: sunrise at 5, noon at 13, sunset at 21.
     const el = Math.sin((Math.PI * (h - 5)) / 16);
@@ -910,6 +976,8 @@ export class World {
     this.night = 1 - day;
     const sky = this.col.copy(this.skyNight).lerp(this.skyDay, day);
     sky.lerp(this.skyDusk, dusk * 0.6);
+    // Storm clouds: a grey sky and a dimmer sun.
+    if (storm) sky.lerp(this.skyStorm, 0.6 * day + 0.2);
     (this.scene.background as THREE.Color).copy(sky);
     (this.scene.fog as THREE.Fog).color.copy(sky);
     const az = (Math.PI * (h - 5)) / 16;
@@ -919,8 +987,8 @@ export class World {
     this.sun.target.position.set(tgt.x, 0, tgt.z);
     if (sunOn) this.sun.color.copy(this.sunDay).lerp(this.sunDusk, dusk);
     else this.sun.color.copy(this.moon);
-    this.sun.intensity = sunOn ? 0.5 + 1.9 * day : 0.35;
-    this.hemi.intensity = 0.28 + 0.62 * day;
+    this.sun.intensity = (sunOn ? 0.5 + 1.9 * day : 0.35) * (storm ? 0.45 : 1);
+    this.hemi.intensity = (0.28 + 0.62 * day) * (storm ? 0.85 : 1);
     this.hemi.color.set(day > 0.5 ? "#f6f7ff" : "#8ea2dc");
     this.scene.environmentIntensity = 0.18 + 0.4 * day;
     const night = Math.max(0, Math.min(1, (0.75 - day) / 0.6));
@@ -996,7 +1064,7 @@ export class World {
       case "struct": {
         const t = s.structs[f.id];
         if (!t || t.dead) return null;
-        return { x0: t.x, z0: t.z, x1: t.x + t.w, z1: t.z + t.d, y: t.kind === "rack" ? rackLevels(s) * LEVEL_H + 0.3 : t.kind === "machine" ? 3.2 : 0.4 };
+        return { x0: t.x, z0: t.z, x1: t.x + t.w, z1: t.z + t.d, y: t.kind === "rack" ? rackLevels(s) * LEVEL_H + 0.3 : t.kind === "freezer" ? FREEZER.levels * LEVEL_H + 0.4 : t.kind === "machine" ? 3.2 : 0.4 };
       }
       case "fork": {
         const m = this.forks[f.id];
@@ -1096,6 +1164,68 @@ export class World {
     return this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), out) ? out : null;
   }
 
+  /* ---------------------------------------------------------------- weather */
+
+  private syncWeather(s: State, dt: number) {
+    const want = eventOn(s, "storm") ? "rain" : siteDef(s.site).theme === "snow" ? "snow" : null;
+    if (want !== (this.weather?.kind ?? null)) {
+      if (this.weather) {
+        this.scene.remove(this.weather.obj);
+        this.weather.obj.geometry.dispose();
+        (this.weather.obj.material as THREE.Material).dispose();
+        this.weather = null;
+      }
+      if (want) {
+        const n = this.quality === "high" ? 1400 : 600;
+        const rain = want === "rain";
+        const pos = new Float32Array(n * (rain ? 6 : 3));
+        const speed = new Float32Array(n);
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+        for (let i = 0; i < n; i++) speed[i] = rain ? 26 + Math.random() * 10 : 1.2 + Math.random() * 1.4;
+        const obj = rain
+          ? new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: "#5f7fae", transparent: true, opacity: 0.75, depthWrite: false }))
+          : new THREE.Points(geo, new THREE.PointsMaterial({ color: "#ffffff", size: 0.42, transparent: true, opacity: 0.95, depthWrite: false }));
+        obj.frustumCulled = false;
+        this.scene.add(obj);
+        this.weather = { kind: want, obj, pos, n, speed };
+        // Scatter it through the air to start.
+        for (let i = 0; i < n; i++) this.dropAt(i, Math.random() * 30);
+      }
+    }
+    const w = this.weather;
+    if (!w) return;
+    const rain = w.kind === "rain";
+    const c = this.rig.cur.target;
+    for (let i = 0; i < w.n; i++) {
+      const k = i * (rain ? 6 : 3);
+      w.pos[k + 1] -= w.speed[i] * dt;
+      if (!rain) {
+        w.pos[k] += Math.sin(this.time * 0.8 + i) * dt * 0.4;
+        w.pos[k + 2] += Math.cos(this.time * 0.6 + i * 0.7) * dt * 0.3;
+      } else w.pos[k + 4] = w.pos[k + 1] + 0.7;
+      if (w.pos[k + 1] < 0 || Math.abs(w.pos[k] - c.x) > 45 || Math.abs(w.pos[k + 2] - c.z) > 40) this.dropAt(i, 26 + Math.random() * 6);
+    }
+    (w.obj.geometry.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+  }
+
+  private dropAt(i: number, y: number) {
+    const w = this.weather!;
+    const c = this.rig.cur.target;
+    const x = c.x + (Math.random() - 0.5) * 88;
+    const z = c.z + (Math.random() - 0.5) * 76;
+    if (w.kind === "rain") w.pos.set([x, y, z, x - 0.12, y + 0.7, z], i * 6);
+    else w.pos.set([x, y, z], i * 3);
+  }
+
+  /** Keep the camera on something that moves (a truck, a forklift); false when it's gone. */
+  follow(s: State, f: Focus) {
+    const fp = this.footprint(s, f);
+    if (!fp) return false;
+    this.rig.goal.target.lerp(new THREE.Vector3((fp.x0 + fp.x1) / 2, 0, (fp.z0 + fp.z1) / 2), 0.25);
+    return true;
+  }
+
   /** Glide the camera to look at something. */
   focusOn(s: State, f: Focus) {
     const fp = this.footprint(s, f);
@@ -1109,6 +1239,7 @@ export class World {
 
   dispose() {
     this.disposeGroup(this.layoutGroup);
+    this.weather?.obj.geometry.dispose();
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh) m.geometry?.dispose();
