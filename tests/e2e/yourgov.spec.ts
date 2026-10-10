@@ -9,6 +9,7 @@ type YG = {
     party: string;
     plan: { week: number; event: string; state: number }[];
     usedEvents: string[];
+    studio: { policies: unknown[] };
     staff: Record<string, unknown>;
     mrp: unknown;
     budgetDraft: { plan: Record<string, number> } | null;
