@@ -177,10 +177,13 @@ export interface Order {
 export interface OwnTruck {
   id: number;
   name: string;
-  /** When it's back at the depot and free (Infinity while out). */
+  /** When it's back at the depot and free (OUT_ON_JOB while it's out with a shipment). */
   free: number;
   trips: number;
 }
+
+/** An own truck's `free` while it's out on a job (finite, so it survives a save). */
+export const OUT_ON_JOB = 1e15;
 
 export interface Mission {
   kind: MissionKind;
@@ -1503,7 +1506,7 @@ function confirm(s: State, o: Order) {
   // One of your own trucks if one is back at the depot.
   const own = up(s, "depot") ? s.ownTrucks.find((x) => x.free <= s.time) : undefined;
   if (own) {
-    own.free = Infinity;
+    own.free = OUT_ON_JOB;
     t.own = own.id;
     t.carrier = OWN_CARRIER;
     t.plate = own.name;
@@ -2031,7 +2034,10 @@ function stepMissions(s: State) {
 
 /* ------------------------------------------------------------------ the cold chain */
 
-/** Frozen pallets out of a freezer warm up (staging lanes slower with reefer lanes); too warm and they spoil. */
+/** How fast a frozen pallet warms in a slot: not at all in a freezer, half speed on the (insulated) dock lanes, a sixth with reefer lanes. */
+export const warmRate = (s: State, sl: Slot) => (sl.cold ? 0 : sl.kind === "stage" ? (up(s, "reefer") ? 1 / 6 : 0.5) : 1);
+
+/** Frozen pallets out of a freezer warm up; too warm and they spoil. In a freezer they chill again. */
 function stepCold(s: State, secs: number) {
   for (const p of Object.values(s.pallets)) {
     if (!ITEMS[p.item].frozen || p.loc !== "slot") continue;
@@ -2040,7 +2046,7 @@ function stepCold(s: State, secs: number) {
       p.warm = Math.max(0, (p.warm ?? 0) - secs * 2);
       continue;
     }
-    p.warm = (p.warm ?? 0) + secs * (sl.kind === "stage" && up(s, "reefer") ? 1 / 3 : 1);
+    p.warm = (p.warm ?? 0) + secs * warmRate(s, sl);
     if (p.warm < THAW_SECS || p.busy >= 0) continue;
     // Spoiled: it goes in the skip.
     sl.pallet = -1;
@@ -2297,6 +2303,8 @@ export function deserialize(json: string): State | null {
     s.missions ??= [];
     s.customers ??= {};
     s.ownTrucks ??= [];
+    // Out on a job (an older save wrote Infinity, which JSON turns to null).
+    for (const t of s.ownTrucks) t.free ??= OUT_ON_JOB;
     s.fx ??= [];
     s.tip ??= 99;
     s.ledger.carriers ??= 0;

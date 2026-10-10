@@ -9,6 +9,7 @@ game. Run a dock, racks and a production floor; accept orders and ship them on t
   - WH-01 Riverside Hub (easy distribution).
   - WH-04 Southfield Cross-Dock (many doors, busy customers).
   - WH-07 Northgate Works (a factory with a press and an assembly cell).
+  - WH-09 Harbor Gate, WH-12 Summit Mega DC and WH-15 Polar Cold Store (frozen goods in the snow).
 - **Orders**: customers offer shipments with a deadline. Accept one and a door is assigned:
   1. Forklifts pick the pallets onto the six-slot lane behind that door.
   2. A carrier's truck arrives, backs onto the door and is loaded.
@@ -26,7 +27,9 @@ game. Run a dock, racks and a production floor; accept orders and ship them on t
 - **Money**:
   - Running costs: rent, $40/h a forklift and machine upkeep.
   - Detention of $3 a minute for a truck kept over an hour.
-  - Fourteen upgrades and twelve goals with cash rewards.
+  - Carriers keep 6% of each shipment (not on your own trucks), and a loan costs interest by the hour.
+  - The cash is always on the top bar; tap it for the bank.
+  - 35 upgrades and 32 goals with cash rewards, and three missions a day.
 - **Time**: 1× is two real minutes a game hour, with speeds up to 8×. A season is five days. The score is net worth gained ÷ 10, + 25 per on-time delivery, + 5 per finished pallet made. It is final when the season ends or the business goes bust (cash below −$25,000). Play carries on after the season.
 
 ## The super mega update
@@ -47,13 +50,31 @@ game. Run a dock, racks and a production floor; accept orders and ship them on t
 
 Older saves load: the new fields get defaults.
 
+## The mega super update
+
+| Area | What's new |
+| --- | --- |
+| Cash | Always on the top bar in every layout (phones, landscape, the figures row hidden), green, amber under $5,000 and red when overdrawn. It flashes and pops "+$1,240" or "−$600" as money comes and goes, and shows the change this hour on wider screens. Tap it for the bank. |
+| Bank | Cash by the hour (a chart of the last three days with a readout under your finger), today's money in and out, and loans: borrow up to half the business's worth (three quarters with a bank partner, up to $500,000) at 3% a day charged hourly; pay back any time. Net worth counts the debt. |
+| Fleet | Carriers keep 6% of every shipment they carry. Build the Transport depot and buy your own trucks ($28,000, $45/h a driver, up to six): a free one takes the next shipment, with no fee, and drives back after delivering. |
+| Cold chain | Ice cream, frozen seafood and vaccines. They live in freezer racks (2×1, two levels, $2,400). Out of the cold they warm (half speed on the dock lanes, a sixth with reefer lanes) and spoil after 150 minutes; in a freezer they chill again. Forklifts put frozen goods in freezers. |
+| Missions | Three a day (deliver, unload, make, revenue, on time, pallets moved), scaled to the day, with cash rewards. |
+| Day report | At midnight: profit, money in and out, deliveries, on time, unloads, made, moves, reputation and the new missions. |
+| Customers | On-time deliveries make customers Bronze (2), Silver (5) and Gold (10): they pay 3%, 6% and 10% more, and Silver and Gold order more. VIP orders pay half again with tight deadlines and a big reputation swing. |
+| Machines and drivers | Rebuild a machine as a Mk II (60% of its price): cycles a quarter faster, 20% less wear. Forklift drivers level up from 1 to 5 with trips, each level 3% quicker. |
+| Site | WH-15 Polar Cold Store: rows of freezer racks in the snow. |
+| Upgrades | 8 new: cold chain, reefer lanes, Transport depot, bank partner, training academy, customer care, VIP accounts, autopilot purchasing (auto-replenish by rail when it's cheaper, never below $5,000). |
+| Goals | 8 new: debt free, cold chain, your own fleet, ten missions, a Gold customer, a VIP on time, a Mk II, a level 5 driver. |
+| Look and feel | Freezer racks (white, insulated, an ice-blue light), the snowy cold store with drifts and snowy pines, falling snow, rain and a grey sky in a storm; follow a truck or forklift with the camera; photo mode; synthesised sounds (a till ding, a horn at the gate, an alarm, a chime) that follow the platform's sound setting; five first-shift tips. |
+
 ## Code
 
 | File | What |
 | --- | --- |
 | `data.ts` | Goods, machines and recipes, sites, carriers, suppliers, customers, upgrades, goals |
 | `sim.ts` | The pure, seeded simulation (see below) |
-| `game.ts` | Controller: state, clock and speed, selection, build tool, saving (`zx-wareforge-save`), score |
+| `game.ts` | Controller: state, clock and speed, selection, build tool, follow camera, photo mode, tips, sounds, saving (`zx-wareforge-save`), score |
+| `audio.ts` | Synthesised sounds (Web Audio) |
 | `render/world.ts` | three.js world, kept in step with the sim each frame; picking |
 | `render/models.ts` | Forklift, truck, train, machine, charger, worker, car, office, gatehouse, lamp, crane, tree and pin models; canvas textures |
 | `render/stage.ts` | Renderer, loop and input (pan, turn, pinch, wheel, tap) |

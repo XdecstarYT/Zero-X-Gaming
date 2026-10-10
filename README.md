@@ -918,7 +918,11 @@ buy forklifts and fourteen upgrades, chase twelve goals. Three sites; a five-day
 light theme. The super mega update adds the Mega hall (78 bays, 18 doors), a rail siding with freight
 trains, two more sites, forklift batteries and charging bays, a Robot Cell and high-tech goods, contracts, a
 daily market, events, 13 upgrades and 12 goals, and a day and night cycle with bloom
-(`20261102100000_wareforge_mega.sql` raises the score cap). See `src/games/wareforge/README.md`.
+(`20261102100000_wareforge_mega.sql` raises the score cap). The mega super update keeps the cash on the top bar in
+every layout and adds a bank (a cash chart, loans with hourly interest), carrier fees and your own trucks, a cold
+chain with freezer racks and spoiling frozen goods, the WH-15 Polar Cold Store, three missions a day and a day's
+report, loyal and VIP customers, Mk II machines, forklift driver levels, 8 upgrades and 8 goals, snow and storm
+rain, a follow camera, photo mode, sounds and tips. See `src/games/wareforge/README.md`.
 
 ### NextX titles play in the NextX app
 

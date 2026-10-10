@@ -485,14 +485,18 @@ export class Game {
 
   /* ---------------------------------------------------------------- money, fleet, camera */
 
+  /** Money moves show as a pop by the cash on the top bar, so only a refusal needs a message. */
   borrow(amount: number) {
-    if (this.s) this.result(sim.borrow(this.s, amount), `Borrowed $${amount.toLocaleString("en-US")}`);
+    if (!this.s) return;
+    const err = sim.borrow(this.s, amount);
+    if (err) this.say(err, "bad");
+    this.bump();
   }
   repay(amount: number | "all") {
     if (!this.s) return;
-    const n = amount === "all" ? Math.min(this.s.loan, Math.floor(this.s.cash)) : amount;
-    const clears = n >= this.s.loan;
-    this.result(sim.repay(this.s, n), clears ? "Loan paid off" : `Repaid $${n.toLocaleString("en-US")}`);
+    const err = sim.repay(this.s, amount === "all" ? Math.min(this.s.loan, Math.floor(this.s.cash)) : amount);
+    if (err) this.say(err, "bad");
+    this.bump();
   }
   buyOwnTruck() {
     if (this.s) this.result(sim.buyOwnTruck(this.s), "Truck bought: it carries your next shipment");

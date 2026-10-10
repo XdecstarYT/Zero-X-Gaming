@@ -211,10 +211,13 @@ function TopBar({ g, s }: { g: Game; s: State }) {
       <div className={`wf-live${g.hold ? " held" : ""}`} data-testid="wf-clock">
         <i />{" "}
         <span className="num">
-          <span className="wf-long">Day </span>
-          <span className="wf-short">D</span>
-          {sim.day(s.time)}
-          <span className="wf-long"> ·</span> {sim.clock(s.time)}
+          <span className="wf-day">
+            <span className="wf-long">Day </span>
+            <span className="wf-short">D</span>
+            {sim.day(s.time)}
+            <span className="wf-long"> ·</span>{" "}
+          </span>
+          {sim.clock(s.time)}
         </span>
       </div>
       <div className="wf-speeds" role="group" aria-label="Speed">
@@ -482,7 +485,7 @@ function PalletInfo({ g, s, id }: { g: Game; s: State; id: number }) {
 function ColdInfo({ s, p }: { s: State; p: Pallet }) {
   const warm = p.warm ?? 0;
   const sl = p.loc === "slot" ? s.slots[p.ref] : null;
-  const rate = sl?.kind === "stage" && sim.up(s, "reefer") ? 1 / 3 : 1;
+  const rate = sl ? sim.warmRate(s, sl) : 0;
   const pct = Math.min(1, warm / THAW_SECS);
   return (
     <>
@@ -491,7 +494,7 @@ function ColdInfo({ s, p }: { s: State; p: Pallet }) {
         <i style={{ width: `${Math.max(3, pct * 100)}%`, background: pct > 0.66 ? "linear-gradient(90deg,#f06c70,#d83d43)" : pct > 0.33 ? "linear-gradient(90deg,#f5a524,#e08a00)" : "linear-gradient(90deg,#8fd3ff,#3d8bff)" }} />
       </div>
       <small className="dim">
-        {sl?.cold ? (warm > 0 ? "Back in the freezer: cooling down" : "In the freezer at −20 °C") : !sl ? "On the move: it keeps cold in transit" : `Out of the cold: spoils in ${mins((THAW_SECS - warm) / rate)}`}
+        {sl?.cold ? (warm > 0 ? "Back in the freezer: cooling down" : "In the freezer at −20 °C") : !sl ? "On the move: it keeps cold in transit" : `${sl.kind === "stage" ? "Waiting at the door" : "Out of the cold"}: spoils in ${mins((THAW_SECS - warm) / rate)}`}
       </small>
     </>
   );
@@ -1007,7 +1010,8 @@ function Sheets({ g, s, sheet }: { g: Game; s: State; sheet: Exclude<Sheet, null
           ✕
         </button>
       </header>
-      <div className="body">
+      {/* Focusable so the keyboard can scroll panels with nothing to press (goals, the books). */}
+      <div className="body" tabIndex={0}>
         {sheet === "site" && (
           <>
             <Search g={g} s={s} inline />
@@ -1103,6 +1107,7 @@ function OrdersSheet({ g, s }: { g: Game; s: State }) {
                 {o.lines.map((l) => `${l.n} × ${ITEMS[l.item].icon} ${ITEMS[l.item].name}`).join(" · ")}
                 <br />
                 Deliver within {mins(o.due - s.time)} ({mins(o.transit * 60)} on the road){o.rush ? " · RUSH +25%" : ""}
+                {o.vip ? " · VIP +50%, big reputation" : ""}
                 {o.lines.some((l) => HIGH_TECH.includes(l.item)) ? " · high tech" : ""}
                 {o.lines.some((l) => FROZEN.includes(l.item)) ? " · ❄ frozen" : ""}
               </p>
@@ -1408,7 +1413,7 @@ function OwnFleet({ g, s }: { g: Game; s: State }) {
                 <button key={t.id} className="wf-trow" onClick={() => truck && g.select({ k: "truck", id: truck.id }, true)} disabled={!truck}>
                   <b>{t.name}</b>
                   <span>
-                    {truck ? STATE_LABEL[truck.state] : out ? (Number.isFinite(t.free) ? `Driving back · ${mins(t.free - s.time)}` : "Out on a job") : "At the depot"}
+                    {truck ? STATE_LABEL[truck.state] : out ? (t.free < sim.OUT_ON_JOB ? `Driving back · ${mins(t.free - s.time)}` : "Out on a job") : "At the depot"}
                     <span className="sub">{t.trips} trips</span>
                   </span>
                   <span className={`wf-pill ${out || truck ? "good" : "grey"}`}>{out || truck ? "Busy" : "Free"}</span>

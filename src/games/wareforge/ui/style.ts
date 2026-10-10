@@ -92,7 +92,7 @@ export const css = `
 /* Full window: the platform's pause button sits at the top bar's left end. */
 [data-immersive] .wf-top{padding-left:58px}
 [data-immersive] .wf-brand svg{display:none}
-.wf-bell em{position:absolute;top:2px;right:2px;min-width:16px;height:16px;border-radius:8px;background:var(--bad);color:#fff;font-size:10px;font-style:normal;font-weight:800;display:grid;place-items:center;padding:0 4px}
+.wf-bell em{position:absolute;top:-4px;right:-5px;min-width:16px;height:16px;border-radius:8px;background:var(--bad);color:#fff;font-size:10px;font-style:normal;font-weight:800;display:grid;place-items:center;padding:0 4px}
 .wf-me{display:flex;align-items:center;gap:8px;flex:none}
 .wf-me .av{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#ffcf8a,#f08a5d);display:grid;place-items:center;font-weight:800;color:#fff;font-size:13px}
 .wf-me b{font-size:13px;display:block;line-height:1.1}
@@ -332,8 +332,9 @@ export const css = `
   .wf-long{display:none}
   .wf-short{display:inline}
   .wf-live{font-size:12px;gap:5px;padding:0}
-  .wf-live i{width:7px;height:7px}
-  .wf-top{gap:5px}
+  .wf-live i{display:none}
+  .wf-live.held{color:#b36d00}
+  .wf-top{gap:4px}
   .wf-top .wf-spacer{min-width:0}
   .wf-cash{height:34px;padding:0 10px 0 4px;gap:5px}
   .wf-cash>i{width:26px;height:26px;font-size:13px}
@@ -342,7 +343,7 @@ export const css = `
 }
 @container wf (max-width:380px){
   .wf-brand{display:none}
-  .wf-live i{display:none}
+  .wf-day{display:none}
   .wf-top{gap:4px;padding-right:5px}
   .wf .wf-cash{padding:0 9px}
   .wf-cash>i{display:none}

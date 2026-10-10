@@ -31,15 +31,15 @@ export const NEXTX_TITLES: NextXTitle[] = [
     accent: "#2f6fe4",
     accent2: "#f6c21c",
     stats: [
-      { v: "5", k: "Sites" },
-      { v: "22", k: "Goods" },
+      { v: "6", k: "Sites" },
+      { v: "25", k: "Goods" },
       { v: "7", k: "Machines" },
     ],
     features: [
-      "A Mega hall 78 bays long, with eighteen doors and a rail siding",
-      "Forklifts with batteries that route round your racks and recharge",
-      "Trucks and freight trains, contracts, a daily market and events",
-      "Day and night: floodlights, glowing lamps and workers on the floor",
+      "Your cash always on show, a bank with loans, and your own trucks",
+      "A cold chain: freezer racks and frozen goods that spoil",
+      "A Mega hall 78 bays long, a rail siding, contracts and events",
+      "Day and night, storms and snow, and workers on the floor",
     ],
   },
   {

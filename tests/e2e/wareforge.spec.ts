@@ -1,10 +1,10 @@
-import type { Page } from "@playwright/test";
+import { devices, type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
 test.use({ viewport: { width: 1400, height: 900 } });
 
 type WF = {
-  s: { cash: number; time: number; orders: { id: number; code: string; state: string }[]; stats: { unloaded: number; delivered: number }; structs: unknown[]; forks: unknown[] };
+  s: { cash: number; loan: number; time: number; orders: { id: number; code: string; state: string }[]; stats: { unloaded: number; delivered: number }; structs: unknown[]; forks: unknown[] };
   speed: number;
 };
 const wf = <T,>(page: Page, f: (g: WF) => T) => page.evaluate(`(${f.toString()})(window.__wf)`) as Promise<T>;
@@ -31,6 +31,16 @@ test("WareForge: members only; pick a site, accept an order, buy stock, build a 
   await page.getByTestId("wf-site-wh01").click();
   await expect(page.getByTestId("wf-top")).toBeVisible();
   await expect(page.getByTestId("wf-kpis")).toContainText("Stock on hand");
+  // The cash is always on the top bar, and opens the bank: borrow $10,000 and pay it back.
+  await expect(page.getByTestId("wf-cash")).toContainText("$");
+  await page.getByTestId("wf-cash").click();
+  await expect(page.getByTestId("wf-sheet-bank")).toContainText("Cash by the hour");
+  const before = await wf(page, (g) => g.s.cash);
+  await page.getByTestId("wf-borrow-10000").click();
+  await expect(page.getByTestId("wf-loan")).toHaveText("$10,000");
+  expect(await wf(page, (g) => g.s.cash)).toBeGreaterThan(before + 9_000);
+  await page.getByTestId("wf-repay-all").click();
+  await expect.poll(() => wf(page, (g) => g.s.loan)).toBe(0);
   // In the page's game frame the tracker and the status table live in the Site panel.
   await page.getByTestId("wf-dock-site").click();
   await expect(page.getByTestId("wf-sheet-site")).toContainText("Shipment Tracking");
@@ -91,4 +101,53 @@ test("WareForge: members only; pick a site, accept an order, buy stock, build a 
   await page.getByTestId("wf-continue").click();
   await expect(page.getByTestId("wf-top")).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test.describe("on a phone", () => {
+  // The rest of this file plays on a big screen; this one uses the phone's own.
+  test.use({ viewport: devices["Pixel 7"].viewport });
+
+  test("WareForge on a phone: the cash is always on the top bar, with the figures hidden too, and the bar fits", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== "mobile", "the phone layout");
+    test.setTimeout(180_000);
+    await page.addInitScript(() => {
+      if (!localStorage.getItem("zx-season-s1"))
+        localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+      localStorage.setItem("zx-wareforge-prefs", JSON.stringify({ gfx: "low", sound: false }));
+    });
+    await page.goto("/nextx/play/wareforge?wf");
+    await page.getByTestId("zlink-lock-join").click();
+    await page.getByRole("button", { name: "Play", exact: true }).click();
+    await expect(page.getByTestId("wf-title")).toBeVisible({ timeout: 120_000 });
+    await page.getByTestId("wf-site-wh01").click();
+    const cash = page.getByTestId("wf-cash");
+    await expect(cash).toBeVisible();
+    await expect(page.getByTestId("wf-cash-value")).toHaveText(/^\$[\d,]+$/);
+    // Everything on the top bar is on the screen, the alerts bell last.
+    const vp = page.viewportSize()!;
+    const onScreen = async (id: string) => {
+      const b = (await page.getByTestId(id).boundingBox())!;
+      expect(b, id).not.toBeNull();
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width).toBeLessThanOrEqual(vp.width);
+    };
+    for (const id of ["wf-cash", "wf-clock", "wf-pause", "wf-speed-cycle", "wf-kpitoggle", "wf-bell"]) await onScreen(id);
+    // Even a six-figure balance fits.
+    await wf(page, (g) => void (g.s.cash = 734_982));
+    await expect(page.getByTestId("wf-cash-value")).toHaveText("$734,982");
+    await onScreen("wf-bell");
+    // Hide the row of figures: the cash stays.
+    await page.getByTestId("wf-kpitoggle").click();
+    await expect(page.getByTestId("wf-kpis")).toBeHidden();
+    await expect(cash).toBeVisible();
+    // One button steps the speed up on a phone.
+    await page.getByTestId("wf-speed-cycle").click();
+    await expect(page.getByTestId("wf-speed-cycle")).toHaveText("2×");
+    // Tap the cash for the bank.
+    await cash.click();
+    await expect(page.getByTestId("wf-sheet-bank")).toBeVisible();
+    await expect(page.getByTestId("wf-bank-cash")).toContainText("$");
+    await page.getByTestId("wf-borrow-10000").click();
+    await expect(page.getByTestId("wf-loan")).toHaveText("$10,000");
+  });
 });

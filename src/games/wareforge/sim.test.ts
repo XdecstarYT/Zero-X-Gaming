@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOUR, ITEMS, MIN, SITES } from "./data";
+import { CARRIER_FEE, CUSTOMERS, HOUR, ITEMS, MIN, OWN_CARRIER, SITES, THAW_SECS } from "./data";
 import * as sim from "./sim";
 
 const run = (s: sim.State, secs: number) => sim.tick(s, secs);
@@ -221,5 +221,191 @@ describe("WareForge super mega update", () => {
     const back = sim.deserialize(JSON.stringify(old))!;
     expect(back.forks[0].battery).toBe(1);
     run(back, 3600);
+  });
+});
+
+describe("WareForge mega super update", () => {
+  /** The first offer the racks can fill (asking for new ones until there is one). */
+  const fillable = (s: sim.State) => {
+    for (let i = 0; i < 40; i++) {
+      const o = s.orders.find((x) => x.state === "offer" && x.lines.every((l) => sim.availableCount(s, l.item) >= l.n));
+      if (o) return o;
+      sim.offer(s);
+    }
+    throw new Error("no fillable offer");
+  };
+
+  it("lends against the business, charges interest by the hour and takes repayments", () => {
+    const s = sim.newGame("wh01", 31);
+    const worth = sim.worth(s);
+    const limit = sim.creditLimit(s);
+    expect(limit).toBeGreaterThan(0);
+    expect(limit % 5_000).toBe(0);
+    expect(sim.borrow(s, limit + 5_000)).toMatch(/limit/);
+    const cash = s.cash;
+    expect(sim.borrow(s, 20_000)).toBeNull();
+    expect(s.cash).toBe(cash + 20_000);
+    expect(s.loan).toBe(20_000);
+    expect(sim.creditLimit(s)).toBeLessThan(limit);
+    // A loan isn't wealth: net worth counts the debt.
+    expect(sim.worth(s)).toBe(worth);
+    expect(s.fx[s.fx.length - 1]).toMatchObject({ amount: 20_000, text: "Loan" });
+    run(s, 24 * HOUR);
+    expect(s.ledger.interest).toBeCloseTo(20_000 * sim.loanRate(s), 0);
+    expect(s.cashLog.length).toBe(24);
+    expect(sim.repay(s, 5_000)).toBeNull();
+    expect(s.loan).toBe(15_000);
+    const keep = s.cash;
+    s.cash = 100;
+    expect(sim.repay(s, 15_000)).toMatch(/cash/);
+    s.cash = keep;
+    expect(sim.repay(s, 1e6)).toBeNull();
+    expect(s.loan).toBe(0);
+    expect(s.stats.repaid).toBe(20_000);
+    expect(sim.repay(s, 10)).toMatch(/owed/);
+    // A bank partner halves the rate.
+    const rate = sim.loanRate(s);
+    s.cash = 1e6;
+    expect(sim.buyUpgrade(s, "bank")).toBeNull();
+    expect(sim.loanRate(s)).toBeCloseTo(rate / 2);
+  });
+
+  it("pays carriers 6% of a shipment, but nothing when your own truck carries it", () => {
+    const s = sim.newGame("wh01", 32);
+    s.cash = 1e6;
+    expect(sim.buyOwnTruck(s)).toMatch(/depot/);
+    expect(sim.buyUpgrade(s, "depot")).toBeNull();
+    expect(sim.buyOwnTruck(s)).toBeNull();
+    expect(s.ownTrucks[0]).toMatchObject({ name: "WF-01", trips: 0 });
+    const first = s.orders.find((o) => o.code === "SHP-78442")!;
+    const mine = fillable(s);
+    expect(sim.accept(s, mine.id)).toBeNull();
+    const truck = s.trucks.find((t) => t.id === mine.truck)!;
+    expect(mine.own).toBe(1);
+    expect(truck).toMatchObject({ own: 1, carrier: OWN_CARRIER, plate: "WF-01" });
+    expect(s.ownTrucks[0].free).toBe(sim.OUT_ON_JOB);
+    // A save keeps it out on the job.
+    const back = sim.deserialize(sim.serialize(s))!;
+    expect(back.ownTrucks[0].free).toBe(sim.OUT_ON_JOB);
+    for (let t = 0; t < 12 * HOUR && !(first.state === "delivered" && mine.state === "delivered"); t += MIN) run(s, MIN);
+    expect(first.state).toBe("delivered");
+    expect(mine.state).toBe("delivered");
+    expect(s.ledger.carriers).toBe(Math.round(first.value * CARRIER_FEE));
+    expect(s.stats.ownShipped).toBe(1);
+    expect(s.ownTrucks[0].trips).toBe(1);
+    expect(s.ownTrucks[0].free).toBeLessThan(sim.OUT_ON_JOB);
+    expect(s.goals.ownfleet).toBe(true);
+  });
+
+  it("keeps frozen goods in freezer racks and spoils them out of the cold", () => {
+    const s = sim.newGame("wh15", 33);
+    expect(sim.up(s, "cold")).toBe(true);
+    const frozen = () => Object.values(s.pallets).filter((p) => ITEMS[p.item].frozen);
+    expect(frozen().length).toBeGreaterThan(0);
+    // In the freezers (the rest are on the inbound truck).
+    expect(frozen().every((p) => p.loc === "truck" || s.slots[p.ref].cold)).toBe(true);
+    // The first shipment of ice cream waits at the door and still goes out frozen.
+    run(s, 6 * HOUR);
+    expect(s.stats.spoiled).toBe(0);
+    expect(s.orders.find((o) => o.code === "SHP-78442")?.state).toBe("delivered");
+    expect(s.stats.coldShipped).toBe(1);
+    // The dock lanes are half speed, a sixth with reefer lanes; freezers stop it.
+    const lane = s.slots.find((x) => x.kind === "stage")!;
+    expect(sim.warmRate(s, lane)).toBe(0.5);
+    s.cash = 1e6;
+    expect(sim.buyUpgrade(s, "reefer")).toBeNull();
+    expect(sim.warmRate(s, lane)).toBeCloseTo(1 / 6);
+    // The freezers fail: everything left in the racks spoils after THAW_SECS.
+    for (const sl of s.slots) sl.cold = false;
+    const n = frozen().filter((p) => p.loc === "slot" && s.slots[p.ref].kind === "store").length;
+    expect(n).toBeGreaterThan(0);
+    run(s, THAW_SECS + 2 * MIN);
+    expect(s.stats.spoiled).toBeGreaterThanOrEqual(n - 2);
+    expect(s.ledger.spoilage).toBeGreaterThan(0);
+  });
+
+  it("sets three missions a day, pays them out and writes the day's report at midnight", () => {
+    const s = sim.newGame("wh01", 34);
+    expect(s.missions.length).toBe(3);
+    expect(new Set(s.missions.map((m) => m.kind)).size).toBe(3);
+    const cash = s.cash;
+    const reward = s.missions.reduce((a, m) => a + m.reward, 0);
+    Object.assign(s.today, { orders: 1e6, unloads: 1e6, made: 1e6, revenue: 1e9, onTime: 1e6, moves: 1e6 });
+    run(s, MIN);
+    expect(s.missions.every((m) => m.done)).toBe(true);
+    expect(s.stats.missions).toBe(3);
+    expect(s.cash).toBeGreaterThan(cash + reward - 500);
+    expect(s.fx.some((f) => f.text === "Mission")).toBe(true);
+    expect(s.report).toBeNull();
+    run(s, 17 * HOUR);
+    expect(s.report?.day).toBe(1);
+    expect(s.report!.profit).toBe(Math.round(s.report!.revenue - s.report!.costs));
+    expect(s.missions.every((m) => !m.done)).toBe(true);
+  });
+
+  it("makes customers loyal with on-time deliveries; loyal customers pay more, VIPs half again", () => {
+    const a = sim.newGame("wh01", 35);
+    const b = sim.newGame("wh01", 35);
+    for (const c of CUSTOMERS) b.customers[c.name] = { onTime: 2, late: 0 };
+    expect(sim.loyalty(b, CUSTOMERS[0].name)).toBe(1);
+    const oa = sim.offer(a);
+    const ob = sim.offer(b);
+    expect(ob.customer).toBe(oa.customer);
+    expect(ob.value / oa.value).toBeCloseTo(1.03, 2);
+    b.customers.X = { onTime: 10, late: 3 };
+    expect(sim.LOYALTY[sim.loyalty(b, "X")]).toBe("Gold");
+    expect(sim.loyalty(b, "nobody")).toBe(0);
+    // A VIP delivered on time: a big boost to the reputation.
+    const s = sim.newGame("wh01", 36);
+    const first = s.orders.find((o) => o.code === "SHP-78442")!;
+    first.vip = true;
+    const rep = s.rep;
+    for (let t = 0; t < 8 * HOUR && first.state !== "delivered"; t += MIN) run(s, MIN);
+    expect(first.onTime).toBe(true);
+    expect(s.stats.vipOnTime).toBe(1);
+    expect(s.rep).toBeGreaterThanOrEqual(rep + 6);
+    expect(s.customers[first.customer].onTime).toBe(1);
+  });
+
+  it("rebuilds machines as a Mk II and levels up forklift drivers", () => {
+    const s = sim.newGame("wh07", 37);
+    const t = s.structs.find((x) => x.m)!;
+    const cycle = sim.cycleSecs(s, t);
+    const cash = s.cash;
+    expect(sim.upgradeMachine(s, t.id)).toBeNull();
+    expect(s.cash).toBe(cash - sim.mk2Cost(t));
+    expect(sim.cycleSecs(s, t)).toBeCloseTo(cycle * 0.75);
+    expect(sim.upgradeMachine(s, t.id)).toMatch(/Already/);
+    run(s, MIN);
+    expect(s.goals.mk2).toBe(true);
+    const f = s.forks[0];
+    expect(sim.forkLevel(s, f)).toBe(1);
+    f.trips = 54;
+    expect(sim.forkLevel(s, f)).toBe(3);
+    s.cash = 1e6;
+    expect(sim.buyUpgrade(s, "academy")).toBeNull();
+    expect(sim.forkLevel(s, f)).toBe(4);
+    f.trips = 1e4;
+    expect(sim.forkLevel(s, f)).toBe(5);
+  });
+
+  it("opens the Polar Cold Store and loads a save from before the update", () => {
+    const p = sim.newGame("wh15", 38);
+    expect(p.structs.filter((t) => t.kind === "freezer").length).toBeGreaterThanOrEqual(6);
+    expect(p.slots.filter((x) => x.cold).length).toBeGreaterThan(20);
+    const s = sim.newGame("wh01", 39);
+    run(s, HOUR);
+    const old = JSON.parse(sim.serialize(s));
+    for (const k of ["loan", "cashLog", "report", "missions", "customers", "ownTrucks", "fx", "tip"]) delete old[k];
+    for (const k of ["carriers", "interest", "spoilage"]) delete old.ledger[k];
+    for (const k of ["borrowed", "repaid", "coldShipped", "ownShipped", "missions", "vipOnTime", "spoiled"]) delete old.stats[k];
+    const back = sim.deserialize(JSON.stringify(old))!;
+    expect(back.loan).toBe(0);
+    expect(back.missions.length).toBe(3);
+    expect(back.tip).toBeGreaterThan(10);
+    expect(back.ledger.interest).toBe(0);
+    run(back, 2 * HOUR);
+    expect(sim.cashTrend(back)).not.toBeNaN();
+    expect(Number.isFinite(sim.worth(back))).toBe(true);
   });
 });
