@@ -62,3 +62,15 @@ export const NEXTX_STANDARD = [
   { icon: "▣", title: "Phone first", body: "Built for a thumb before a mouse: every panel scrolls, every button is in reach." },
   { icon: "✦", title: "Always updating", body: "Mega updates, not patches: hundreds of features at a time." },
 ];
+
+/** The NextX Engine: what the titles share, and which title it came from. */
+export const NEXTX_ENGINE = [
+  { title: "Liquid Glass UI", from: "Both", body: "Panels that bend the world behind them like thick glass, with a highlight that follows your finger." },
+  { title: "Photoreal terrain", from: "YourGov", body: "Real elevation, rivers, farmland, forests, snow and cities, painted county by county." },
+  { title: "Physical sky and sea", from: "YourGov", body: "An atmospheric sky, a sea with surf and drifting clouds." },
+  { title: "PBR city renderer", from: "Zero City", body: "Buildings, roads, trees and traffic lit with image-based light and soft shadows." },
+  { title: "Cinematic cameras", from: "Both", body: "Smooth orbits, fly-tos and tilts down to street level." },
+  { title: "Filmic grading", from: "Both", body: "ACES tone mapping, bloom and ambient occlusion where the device can take it." },
+  { title: "Adaptive quality", from: "Both", body: "High detail on desktops, a lighter path on phones, chosen for you." },
+  { title: "Phone-first layout", from: "Both", body: "Dock, sheets and tab bars that fit a thumb, upright or sideways." },
+];

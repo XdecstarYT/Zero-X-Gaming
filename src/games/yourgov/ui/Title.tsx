@@ -10,6 +10,7 @@ import { flagUrl } from "./flags";
 import { Icon } from "./icons";
 import { HallOfFame, ModePicker } from "./Power";
 import { ScenarioStudio } from "./ScenarioStudio";
+import { PoweredBy } from "@/nextx/PoweredBy";
 
 /** The scenario behind a pick: Avalon (new every game), a real country, or one of yours. */
 function scenarioFor(id: string, seed: number, library: Scenario[]): Scenario {
@@ -112,6 +113,7 @@ export function Title({ g }: { g: Game }) {
           <div>
             <h1>YourGov</h1>
             <p>Lead a party. Write the laws. Win the country, county by county.</p>
+            <PoweredBy style={{ marginTop: 8 }} />
           </div>
           <span className="grow" />
           <button type="button" className="yg-btn small" onClick={() => g.setUI({ extra: "slots" })} data-testid="yg-title-saves">

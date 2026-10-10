@@ -11,6 +11,7 @@ import { Icon } from "./Icons";
 import { Logo, Mark } from "./Mark";
 import type { GameMode } from "../store";
 import { ZERO_CITY_DLC_PRICE } from "@/lib/economy";
+import { PoweredBy } from "@/nextx/PoweredBy";
 
 // ---------------------------------------------------------------- loading
 
@@ -58,7 +59,10 @@ export function MainMenu() {
     <div className="absolute inset-0 z-20 overflow-auto" data-testid="zc-menu">
       <div className="pointer-events-none absolute inset-0" style={{ backdropFilter: "blur(5px) brightness(.88)", WebkitBackdropFilter: "blur(5px) brightness(.88)" }} />
       <div className="relative flex min-h-full flex-col gap-6 p-4 sm:p-8">
-        <Logo size={46} />
+        <div className="flex flex-wrap items-center gap-4">
+          <Logo size={46} />
+          <PoweredBy />
+        </div>
         <div className="flex flex-1 flex-col items-start gap-5 lg:flex-row lg:items-center">
           <nav className="zc-glass zc-slide w-full max-w-[440px] p-3" aria-label={t("menu")}>
             {last && (

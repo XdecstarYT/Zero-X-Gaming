@@ -57,7 +57,7 @@ export const ACH_LABEL: Record<(typeof ACHIEVEMENTS)[number], StringKey> = {
 };
 
 /** Views of one city in the scene. */
-class WorldViews {
+export class WorldViews {
   terrain: TerrainView;
   trees = new TreeView();
   roads: RoadView;
