@@ -147,6 +147,9 @@ export const css = `
 .wf-palchip{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:10px;background:rgba(27,34,54,.04);font-size:12px;font-weight:600}
 .wf-palchip:hover{background:rgba(47,111,228,.1)}
 .wf-palchip i{width:12px;height:12px;border-radius:3px;display:block}
+.wf-palchip:disabled{opacity:.5;cursor:default}
+.wf-palchip:disabled:hover{background:rgba(27,34,54,.04)}
+.wf-select{height:34px;max-width:72%;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink);padding:0 8px;font:inherit;font-size:12.5px;font-weight:600}
 
 /* ---- tracking ---- */
 .wf-track{position:absolute;left:12px;bottom:12px;width:min(420px,calc(50% - 18px));z-index:4}
@@ -169,6 +172,9 @@ export const css = `
 .wf-tabs{display:flex;gap:4px;padding:3px;border-radius:999px;background:rgba(27,34,54,.05)}
 .wf-tabs button{flex:1;height:30px;border-radius:999px;font-size:12.5px;font-weight:700;color:var(--ink2)}
 .wf-tabs button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(27,34,54,.15)}
+.wf-sheet .wf-tabs{overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:2;background:rgba(236,239,245,.92);backdrop-filter:blur(8px)}
+.wf-sheet .wf-tabs::-webkit-scrollbar{display:none}
+.wf-sheet .wf-tabs button{flex:1 0 auto;padding:0 11px;white-space:nowrap}
 .wf-rows{margin-top:6px;max-height:190px;overflow:auto}
 .wf-trow{display:grid;grid-template-columns:76px 1fr auto;gap:8px;align-items:center;width:100%;padding:8px 6px;border-radius:12px;text-align:left;font-size:12.5px}
 .wf-trow:hover{background:rgba(47,111,228,.07)}
@@ -215,6 +221,12 @@ export const css = `
 .wf-toast.good{color:#0e8a57}
 @keyframes wf-toast{0%{opacity:0;transform:translate(-50%,-8px)}10%,80%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-6px)}}
 .wf-toolbar{position:absolute;left:50%;bottom:76px;transform:translateX(-50%);display:flex;align-items:center;gap:6px;padding:6px 6px 6px 14px;z-index:7;font-size:13px;font-weight:700;white-space:nowrap}
+.wf-toolbar>span:first-child{overflow:hidden;text-overflow:ellipsis;min-width:0}
+@container wf (max-width:640px){
+  .wf-toolbar{max-width:calc(100% - 24px);padding-left:12px}
+  .wf-toolbar>span.dim{display:none}
+  .wf-toolbar .wf-btn{flex:none}
+}
 
 /* ---- the bank ---- */
 .wf-bankhead{display:grid;grid-template-columns:1fr 1fr;gap:8px}

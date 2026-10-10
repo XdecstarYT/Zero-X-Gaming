@@ -5,19 +5,26 @@
  */
 import type { GameSettings } from "../types";
 import { Sound } from "./audio";
-import { BELT, CHARGER, FLOOR, FREEZER, GAME_SECS_PER_REAL, MACHINES, PREFS_KEY, RACK, SAVE_KEY, SITES, SPEEDS, type DoorType, type ItemId, type MachineType, type UpgradeId } from "./data";
+import {
+  BELT, CHARGER, FLOOR, FREEZER, GAME_SECS_PER_REAL, ITEMS, MACHINES, PREFS_KEY, RACK, SAVE_KEY, SITES, SPEEDS,
+  type DoorType, type IndustryId, type ItemId, type MachineType, type ManagerId, type StoreKind, type UpgradeId,
+} from "./data";
 import { Stage } from "./render/stage";
 import type { Ghost, Quality } from "./render/world";
 import * as sim from "./sim";
 import type { Focus, State, StructKind } from "./sim";
 
 export interface Tool {
-  kind: StructKind | "remove";
+  kind: StructKind | "remove" | "move";
   type?: MachineType;
+  /** Racks: the side they're picked from. Machines: mirrored or not. Conveyors: the way they run. */
   rot: number;
+  /** Moving: the struct being moved. */
+  id?: number;
 }
 
-export type Sheet = null | "site" | "orders" | "buy" | "build" | "fleet" | "upgrades" | "goals" | "stats" | "menu" | "alerts" | "help" | "bank";
+export type Sheet = null | "site" | "orders" | "buy" | "build" | "fleet" | "upgrades" | "goals" | "company" | "menu" | "alerts" | "help" | "bank";
+export type CompanyTab = "overview" | "industries" | "production" | "stores" | "managers";
 
 /** What a tutorial step counts from (taken when the step starts). */
 interface TipBase {
@@ -81,6 +88,8 @@ export class Game {
   following: Focus | null = null;
   /** Photo mode: the interface hides. */
   photo = false;
+  /** The Company panel's page. */
+  companyTab: CompanyTab = "overview";
   readonly sound = new Sound();
   private tipBase: TipBase = { orders: 0, pos: 0, structs: 0 };
   private tipAt = -1;
@@ -183,7 +192,7 @@ export class Game {
     if (this.uiClock > 0.25) {
       this.uiClock = 0;
       this.bump();
-      this.hooks.progress(sim.score(s));
+      if (!s.sandbox) this.hooks.progress(sim.score(s));
       if (s.seasonOver && !this.finalSent) this.submitFinal();
     }
     this.saveClock += dt;
@@ -238,7 +247,22 @@ export class Game {
         if (f?.k === "struct") this.result(sim.remove(this.s, f.id), "Removed (half the cost back)");
         return;
       }
+      if (this.tool.kind === "move" && this.tool.id === undefined) {
+        // First pick up what's to be moved.
+        const f = w.pick(nx, ny);
+        if (f?.k === "struct") this.startMove(f.id);
+        return;
+      }
       const p = this.placement(g.x, g.z);
+      if (this.tool.kind === "move") {
+        if (!this.result(sim.move(this.s, this.tool.id!, p.x, p.z, p.rot), "Moved")) return;
+        const n = sim.structAt(this.s, p.x, p.z);
+        this.tool = null;
+        this.ghost = null;
+        this.sel = n ? { k: "struct", id: n.id } : null;
+        this.bump();
+        return;
+      }
       this.result(sim.place(this.s, p), `${p.kind === "machine" ? MACHINES[p.type!].name : STRUCT_NAME[p.kind]} built`);
       this.hover(nx, ny);
       return;
@@ -247,14 +271,18 @@ export class Game {
     this.bump();
   }
 
+  /** What the tool would build (or where it would put what it's moving) at a point on the floor. */
   private placement(gx: number, gz: number): sim.Placement {
     const t = this.tool!;
-    const fp = sim.footprint({ kind: t.kind as StructKind, type: t.type, x: 0, z: 0 });
-    return { kind: t.kind as StructKind, type: t.type, rot: t.rot, x: Math.round(gx - fp.w / 2), z: Math.round(gz - fp.d / 2) };
+    const moving = t.kind === "move" ? this.s?.structs[t.id!] : undefined;
+    const kind = (moving ? moving.kind : t.kind) as StructKind;
+    const type = moving ? moving.m?.type : t.type;
+    const fp = sim.footprint({ kind, type, x: 0, z: 0 });
+    return { kind, type, rot: t.rot, x: Math.round(gx - fp.w / 2), z: Math.round(gz - fp.d / 2) };
   }
 
   private hover(nx: number, ny: number) {
-    if (!this.tool || this.tool.kind === "remove" || !this.stage || !this.s) {
+    if (!this.tool || this.tool.kind === "remove" || (this.tool.kind === "move" && this.tool.id === undefined) || !this.stage || !this.s) {
       this.ghost = null;
       return;
     }
@@ -262,13 +290,28 @@ export class Game {
     if (!g) return;
     const p = this.placement(g.x, g.z);
     const fp = sim.footprint(p);
-    this.ghost = { x: p.x, z: p.z, w: fp.w, d: fp.d, ok: !sim.placeError(this.s, p), rot: p.rot, rack: p.kind === "rack" };
+    let ok: boolean;
+    if (this.tool.kind === "move") {
+      // Try it with the thing lifted out of its old spot.
+      const t = this.s.structs[this.tool.id!];
+      const was = t.dead;
+      t.dead = true;
+      this.s.rev = (this.s.rev ?? 0) + 1;
+      ok = !sim.placeError(this.s, p);
+      t.dead = was;
+      this.s.rev++;
+    } else ok = !sim.placeError(this.s, p);
+    // The arrow: which side a rack is picked from, the way a conveyor runs, the end goods leave a machine.
+    const arrow = p.kind === "rack" || p.kind === "freezer" ? (p.rot ? 3 : 1) : p.kind === "belt" ? p.rot! : p.kind === "machine" ? (p.rot ? 2 : 0) : undefined;
+    this.ghost = { x: p.x, z: p.z, w: fp.w, d: fp.d, ok, arrow };
   }
 
   /* ---------------------------------------------------------------- flow */
 
-  newGame(site: string) {
-    this.s = sim.newGame(site, (Date.now() % 100000) + 1);
+  /** Start a site; a sandbox has money no object and no score. */
+  newGame(site: string, sandbox = false) {
+    this.s = sim.newGame(site, (Date.now() % 100000) + 1, { sandbox });
+    this.finalSent = sandbox;
     this.start();
   }
 
@@ -278,7 +321,7 @@ export class Game {
       const s = json ? sim.deserialize(json) : null;
       if (!s) return this.say("That save couldn't be read", "bad");
       this.s = s;
-      this.finalSent = s.seasonOver;
+      this.finalSent = s.seasonOver || !!s.sandbox;
       this.start();
     } catch {
       this.say("That save couldn't be read", "bad");
@@ -381,6 +424,13 @@ export class Game {
     this.bump();
   }
 
+  /** The Company panel at one of its pages. */
+  openCompany(tab: CompanyTab) {
+    this.companyTab = tab;
+    this.sheet = "company";
+    this.bump();
+  }
+
   open(sheet: Sheet) {
     this.sheet = this.sheet === sheet ? null : sheet;
     if (sheet === "alerts" && this.s?.alerts.length) this.seenAlert = this.s.alerts[this.s.alerts.length - 1].id;
@@ -393,8 +443,13 @@ export class Game {
     if (t) this.sel = null;
     this.bump();
   }
+  /** R, or the turn button: conveyors run round four ways; racks face the other side; machines mirror. */
   rotateTool() {
-    if (this.tool) this.tool = { ...this.tool, rot: this.tool.rot ? 0 : 1 };
+    const t = this.tool;
+    if (t) {
+      const kind = t.kind === "move" ? this.s?.structs[t.id!]?.kind : t.kind;
+      this.tool = { ...t, rot: kind === "belt" ? (t.rot + 1) % 4 : t.rot ? 0 : 1 };
+    }
     this.bump();
   }
 
@@ -468,21 +523,59 @@ export class Game {
   removeStruct(id: number) {
     if (this.s && this.result(sim.remove(this.s, id), "Removed (half the cost back)")) this.sel = null;
   }
-  /** Rotate a rack to pick from the other side (only when empty). */
-  flipRack(id: number) {
+  /** Pick something up to put it down somewhere else (empty things only; free). */
+  startMove(id: number) {
     const s = this.s;
-    if (!s) return;
-    const t = s.structs[id];
-    if (!t || t.kind !== "rack") return;
+    const t = s?.structs[id];
+    if (!s || !t) return;
     const err = sim.removeError(s, id);
     if (err) return this.say(err, "bad");
-    t.dead = true;
-    const p: sim.Placement = { kind: "rack", x: t.x, z: t.z, rot: t.rot ? 0 : 1 };
-    const e2 = sim.placeError(s, p);
-    t.dead = false;
-    if (e2) return this.say(e2, "bad");
-    t.rot = p.rot!;
-    this.say("Rack turned round", "good");
+    this.setTool({ kind: "move", id, rot: t.rot });
+  }
+  /** Mirror a machine (materials in at the other end), turn a conveyor, or turn a rack round, where it stands. */
+  turn(id: number) {
+    const t = this.s?.structs[id];
+    if (!this.s || !t) return;
+    const rot = t.kind === "belt" ? (t.rot + 1) % 4 : t.rot ? 0 : 1;
+    if (!this.result(sim.move(this.s, id, t.x, t.z, rot), t.kind === "machine" ? "Mirrored" : t.kind === "belt" ? "Conveyor turned" : "Turned round")) return;
+    const n = sim.structAt(this.s, t.x, t.z);
+    this.sel = n ? { k: "struct", id: n.id } : null;
+    this.bump();
+  }
+
+  /* ---------------------------------------------------------------- industries, stores, managers */
+
+  buyLicence(id: IndustryId) {
+    if (this.s) this.result(sim.buyLicence(this.s, id), "Licence granted");
+  }
+  openStore(kind: StoreKind, city: string) {
+    if (this.s) this.result(sim.openStore(this.s, kind, city), "Store opened");
+  }
+  closeStore(id: number) {
+    if (this.s) this.result(sim.closeStore(this.s, id), "Store closed");
+  }
+  upgradeStore(id: number) {
+    if (this.s) this.result(sim.upgradeStore(this.s, id), "Store enlarged");
+  }
+  setStore(id: number, p: Parameters<typeof sim.setStore>[2]) {
+    if (this.s) sim.setStore(this.s, id, p);
+    this.bump();
+  }
+  restock(id: number, lines: { item: ItemId; n: number }[]) {
+    if (this.s) this.result(sim.restock(this.s, id, lines), "Restock booked: the forklifts are picking it");
+  }
+  hire(id: ManagerId) {
+    if (this.s) sim.hire(this.s, id);
+    this.bump();
+  }
+  /** Reorder every working machine's raw materials automatically when they run low. */
+  autoSupply() {
+    const s = this.s;
+    if (!s) return;
+    const items = new Set<ItemId>();
+    for (const t of s.structs) if (!t.dead && t.m) for (const i of MACHINES[t.m.type].recipes[t.m.recipe].inputs) if (ITEMS[i].tier === "raw") items.add(i);
+    for (const i of items) if (!s.auto[i]) sim.setAuto(s, i, 4, 6);
+    this.say(items.size ? `Auto-ordering ${[...items].map((i) => ITEMS[i].name.toLowerCase()).join(", ")}` : "No raw materials to order", items.size ? "good" : "info");
   }
 
   /* ---------------------------------------------------------------- money, fleet, camera */

@@ -926,7 +926,13 @@ rain, a follow camera, photo mode, sounds and tips. The NextX graphics update gi
 get a sharp multisampled picture with sun shadows; big screens add GTAO, bloom and the NextX grade), the NextX
 Engine sky (`src/nextx/look.ts`) lighting the scene, polished concrete with baked occlusion, clad walls with dock
 shelters and dock lights, wooden pallets and labelled cartons, detailed trucks and forklifts, contact shadows, and
-static batching (`src/nextx/batch.ts`). See `src/games/wareforge/README.md`.
+static batching (`src/nextx/batch.ts`). The industry update fixes the lag on phones (vehicles merged to a few draw
+calls with the NextX palette merge, instanced dock doors, steady night lamps, an adaptive resolution governor and a
+four-times-faster simulation), and adds four industries to license (food & drink, fashion, pharma & beauty,
+automotive) with 31 items and 14 machines, conveyors, moving and mirroring anything, a sandbox mode and five new
+sites (an empty greenfield plot and one per industry), stores in 13 cities restocked by truck, a Company panel and
+managers for sales, supply, retail and the plant (`20261103100000_wareforge_industries.sql` raises the score cap).
+See `src/games/wareforge/README.md`.
 
 ### NextX titles play in the NextX app
 

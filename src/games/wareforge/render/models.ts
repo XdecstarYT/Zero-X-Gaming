@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mergeStatic } from "@/nextx/batch";
-import { CARRIERS, type MachineType } from "../data";
+import { CARRIERS, MACHINES, type MachineType } from "../data";
 
 export const COL = {
   wall: "#e4e8ef",
@@ -842,15 +842,34 @@ function buildTruck(carrier: number) {
 
 export interface MachineModel {
   group: THREE.Group;
-  /** Parts that move while it runs. */
+  /** Parts that move while it runs (each says how: userData.anim is bob, spin, slide or swing). */
   moving: THREE.Object3D[];
   light: THREE.Mesh;
 }
 
 let hazardMat: THREE.MeshStandardMaterial | null = null;
+const inArrow = new THREE.MeshBasicMaterial({ color: "#3d8bff", transparent: true, opacity: 0.85, depthWrite: false });
+const outArrow = new THREE.MeshBasicMaterial({ color: "#2fc488", transparent: true, opacity: 0.85, depthWrite: false });
+let chevronGeo: THREE.BufferGeometry | null = null;
+/** A flat chevron pointing along +x, for flow arrows. */
+function chevron() {
+  if (chevronGeo) return chevronGeo;
+  const sh = new THREE.Shape();
+  sh.moveTo(-0.16, -0.2);
+  sh.lineTo(0.02, -0.2);
+  sh.lineTo(0.2, 0);
+  sh.lineTo(0.02, 0.2);
+  sh.lineTo(-0.16, 0.2);
+  sh.lineTo(0.02, 0);
+  sh.closePath();
+  chevronGeo = new THREE.ShapeGeometry(sh);
+  chevronGeo.rotateX(-Math.PI / 2);
+  return chevronGeo;
+}
 
-/** A machine filling w×d tiles from its origin corner; inputs on the left column, outputs on the right. */
-export function machine(type: MachineType, w: number, d: number, color: string): MachineModel {
+/** A machine filling w×d tiles from its origin corner; inputs on the left column, outputs on the right (or the other way round, mirrored). */
+export function machine(type: MachineType, w: number, d: number, color: string, mirrored = false): MachineModel {
+  const style = MACHINES[type].style;
   const g = new THREE.Group();
   const body = mat(color, 0.38, 0.25);
   const grey = mat("#d5d9e4", 0.55, 0.1);
@@ -865,7 +884,7 @@ export function machine(type: MachineType, w: number, d: number, color: string):
     m.userData.own = true;
     g.add(m);
   }
-  // Conveyors at each end, under the buffers.
+  // Conveyors at each end, under the buffers, with arrows for the flow: materials in (blue), goods out (green).
   for (const x of [0.5, w - 0.5]) {
     g.add(rbox(0.9, 0.45, d - 0.06, grey, x, 0.05, d / 2, 0.04));
     for (let i = 0; i < d * 4; i++) {
@@ -874,18 +893,31 @@ export function machine(type: MachineType, w: number, d: number, color: string):
       r.position.set(x, 0.5, 0.15 + i * 0.25);
       g.add(r);
     }
+    const out = (x > w / 2) !== mirrored;
+    for (let z = 0; z < d; z++) {
+      const c = new THREE.Mesh(chevron(), out ? outArrow : inArrow);
+      c.position.set(x, 0.57, z + 0.5);
+      // Inputs point in, outputs point out.
+      c.rotation.y = (x > w / 2) === out ? 0 : Math.PI;
+      c.renderOrder = 2;
+      g.add(c);
+    }
   }
   const moving: THREE.Object3D[] = [];
+  const anim = (o: THREE.Object3D, how: "bob" | "spin" | "slide" | "swing") => {
+    o.userData.anim = how;
+    moving.push(o);
+    return o;
+  };
   const mid = w / 2;
   const inner = w - 2;
-  if (type === "press") {
+  if (style === "press") {
     g.add(rbox(inner, 0.6, d - 0.3, dark, mid, 0, d / 2, 0.06));
     for (const [x, z] of [[mid - inner / 2 + 0.3, 0.3], [mid + inner / 2 - 0.3, 0.3], [mid - inner / 2 + 0.3, d - 0.3], [mid + inner / 2 - 0.3, d - 0.3]]) g.add(rbox(0.3, 2.6, 0.3, body, x, 0, z, 0.05));
     g.add(rbox(inner, 0.5, d - 0.2, body, mid, 2.5, d / 2, 0.08));
     const ram = box(inner - 0.8, 0.5, d - 0.8, steel, mid, 1.3, d / 2);
-    g.add(ram);
-    moving.push(ram);
-  } else if (type === "saw") {
+    g.add(anim(ram, "bob"));
+  } else if (style === "saw") {
     g.add(rbox(inner, 0.85, d - 0.2, grey, mid, 0, d / 2, 0.06));
     g.add(box(0.15, 1.6, 0.15, body, mid - 0.4, 0.85, 0.15));
     g.add(box(0.15, 1.6, 0.15, body, mid - 0.4, 0.85, d - 0.15));
@@ -893,19 +925,86 @@ export function machine(type: MachineType, w: number, d: number, color: string):
     const blade = new THREE.Mesh(cylGeo(0.35, 0.35, 0.04, 24), steel);
     blade.rotation.x = Math.PI / 2;
     blade.position.set(mid, 1.15, d / 2);
-    g.add(blade);
-    moving.push(blade);
-  } else if (type === "smt") {
+    g.add(anim(blade, "spin"));
+  } else if (style === "smt") {
     g.add(rbox(inner, 0.9, d - 0.4, body, mid, 0, d / 2, 0.06));
     const hood = new THREE.Mesh(boxGeo(inner - 0.2, 0.6, d - 0.6), new THREE.MeshPhysicalMaterial({ color: "#d6f1ff", transparent: true, opacity: 0.35, roughness: 0.05, transmission: 0, clearcoat: 1 }));
     hood.position.set(mid, 1.2, d / 2);
     g.add(hood);
-    for (let i = 0; i < 3; i++) {
-      const head = box(0.25, 0.3, 0.25, dark, mid - inner / 2 + 0.6 + i * ((inner - 1.2) / 2), 1.05, d / 2);
-      g.add(head);
-      moving.push(head);
-    }
+    for (let i = 0; i < 3; i++) g.add(anim(box(0.25, 0.3, 0.25, dark, mid - inner / 2 + 0.6 + i * ((inner - 1.2) / 2), 1.05, d / 2), "slide"));
     g.add(box(0.5, 0.4, 0.06, glow("#3f7bff"), mid, 0.9, 0.18, false));
+  } else if (style === "oven") {
+    // A long insulated oven with a glowing window and a flue; trays slide through it.
+    g.add(rbox(inner, 1.5, d - 0.3, body, mid, 0, d / 2, 0.1));
+    g.add(rbox(inner + 0.1, 0.12, d - 0.2, dark, mid, 1.5, d / 2, 0.04));
+    g.add(box(inner - 0.4, 0.22, 0.04, glow("#ffb24a"), mid, 0.7, 0.12, false));
+    g.add(box(inner - 0.4, 0.22, 0.04, glow("#ffb24a"), mid, 0.7, d - 0.12, false));
+    const flue = cyl(0.18, 1.4, steel, 14);
+    flue.position.set(mid + inner / 2 - 0.5, 2.3, d / 2);
+    g.add(flue);
+    g.add(anim(box(0.8, 0.08, d - 0.6, steel, mid, 0.55, d / 2), "slide"));
+  } else if (style === "tank") {
+    // Stainless vats with domed tops, pipework between them and a stirrer turning in each.
+    const n = Math.max(1, Math.round(inner / 1.4));
+    g.add(rbox(inner, 0.25, d - 0.2, dark, mid, 0, d / 2, 0.05));
+    for (let i = 0; i < n; i++) {
+      const x = mid - inner / 2 + (inner / n) * (i + 0.5);
+      const r = Math.min(0.62, (inner / n) * 0.42, d * 0.32);
+      const vat = cyl(r, 1.7, steel, 20);
+      vat.position.set(x, 1.1, d / 2);
+      g.add(vat);
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2), steel);
+      dome.position.set(x, 1.95, d / 2);
+      dome.castShadow = true;
+      dome.userData.own = true;
+      g.add(dome);
+      g.add(box(r * 2 + 0.04, 0.12, 0.06, body, x, 1.2, d / 2 - r - 0.02));
+      const stir = box(0.5, 0.06, 0.08, dark, x, 2.35, d / 2);
+      g.add(anim(stir, "spin"));
+      g.add(box(0.06, 0.4, 0.06, dark, x, 1.98, d / 2));
+    }
+    const pipe = cyl(0.06, inner, mat("#c9ced8", 0.3, 0.8), 8);
+    pipe.rotation.z = Math.PI / 2;
+    pipe.position.set(mid, 0.55, d - 0.25);
+    g.add(pipe);
+  } else if (style === "loom") {
+    // A frame strung with threads (or a sewing table), and a beater bar sweeping across.
+    g.add(rbox(inner, 0.75, d - 0.3, grey, mid, 0, d / 2, 0.05));
+    for (const z of [0.25, d - 0.25]) {
+      g.add(box(0.12, 1.5, 0.12, body, mid - inner / 2 + 0.2, 0.75, z));
+      g.add(box(0.12, 1.5, 0.12, body, mid + inner / 2 - 0.2, 0.75, z));
+    }
+    g.add(box(inner - 0.2, 0.12, 0.12, body, mid, 2.2, 0.25));
+    g.add(box(inner - 0.2, 0.12, 0.12, body, mid, 2.2, d - 0.25));
+    const thread = mat(color, 0.6);
+    for (let i = 0; i < 9; i++) g.add(box(0.025, 1.35, 0.02, thread, mid - inner / 2 + 0.4 + i * ((inner - 0.8) / 8), 0.8, d / 2, false));
+    g.add(anim(box(0.1, 0.1, d - 0.6, dark, mid, 1.3, d / 2), "slide"));
+  } else if (style === "line") {
+    // An assembly line: a long low bed, a gantry, and robot arms either side of the work.
+    g.add(rbox(inner, 0.55, d - 0.5, grey, mid, 0, d / 2, 0.05));
+    for (const x of [mid - inner / 2 + 0.15, mid + inner / 2 - 0.15]) {
+      g.add(box(0.15, 2.4, 0.15, body, x, 0, 0.2));
+      g.add(box(0.15, 2.4, 0.15, body, x, 0, d - 0.2));
+    }
+    g.add(box(inner, 0.2, 0.2, body, mid, 2.3, 0.2));
+    g.add(box(inner, 0.2, 0.2, body, mid, 2.3, d - 0.2));
+    const arms = Math.max(2, Math.floor(inner / 1.5));
+    for (let i = 0; i < arms; i++) {
+      const x = mid - inner / 2 + (inner / arms) * (i + 0.5);
+      const z = i % 2 ? d - 0.7 : 0.7;
+      const base = cyl(0.26, 0.25, dark, 16);
+      base.position.set(x, 0.68, z);
+      g.add(base);
+      const arm = new THREE.Group();
+      arm.position.set(x, 0.8, z);
+      const a1 = rbox(0.18, 0.9, 0.18, body, 0, 0, 0, 0.06);
+      a1.rotation.x = i % 2 ? 0.4 : -0.4;
+      arm.add(a1);
+      const a2 = rbox(0.14, 0.7, 0.14, body, 0, 0.7, i % 2 ? -0.5 : 0.5, 0.05);
+      a2.rotation.x = i % 2 ? 1.3 : -1.3;
+      arm.add(a2);
+      g.add(anim(arm, "swing"));
+    }
   } else {
     // An assembly or robot cell: a guarded table and a robot arm.
     g.add(rbox(inner, 0.75, d - 0.4, grey, mid, 0, d / 2, 0.05));
@@ -922,8 +1021,7 @@ export function machine(type: MachineType, w: number, d: number, color: string):
     const a2 = rbox(0.2, 0.9, 0.2, body, -0.6, 0.9, 0, 0.07);
     a2.rotation.z = 1.4;
     arm.add(a2);
-    g.add(arm);
-    moving.push(arm);
+    g.add(anim(arm, "swing"));
   }
   // A status beacon on a post.
   g.add(box(0.06, 2.8, 0.06, dark, w - 1.05, 0, 0.12));
@@ -931,9 +1029,63 @@ export function machine(type: MachineType, w: number, d: number, color: string):
   light.position.set(w - 1.05, 2.9, 0.12);
   g.add(light);
   shadows(g);
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).material === inArrow || (o as THREE.Mesh).material === outArrow) o.castShadow = false;
+  });
   for (const m of moving) m.userData.dynamic = true;
   light.userData.dynamic = true;
   return { group: g, moving, light };
+}
+
+/* ------------------------------------------------------------------ conveyors */
+
+let beltTex: THREE.CanvasTexture | null = null;
+/** The rubber belt, with chevrons pointing the way it runs (scroll its offset to make it move). */
+export function beltTexture() {
+  if (beltTex) return beltTex;
+  beltTex = canvasTex(128, 64, (g) => {
+    g.fillStyle = "#2a2d34";
+    g.fillRect(0, 0, 128, 64);
+    g.fillStyle = "rgba(255,255,255,0.05)";
+    for (let x = 0; x < 128; x += 8) g.fillRect(x, 0, 3, 64);
+    g.fillStyle = "#f5c518";
+    for (const x0 of [16, 80]) {
+      g.beginPath();
+      g.moveTo(x0, 14);
+      g.lineTo(x0 + 14, 14);
+      g.lineTo(x0 + 30, 32);
+      g.lineTo(x0 + 14, 50);
+      g.lineTo(x0, 50);
+      g.lineTo(x0 + 16, 32);
+      g.closePath();
+      g.fill();
+    }
+  }) as THREE.CanvasTexture;
+  beltTex.wrapS = THREE.RepeatWrapping;
+  return beltTex;
+}
+
+/** A conveyor tile, running along +x, centred on the origin: frame, legs, end rollers and the belt. */
+export function belt(beltMat: THREE.Material): THREE.Group {
+  const g = new THREE.Group();
+  const frame = mat("#8b94a6", 0.35, 0.7);
+  const leg = mat("#4b5263", 0.5, 0.5);
+  for (const z of [-0.4, 0.4]) {
+    g.add(box(1, 0.12, 0.07, frame, 0, 0.27, z));
+    for (const x of [-0.38, 0.38]) g.add(box(0.06, 0.28, 0.06, leg, x, 0, z));
+  }
+  for (const x of [-0.42, 0.42]) {
+    const r = cyl(0.06, 0.74, frame, 10);
+    r.rotation.x = Math.PI / 2;
+    r.position.set(x, 0.33, 0);
+    g.add(r);
+  }
+  const top = new THREE.Mesh(boxGeo(1, 0.05, 0.74), beltMat);
+  top.position.set(0, 0.365, 0);
+  top.castShadow = true;
+  top.receiveShadow = true;
+  g.add(top);
+  return g;
 }
 
 /* ------------------------------------------------------------------ scenery */

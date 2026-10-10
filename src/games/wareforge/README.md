@@ -10,6 +10,8 @@ game. Run a dock, racks and a production floor; accept orders and ship them on t
   - WH-04 Southfield Cross-Dock (many doors, busy customers).
   - WH-07 Northgate Works (a factory with a press and an assembly cell).
   - WH-09 Harbor Gate, WH-12 Summit Mega DC and WH-15 Polar Cold Store (frozen goods in the snow).
+  - WH-20 Greenfield Plot (an empty floor: build your own factory), WH-21 Harvest Bakery Works (food), WH-22 Atelier Row (fashion), WH-23 Clearwater Labs (pharma) and WH-24 Motor City Plant (cars).
+  - Any site can be played as a **sandbox**: money is no object, every industry is open, and there's no score.
 - **Orders**: customers offer shipments with a deadline. Accept one and a door is assigned:
   1. Forklifts pick the pallets onto the six-slot lane behind that door.
   2. A carrier's truck arrives, backs onto the door and is loaded.
@@ -80,16 +82,30 @@ Older saves load: the new fields get defaults.
 | The site | Textured lawn with broad colour variation, asphalt with grit, cracks and oil spots, a footway and kerb, a chain-link fence, a glass office with mullions and rooftop plant, broadleaf trees and pines, round snowflakes. |
 | Speed | Static geometry is merged per material (`src/nextx/batch.ts`): the scene went from about 860 meshes to about 360, and models share their geometry and materials (a truck no longer leaves its materials behind when it drives off). |
 
+## The industry update
+
+| Area | What's new |
+| --- | --- |
+| Lag | The phone frame rate. Forklifts, trucks, trains and workers are merged once into a handful of draw calls each and copied; plain painted parts share one "palette" material with their colour, roughness and metalness in the vertices (`src/nextx/batch.ts`). Dock doors and their lights are instanced, picking boxes are only built when you tap, truck positions are worked out once a frame, and the night lamps never switch on and off (so no shaders rebuild at dusk). The Mega DC went from about 950 draw calls to about 160. Phones start at 1.5× resolution and an adaptive governor steps it down when frames run slow and back up with headroom; medium redraws the shadow map every other frame. The simulation is about four times faster: forklifts look for work with one pass over the pallets, idle ones back off, and the path finder reuses its memory. |
+| Industries | General goods and electronics come with every site. License **food & drink** ($18,000), **fashion** ($22,000), **pharma & beauty** ($40,000) and **automotive** ($65,000) in Company → Industries: each brings its materials and suppliers, its machines (14 new: flour mill, bakery oven, dairy & chocolate works, juice bottling, weaving loom, sewing line, shoe line, body shop, engine plant, tyre plant, car assembly line, chemical reactor, tablet press, filling line) and its customers (9 new). 31 new items. Each trade levels up as you make its goods (25 and 80 pallets): customers pay 5%, then 12% more. |
+| Production | Machines report how busy they've been, and why they're stopped (short of what, or output full). Company → Production lists every machine with its rate, state and output, what the line is short of, and auto-orders every machine's materials in one tap. Machines can be mirrored (materials in on the right). Blue and green arrows show where materials go in and goods come out. |
+| Conveyors | 1×1 tiles ($300) that run four ways. A machine hands its goods to a conveyor at its output end; pallets ride tile by tile (20 s a tile, 10 with fast conveyors) and run into the next machine's input; at the end of a line forklifts collect. Forklifts can't cross them and leave conveyor-fed inputs alone, so a busy line doesn't jam. |
+| Free building | Move anything (free, when it's empty), turn racks, mirror machines, point conveyors another way; the Greenfield Plot starts empty; sandbox mode on any site. |
+| Stores | Open a discount store, gadget store, bike shop, supermarket, fashion boutique, pharmacy or car dealership in any of 13 cities (up to 12). They're restocked by real shipments (picked, loaded and trucked; a flat $150 for a carrier) and sell every hour from 08:00 to 22:00 at shelf prices (50% over wholesale): demand follows the city, the store's size (three), your reputation, prices (−20% to +40%) and how happy shoppers are; staff serve so many each, empty shelves lose sales. Rent by the hour, staff $22/h while open. Auto restock, upgrade, close for now, or sell (half the fit-out back). |
+| Company | A new dock button: the overview (today by business, the group, the books), industries, production, stores and managers. |
+| Managers | A sales manager accepts the offers you have the stock for; a supply manager orders what working machines need; a retail manager restocks every store; a plant engineer services and repairs machines. $30–35 an hour each. |
+| Also | 2 upgrades (point of sale, fast conveyors), 11 goals, a store takings mission, and the score cap rises (`20261103100000_wareforge_industries.sql`). Older saves load with no licences, stores or managers. |
+
 ## Code
 
 | File | What |
 | --- | --- |
-| `data.ts` | Goods, machines and recipes, sites, carriers, suppliers, customers, upgrades, goals |
+| `data.ts` | Goods, machines and recipes, industries, store kinds, managers, sites, carriers, suppliers, customers, cities, upgrades, goals |
 | `sim.ts` | The pure, seeded simulation (see below) |
 | `game.ts` | Controller: state, clock and speed, selection, build tool, follow camera, photo mode, tips, sounds, saving (`zx-wareforge-save`), score |
 | `audio.ts` | Synthesised sounds (Web Audio) |
 | `render/world.ts` | three.js world, kept in step with the sim each frame; picking |
-| `render/models.ts` | Forklift, truck, train, machine, charger, worker, car, office, gatehouse, lamp, crane, tree and pin models; canvas textures |
+| `render/models.ts` | Forklift, truck, train, machine (eight styles), conveyor, charger, worker, car, office, gatehouse, lamp, crane, tree and pin models; canvas textures |
 | `render/stage.ts` | Renderer, quality tiers, the post chain (GTAO, bloom, grade), loop and input (pan, turn, pinch, wheel, tap) |
 | `ui/App.tsx`, `ui/style.ts` | The liquid-glass interface (NextX `GlassDefs` with the `wf` prefix) |
 | `index.ts` | The Zero X `GameModule` |
@@ -108,7 +124,9 @@ The simulation is plain JSON on a 44×34 tile grid:
 
 - Doors sit every four tiles.
 - Pallets live in slots, trucks, or on forks.
-- Idle forklifts pick the most urgent job: load > unload > clear a machine > pick an order > feed a machine > put away.
+- Idle forklifts pick the most urgent job: load > unload > clear a machine (or the end of a conveyor) > pick an order > feed a machine > put away.
+- Conveyors are structs with one `belt` slot; a pallet's `bt` is how far it's ridden toward the next tile. `cutOff()` lists anything forklifts can't reach (conveyor-served slots excepted); every site starts with none.
+- Stores, licences and managers live on the state (`stores`, `lic`, `managers`); a restock is an order with `store` set (no payment).
 - Forklifts route with A* (turns cost a little) round racks and machines.
 
 The game plays in the NextX app at `/nextx/play/wareforge` (`/games/wareforge` redirects there). `?wf` on the URL exposes the controller as `window.__wf` for tests.

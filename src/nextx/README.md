@@ -28,7 +28,11 @@ game starts where the last one finished. The NextX app (`/nextx`,
 - **Static batching** (`batch.ts`): `mergeStatic(root)` folds every mesh under a group that never
   moves into one mesh per material (and shadow setting), so buildings made of hundreds of parts
   draw in tens of calls. Anything marked `userData.dynamic` is left alone; shared materials stay
-  shared, so their colour or glow can still change.
+  shared, so their colour or glow can still change. With `{ palette: true }`, plain painted parts
+  (a standard material with no textures, glow or transparency) go further: their colour,
+  roughness and metalness are written into the vertices and they all draw with one shared
+  `paletteMaterial()`, so a forklift of fifteen paints is one draw call. Build a model once,
+  merge it and `clone()` it: copies share the merged geometry.
 - **Camera rig** (`rig.ts`): an orbiting camera with damping (target, distance, yaw, pitch), pan
   under the finger, zoom toward a point. Built for YourGov's map, used by WareForge.
 - **Powered by** (`PoweredBy.tsx`): the mark on each title's title screen, linking to the app.

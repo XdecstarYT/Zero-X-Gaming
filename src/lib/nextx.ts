@@ -27,19 +27,19 @@ export interface NextXTitle {
 export const NEXTX_TITLES: NextXTitle[] = [
   {
     slug: "wareforge",
-    pitch: "Run a warehouse and a factory in 3D: book trucks, pick orders, build machines and ship on time.",
+    pitch: "Run a warehouse, a factory and a chain of stores in 3D: build your own plant, go into new industries and ship on time.",
     accent: "#2f6fe4",
     accent2: "#f6c21c",
     stats: [
-      { v: "6", k: "Sites" },
-      { v: "25", k: "Goods" },
-      { v: "7", k: "Machines" },
+      { v: "11", k: "Sites" },
+      { v: "56", k: "Goods" },
+      { v: "21", k: "Machines" },
     ],
     features: [
-      "Your cash always on show, a bank with loans, and your own trucks",
-      "A cold chain: freezer racks and frozen goods that spoil",
-      "A Mega hall 78 bays long, a rail siding, contracts and events",
-      "NextX Engine graphics: sky light, shadows and sharp detail, even on phones",
+      "Build your own factory: conveyors, move anything, a sandbox and an empty plot",
+      "Six industries: food, fashion, pharma and cars join goods and electronics",
+      "Stores in 13 cities, a Company panel and managers to run it all",
+      "Smooth on phones: NextX Engine graphics with an adaptive resolution",
     ],
   },
   {

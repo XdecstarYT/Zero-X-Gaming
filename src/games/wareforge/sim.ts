@@ -775,13 +775,6 @@ export const beltNext = (t: Struct): [number, number] => [t.x + BELT_DIR[t.rot &
 export const inColumn = (t: Struct) => (t.rot === 1 ? t.x + t.w - 1 : t.x);
 export const outColumn = (t: Struct) => (t.rot === 1 ? t.x : t.x + t.w - 1);
 
-/** The machine a conveyor runs into (at its input end), if it does. */
-function beltInto(s: State, b: Struct): Struct | null {
-  const [nx, nz] = beltNext(b);
-  const t = structAt(s, nx, nz);
-  return t && t.kind === "machine" && !t.dead && nx === inColumn(t) ? t : null;
-}
-
 /** Conveyors that carry a machine's goods away: any beside its output end that doesn't run back into it. */
 export function outBelts(s: State, t: Struct): Struct[] {
   const ox = outColumn(t);
@@ -840,7 +833,7 @@ function makeStruct(s: State, p: Placement): Struct {
   } else if (p.kind === "floor") {
     for (let dz = 0; dz < d; dz++) for (let dx = 0; dx < w; dx++) t.slots.push(addSlot(s, "store", p.x + dx, p.z + dz, 0, t.id));
   } else if (p.kind === "belt") {
-    t.slots.push(addSlot(s, "belt", p.x, p.z, 0.42, t.id));
+    t.slots.push(addSlot(s, "belt", p.x, p.z, 0.39, t.id));
   } else if (p.kind === "machine") {
     for (let dz = 0; dz < d; dz++) t.slots.push(addSlot(s, "in", inColumn(t), p.z + dz, 0.55, t.id));
     for (let dz = 0; dz < d; dz++) t.slots.push(addSlot(s, "out", outColumn(t), p.z + dz, 0.55, t.id));

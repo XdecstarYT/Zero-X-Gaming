@@ -9,10 +9,10 @@ import * as THREE from "three";
 import { mergeStatic } from "@/nextx/batch";
 import { SkyEnvironment, makeSky, skyFor, type SkyLight, type SkyMesh } from "@/nextx/look";
 import { Rig } from "@/nextx/rig";
-import { AISLE_Z, DAY, DOCK_Z, FREEZER, GRID_W, HOUR, ITEMS, MACHINES, RAIL_DOORS, RAIL_Z, ROAD_Z, STAGE_Z, TRUCK_PHASE, WIDTH_FULL, WIDTH_MEGA, doorX0, siteDef, type SiteDef } from "../data";
-import { LEVEL_H, doorName, eventOn, rackLevels, route, width, type Focus, type Pallet, type State, type Truck } from "../sim";
+import { AISLE_Z, BELT, DAY, DOCK_Z, FREEZER, GAME_SECS_PER_REAL, GRID_W, HOUR, ITEMS, MACHINES, RAIL_DOORS, RAIL_Z, ROAD_Z, STAGE_Z, TRUCK_PHASE, WIDTH_FULL, WIDTH_MEGA, doorX0, siteDef, type SiteDef } from "../data";
+import { BELT_DIR, LEVEL_H, doorName, eventOn, rackLevels, route, up, width, type Focus, type Pallet, type State, type Truck } from "../sim";
 import {
-  COL, CONTAINER_COLORS, TRAILER_LEN, asphaltTexture, box, boxGeo, car, charger, claddingTexture, crane, doorTexture, fadeTexture, fenceTexture, flakeTexture, floorTexture, forklift, gatehouse,
+  COL, CONTAINER_COLORS, TRAILER_LEN, asphaltTexture, belt, beltTexture, box, boxGeo, car, charger, claddingTexture, crane, doorTexture, fadeTexture, fenceTexture, flakeTexture, floorTexture, forklift, gatehouse,
   grassTexture, hazardTexture, lampMat, letteringTexture, loadTexture, machine, mat, office, palletGeometry, person, pin, pine, rbox, signTexture, streetLamp, train, tree, truck,
   windowMat, woodTexture, type ForkModel, type MachineModel, type PersonModel, type TrainModel, type TruckModel,
 } from "./models";
@@ -22,6 +22,7 @@ export type Quality = "low" | "medium" | "high";
 
 const WHITE = new THREE.Color(1, 1, 1);
 const DOWN = new THREE.Vector3(0, -1, 0);
+const UP = new THREE.Vector3(0, 1, 0);
 const LIGHT_ON = { red: new THREE.Color("#ff3b30"), redOff: new THREE.Color("#4a1a1a"), green: new THREE.Color("#3ddc84"), greenOff: new THREE.Color("#173a22") };
 
 type Surface = "floor" | "clad" | "cladDim" | "plinth" | "coping" | "fascia" | "door" | "shelter" | "asphalt" | "road" | "concrete" | "hazard" | "fence" | "post";
@@ -32,9 +33,8 @@ export interface Ghost {
   w: number;
   d: number;
   ok: boolean;
-  /** Racks: the side forklifts pick from (0 south, 1 north). */
-  rot?: number;
-  rack?: boolean;
+  /** An arrow off one side (0 east, 1 south, 2 west, 3 north): where a rack is picked from, the way a conveyor runs, where a machine's goods come out. */
+  arrow?: number;
 }
 
 const MAX_PALLETS = 1400;
@@ -159,6 +159,7 @@ export class World {
   private ghost: THREE.Mesh;
   private ghostArrow: THREE.Mesh;
   private tmp = new THREE.Object3D();
+  private tmpV = new THREE.Vector3();
   private col = new THREE.Color();
   private time = 0;
   /** The state last drawn (what a tap picks from). */
@@ -183,6 +184,8 @@ export class World {
   /** The high-bay lamps hang from the trusses and fade with them (their glow follows the street lamps'). */
   private bayLampMat = new THREE.MeshStandardMaterial({ color: "#dcdfe5", emissive: "#ffe7b0", emissiveIntensity: 0, roughness: 0.35, metalness: 0.2, transparent: true });
   private bayFrameMat = new THREE.MeshStandardMaterial({ color: "#454c5a", roughness: 0.5, metalness: 0.4, transparent: true });
+  /** The conveyors' belts: one material, its texture scrolled so they all run. */
+  private beltMat = new THREE.MeshStandardMaterial({ map: beltTexture(), roughness: 0.75 });
 
   constructor(readonly quality: Quality) {
     this.scene.background = new THREE.Color("#bcd7ef");
@@ -886,9 +889,14 @@ export class World {
         ch.group.position.set(t.x, 0, t.z);
         G.add(ch.group);
         this.chargers.set(t.id, { leds: ch.leds });
+      } else if (t.kind === "belt") {
+        const b = belt(this.beltMat);
+        b.position.set(t.x + 0.5, 0, t.z + 0.5);
+        b.rotation.y = (-t.rot * Math.PI) / 2;
+        G.add(b);
       } else if (t.m) {
         const def = MACHINES[t.m.type];
-        const mm = machine(t.m.type, t.w, t.d, def.color);
+        const mm = machine(t.m.type, t.w, t.d, def.color, t.rot === 1);
         mm.group.position.set(t.x, 0, t.z);
         G.add(mm.group);
         this.machines.set(t.id, mm);
@@ -934,7 +942,7 @@ export class World {
     };
     for (const t of s.structs) {
       if (t.dead) continue;
-      const a = t.kind === "machine" ? 0.55 : t.kind === "floor" ? 0.12 : t.kind === "charger" ? 0.32 : 0.45;
+      const a = t.kind === "machine" ? 0.55 : t.kind === "floor" ? 0.12 : t.kind === "charger" ? 0.32 : t.kind === "belt" ? 0.22 : 0.45;
       soft(t.x + 0.05, t.z + 0.05, t.x + t.w - 0.05, t.z + t.d - 0.05, a, t.kind === "floor" ? 0.3 : 0.65);
     }
     const edge = (ax: number, ay: number, bx: number, by: number, rx: number, ry: number, rw: number, rh: number, a: number) => {
@@ -997,10 +1005,21 @@ export class World {
       if (running) {
         const ph = this.time;
         mm.moving.forEach((o, i) => {
-          if (m.type === "press") o.position.y = 1.3 + Math.abs(Math.sin(ph * 2.2)) * 0.6;
-          else if (m.type === "saw") o.rotation.y += dt * 18;
-          else if (m.type === "smt") o.position.x = o.userData.x0 === undefined ? ((o.userData.x0 = o.position.x), o.position.x) : o.userData.x0 + Math.sin(ph * 4 + i) * 0.25;
-          else o.rotation.y = Math.sin(ph * 1.3) * 1.2;
+          o.userData.x0 ??= o.position.x;
+          o.userData.y0 ??= o.position.y;
+          switch (o.userData.anim) {
+            case "bob":
+              o.position.y = o.userData.y0 + Math.abs(Math.sin(ph * 2.2)) * 0.6;
+              break;
+            case "spin":
+              o.rotation.y += dt * 18;
+              break;
+            case "slide":
+              o.position.x = o.userData.x0 + Math.sin(ph * 4 + i) * 0.25;
+              break;
+            default:
+              o.rotation.y = Math.sin(ph * 1.3 + i) * 1.2;
+          }
         });
       }
     }
@@ -1036,6 +1055,8 @@ export class World {
       });
       if (changed && dl.mesh.instanceColor) dl.mesh.instanceColor.needsUpdate = true;
     }
+    // The conveyors run while the clock does.
+    this.beltMat.map!.offset.x -= (dt * (opts.speed ?? 0) * GAME_SECS_PER_REAL * (up(s, "fastbelt") ? 2 : 1)) / BELT.secs;
     this.syncForks(s, dt);
     this.syncTrucks(s);
     this.syncPallets(s);
@@ -1144,6 +1165,13 @@ export class World {
     }
     const sl = s.slots[p.ref];
     if (!sl) return null;
+    if (sl.kind === "belt") {
+      // Riding a conveyor: part of the way to the next tile.
+      const t = s.structs[sl.owner];
+      const [dx, dz] = BELT_DIR[t.rot & 3];
+      const k = Math.min(1, p.bt ?? 0);
+      return { x: sl.x + 0.5 + dx * k, z: sl.z + 0.5 + dz * k, y: sl.y, rot: 0 };
+    }
     return { x: sl.x + 0.5, z: sl.z + 0.5, y: sl.y, rot: 0 };
   }
 
@@ -1360,15 +1388,15 @@ export class World {
 
   private syncGhost(g: Ghost | null) {
     this.ghost.visible = !!g;
-    this.ghostArrow.visible = !!g?.rack;
+    this.ghostArrow.visible = g?.arrow !== undefined;
     if (!g) return;
     this.ghost.position.set(g.x + g.w / 2, 0.6, g.z + g.d / 2);
     this.ghost.scale.set(g.w, 1.2, g.d);
     (this.ghost.material as THREE.MeshStandardMaterial).color.set(g.ok ? "#3ddc84" : "#ff3b30");
-    if (g.rack) {
-      const south = (g.rot ?? 0) === 0;
-      this.ghostArrow.position.set(g.x + g.w / 2, 1.3, south ? g.z + g.d + 0.2 : g.z - 0.2);
-      this.ghostArrow.rotation.set(south ? Math.PI / 2 : -Math.PI / 2, 0, 0);
+    if (g.arrow !== undefined) {
+      const [dx, dz] = BELT_DIR[g.arrow & 3];
+      this.ghostArrow.position.set(g.x + g.w / 2 + dx * (g.w / 2 + 0.25), 1.3, g.z + g.d / 2 + dz * (g.d / 2 + 0.25));
+      this.ghostArrow.quaternion.setFromUnitVectors(UP, this.tmpV.set(dx, 0, dz));
     }
   }
 
