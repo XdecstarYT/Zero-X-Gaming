@@ -328,33 +328,44 @@ export function brickTexture(tint = "#b5502f") {
 }
 
 /** Rough rock: layered bands of stone, cracks and specks. */
-export function rockTexture(base = "#b7a383") {
+export function rockTexture(base = "#9d978d") {
   seed = 67;
   return tiled(
     canvasTex(256, 256, (g) => {
       g.fillStyle = base;
       g.fillRect(0, 0, 256, 256);
-      for (let y = 0; y < 256; y += 10 + rnd() * 18) {
-        g.fillStyle = `rgba(${rnd() > 0.5 ? "255,255,255" : "60,40,20"},${0.06 + rnd() * 0.1})`;
-        g.fillRect(0, y, 256, 4 + rnd() * 10);
+      // Broken blocks of stone, each a slightly different shade, rather than grain.
+      for (let i = 0; i < 90; i++) {
+        const w = 20 + rnd() * 50;
+        const h = 14 + rnd() * 34;
+        const l = Math.round(rnd() * 40 - 20);
+        g.fillStyle = l > 0 ? `rgba(255,255,250,${l / 160})` : `rgba(30,28,26,${-l / 120})`;
+        g.beginPath();
+        const x = rnd() * 256;
+        const y = rnd() * 256;
+        g.moveTo(x, y);
+        g.lineTo(x + w, y + rnd() * 8);
+        g.lineTo(x + w - rnd() * 10, y + h);
+        g.lineTo(x + rnd() * 8, y + h - rnd() * 6);
+        g.fill();
       }
-      mottle(g, 256, 40, 10, 40, "255,250,240", "50,35,20", 0.18);
-      g.strokeStyle = "rgba(40,28,16,0.35)";
-      for (let i = 0; i < 26; i++) {
+      mottle(g, 256, 40, 10, 40, "250,250,245", "40,38,34", 0.16);
+      g.strokeStyle = "rgba(30,28,26,0.4)";
+      for (let i = 0; i < 30; i++) {
         g.beginPath();
         let x = rnd() * 256;
         let y = rnd() * 256;
         g.moveTo(x, y);
-        for (let k = 0; k < 4; k++) g.lineTo((x += (rnd() - 0.5) * 30), (y += rnd() * 20));
+        for (let k = 0; k < 4; k++) g.lineTo((x += (rnd() - 0.5) * 34), (y += (rnd() - 0.3) * 24));
         g.stroke();
       }
-      speckle(g, 256, 3000, "255,255,255", "30,20,10", 0.2, 1.6);
+      speckle(g, 256, 3000, "255,255,255", "25,24,22", 0.2, 1.6);
     }),
   );
 }
 
 /** Clay roof tiles: overlapping rows with a shadow under each. */
-export function roofTexture(tint = "#8c3b2a") {
+export function roofTexture(tint = "#b4553c") {
   seed = 71;
   const c = new THREE.Color(tint);
   return tiled(

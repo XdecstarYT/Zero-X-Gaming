@@ -243,6 +243,38 @@ export const css = `
 .wf-chart .lab.lo{bottom:24px}
 .wf-chart .readout{position:absolute;left:12px;right:12px;bottom:5px;font-size:12px;display:flex;gap:6px;align-items:baseline;pointer-events:none}
 
+/* ---- building sites and store visits ---- */
+.wf-sitebar{position:absolute;left:50%;top:70px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:5px 6px;max-width:calc(100% - 24px);z-index:5}
+.wf-sitebar .name{display:flex;flex-direction:column;min-width:0;line-height:1.15}
+.wf-sitebar .name b{font-size:13.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wf-sitebar .name small{font-size:11px;font-weight:650;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wf-sitetools{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);width:min(760px,calc(100% - 24px));padding:8px;display:flex;flex-direction:column;gap:6px;z-index:6}
+.wf-sitetools .row{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none}
+.wf-sitetools .row::-webkit-scrollbar,.wf-sitetools .tools::-webkit-scrollbar{display:none}
+.wf-sitetools .row .wf-btn{flex:none}
+.wf-sitetools .spacer{flex:1}
+.wf-sitetools .wf-stepper output{min-width:68px}
+.wf-sitetools .tools{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+.wf-sitetools .tools button{flex:1 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:60px;height:50px;border-radius:14px;font-size:10.5px;font-weight:700;color:var(--ink2)}
+.wf-sitetools .tools button span{font-size:18px;line-height:1}
+.wf-sitetools .tools button.on{background:rgba(47,111,228,.14);color:var(--blue);box-shadow:inset 0 0 0 1.5px rgba(47,111,228,.35)}
+.wf-sitetools .tools button:hover{background:rgba(27,34,54,.05)}
+.wf-sitetools .hint{font-size:11.5px;font-weight:650;text-align:center}
+.wf-sheet.wf-site-sheet{bottom:150px;max-height:min(58vh,560px)}
+.wf-cellcard{position:absolute;right:12px;top:122px;width:min(330px,calc(100% - 24px));padding:12px;z-index:5;font-size:13px}
+.wf-storecard{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);width:min(560px,calc(100% - 24px));padding:12px;z-index:6}
+@container wf (max-width:820px){
+  .wf-sitebar{top:calc(62px + env(safe-area-inset-top));left:8px;right:8px;transform:none;max-width:none}
+  .wf-sitebar .lbl{display:none}
+  .wf-sitebar .name{flex:1}
+  .wf-sitetools{left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));transform:none;width:auto;padding:6px}
+  .wf-sitetools .lbl{display:none}
+  .wf-sitetools .tools button{min-width:54px;height:46px}
+  .wf-sheet.wf-site-sheet{bottom:140px;max-height:calc(100% - 260px)}
+  .wf-cellcard{left:8px;right:8px;top:auto;bottom:146px;width:auto}
+  .wf-storecard{left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));transform:none;width:auto}
+}
+
 /* ---- the company map and the market ---- */
 .wf-legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:10px 0 8px;font-size:11.5px;font-weight:650;color:var(--ink2)}
 .wf-legend span{display:inline-flex;align-items:center;gap:6px}

@@ -144,4 +144,4 @@ The simulation is plain JSON on a 44×34 tile grid:
 - Tenders close on the hour (`stepTenders`); `winChance(s, bid)` is the exact chance a bid beats the three rivals, shown in the Market.
 - Forklifts route with A* (turns cost a little) round racks and machines.
 
-The game plays in the NextX app at `/nextx/play/wareforge` (`/games/wareforge` redirects there). `?wf` on the URL exposes the controller as `window.__wf` and the simulation as `window.__wfsim` for tests.
+The game plays in the NextX app at `/nextx/play/wareforge` (`/games/wareforge` redirects there). `?wf` on the URL exposes the controller as `window.__wf`, the simulation as `window.__wfsim` and the estate as `window.__wfest` for tests.

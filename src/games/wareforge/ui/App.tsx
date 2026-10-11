@@ -11,23 +11,13 @@ import {
 import { TIPS, type CompanyTab, type Game, type Sheet } from "../game";
 import * as sim from "../sim";
 import type { Focus, Order, Pallet, State, Store } from "../sim";
+import { EstateSheet, SiteHud, StoreHud } from "./Estate";
+import { mins, money, pct, short } from "./fmt";
 
-const money = (n: number) => `${n < 0 ? "−" : ""}$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
-/** Short money for tight spots: $950, $12.4k, $1.25M. */
-const short = (n: number) => {
-  const a = Math.abs(n);
-  const trim = (x: string) => (x.includes(".") ? x.replace(/0+$/, "").replace(/\.$/, "") : x);
-  const v = a >= 1e6 ? `$${trim((a / 1e6).toFixed(a >= 1e7 ? 1 : 2))}M` : a >= 1e4 ? `$${trim((a / 1e3).toFixed(a >= 1e5 ? 0 : 1))}k` : `$${Math.round(a).toLocaleString("en-US")}`;
-  return `${n < 0 ? "−" : ""}${v}`;
-};
 /** Cash on the top bar: in full up to a million. */
 /** A recipe's inputs as icons (a pick for one that digs from the ground). */
 const ins = (inputs: ItemId[], sep = "+") => (inputs.length ? inputs.map((x) => ITEMS[x].icon).join(sep) : "⛏️");
 const cashText = (n: number) => (Math.abs(n) >= 1e6 ? short(n) : money(n));
-const mins = (secs: number) => {
-  const m = Math.max(0, Math.round(secs / 60));
-  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m} min`;
-};
 
 export function Mark({ size = 30 }: { size?: number }) {
   return (
@@ -85,7 +75,11 @@ export function App({ game: g }: { game: Game }) {
         g.togglePause();
       } else if (["1", "2", "3", "4"].includes(e.key)) g.setSpeed(Number(e.key) - 1);
       else if (e.key === "Escape") {
-        if (g.tool) g.setTool(null);
+        if (g.view.k === "prop" && (g.etool || g.panel || g.esel)) {
+          g.setEstateTool(null);
+          g.setPanel(null);
+        } else if (g.view.k !== "site" && !g.sheet) g.leaveView();
+        else if (g.tool) g.setTool(null);
         else if (g.sheet) g.open(null);
         else g.select(null);
       } else if (e.key === "r" || e.key === "R") g.rotateTool();
@@ -95,8 +89,11 @@ export function App({ game: g }: { game: Game }) {
   }, [g]);
 
   const s = g.s;
+  const view = g.view;
+  const prop = s && view.k === "prop" ? s.estate.props.find((p) => p.id === view.id) : undefined;
+  const store = s && view.k === "store" ? s.stores.find((x) => x.id === view.id) : undefined;
   return (
-    <div ref={root} className={`wf${refract ? " wf-refract" : ""}`} data-testid="wf-root">
+    <div ref={root} className={`wf${refract ? " wf-refract" : ""}${prop ? " wf-onsite" : ""}`} data-testid="wf-root">
       <GlassDefs prefix="wf" />
       <canvas ref={canvas} className="wf-canvas" aria-label="The warehouse in 3D: drag to move, pinch or scroll to zoom, tap to inspect" tabIndex={0} />
       {g.screen === "title" || !s ? (
@@ -105,6 +102,19 @@ export function App({ game: g }: { game: Game }) {
         <button className="wf-btn wf-photo-exit" onClick={() => g.togglePhoto()} data-testid="wf-photo-exit">
           ✕ Exit photo mode
         </button>
+      ) : prop ? (
+        <>
+          <TopBar g={g} s={s} />
+          {s.event && <EventBanner s={s} />}
+          {g.sheet ? <Sheets g={g} s={s} sheet={g.sheet} /> : <SiteHud g={g} s={s} p={prop} />}
+          {(s.bankrupt || (s.seasonOver && !s.goals.__seen)) && <Over g={g} s={s} />}
+        </>
+      ) : store ? (
+        <>
+          <TopBar g={g} s={s} />
+          {g.sheet ? <Sheets g={g} s={s} sheet={g.sheet} /> : <StoreHud g={g} s={s} st={store} />}
+          {(s.bankrupt || (s.seasonOver && !s.goals.__seen)) && <Over g={g} s={s} />}
+        </>
       ) : (
         <>
           <TopBar g={g} s={s} />
@@ -1098,6 +1108,7 @@ const DOCK: { id: Exclude<Sheet, null>; icon: string; label: string }[] = [
   { id: "fleet", icon: "🚜", label: "Fleet" },
   { id: "upgrades", icon: "⚡", label: "Upgrades" },
   { id: "goals", icon: "🎯", label: "Goals" },
+  { id: "estate", icon: "🏘️", label: "Property" },
   { id: "company", icon: "🏢", label: "Company" },
   { id: "menu", icon: "☰", label: "Menu" },
 ];
@@ -1156,7 +1167,7 @@ function Toolbar({ g }: { g: Game }) {
 /* ====================================================================== sheets */
 
 function Sheets({ g, s, sheet }: { g: Game; s: State; sheet: Exclude<Sheet, null> }) {
-  const titles: Record<string, string> = { site: "Site", orders: "Orders", buy: "Buy stock", build: "Build", fleet: "Fleet & docks", upgrades: "Upgrades", goals: "Goals & missions", company: "Company", menu: "Menu", alerts: "Alerts", help: "How to play", bank: "Cash & bank" };
+  const titles: Record<string, string> = { site: "Site", orders: "Orders", buy: "Buy stock", build: "Build", fleet: "Fleet & docks", upgrades: "Upgrades", goals: "Goals & missions", company: "Company", menu: "Menu", alerts: "Alerts", help: "How to play", bank: "Cash & bank", estate: "Property" };
   return (
     <section className="wf-sheet wf-glass" aria-label={titles[sheet]} data-testid={`wf-sheet-${sheet}`}>
       <header>
@@ -1184,6 +1195,7 @@ function Sheets({ g, s, sheet }: { g: Game; s: State; sheet: Exclude<Sheet, null
         {sheet === "menu" && <MenuSheet g={g} s={s} />}
         {sheet === "alerts" && <AlertsSheet g={g} s={s} />}
         {sheet === "bank" && <BankSheet g={g} s={s} />}
+        {sheet === "estate" && <EstateSheet g={g} s={s} />}
       </div>
     </section>
   );
@@ -2179,7 +2191,6 @@ function ProductionTab({ g, s }: { g: Game; s: State }) {
   );
 }
 
-const pct = (p: number) => (Math.abs(p - 1) < 0.001 ? "Usual" : `${p > 1 ? "+" : "−"}${Math.round(Math.abs(p - 1) * 100)}%`);
 
 function StoreCard({ g, s, st }: { g: Game; s: State; st: Store }) {
   const def = STORES[st.kind];
@@ -2251,6 +2262,9 @@ function StoreCard({ g, s, st }: { g: Game; s: State; st: Store }) {
         </div>
       </div>
       <div className="wf-seg" style={{ marginTop: 10 }}>
+        <button className="wf-btn small primary" onClick={() => g.visitStore(st.id)} data-testid="wf-visit-store">
+          👀 Visit in 3D
+        </button>
         <button className={`wf-btn small ${st.auto ? "on" : ""}`} aria-pressed={st.auto} onClick={() => g.setStore(st.id, { auto: !st.auto })}>
           {st.auto ? "Auto restock ✓" : "Auto restock"}
         </button>

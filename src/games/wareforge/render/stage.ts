@@ -10,6 +10,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { GRADE } from "@/nextx/look";
+import type { View3D } from "./view";
 import { World, type Quality } from "./world";
 
 export interface StageEvents {
@@ -39,7 +40,11 @@ export class Stage {
    * tone mapping and the NextX colour grade.
    */
   private composer: EffectComposer | null = null;
+  private pass: RenderPass | null = null;
   private bloom: UnrealBloomPass | null = null;
+  /** A building site or a store in front of the warehouse, if one's showing. */
+  private alt: View3D | null = null;
+  private baked = new WeakSet<View3D>();
   private ao: GTAOPass | null = null;
   /**
    * Adaptive resolution: the pixel ratio steps down while frames run slow and creeps back up when
@@ -80,7 +85,8 @@ export class Stage {
     if (quality === "high") {
       const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
       this.composer = new EffectComposer(this.renderer, target);
-      this.composer.addPass(new RenderPass(this.world.scene, this.world.camera));
+      this.pass = new RenderPass(this.world.scene, this.world.camera);
+      this.composer.addPass(this.pass);
       try {
         const ao = new GTAOPass(this.world.scene, this.world.camera, 256, 256);
         ao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.6, thickness: 1.2, scale: 1.1, samples: 12 });
@@ -105,6 +111,28 @@ export class Stage {
     this.raf = requestAnimationFrame(this.frame);
   }
 
+  /** What's on screen: the warehouse, or a site or store in front of it. */
+  get view(): View3D {
+    return this.alt ?? this.world;
+  }
+
+  /** Show another scene in front of the warehouse (null to go back). The old one is the caller's to dispose. */
+  setView(v: View3D | null) {
+    this.alt = v;
+    const view = this.view;
+    if (v && !this.baked.has(v)) {
+      v.bakeEnvironment(this.renderer);
+      this.baked.add(v);
+    }
+    if (this.pass) {
+      this.pass.scene = view.scene;
+      this.pass.camera = view.camera;
+    }
+    // Ambient occlusion is set up for the warehouse's scene.
+    if (this.ao) this.ao.enabled = !v;
+    view.resize(this.w, this.h);
+  }
+
   resize() {
     const r = this.canvas.getBoundingClientRect();
     this.w = Math.max(1, Math.round(r.width));
@@ -112,6 +140,7 @@ export class Stage {
     this.renderer.setSize(this.w, this.h, false);
     this.composer?.setSize(this.w, this.h);
     this.world.resize(this.w, this.h);
+    this.alt?.resize(this.w, this.h);
   }
 
   /** Step the pixel ratio from how long frames are taking (milliseconds between them). */
@@ -160,10 +189,13 @@ export class Stage {
     if (document.hidden) return;
     this.govern(ms, now);
     if (!this.renderer.shadowMap.autoUpdate && this.frames++ % 2 === 0) this.renderer.shadowMap.needsUpdate = true;
-    if (this.spin) this.world.rig.goal.yaw += this.spin * dt;
+    const view = this.view;
+    if (this.spin) view.rig.goal.yaw += this.spin * dt;
     this.events.frame(dt);
-    this.world.update(dt);
-    const night = this.world.nightness;
+    // The frame callback may have swapped the view.
+    const v = this.view;
+    v.update(dt);
+    const night = v.nightness;
     // Without the glow pass (medium, low) nights are lifted a little more, so the lit hall reads.
     this.renderer.toneMappingExposure = 1.0 + night * (this.composer ? 0.25 : 0.45);
     if (this.composer && this.bloom) {
@@ -171,7 +203,7 @@ export class Stage {
       this.bloom.strength = 0.1 + night * 0.4;
       this.bloom.threshold = 1.6 - night * 0.75;
       this.composer.render(dt);
-    } else this.renderer.render(this.world.scene, this.world.camera);
+    } else this.renderer.render(v.scene, v.camera);
   };
 
   private ndc(e: { clientX: number; clientY: number }) {
@@ -184,7 +216,7 @@ export class Stage {
     const pointers = new Map<number, { x: number; y: number }>();
     let drag: { x: number; y: number; moved: boolean; rotate: boolean } | null = null;
     let pinch: { d: number; a: number; y: number } | null = null;
-    const rig = () => this.world.rig;
+    const rig = () => this.view.rig;
     const down = (e: PointerEvent) => {
       c.setPointerCapture?.(e.pointerId);
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -220,7 +252,7 @@ export class Stage {
         if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) drag.moved = true;
         if (drag.moved) {
           if (drag.rotate) rig().rotate(dx, dy);
-          else rig().pan(dx, dy, this.h, this.world.camera.fov);
+          else rig().pan(dx, dy, this.h, this.view.camera.fov);
         } else if (e.pointerType !== "mouse") {
           const n = this.ndc(e);
           this.events.hover?.(n.x, n.y);
@@ -240,7 +272,7 @@ export class Stage {
       e.preventDefault();
       const f = Math.exp(e.deltaY * 0.0012);
       const n = this.ndc(e);
-      rig().zoom(f, f < 1 ? this.world.groundAt(n.x, n.y) : null);
+      rig().zoom(f, f < 1 ? this.view.groundAt(n.x, n.y) : null);
     };
     const menu = (e: Event) => e.preventDefault();
     c.addEventListener("pointerdown", down);
@@ -264,6 +296,7 @@ export class Stage {
     cancelAnimationFrame(this.raf);
     this.ro.disconnect();
     this.off.forEach((f) => f());
+    this.alt?.dispose();
     this.world.dispose();
     this.ao?.dispose();
     this.composer?.dispose();

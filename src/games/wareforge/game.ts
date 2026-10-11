@@ -9,6 +9,9 @@ import {
   BELT, BREAKROOM, CHARGER, FENCE, FLOOR, FREEZER, GAME_SECS_PER_REAL, ITEMS, MACHINES, OFFICE, PREFS_KEY, RACK, SAVE_KEY, SITES, SPEEDS,
   type DoorType, type IndustryId, type ItemId, type MachineType, type ManagerId, type StoreKind, type UpgradeId,
 } from "./data";
+import * as E from "./estate";
+import { BuildWorld, type BuildCursor } from "./render/build";
+import { StoreWorld } from "./render/shop";
 import { Stage } from "./render/stage";
 import type { Ghost, Quality } from "./render/world";
 import * as sim from "./sim";
@@ -23,7 +26,14 @@ export interface Tool {
   id?: number;
 }
 
-export type Sheet = null | "site" | "orders" | "buy" | "build" | "fleet" | "upgrades" | "goals" | "company" | "menu" | "alerts" | "help" | "bank";
+export type Sheet = null | "site" | "orders" | "buy" | "build" | "fleet" | "upgrades" | "goals" | "company" | "menu" | "alerts" | "help" | "bank" | "estate";
+/** What's on screen: the warehouse, one of your building sites, or inside one of your stores. */
+export type View = { k: "site" } | { k: "prop"; id: number } | { k: "store"; id: number };
+export type EstateTab = "portfolio" | "land" | "market";
+/** On a building site: plan a part (one cell, a rectangle, or the outline of one), take one out, or lend a hand. */
+export type EstateTool = E.PartKind | "walls" | "erase" | "lay";
+/** The building site's own panel. */
+export type SitePanel = null | "plan" | "site" | "units" | "money";
 export type CompanyTab = "overview" | "map" | "industries" | "production" | "market" | "stores" | "managers";
 
 /** What a tutorial step counts from (taken when the step starts). */
@@ -94,6 +104,16 @@ export class Game {
   companyTab: CompanyTab = "overview";
   /** The city the Stores page starts on (picked on the map). */
   storeCity = "New York";
+  view: View = { k: "site" };
+  estateTab: EstateTab = "portfolio";
+  /** On a site: the tool in hand, the storey it works on, the first corner of a rectangle, the cell tapped, the panel open. */
+  etool: EstateTool | null = null;
+  anchor: { x: number; z: number } | null = null;
+  esel: { x: number; z: number; l: number } | null = null;
+  panel: SitePanel = null;
+  private build: BuildWorld | null = null;
+  private shop: StoreWorld | null = null;
+  private cursor: BuildCursor | null = null;
   readonly sound = new Sound();
   private tipBase: TipBase = { orders: 0, pos: 0, structs: 0 };
   private tipAt = -1;
@@ -187,10 +207,21 @@ export class Game {
       this.stepTips(s);
     }
     if (this.following && this.stage && this.screen === "play" && !this.stage.world.follow(s, this.following)) this.following = null;
-    this.stage?.world.sync(s, dt, this.screen === "play" ? this.sel : null, this.tool ? this.ghost : null, {
-      daylight: this.screen === "title" ? "day" : this.prefs.daylight,
-      speed: this.screen === "play" && !this.hold && !this.paused ? this.speed : 0,
-    });
+    const v = this.screen === "play" ? this.view : ({ k: "site" } as View);
+    const prop = v.k === "prop" ? E.prop(s, v.id) : undefined;
+    const store = v.k === "store" ? s.stores.find((x) => x.id === v.id) : undefined;
+    // A site sold, or a store closed for good, while you were looking at it.
+    if ((v.k === "prop" && !prop) || (v.k === "store" && !store)) this.leaveView();
+    if (prop && this.build) {
+      this.build.sync(s, prop, dt, { editing: !!this.etool, daylight: this.prefs.daylight });
+      this.build.setCursor(this.etool ? this.cursor : null);
+      this.build.select(this.etool ? null : this.esel);
+    } else if (store && this.shop) this.shop.sync(s, store, dt, { daylight: this.prefs.daylight });
+    else
+      this.stage?.world.sync(s, dt, this.screen === "play" ? this.sel : null, this.tool ? this.ghost : null, {
+        daylight: this.screen === "title" ? "day" : this.prefs.daylight,
+        speed: this.screen === "play" && !this.hold && !this.paused ? this.speed : 0,
+      });
     if (this.screen !== "play") return;
     this.uiClock += dt;
     if (this.uiClock > 0.25) {
@@ -242,6 +273,8 @@ export class Game {
 
   private click(nx: number, ny: number) {
     if (this.screen !== "play" || !this.stage || !this.s) return;
+    if (this.view.k === "prop") return this.siteClick(nx, ny);
+    if (this.view.k === "store") return;
     const w = this.stage.world;
     if (this.tool) {
       const g = w.groundAt(nx, ny);
@@ -286,6 +319,7 @@ export class Game {
   }
 
   private hover(nx: number, ny: number) {
+    if (this.view.k === "prop") return this.siteHover(nx, ny);
     if (!this.tool || this.tool.kind === "remove" || (this.tool.kind === "move" && this.tool.id === undefined) || !this.stage || !this.s) {
       this.ghost = null;
       return;
@@ -333,6 +367,7 @@ export class Game {
   }
 
   private start() {
+    this.leaveView();
     this.screen = "play";
     this.sel = null;
     this.tool = null;
@@ -358,6 +393,7 @@ export class Game {
   }
 
   quit() {
+    this.leaveView();
     this.save();
     if (this.s?.seasonOver || this.s?.bankrupt) this.submitFinal();
     this.screen = "title";
@@ -644,6 +680,273 @@ export class Game {
       this.sel = null;
     }
     this.bump();
+  }
+
+  /* ---------------------------------------------------------------- views: building sites and stores */
+
+  /** Go to one of your building sites, in 3D. */
+  openProperty(id: number) {
+    if (!this.s || !this.stage || !E.prop(this.s, id)) return;
+    this.shop?.dispose();
+    this.shop = null;
+    this.build ??= new BuildWorld(this.stage.quality);
+    this.stage.setView(this.build);
+    this.view = { k: "prop", id };
+    this.sheet = null;
+    this.sel = null;
+    this.tool = null;
+    this.etool = null;
+    this.anchor = null;
+    this.esel = null;
+    this.panel = null;
+    const p = E.prop(this.s, id)!;
+    this.build.viewLevel = 99;
+    this.build.editLevel = 0;
+    this.build.frame(p);
+    this.bump();
+  }
+
+  /** Walk round one of your stores, in 3D. */
+  visitStore(id: number) {
+    if (!this.s || !this.stage || !this.s.stores.some((x) => x.id === id)) return;
+    this.build?.dispose();
+    this.build = null;
+    this.shop?.dispose();
+    this.shop = new StoreWorld(this.stage.quality);
+    this.stage.setView(this.shop);
+    this.view = { k: "store", id };
+    this.sheet = null;
+    this.sel = null;
+    this.tool = null;
+    this.bump();
+  }
+
+  /** Back to the warehouse. */
+  leaveView() {
+    if (this.view.k === "site" && !this.build && !this.shop) return;
+    this.stage?.setView(null);
+    this.build?.dispose();
+    this.shop?.dispose();
+    this.build = null;
+    this.shop = null;
+    this.view = { k: "site" };
+    this.etool = null;
+    this.anchor = null;
+    this.esel = null;
+    this.panel = null;
+    this.cursor = null;
+    this.bump();
+  }
+
+  openEstate(tab: EstateTab) {
+    this.estateTab = tab;
+    this.sheet = "estate";
+    this.bump();
+  }
+
+  /** The storey being built on (and the storeys shown: everything up to it, or all of them). */
+  get editLevel() {
+    return this.build?.editLevel ?? 0;
+  }
+  get viewLevel() {
+    return this.build?.viewLevel ?? 99;
+  }
+  setEditLevel(l: number) {
+    if (!this.build || !this.s || this.view.k !== "prop") return;
+    const p = E.prop(this.s, this.view.id);
+    const top = p ? p.storeys : 8;
+    this.build.editLevel = Math.max(0, Math.min(top, l));
+    if (this.build.viewLevel !== 99) this.build.viewLevel = this.build.editLevel;
+    this.anchor = null;
+    this.bump();
+  }
+  /** Show every storey, or cut the building away above the one being built on. */
+  toggleCutaway() {
+    if (!this.build) return;
+    this.build.viewLevel = this.build.viewLevel === 99 ? this.build.editLevel : 99;
+    this.bump();
+  }
+
+  setEstateTool(t: EstateTool | null) {
+    this.etool = t;
+    this.anchor = null;
+    this.esel = null;
+    this.cursor = null;
+    if (t) this.panel = null;
+    this.bump();
+  }
+
+  setPanel(p: SitePanel) {
+    this.panel = this.panel === p ? null : p;
+    if (this.panel) this.etool = null;
+    this.bump();
+  }
+
+  /** Tools that work on a rectangle: floors and roofs fill it, walls go round it. */
+  private rectTool(t: EstateTool) {
+    return t === "found" || t === "slab" || t === "roof" || t === "walls";
+  }
+
+  /** The part a tool puts down on a storey (a floor is a foundation on the ground, a slab above). */
+  private toolPart(t: EstateTool): E.PartKind | null {
+    if (t === "walls") return "wall";
+    if (t === "erase" || t === "lay") return null;
+    if ((t === "found" || t === "slab") && this.editLevel > 0) return "slab";
+    if (t === "found" || t === "slab") return "found";
+    return t;
+  }
+
+  private siteHover(nx: number, ny: number) {
+    if (!this.etool || !this.build || !this.s || this.view.k !== "prop") return;
+    const c = this.build.cellAt(nx, ny);
+    if (!c) {
+      this.cursor = null;
+      return;
+    }
+    const l = this.editLevel;
+    const part = this.toolPart(this.etool);
+    const a = this.anchor ?? c;
+    const fill = part ? E.PARTS[part].layer === "fill" : this.etool !== "erase";
+    const ok = part ? !E.planError(this.s, this.view.id, part, c.x, c.z, l) || !!this.anchor : true;
+    this.cursor = { x0: a.x, z0: a.z, x1: c.x, z1: c.z, l, fill, ok };
+  }
+
+  private siteClick(nx: number, ny: number) {
+    const s = this.s;
+    if (!s || !this.build || this.view.k !== "prop") return;
+    const id = this.view.id;
+    const c = this.build.cellAt(nx, ny);
+    if (!c) {
+      this.anchor = null;
+      this.esel = null;
+      this.bump();
+      return;
+    }
+    const l = this.editLevel;
+    const t = this.etool;
+    if (!t) {
+      // No tool: look at what's here.
+      this.esel = { x: c.x, z: c.z, l };
+      this.bump();
+      return;
+    }
+    if (t === "erase") return void this.result(E.unplan(s, id, c.x, c.z, l), "Taken out");
+    if (t === "lay") return void this.result(E.layCourse(s, id, c.x, c.z, l), "A course of bricks laid");
+    const part = this.toolPart(t)!;
+    if (this.rectTool(t)) {
+      if (!this.anchor) {
+        // First corner: one tap more for the far corner (or the same cell again for just this one).
+        this.anchor = c;
+        this.siteHover(nx, ny);
+        this.bump();
+        return;
+      }
+      const r = E.planRect(s, id, part, this.anchor.x, this.anchor.z, c.x, c.z, l, t === "walls");
+      this.anchor = null;
+      this.cursor = null;
+      if (r.placed) this.say(`${r.placed} ${E.PARTS[part].name.toLowerCase()}${r.placed === 1 ? "" : "s"} planned${r.error ? ` (${r.error.toLowerCase()} for some)` : ""}`, "good");
+      else this.say(r.error ?? "Nothing to plan there", "bad");
+      this.bump();
+      return;
+    }
+    this.result(E.plan(s, id, part, c.x, c.z, l), `${E.PARTS[part].name} planned`);
+  }
+
+  /** Run an estate action on the open site (or any property by id), with a message either way. */
+  private est(err: string | null, ok: string) {
+    this.result(err, ok);
+  }
+  get siteId() {
+    return this.view.k === "prop" ? this.view.id : -1;
+  }
+  buyPlot(plot: string) {
+    if (!this.s) return;
+    if (this.result(E.buyPlot(this.s, plot), "Land bought")) {
+      const p = this.s.estate.props[this.s.estate.props.length - 1];
+      this.openProperty(p.id);
+      this.panel = "plan";
+      this.bump();
+    }
+  }
+  /** Lend a hand on the wall tapped: a course of bricks. */
+  layCourse(x: number, z: number, l: number) {
+    if (this.s && this.view.k === "prop") this.est(E.layCourse(this.s, this.view.id, x, z, l), "A course of bricks laid");
+  }
+  unplanAt(x: number, z: number, l: number) {
+    if (this.s && this.view.k === "prop") this.est(E.unplan(this.s, this.view.id, x, z, l), "Taken out");
+  }
+  buyListing(id: number) {
+    if (this.s) this.est(E.buyListing(this.s, id), "Property bought");
+  }
+  applyTemplate(id: number, tpl: E.Template, storeys: number) {
+    if (this.s) this.est(E.applyTemplate(this.s, id, tpl, storeys), `Plans drawn up: ${E.TEMPLATES[tpl].name.toLowerCase()}`);
+  }
+  clearPlan(id: number) {
+    if (!this.s) return;
+    E.clearPlan(this.s, id);
+    this.say("Plans cleared (anything started stays)", "info");
+  }
+  copyUp(id: number) {
+    if (!this.s) return;
+    const l = Math.max(1, this.editLevel);
+    const r = E.copyUp(this.s, id, l);
+    if (r.placed) this.say(`Storey ${l + 1}: ${r.placed} parts copied up from below`, "good");
+    else this.say(r.error ?? "Nothing to copy", "bad");
+  }
+  roofOver(id: number) {
+    if (!this.s) return;
+    const r = E.roofOver(this.s, id);
+    if (r.placed) this.say(`${r.placed} roof sections planned`, "good");
+    else this.say(r.error ?? "Every top floor has a roof", "bad");
+  }
+  applyPermit(id: number) {
+    if (this.s) this.est(E.applyPermit(this.s, id), "Planning application in: a decision in a few hours");
+  }
+  applyVariance(id: number) {
+    if (this.s) this.est(E.applyVariance(this.s, id), "Height variance applied for");
+  }
+  hireCrew(id: number, trade: E.Trade, gangs: number, tier: number) {
+    if (this.s) this.est(E.hireCrew(this.s, id, trade, gangs, tier), gangs ? `${E.TRADES[trade].name}: ${gangs} gang${gangs === 1 ? "" : "s"} on site` : `${E.TRADES[trade].name} let go`);
+  }
+  sendToSite(id: number, lines: { item: ItemId; n: number }[]) {
+    if (this.s) this.est(E.sendToSite(this.s, id, lines), "Materials on their way from the warehouse");
+  }
+  orderToSite(id: number, item: ItemId, n: number) {
+    if (this.s) this.est(E.orderToSite(this.s, id, item, n), `${n} × ${ITEMS[item].name} ordered to site`);
+  }
+  setSite(id: number, o: Parameters<typeof E.setSite>[2]) {
+    if (!this.s) return;
+    E.setSite(this.s, id, o);
+    this.bump();
+  }
+  setRent(id: number, level: number) {
+    if (!this.s) return;
+    E.setRent(this.s, id, level);
+    this.bump();
+  }
+  fixRequest(id: number, i: number) {
+    if (this.s) this.est(E.fixRequest(this.s, id, i), "Fixed");
+  }
+  evict(id: number, unit: string) {
+    if (this.s) this.est(E.evict(this.s, id, unit), "Tenant evicted");
+  }
+  refurbish(id: number) {
+    if (this.s) this.est(E.refurbish(this.s, id), "Refurbished: good as new");
+  }
+  borrowOn(id: number, amount: number) {
+    if (this.s) this.est(E.borrowOn(this.s, id, amount), "Mortgage taken out");
+  }
+  repayOn(id: number, amount: number) {
+    if (this.s) this.est(E.repayOn(this.s, id, amount), "Mortgage paid down");
+  }
+  listForSale(id: number, ask: number | null) {
+    if (this.s) this.est(E.listForSale(this.s, id, ask), ask === null ? "Taken off the market" : "On the market");
+  }
+  acceptOffer(id: number) {
+    if (this.s) this.est(E.acceptOffer(this.s, id), "Sold");
+  }
+  quickSell(id: number) {
+    if (this.s) this.est(E.quickSell(this.s, id), "Sold");
   }
 
   sites = SITES;

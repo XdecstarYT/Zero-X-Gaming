@@ -881,6 +881,21 @@ export function progress(p: Property) {
   return total ? done / total : 0;
 }
 
+/** Where a property's at, in a few words (and a tone for its pill). */
+export function status(p: Property): { text: string; tone: "good" | "warn" | "grey" | "" } {
+  if (p.sale) return { text: p.sale.offer ? "Offer in" : "For sale", tone: "warn" };
+  if (!p.parts.length) return { text: "Empty plot", tone: "grey" };
+  if (p.parts.some((x) => !x.done)) {
+    if (p.permit === "none") return { text: "Plans drawn", tone: "grey" };
+    if (p.permit === "pending") return { text: "Permit pending", tone: "warn" };
+    return { text: `Building · ${Math.round(progress(p) * 100)}%`, tone: "" };
+  }
+  if (!p.cert) return { text: p.inspections.length ? "Final inspection" : "Built", tone: "warn" };
+  const u = units(p).units.length;
+  const t = Object.keys(p.tenants).length;
+  return { text: `Let ${t}/${u}`, tone: t === u && u > 0 ? "good" : "" };
+}
+
 /* ------------------------------------------------------------------ buying land and buildings */
 
 const note = (p: Property, s: State, text: string) => {
@@ -892,9 +907,9 @@ const owned = (s: State, plot: string) => s.estate.props.some((p) => p.plot === 
 /** What it costs to buy a plot today (the land, and 3% in fees). */
 export const plotPrice = (s: State, plot: PlotDef) => Math.round(landValue(s, plot) * 1.03);
 
-function newProperty(s: State, plot: PlotDef, land: number): Property {
+function newProperty(s: State, plot: PlotDef, land: number, id?: number): Property {
   return {
-    id: nid(s), plot: plot.id, bought: s.time, land, parts: [], rev: 0,
+    id: id ?? nid(s), plot: plot.id, bought: s.time, land, parts: [], rev: 0,
     permit: "none", permitAt: 0, storeys: plot.storeys, variance: "none", varianceAt: 0,
     crews: {}, overtime: false, stock: {}, deliveries: [], autoSupply: false, spent: 0, bricks: 0,
     inspections: [], passed: [], cert: false, condition: 1, rentLevel: 1, agent: false, insured: false, letAs: "units",
@@ -1453,13 +1468,25 @@ export function quickSell(s: State, id: number): string | null {
 /* ------------------------------------------------------------------ the property market */
 
 /** A finished building for a listing or a purchase: every part built (to the quality given). */
-function builtFrom(s: State, plot: PlotDef, tpl: Template, storeys: number, q: number): Property {
-  const p = newProperty(s, plot, 0);
+function builtFrom(s: State, plot: PlotDef, tpl: Template, storeys: number, q: number, id?: number): Property {
+  const p = newProperty(s, plot, 0, id);
   for (const sp of design(plot, tpl, storeys)) p.parts.push({ k: sp.k, x: sp.x, z: sp.z, l: sp.l, stage: PARTS[sp.k].stages.length, prog: 0, paid: false, done: true, q });
   p.rev++;
   p.cert = true;
   p.letAs = tpl === "house" ? "whole" : "units";
   return p;
+}
+
+const previews = new Map<number, { units: Unit[] }>();
+/** What a listing's building has in it (worked out once, without touching the game). */
+export function listingPreview(s: State, l: Listing) {
+  let v = previews.get(l.id);
+  if (!v) {
+    const p = builtFrom(s, plotDef(l.plot), l.tpl, l.storeys, 0.92, -1);
+    v = { units: units(p).units };
+    previews.set(l.id, v);
+  }
+  return v;
 }
 
 /** Now and then, a finished building comes up for sale. */
