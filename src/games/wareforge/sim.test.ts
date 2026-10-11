@@ -635,3 +635,155 @@ describe("WareForge industry update", () => {
     expect(Object.keys(STORES).length).toBe(7);
   });
 });
+
+describe("WareForge tycoon update", () => {
+  it("Freeport Estate is open plan: build on the aisle (not the dock lanes) in a normal, scored game", () => {
+    const s = sim.newGame("wh30", 60);
+    expect(s.sandbox).toBeUndefined();
+    expect(sim.openPlan(s)).toBe(true);
+    expect(sim.width(s)).toBe(78);
+    expect(s.structs.filter((t) => t.kind === "rack").length).toBe(0);
+    const cash = s.cash;
+    // On the old aisle rows: fine here, not at Riverside.
+    expect(sim.place(s, { kind: "rack", x: 20, z: 15 })).toBeNull();
+    expect(s.cash).toBeLessThan(cash);
+    expect(sim.placeError(sim.newGame("wh01", 60), { kind: "rack", x: 20, z: 15 })).toMatch(/aisle/);
+    // But never the dock lanes, and still nothing left out of reach.
+    expect(sim.placeError(s, { kind: "rack", x: 20, z: 17 })).toMatch(/dock lanes/);
+    expect(sim.cutOff(s)).toEqual([]);
+    // A forklift with its parking spot built over parks on the nearest clear tile.
+    for (let x = 2; x < 12; x += 2) sim.place(s, { kind: "rack", x, z: 15 });
+    for (let x = 2; x < 12; x++) sim.place(s, { kind: "fence", x, z: 16 });
+    sim.tick(s, 20 * MIN);
+    const g = sim.grid(s);
+    for (const f of s.forks) if (f.phase === "idle") expect(g[Math.floor(f.z) * 80 + Math.floor(f.x)]).toBe(0);
+    expect(sim.score(s)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("facilities: break rooms make drivers quicker, offices bring more customers, fences shape the floor", () => {
+    const s = sim.newGame("wh30", 61);
+    const speed0 = sim.breakBonus(s);
+    expect(sim.place(s, { kind: "breakroom", x: 4, z: 3 })).toBeNull();
+    expect(sim.breakBonus(s)).toBeCloseTo(speed0 * 1.05);
+    s.cash = 1e6;
+    sim.buyUpgrade(s, "training");
+    sim.buyUpgrade(s, "ergonomics");
+    expect(sim.breakBonus(s)).toBeCloseTo(1.1);
+    expect(sim.place(s, { kind: "office", x: 8, z: 3 })).toBeNull();
+    expect(sim.built(s, "office")).toBe(1);
+    expect(sim.place(s, { kind: "fence", x: 14, z: 3 })).toBeNull();
+    expect(sim.grid(s)[3 * 80 + 14]).toBe(1);
+    sim.tick(s, MIN);
+    expect(s.goals.staff).toBe(true);
+    // Offices: more offers over a day than without.
+    const offers = (office: boolean) => {
+      const t = sim.newGame("wh30", 62);
+      if (office) {
+        t.cash = 1e6;
+        sim.place(t, { kind: "office", x: 8, z: 3 });
+        sim.place(t, { kind: "office", x: 12, z: 3 });
+      }
+      let n = 0;
+      for (let h = 0; h < 24; h++) {
+        sim.tick(t, HOUR);
+        n += t.orders.filter((o) => o.state === "offer").length;
+        for (const o of t.orders) if (o.state === "offer") o.state = "declined";
+      }
+      return n;
+    };
+    expect(offers(true)).toBeGreaterThan(offers(false));
+  });
+
+  it("new products: electric cars, frozen pizza and ice cream, handbags, vitamins and sofas all have a recipe and buyers", () => {
+    for (const i of ["ecar", "pizza", "icecream", "handbag", "vitamins", "sofa"] as const) {
+      expect(Object.values(MACHINES).some((m) => m.recipes.some((r) => r.output === i))).toBe(true);
+      expect(CUSTOMERS.some((c) => c.likes.includes(i))).toBe(true);
+    }
+    // The dairy makes ice cream from milk and sugar.
+    const s = sim.newGame("wh21", 63);
+    s.cash = 1e6;
+    const dairy = s.structs.find((t) => t.m?.type === "dairy")!;
+    expect(sim.setRecipe(s, dairy.id, 2)).toBeNull();
+    sim.buyUpgrade(s, "cold");
+    sim.setAuto(s, "milk", 3, 6);
+    sim.setAuto(s, "sugar", 3, 6);
+    sim.tick(s, 8 * HOUR);
+    expect(s.stats.madeItems.icecream ?? 0).toBeGreaterThan(0);
+    sim.tick(s, MIN);
+    expect(s.goals.pizza).toBe(true);
+  });
+
+  it("tenders: bid keenly and win a contract at your price; bid high and a rival takes it", () => {
+    const s = sim.newGame("wh01", 64);
+    const t = sim.offerTender(s);
+    expect(t.state).toBe("open");
+    expect(sim.bidTender(s, t.id, 0.8)).toBeNull();
+    expect(t.bid).toBe(0.8);
+    sim.tick(s, 5 * HOUR);
+    expect(t.state).toBe("won");
+    expect(s.stats.tendersWon).toBe(1);
+    const c = s.contracts.find((x) => x.customer === t.customer && x.item === t.item && x.state === "active")!;
+    expect(c.orders.length).toBe(t.count);
+    const o = s.orders.find((x) => x.id === c.orders[0])!;
+    expect(o.value).toBe(Math.round(t.list * t.n * 0.8));
+    expect(s.goals.tender).toBe(true);
+    const t2 = sim.offerTender(s);
+    sim.bidTender(s, t2.id, 1.25);
+    sim.tick(s, 5 * HOUR);
+    expect(t2.state).toBe("lost");
+    expect(s.rivals.reduce((a, r) => a + r.won, 0)).toBeGreaterThanOrEqual(1);
+    expect(sim.bidTender(s, t2.id, 0.9)).toMatch(/closed/);
+  });
+
+  it("ad campaigns bring offers for their trade; industry events only come to businesses in the trade", () => {
+    const s = sim.newGame("wh01", 65);
+    s.cash = 1e6;
+    expect(sim.runCampaign(s, "food")).toMatch(/licence/);
+    sim.buyLicence(s, "food");
+    expect(sim.runCampaign(s, "food")).toBeNull();
+    expect(sim.runCampaign(s, "food")).toMatch(/still running/);
+    expect(sim.activeCampaigns(s)).toEqual(["food"]);
+    const food = INDUSTRIES.find((x) => x.id === "food")!.goods;
+    const before = s.orders.length;
+    for (let i = 0; i < 100; i++) sim.offer(s);
+    const share = s.orders.slice(before).filter((o) => o.lines.some((l) => food.includes(l.item))).length;
+    expect(share).toBeGreaterThan(50);
+    sim.tick(s, 13 * HOUR);
+    expect(sim.activeCampaigns(s)).toEqual([]);
+    // Fashion week never comes to a business without the fashion licence.
+    const t = sim.newGame("wh01", 66);
+    for (let h = 0; h < 10 * 24; h++) {
+      sim.tick(t, HOUR);
+      expect(t.event?.kind === "fashionweek" || t.event?.kind === "flu" || t.event?.kind === "motorshow").toBe(false);
+    }
+  }, 30_000);
+
+  it("air freight flies stock in four times as fast, for more", () => {
+    const s = sim.newGame("wh01", 67);
+    expect(sim.purchaseCost(s, "steel", 6, false, true)).toBeGreaterThan(sim.purchaseCost(s, "steel", 6));
+    const air = sim.buy(s, "steel", 6, false, false, true)!;
+    const road = sim.buy(s, "steel", 6)!;
+    const eta = (po: sim.PO) => s.trucks.find((t) => t.id === po.truck)!.eta - s.time;
+    expect(air.air).toBe(true);
+    expect(eta(air)).toBeLessThan(eta(road));
+    s.cash = 1e6;
+    const dear = sim.purchaseCost(s, "steel", 6, false, true);
+    sim.buyUpgrade(s, "aircargo");
+    expect(sim.purchaseCost(s, "steel", 6, false, true)).toBeLessThan(dear);
+    sim.tick(s, MIN);
+    expect(s.goals.air).toBe(true);
+  });
+
+  it("loads a save from before the tycoon update", () => {
+    const s = sim.newGame("wh01", 68);
+    sim.tick(s, HOUR);
+    const old = JSON.parse(sim.serialize(s));
+    for (const k of ["campaigns", "rivals", "tenders"]) delete old[k];
+    for (const k of ["tendersWon", "campaigns", "airDrops"]) delete old.stats[k];
+    const back = sim.deserialize(JSON.stringify(old))!;
+    expect(back.rivals.length).toBe(3);
+    expect(back.tenders).toEqual([]);
+    sim.tick(back, 2 * DAY);
+    expect(Number.isFinite(sim.worth(back))).toBe(true);
+  });
+});

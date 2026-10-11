@@ -6,7 +6,7 @@
 import type { GameSettings } from "../types";
 import { Sound } from "./audio";
 import {
-  BELT, CHARGER, FLOOR, FREEZER, GAME_SECS_PER_REAL, ITEMS, MACHINES, PREFS_KEY, RACK, SAVE_KEY, SITES, SPEEDS,
+  BELT, BREAKROOM, CHARGER, FENCE, FLOOR, FREEZER, GAME_SECS_PER_REAL, ITEMS, MACHINES, OFFICE, PREFS_KEY, RACK, SAVE_KEY, SITES, SPEEDS,
   type DoorType, type IndustryId, type ItemId, type MachineType, type ManagerId, type StoreKind, type UpgradeId,
 } from "./data";
 import { Stage } from "./render/stage";
@@ -24,7 +24,7 @@ export interface Tool {
 }
 
 export type Sheet = null | "site" | "orders" | "buy" | "build" | "fleet" | "upgrades" | "goals" | "company" | "menu" | "alerts" | "help" | "bank";
-export type CompanyTab = "overview" | "industries" | "production" | "stores" | "managers";
+export type CompanyTab = "overview" | "map" | "industries" | "production" | "market" | "stores" | "managers";
 
 /** What a tutorial step counts from (taken when the step starts). */
 interface TipBase {
@@ -42,7 +42,9 @@ export const TIPS: { icon: string; text: string; done: (s: State, g: Game, b: Ti
   { icon: "⏩", text: "Speed up time at the top, and finish today's missions (in Goals) for bonus cash.", done: (_s, g) => g.speed > 1 },
 ];
 
-const STRUCT_NAME: Record<StructKind, string> = { rack: RACK.name, floor: FLOOR.name, charger: CHARGER.name, freezer: FREEZER.name, machine: "Machine", belt: BELT.name };
+const STRUCT_NAME: Record<StructKind, string> = {
+  rack: RACK.name, floor: FLOOR.name, charger: CHARGER.name, freezer: FREEZER.name, machine: "Machine", belt: BELT.name, office: OFFICE.name, breakroom: BREAKROOM.name, fence: FENCE.name,
+};
 
 export interface Prefs {
   gfx: Quality | "auto";
@@ -481,10 +483,10 @@ export class Game {
   callTruck(id: number) {
     if (this.s) this.result(sim.callTruck(this.s, id), "Truck called: here within 15 minutes ($150)");
   }
-  buy(item: ItemId, n: number, rail = false) {
+  buy(item: ItemId, n: number, rail = false, air = false) {
     if (!this.s) return;
-    const po = sim.buy(this.s, item, n, false, rail);
-    if (po) this.say(`${po.code}: ${po.n} pallets ordered from ${po.supplier}${rail ? " by rail" : ""}`, "good");
+    const po = sim.buy(this.s, item, n, false, rail, air);
+    if (po) this.say(`${po.code}: ${po.n} pallets ordered from ${po.supplier}${air ? ", flying in" : rail ? " by rail" : ""}`, "good");
     else this.say("Not enough cash", "bad");
   }
   acceptContract(id: number) {
@@ -563,6 +565,12 @@ export class Game {
   }
   restock(id: number, lines: { item: ItemId; n: number }[]) {
     if (this.s) this.result(sim.restock(this.s, id, lines), "Restock booked: the forklifts are picking it");
+  }
+  runCampaign(id: IndustryId) {
+    if (this.s) this.result(sim.runCampaign(this.s, id), "Campaign running");
+  }
+  bidTender(id: number, bid: number) {
+    if (this.s) this.result(sim.bidTender(this.s, id, bid), bid > 0 ? `Bid in at ${Math.round(bid * 100)}% of list` : "Bid withdrawn");
   }
   hire(id: ManagerId) {
     if (this.s) sim.hire(this.s, id);

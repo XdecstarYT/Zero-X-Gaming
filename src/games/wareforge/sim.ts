@@ -16,6 +16,7 @@ import {
   WIDTH_BASE, WIDTH_FULL, WIDTH_MEGA, buyPrice, doorX0, siteDef, supplierFor,
   CARRIER_FEE, FREEZER, FROZEN, LOAN_RATE, MAX_OWN_TRUCKS, MISSIONS, OWN_CARRIER, OWN_TRUCK_COST, OWN_TRUCK_WAGE, THAW_SECS,
   BELT, INDUSTRIES, INDUSTRY_LEVELS, MANAGERS, MAX_STORES, RETAIL_MARKUP, STORES, STORE_HOURS, STORE_WAGE, city, industry, itemIndustry, machineIndustry,
+  AIR, APRON_Z, BID_RANGE, BREAKROOM, CAMPAIGN, FENCE, OFFICE, RIVALS,
   type DoorType, type EventKind, type IndustryId, type ItemId, type MachineType, type ManagerId, type MissionKind, type StoreKind, type UpgradeId,
 } from "./data";
 
@@ -41,7 +42,9 @@ export interface Slot {
   cold?: boolean;
 }
 
-export type StructKind = "rack" | "floor" | "machine" | "charger" | "freezer" | "belt";
+export type StructKind = "rack" | "floor" | "machine" | "charger" | "freezer" | "belt" | "office" | "breakroom" | "fence";
+/** Facilities: things that stand on the floor but hold no pallets. */
+export const FACILITIES: StructKind[] = ["office", "breakroom", "fence"];
 
 export interface Machine {
   type: MachineType;
@@ -270,6 +273,35 @@ export interface PO {
   ordered: number;
   truck: number;
   done: boolean;
+  /** Flown in. */
+  air?: boolean;
+}
+
+/** A big customer puts a run of shipments out to tender: you and your rivals bid, the keenest price wins. */
+export interface Tender {
+  id: number;
+  customer: string;
+  city: string;
+  item: ItemId;
+  /** Pallets a shipment, how many shipments, how often (game hours). */
+  n: number;
+  count: number;
+  every: number;
+  /** The list price of a pallet when it opened. */
+  list: number;
+  closes: number;
+  /** Your bid, as a share of list (none yet if undefined). */
+  bid?: number;
+  state: "open" | "won" | "lost";
+  winner?: string;
+  winBid?: number;
+}
+
+export interface RivalState {
+  name: string;
+  won: number;
+  /** Their bid on the last tender (shown with market research). */
+  last?: number;
 }
 
 export type AlertKind = "info" | "good" | "warn" | "bad";
@@ -351,6 +383,10 @@ export interface State {
   managers: Partial<Record<ManagerId, boolean>>;
   /** Sandbox: money is no object, everything's unlocked, and there's no score. */
   sandbox?: boolean;
+  /** Ad campaigns running, by trade (when each ends). */
+  campaigns: Partial<Record<IndustryId, number>>;
+  rivals: RivalState[];
+  tenders: Tender[];
   fx: Fx[];
   /** The tutorial step (and whether it's switched off). */
   tip: number;
@@ -373,7 +409,7 @@ export interface State {
   today: DayStat;
   days: DayStat[];
   history: boolean[];
-  stats: { delivered: number; onTime: number; late: number; failed: number; revenue: number; made: number; madeGoods: number; unloaded: number; moves: number; rushOnTime: number; phones: number; peakStock: number; trains: number; charges: number; contractsDone: number; events: number; madeItems: Partial<Record<ItemId, number>>; borrowed: number; repaid: number; coldShipped: number; ownShipped: number; missions: number; vipOnTime: number; spoiled: number; retail: number; restocks: number; belted: number; storesOpened: number };
+  stats: { delivered: number; onTime: number; late: number; failed: number; revenue: number; made: number; madeGoods: number; unloaded: number; moves: number; rushOnTime: number; phones: number; peakStock: number; trains: number; charges: number; contractsDone: number; events: number; madeItems: Partial<Record<ItemId, number>>; borrowed: number; repaid: number; coldShipped: number; ownShipped: number; missions: number; vipOnTime: number; spoiled: number; retail: number; restocks: number; belted: number; storesOpened: number; tendersWon: number; campaigns: number; airDrops: number };
   seasonOver: boolean;
   bankrupt: boolean;
   /** Bumped whenever something on the floor is built, moved or removed (the forklifts' map is redrawn). */
@@ -490,7 +526,7 @@ function mixOf(s: State) {
 const inside = (s: State, x: number, z: number) => x >= 2 && x < width(s) && z >= BACK_Z && z < DOCK_Z;
 
 /** Tiles: 0 floor you can drive on, 1 blocked. Rebuilt when the layout changes (one per game, so the title screen's demo never shares one). */
-const grids = new WeakMap<State, { exp: boolean; mega: boolean; rail: boolean; doors: number; structs: number; rev: number; g: Uint8Array; occ: Int32Array }>();
+const grids = new WeakMap<State, { exp: boolean; mega: boolean; rail: boolean; doors: number; structs: number; rev: number; g: Uint8Array; occ: Int32Array; count: Partial<Record<StructKind, number>> }>();
 /** Something on the floor was built, moved or taken away: the grid is redrawn on next use. */
 function dirty(s: State) {
   s.rev = (s.rev ?? 0) + 1;
@@ -498,6 +534,22 @@ function dirty(s: State) {
 export function grid(s: State): Uint8Array {
   return layout(s).g;
 }
+/** How many of a kind of thing stand on the floor. */
+export const built = (s: State, kind: StructKind) => layout(s).count[kind] ?? 0;
+/** Open plan (the free-build map): no fixed aisle, build anywhere short of the dock lanes. */
+export const openPlan = (s: State) => !!siteDef(s.site).openPlan;
+/** The nearest tile forklifts can stand on (a short search out from x, z). */
+export function nearFree(s: State, x: number, z: number): [number, number] {
+  const g = grid(s);
+  for (let r = 0; r < 24; r++)
+    for (let dz = -r; dz <= r; dz++)
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        if (free(g, x + dx, z + dz)) return [x + dx, z + dz];
+      }
+  return [x, z];
+}
+
 /** What stands on a tile (a struct id, or -1). */
 export function structAt(s: State, x: number, z: number): Struct | null {
   if (x < 0 || z < 0 || x >= GRID_W || z >= GRID_H) return null;
@@ -517,15 +569,17 @@ function layout(s: State) {
   }
   // Rail doors open in the back wall.
   if (s.rail) for (const x0 of RAIL_DOORS) g[1 * GRID_W + x0 + 1] = 0;
+  const count: Partial<Record<StructKind, number>> = {};
   for (const t of s.structs) {
     if (t.dead) continue;
+    count[t.kind] = (count[t.kind] ?? 0) + 1;
     for (let z = t.z; z < t.z + t.d; z++)
       for (let x = t.x; x < t.x + t.w; x++) {
         g[z * GRID_W + x] = 1;
         occ[z * GRID_W + x] = t.id;
       }
   }
-  const c2 = { exp: s.expanded, mega: s.mega, rail: s.rail, doors: s.doors.length, structs: s.structs.length, rev: s.rev ?? 0, g, occ };
+  const c2 = { exp: s.expanded, mega: s.mega, rail: s.rail, doors: s.doors.length, structs: s.structs.length, rev: s.rev ?? 0, g, occ, count };
   grids.set(s, c2);
   return c2;
 }
@@ -563,7 +617,8 @@ export function access(s: State, sl: Slot, g = grid(s)): [number, number] | null
 function reach(s: State, g: Uint8Array) {
   const seen = new Uint8Array(GRID_W * GRID_H);
   const q: number[] = [];
-  const start = AISLE_Z[0] * GRID_W + 2;
+  // From the apron along the dock wall: nothing can be built there, even on an open-plan floor.
+  const start = APRON_Z * GRID_W + 2;
   if (g[start] === 0) {
     seen[start] = 1;
     q.push(start);
@@ -757,13 +812,17 @@ export function footprint(p: Placement) {
   if (p.kind === "charger") return { w: CHARGER.w, d: CHARGER.d };
   if (p.kind === "freezer") return { w: FREEZER.w, d: FREEZER.d };
   if (p.kind === "belt") return { w: 1, d: 1 };
+  if (p.kind === "office") return { w: OFFICE.w, d: OFFICE.d };
+  if (p.kind === "breakroom") return { w: BREAKROOM.w, d: BREAKROOM.d };
+  if (p.kind === "fence") return { w: FENCE.w, d: FENCE.d };
   return p.kind === "rack" ? { w: RACK.w, d: RACK.d } : { w: FLOOR.w, d: FLOOR.d };
 }
 
 export const structCost = (p: Placement) =>
   p.kind === "machine"
     ? MACHINES[p.type ?? "press"].cost
-    : p.kind === "rack" ? RACK.cost : p.kind === "charger" ? CHARGER.cost : p.kind === "freezer" ? FREEZER.cost : p.kind === "belt" ? BELT.cost : FLOOR.cost;
+    : p.kind === "rack" ? RACK.cost : p.kind === "charger" ? CHARGER.cost : p.kind === "freezer" ? FREEZER.cost : p.kind === "belt" ? BELT.cost
+    : p.kind === "office" ? OFFICE.cost : p.kind === "breakroom" ? BREAKROOM.cost : p.kind === "fence" ? FENCE.cost : FLOOR.cost;
 
 /* ------------------------------------------------------------------ conveyors */
 
@@ -867,7 +926,7 @@ export function placeError(s: State, p: Placement): string | null {
   for (let z = p.z; z < p.z + d; z++)
     for (let x = p.x; x < p.x + w; x++) {
       if (!inside(s, x, z)) return "Outside the building";
-      if (z >= AISLE_Z[0]) return "Keep the aisle and docks clear";
+      if (z >= (openPlan(s) ? STAGE_Z[0] : AISLE_Z[0])) return openPlan(s) ? "Keep the dock lanes clear" : "Keep the aisle and docks clear";
       if (s.rail && z === BACK_Z && RAIL_DOORS.some((x0) => x >= x0 && x < x0 + 3)) return "Keep the rail doors clear";
     }
   const g = grid(s);
@@ -1015,6 +1074,7 @@ export function newGame(siteId: string, seed = 1, opts: { sandbox?: boolean } = 
     v: 1, site: def.id, seed, rng: seed >>> 0, time: 7 * HOUR, cash: opts.sandbox ? SANDBOX_CASH : def.cash, startWorth: 0, rep: 60, expanded: def.expanded,
     mega: !!def.mega, rail: !!def.rail, market: {}, contracts: [], event: null,
     loan: 0, cashLog: [], report: null, missions: [], customers: {}, ownTrucks: [], lic: {}, stores: [], managers: {}, fx: [], tip: 0,
+    campaigns: {}, rivals: RIVALS.map((r) => ({ name: r.name, won: 0 })), tenders: [],
     ...(opts.sandbox ? { sandbox: true } : {}),
     slots: [], structs: [], doors: [], pallets: {}, forks: [], trucks: [], orders: [], pos: [], alerts: [], up: {}, goals: {}, auto: {},
     next: 0, lot: 0,
@@ -1022,7 +1082,7 @@ export function newGame(siteId: string, seed = 1, opts: { sandbox?: boolean } = 
     today: newDay(1), days: [], history: [],
     stats: {
       delivered: 0, onTime: 0, late: 0, failed: 0, revenue: 0, made: 0, madeGoods: 0, unloaded: 0, moves: 0, rushOnTime: 0, phones: 0, peakStock: 0, trains: 0, charges: 0, contractsDone: 0, events: 0, madeItems: {},
-      borrowed: 0, repaid: 0, coldShipped: 0, ownShipped: 0, missions: 0, vipOnTime: 0, spoiled: 0, retail: 0, restocks: 0, belted: 0, storesOpened: 0,
+      borrowed: 0, repaid: 0, coldShipped: 0, ownShipped: 0, missions: 0, vipOnTime: 0, spoiled: 0, retail: 0, restocks: 0, belted: 0, storesOpened: 0, tendersWon: 0, campaigns: 0, airDrops: 0,
     },
     seasonOver: false, bankrupt: false,
   };
@@ -1073,7 +1133,15 @@ export function newGame(siteId: string, seed = 1, opts: { sandbox?: boolean } = 
   offer(s);
   newMissions(s);
   s.startWorth = worth(s);
-  alert(s, "info", empty ? `Welcome to ${def.code} ${def.name}: an empty floor. Build racks first (Build), then buy stock or materials and put machines down.` : `Welcome to ${def.code} ${def.name}. Shift starts 07:00.`);
+  alert(
+    s,
+    "info",
+    def.openPlan
+      ? `Welcome to ${def.code} ${def.name}: an open-plan hall, all yours. Build anywhere short of the dock lanes; keep your own aisles clear so forklifts can reach everything.`
+      : empty
+        ? `Welcome to ${def.code} ${def.name}: an empty floor. Build racks first (Build), then buy stock or materials and put machines down.`
+        : `Welcome to ${def.code} ${def.name}. Shift starts 07:00.`,
+  );
   if (s.sandbox) alert(s, "good", "Sandbox: money is no object and every industry is open. Build whatever you like.");
   return s;
 }
@@ -1095,7 +1163,10 @@ export function buyForklift(s: State): string | null {
   return null;
 }
 
+/** Break rooms make drivers quicker: 5% each (twice that with ergonomics), up to three. */
+export const breakBonus = (s: State) => 1 + 0.05 * Math.min(3, built(s, "breakroom")) * (up(s, "ergonomics") ? 2 : 1);
 const forkSpeed = (s: State, f?: Forklift) =>
+  breakBonus(s) *
   FORK_SPEED * (up(s, "fast2") ? 1.4 : up(s, "fast1") ? 1.2 : 1) * (f && f.battery <= 0.02 ? 0.4 : 1) * (f ? 1 + (forkLevel(s, f) - 1) * 0.03 : 1);
 const handleTime = (s: State, atDock: boolean) => FORK_HANDLE * (up(s, "scanner") ? 0.5 : 1) * (atDock && up(s, "levellers") ? 0.6 : 1) * (up(s, "training") ? 0.75 : 1);
 const drainFactor = (s: State) => (eventOn(s, "heat") ? 1.5 : 1) * (up(s, "training") ? 0.8 : 1);
@@ -1559,8 +1630,10 @@ function stepFork(s: State, f: Forklift, dt: number) {
       f.miss = (f.miss ?? 0) + 1;
       // Nothing to do: wait on the aisle, out of the way.
       if (f.phase === "idle") {
-        const px = 2 + ((f.id * 4) % Math.max(4, width(s) - 3)) + 0.5;
-        const pz = AISLE_Z[f.id % 2] + 0.5;
+        // On the aisle (or, on an open-plan floor, the nearest clear spot to it).
+        const [qx, qz] = nearFree(s, 2 + ((f.id * 4) % Math.max(4, width(s) - 3)), AISLE_Z[f.id % 2]);
+        const px = qx + 0.5;
+        const pz = qz + 0.5;
         if (Math.abs(f.x - px) + Math.abs(f.z - pz) > 0.2) {
           f.path = route(s, f.x, f.z, Math.floor(px), Math.floor(pz));
           f.phase = "park";
@@ -1816,7 +1889,7 @@ function makeOrder(s: State, o: { customer: string; city: string; lines: { item:
   const city = CITIES.find((c) => c.name === o.city) ?? CITIES[0];
   const total = o.lines.reduce((a, l) => a + l.n, 0);
   const prem = 0.97 + rand(s) * 0.15;
-  const base = o.lines.reduce((a, l) => a + ITEMS[l.item].price * marketOf(s, l.item) * tradeBonus(s, l.item) * l.n * (eventOn(s, "boom") && HIGH_TECH.includes(l.item) ? 1.2 : 1), 0);
+  const base = o.lines.reduce((a, l) => a + ITEMS[l.item].price * marketOf(s, l.item) * tradeBonus(s, l.item) * l.n * eventPrice(s, l.item), 0);
   const loyal = [1, 1.03, 1.06, 1.1][loyalty(s, o.customer)];
   const value = Math.round(
     base * prem * loyal * (up(s, "sales") ? 1.06 : 1) * (up(s, "quality") ? 1.05 : 1) * (eventOn(s, "rush") ? 1.1 : 1) * (o.rush ? 1.25 : 1) * (o.vip ? 1.5 : 1),
@@ -1830,9 +1903,33 @@ function makeOrder(s: State, o: { customer: string; city: string; lines: { item:
   return order;
 }
 
+/** What an event does to an item's price: tech booms, fashion week, flu season, the motor show. */
+function eventPrice(s: State, item: ItemId) {
+  if (eventOn(s, "boom") && HIGH_TECH.includes(item)) return 1.2;
+  const ind = itemIndustry(item);
+  if (eventOn(s, "fashionweek") && ind === "fashion") return 1.25;
+  if (eventOn(s, "flu") && (item === "medicine" || item === "vitamins")) return 1.2;
+  if (eventOn(s, "motorshow") && ind === "auto") return 1.2;
+  return 1;
+}
+
+/** The trade customers are talking about: an ad campaign, or fashion week or flu season. */
+function hotTrade(s: State): IndustryId | null {
+  if (eventOn(s, "fashionweek") && licensed(s, "fashion")) return "fashion";
+  if (eventOn(s, "flu") && licensed(s, "pharma")) return "pharma";
+  const c = activeCampaigns(s);
+  return c.length ? c[Math.floor(rand(s) * c.length)] : null;
+}
+
 /** A customer asks for something. */
 export function offer(s: State) {
-  const mix = mixOf(s);
+  let mix = mixOf(s);
+  // More of the orders come for the trade that's in the news.
+  const hot = hotTrade(s);
+  if (hot && rand(s) < 0.6) {
+    const goods = mix.filter((i) => industry(hot).goods.includes(i));
+    if (goods.length) mix = goods;
+  }
   // Customers who buy something you trade in (anyone, if no one does).
   const keen = CUSTOMERS.filter((c) => c.likes.some((i) => mix.includes(i)));
   const cust = pick(s, keen.length ? keen : CUSTOMERS);
@@ -2098,23 +2195,32 @@ function stepOrders(s: State) {
 /* ------------------------------------------------------------------ purchasing */
 
 /** What a pallet costs today. */
-export const unitCost = (s: State, item: ItemId, rail = false) => buyPrice(item) * marketOf(s, item) * (up(s, "buyer") ? 0.92 : 1) * (eventOn(s, "strike") ? 1.15 : 1) * (rail ? 0.9 : 1);
-export const purchaseCost = (s: State, item: ItemId, n: number, rail = false) => Math.round(unitCost(s, item, rail) * n + (rail ? 60 : 120));
+export const unitCost = (s: State, item: ItemId, rail = false, air = false) =>
+  buyPrice(item) * marketOf(s, item) * (up(s, "buyer") ? 0.92 : 1) * (eventOn(s, "strike") ? 1.15 : 1) * (rail ? 0.9 : 1) *
+  (eventOn(s, "harvest") && ITEMS[item].tier === "raw" && itemIndustry(item) === "food" ? 0.7 : 1) *
+  (air ? 1 + (AIR.surcharge - 1) * (up(s, "aircargo") ? 0.6 : 1) : 1);
+/** Freight on top: a truck $120, a train $60, a plane's fee. */
+export const freight = (s: State, rail = false, air = false) => (air ? Math.round(AIR.fee * (up(s, "aircargo") ? 0.6 : 1)) : rail ? 60 : 120);
+export const purchaseCost = (s: State, item: ItemId, n: number, rail = false, air = false) => Math.round(unitCost(s, item, rail, air) * n + freight(s, rail, air));
 
 /** Order stock from a supplier: a truck (or, with the rail siding, a train) brings it in. */
-export function buy(s: State, item: ItemId, n: number, free = false, rail = false): PO | null {
+/** Order stock: by truck, by train (with the siding), or flown in (four times as fast, and dearer). */
+export function buy(s: State, item: ItemId, n: number, free = false, rail = false, air = false): PO | null {
   if (rail && !s.rail) return null;
+  if (air) rail = false;
   n = Math.max(1, Math.min(rail ? RAIL_CAP : 12, Math.round(n)));
-  const cost = free ? 0 : purchaseCost(s, item, n, rail);
-  if (!free && s.cash < cost) return null;
+  const cost = free ? 0 : purchaseCost(s, item, n, rail, air);
+  if (!free && !afford(s, cost)) return null;
   if (!free) {
     spend(s, cost, "purchases");
     pop(s, -cost, `${n} × ${ITEMS[item].name}`);
   }
   const sup = supplierFor(item);
-  const po: PO = { id: nid(s), code: `PO-${1200 + s.pos.length + 1}`, supplier: sup.name, item, n, cost, ordered: s.time, truck: -1, done: false };
+  const po: PO = { id: nid(s), code: `PO-${1200 + s.pos.length + 1}`, supplier: sup.name, item, n, cost, ordered: s.time, truck: -1, done: false, ...(air ? { air: true } : {}) };
   s.pos.push(po);
-  const lead = ri(s, sup.lead[0], sup.lead[1]) * (rail ? 1.5 : 1) * (eventOn(s, "strike") ? 2 : 1);
+  if (air) s.stats.airDrops++;
+  // A strike holds up suppliers, but not the airline.
+  const lead = ri(s, sup.lead[0], sup.lead[1]) * (rail ? 1.5 : 1) * (air ? AIR.lead : eventOn(s, "strike") ? 2 : 1);
   const t = newTruck(s, "in", po.id, s.time + lead * MIN, rail ? RAIL_CAP : 12, rail);
   for (let i = 0; i < n; i++) {
     const p = newPallet(s, item);
@@ -2581,6 +2687,109 @@ function stepStores(s: State) {
   if (takings > 0) pop(s, takings, "Stores");
 }
 
+/* ------------------------------------------------------------------ marketing */
+
+/** Trades with an ad campaign running. */
+export const activeCampaigns = (s: State) => (Object.entries(s.campaigns) as [IndustryId, number][]).filter(([, until]) => until > s.time).map(([id]) => id);
+
+/** Run an ad campaign for a trade: more of the offers come for its goods, and more come in all. */
+export function runCampaign(s: State, id: IndustryId): string | null {
+  if (!licensed(s, id)) return `Needs the ${industry(id).name} licence`;
+  if ((s.campaigns[id] ?? 0) > s.time) return "That campaign's still running";
+  if (!afford(s, CAMPAIGN.cost)) return "Not enough cash";
+  spend(s, CAMPAIGN.cost, "capex");
+  pop(s, -CAMPAIGN.cost, "Ads");
+  s.campaigns[id] = s.time + CAMPAIGN.hours * HOUR;
+  s.stats.campaigns++;
+  alert(s, "good", `${industry(id).icon} Ad campaign for ${industry(id).name.toLowerCase()} is running for ${CAMPAIGN.hours} hours`);
+  return null;
+}
+
+/* ------------------------------------------------------------------ rivals and tenders */
+
+/** A big customer puts a run of shipments out to tender. */
+export function offerTender(s: State): Tender {
+  const mix = mixOf(s);
+  const keen = CUSTOMERS.filter((c) => c.likes.some((i) => mix.includes(i)));
+  const cust = pick(s, keen.length ? keen : CUSTOMERS);
+  const likes = cust.likes.filter((i) => mix.includes(i));
+  const item = pick(s, likes.length ? likes : mix);
+  const dear = ITEMS[item].price > 8_000;
+  const t: Tender = {
+    id: nid(s), customer: cust.name, city: pick(s, CITIES).name, item, n: dear ? ri(s, 1, 2) : ri(s, 3, 6), count: ri(s, 4, 7), every: pick(s, [6, 8, 12]),
+    list: Math.round(ITEMS[item].price * marketOf(s, item)), closes: s.time + 4 * HOUR, state: "open",
+  };
+  s.tenders.push(t);
+  alert(s, "info", `Tender: ${cust.name} wants ${t.count} shipments of ${t.n} × ${ITEMS[item].name}. Bids close in 4 hours (Company → Market)`);
+  return t;
+}
+
+/** Put in (or change, or with 0 withdraw) a bid on an open tender: your price as a share of list. */
+export function bidTender(s: State, id: number, bid: number): string | null {
+  const t = s.tenders.find((x) => x.id === id);
+  if (!t || t.state !== "open") return "That tender has closed";
+  if (bid <= 0) {
+    delete t.bid;
+    return null;
+  }
+  t.bid = Math.round(Math.max(BID_RANGE[0], Math.min(BID_RANGE[1], bid)) * 100) / 100;
+  return null;
+}
+
+/** How a bid is judged: price, then reputation (a good name is worth a few percent), then market research. */
+export const bidScore = (s: State, bid: number) => bid * (1.1 - (s.rep / 100) * 0.2) * (up(s, "intel") ? 0.95 : 1);
+
+/** Close the tenders that are due: rivals bid, the keenest price wins; win, and it's a contract. */
+function stepTenders(s: State) {
+  for (const t of s.tenders) {
+    if (t.state !== "open" || s.time < t.closes) continue;
+    // Rivals bid round list, the keenest a little under.
+    const bids = s.rivals.map((r) => {
+      const def = RIVALS.find((x) => x.name === r.name) ?? RIVALS[0];
+      const bid = Math.round(def.edge * (0.88 + rand(s) * 0.24) * 100) / 100;
+      r.last = bid;
+      return { r, bid, score: bid * 0.98 };
+    });
+    bids.sort((a, b) => a.score - b.score);
+    const best = bids[0];
+    if (t.bid !== undefined && bidScore(s, t.bid) < best.score) {
+      t.state = "won";
+      t.winner = "You";
+      t.winBid = t.bid;
+      s.stats.tendersWon++;
+      awardTender(s, t);
+    } else {
+      t.state = "lost";
+      t.winner = best.r.name;
+      t.winBid = best.bid;
+      best.r.won++;
+      alert(s, t.bid === undefined ? "info" : "warn", `${best.r.name} won ${t.customer}'s tender${up(s, "intel") ? ` at ${Math.round(best.bid * 100)}% of list` : ""}${t.bid !== undefined ? ` (you bid ${Math.round(t.bid * 100)}%)` : ""}`);
+    }
+  }
+  // Keep a day's worth, and offer another now and then.
+  s.tenders = s.tenders.filter((t) => t.state === "open" || s.time - t.closes < DAY);
+  if (!s.tenders.some((t) => t.state === "open") && day(s.time) + (s.time % DAY) / DAY > 1.3 && rand(s) < 0.1) offerTender(s);
+}
+
+/** A tender you've won becomes a contract at your price, with a bonus for every shipment on time. */
+function awardTender(s: State, t: Tender) {
+  const c: Contract = {
+    id: nid(s), customer: t.customer, city: t.city, item: t.item, n: t.n, count: t.count, every: t.every,
+    bonus: Math.round((t.list * t.n * t.count * 0.15) / 100) * 100, state: "active", expires: s.time, orders: [], onTime: 0, late: 0,
+  };
+  s.contracts.push(c);
+  const cc = city(c.city);
+  for (let k = 0; k < c.count; k++) {
+    const due = s.time + cc.transit * MIN + 6 * HOUR + k * c.every * HOUR;
+    const o = makeOrder(s, { customer: c.customer, city: c.city, lines: [{ item: c.item, n: c.n }], due, rush: false });
+    o.value = Math.round(t.list * t.n * (t.bid ?? 1));
+    o.contract = c.id;
+    c.orders.push(o.id);
+    confirm(s, o);
+  }
+  alert(s, "good", `🏆 You won ${t.customer}'s tender at ${Math.round((t.bid ?? 1) * 100)}% of list: ${t.count} shipments booked, $${c.bonus.toLocaleString("en-US")} bonus if all are on time`);
+}
+
 /* ------------------------------------------------------------------ managers */
 
 export const managerWages = (s: State) => MANAGERS.reduce((a, m) => a + (s.managers[m.id] ? m.wage : 0), 0);
@@ -2773,6 +2982,14 @@ const GOAL_CHECKS: Record<string, (s: State) => boolean> = {
   stores5: (s) => s.stores.length >= 5,
   manager: (s) => Object.values(s.managers).some(Boolean),
   allind: (s) => INDUSTRIES.every((i) => i.cost === 0 || !!s.lic[i.id]),
+  tender: (s) => s.stats.tendersWon >= 1,
+  leader: (s) => s.stats.tendersWon >= 3 && s.rivals.every((r) => r.won < s.stats.tendersWon),
+  campaign: (s) => s.stats.campaigns >= 1,
+  air: (s) => s.stats.airDrops >= 1,
+  ecar: (s) => (s.stats.madeItems.ecar ?? 0) >= 1,
+  pizza: (s) => (s.stats.madeItems.pizza ?? 0) + (s.stats.madeItems.icecream ?? 0) >= 1,
+  staff: (s) => built(s, "breakroom") >= 1 && built(s, "office") >= 1,
+  builder: (s) => s.structs.filter((t) => !t.dead).length >= 60,
 };
 
 function stepGoals(s: State) {
@@ -2801,7 +3018,7 @@ export function startEvent(s: State, kind: EventKind) {
   const def = EVENTS.find((e) => e.kind === kind)!;
   s.event = { kind, started: s.time, until: s.time + ri(s, def.hours[0], def.hours[1]) * HOUR };
   if (kind === "storm") for (const t of s.trucks) if (t.state === "transit") t.eta += HOUR;
-  alert(s, kind === "rush" || kind === "boom" ? "good" : "warn", `${def.icon} ${def.name}: ${def.body}`);
+  alert(s, ["rush", "boom", "fashionweek", "harvest", "flu", "motorshow"].includes(kind) ? "good" : "warn", `${def.icon} ${def.name}: ${def.body}`);
 }
 
 function stepHour(s: State) {
@@ -2814,7 +3031,8 @@ function stepHour(s: State) {
     alert(s, "info", `${def.name} is over`);
     s.event = null;
     s.stats.events++;
-  } else if (!s.event && day(s.time) > 1 && rand(s) < 0.035) startEvent(s, pick(s, EVENTS).kind);
+  } else if (!s.event && day(s.time) > 1 && rand(s) < 0.035) startEvent(s, pick(s, EVENTS.filter((e) => !e.ind || licensed(s, e.ind))).kind);
+  stepTenders(s);
   if (!s.contracts.some((c) => c.state === "offer") && day(s.time) + (s.time % DAY) / DAY > 1.25 && rand(s) < 0.06) offerContract(s);
   stepStores(s);
 }
@@ -2859,7 +3077,11 @@ function stepOnce(s: State, dt: number) {
   const night = hour < 6 || hour >= 22;
   const open = s.orders.filter((o) => o.state === "offer").length;
   const rate =
-    def.demand * (up(s, "sales") ? 1.3 : 1) * (up(s, "brand") ? 1.25 : 1) * (eventOn(s, "rush") ? 2 : 1) * (s.mega ? 1.3 : 1) * (night && !up(s, "night") ? 0.3 : 1) * (0.6 + (s.rep / 100) * 0.8);
+    def.demand *
+    (1 + 0.08 * Math.min(2, built(s, "office"))) *
+    (activeCampaigns(s).length ? 1.25 : 1) *
+    (eventOn(s, "flu") || eventOn(s, "fashionweek") ? 1.2 : 1) *
+    (up(s, "sales") ? 1.3 : 1) * (up(s, "brand") ? 1.25 : 1) * (eventOn(s, "rush") ? 2 : 1) * (s.mega ? 1.3 : 1) * (night && !up(s, "night") ? 0.3 : 1) * (0.6 + (s.rep / 100) * 0.8);
   if (open < 5 && rand(s) < (rate * dt) / HOUR) offer(s);
   // Once a game minute.
   if (Math.floor(before / MIN) !== Math.floor(s.time / MIN)) {
@@ -2979,6 +3201,11 @@ export function deserialize(json: string): State | null {
     s.today.retail ??= 0;
     for (const d of s.days) d.retail ??= 0;
     for (const k of ["retail", "restocks", "belted", "storesOpened"] as const) s.stats[k] ??= 0;
+    // Saves from before the tycoon update.
+    s.campaigns ??= {};
+    s.rivals ??= RIVALS.map((r) => ({ name: r.name, won: 0 }));
+    s.tenders ??= [];
+    for (const k of ["tendersWon", "campaigns", "airDrops"] as const) s.stats[k] ??= 0;
     if (!s.missions.length) newMissions(s);
     return s;
   } catch {
