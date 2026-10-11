@@ -21,6 +21,8 @@ const short = (n: number) => {
   return `${n < 0 ? "−" : ""}${v}`;
 };
 /** Cash on the top bar: in full up to a million. */
+/** A recipe's inputs as icons (a pick for one that digs from the ground). */
+const ins = (inputs: ItemId[], sep = "+") => (inputs.length ? inputs.map((x) => ITEMS[x].icon).join(sep) : "⛏️");
 const cashText = (n: number) => (Math.abs(n) >= 1e6 ? short(n) : money(n));
 const mins = (secs: number) => {
   const m = Math.max(0, Math.round(secs / 60));
@@ -720,7 +722,7 @@ function StructInfo({ g, s, id }: { g: Game; s: State; id: number }) {
         <div className="wf-list">
           {def.recipes.map((rc, i) => (
             <button key={i} className={`wf-tile ${i === m.recipe ? "on" : ""}`} onClick={() => g.setRecipe(t.id, i)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <span>{rc.inputs.map((x) => ITEMS[x].icon).join(" + ")}</span>
+              <span>{ins(rc.inputs, " + ")}</span>
               <span className="dim">→</span>
               <span>{ITEMS[rc.output].icon}</span>
               <b style={{ flex: 1 }}>{ITEMS[rc.output].name}</b>
@@ -1537,7 +1539,7 @@ function BuildSheet({ g, s }: { g: Game; s: State }) {
                     </span>
                     <b>{m.name}</b>
                     <small>{m.blurb}</small>
-                    <small>{m.recipes.map((r) => `${r.inputs.map((x) => ITEMS[x].icon).join("+")}→${ITEMS[r.output].icon}`).join("  ")}</small>
+                    <small>{m.recipes.map((r) => `${ins(r.inputs)}→${ITEMS[r.output].icon}`).join("  ")}</small>
                     <b>
                       {money(m.cost)} <span className="dim">· {m.w}×{m.d}</span>
                     </b>
@@ -2164,7 +2166,7 @@ function ProductionTab({ g, s }: { g: Game; s: State }) {
               <span style={{ minWidth: 0 }}>
                 {MACHINES[m.type].name}
                 <span className="sub">
-                  {r.inputs.map((x) => ITEMS[x].icon).join("+")}→{ITEMS[r.output].icon} {ITEMS[r.output].name} · {rate.toFixed(1)}/h · busy {Math.round((m.util ?? 0) * 100)}% · made {m.made}
+                  {ins(r.inputs)}→{ITEMS[r.output].icon} {ITEMS[r.output].name} · {rate.toFixed(1)}/h · busy {Math.round((m.util ?? 0) * 100)}% · made {m.made}
                 </span>
               </span>
               <span className={`wf-pill ${cls}`}>{txt}</span>

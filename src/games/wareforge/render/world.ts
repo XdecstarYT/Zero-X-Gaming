@@ -13,7 +13,7 @@ import { AISLE_Z, BELT, DAY, DOCK_Z, FREEZER, GAME_SECS_PER_REAL, GRID_W, HOUR, 
 import { BELT_DIR, LEVEL_H, doorName, eventOn, grid, openPlan, rackLevels, route, up, width, type Focus, type Pallet, type State, type Truck } from "../sim";
 import {
   COL, CONTAINER_COLORS, TRAILER_LEN, asphaltTexture, belt, beltTexture, box, boxGeo, breakRoom, car, charger, fenceTile, salesOffice, claddingTexture, crane, doorTexture, fadeTexture, fenceTexture, flakeTexture, floorTexture, forklift, gatehouse,
-  grassTexture, hazardTexture, lampMat, letteringTexture, loadTexture, machine, mat, office, palletGeometry, person, pin, pine, rbox, signTexture, streetLamp, train, tree, truck,
+  grassTexture, hazardTexture, haulTruck, excavator, rockTexture, lampMat, letteringTexture, loadTexture, machine, mat, office, palletGeometry, person, pin, pine, rbox, signTexture, streetLamp, train, tree, truck,
   windowMat, woodTexture, type ForkModel, type MachineModel, type PersonModel, type TrainModel, type TruckModel,
 } from "./models";
 
@@ -481,7 +481,7 @@ export class World {
     this.disposeGroup(G);
     let seed = def.id.charCodeAt(3) * 97 + 13;
     const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    if (this.grass) this.grass.visible = def.theme !== "snow";
+    if (this.grass) this.grass.visible = def.theme !== "snow" && def.theme !== "quarry";
     const water = (x: number, z: number, w: number, d: number) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d, 1, 1), new THREE.MeshStandardMaterial({ color: "#86b8e8", roughness: 0.08, metalness: 0.2, envMapIntensity: 1.4 }));
       m.rotation.x = -Math.PI / 2;
@@ -582,6 +582,75 @@ export class World {
         d.position.set(-24 + r() * 130, 0, i % 2 ? -3.2 : ROAD_Z + 5.5 + r() * 3);
         d.userData.own = true;
         G.add(d);
+      }
+    } else if (def.theme === "quarry") {
+      // The quarry: dusty ground, a pit wall cut in benches behind the hall, stockpiles, haul trucks and an excavator at work.
+      const dust = new THREE.Mesh(new THREE.PlaneGeometry(420, 420), mat("#cdb894", 0.95));
+      dust.rotation.x = -Math.PI / 2;
+      dust.position.set(22, -0.03, 17);
+      dust.receiveShadow = true;
+      dust.userData.own = true;
+      G.add(dust);
+      const rockMap = rockTexture();
+      rockMap.repeat.set(10, 1);
+      const rock = new THREE.MeshStandardMaterial({ map: rockMap, roughness: 0.95 });
+      for (let k = 0; k < 5; k++) {
+        const bench = box(260, 4 + k * 4, 7, rock, 22, 0, -12 - k * 7);
+        bench.castShadow = k < 2;
+        G.add(bench);
+        // A haul road along the top of each bench.
+        G.add(box(260, 0.06, 2.2, mat("#bfa983", 0.95), 22, 4 + k * 4, -9.6 - k * 7, false));
+      }
+      // Stockpiles: crushed stone, sand and clay, east and west of the hall.
+      for (const [x, z, r, h, c] of [[96, 6, 5, 4, "#a7a49c"], [104, 16, 4.2, 3.4, "#e9d49a"], [96, 24, 3.6, 3, "#c0703f"], [-16, 4, 4.4, 3.6, "#a7a49c"], [-18, 16, 3.2, 2.6, "#e9d49a"]] as [number, number, number, number, string][]) {
+        const pile = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12), mat(c, 0.95));
+        pile.position.set(x, h / 2, z);
+        pile.castShadow = true;
+        pile.receiveShadow = true;
+        pile.userData.own = true;
+        G.add(pile);
+      }
+      // A conveyor gantry running up onto a stockpile.
+      const gantry = box(14, 0.4, 0.8, mat("#5b6b86", 0.5, 0.4), 89, 2.4, 6);
+      gantry.rotation.z = 0.32;
+      G.add(gantry);
+      for (const x of [84, 89]) G.add(box(0.25, x === 84 ? 1.2 : 2.6, 0.25, mat("#3a3f4c", 0.5, 0.4), x, 0, 6));
+      // Haul trucks and an excavator on the benches.
+      for (const [x, y, z, ry] of [[100, 0, 30, 0.4], [-14, 0, 26, -0.6], [40, 8, -24, Math.PI]] as [number, number, number, number][]) {
+        const t = haulTruck();
+        t.position.set(x, y, z);
+        t.rotation.y = ry;
+        G.add(t);
+      }
+      const ex = excavator();
+      ex.group.scale.setScalar(2.2);
+      ex.group.position.set(18, 4, -17);
+      ex.boom.rotation.y = 0.7;
+      G.add(ex.group);
+      const ex2 = excavator("#e0773c");
+      ex2.group.scale.setScalar(2.2);
+      ex2.group.position.set(64, 12, -31);
+      ex2.group.rotation.y = 2.4;
+      G.add(ex2.group);
+      // A headframe over the old shaft, out east.
+      const red = mat("#c0392b", 0.5, 0.3);
+      for (const z of [-4, -1]) {
+        G.add(box(0.5, 16, 0.5, red, 112, 0, z));
+        G.add(box(0.5, 16, 0.5, red, 116, 0, z));
+      }
+      for (const y of [5, 10, 15]) G.add(box(4.6, 0.4, 3.6, red, 114, y, -2.5));
+      const wheelG = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.18, 8, 24), mat("#a4abb9", 0.3, 0.75));
+      wheelG.position.set(114, 17.4, -2.5);
+      wheelG.castShadow = true;
+      wheelG.userData.own = true;
+      G.add(wheelG);
+      for (let i = 0; i < 24; i++) {
+        const pine = new THREE.Mesh(new THREE.ConeGeometry(0.9, 3.4, 7), mat("#5f8f6a", 0.85));
+        const k = i % 5;
+        pine.position.set(-40 + r() * 160, 1.7 + 4 + k * 4, -14.5 - k * 7 + r() * 2);
+        pine.castShadow = true;
+        pine.userData.own = true;
+        G.add(pine);
       }
     } else {
       // Summit: rolling hills and pines behind.
@@ -1031,6 +1100,9 @@ export class World {
               break;
             case "slide":
               o.position.x = o.userData.x0 + Math.sin(ph * 4 + i) * 0.25;
+              break;
+            case "wheel":
+              o.rotation.z -= dt * 3;
               break;
             default:
               o.rotation.y = Math.sin(ph * 1.3 + i) * 1.2;

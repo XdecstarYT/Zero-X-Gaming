@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mergeStatic } from "@/nextx/batch";
-import { CARRIERS, MACHINES, type MachineType } from "../data";
+import { CARRIERS, MACHINES, isExtractor, type MachineType } from "../data";
 
 export const COL = {
   wall: "#e4e8ef",
@@ -300,6 +300,80 @@ export function grassTexture() {
     }
   });
   return tiled(t);
+}
+
+/** Brickwork in stretcher bond: four courses and two bricks across per tile, each brick a slightly different red, in pale mortar. */
+export function brickTexture(tint = "#b5502f") {
+  seed = 61;
+  const c = new THREE.Color(tint);
+  return tiled(
+    canvasTex(256, 256, (g) => {
+      g.fillStyle = "#d8d2c6";
+      g.fillRect(0, 0, 256, 256);
+      const rows = 8;
+      const h = 256 / rows;
+      for (let r = 0; r < rows; r++) {
+        const off = r % 2 ? 32 : 0;
+        for (let x = -64 + off; x < 256; x += 64) {
+          const k = 0.82 + rnd() * 0.3;
+          g.fillStyle = `rgb(${Math.round(c.r * 255 * k)},${Math.round(c.g * 255 * k)},${Math.round(c.b * 255 * k)})`;
+          g.fillRect(x + 2, r * h + 2, 60, h - 4);
+          g.fillStyle = "rgba(0,0,0,0.12)";
+          g.fillRect(x + 2, r * h + h - 6, 60, 2);
+        }
+      }
+      speckle(g, 256, 2500, "255,255,255", "40,20,10", 0.12);
+    }),
+  );
+}
+
+/** Rough rock: layered bands of stone, cracks and specks. */
+export function rockTexture(base = "#b7a383") {
+  seed = 67;
+  return tiled(
+    canvasTex(256, 256, (g) => {
+      g.fillStyle = base;
+      g.fillRect(0, 0, 256, 256);
+      for (let y = 0; y < 256; y += 10 + rnd() * 18) {
+        g.fillStyle = `rgba(${rnd() > 0.5 ? "255,255,255" : "60,40,20"},${0.06 + rnd() * 0.1})`;
+        g.fillRect(0, y, 256, 4 + rnd() * 10);
+      }
+      mottle(g, 256, 40, 10, 40, "255,250,240", "50,35,20", 0.18);
+      g.strokeStyle = "rgba(40,28,16,0.35)";
+      for (let i = 0; i < 26; i++) {
+        g.beginPath();
+        let x = rnd() * 256;
+        let y = rnd() * 256;
+        g.moveTo(x, y);
+        for (let k = 0; k < 4; k++) g.lineTo((x += (rnd() - 0.5) * 30), (y += rnd() * 20));
+        g.stroke();
+      }
+      speckle(g, 256, 3000, "255,255,255", "30,20,10", 0.2, 1.6);
+    }),
+  );
+}
+
+/** Clay roof tiles: overlapping rows with a shadow under each. */
+export function roofTexture(tint = "#8c3b2a") {
+  seed = 71;
+  const c = new THREE.Color(tint);
+  return tiled(
+    canvasTex(256, 256, (g) => {
+      for (let r = 0; r < 8; r++) {
+        for (let x = 0; x < 256; x += 32) {
+          const k = 0.85 + rnd() * 0.25;
+          g.fillStyle = `rgb(${Math.round(c.r * 255 * k)},${Math.round(c.g * 255 * k)},${Math.round(c.b * 255 * k)})`;
+          g.fillRect(x + (r % 2 ? 16 : 0), r * 32, 32, 32);
+        }
+        g.fillStyle = "rgba(0,0,0,0.3)";
+        g.fillRect(0, r * 32 + 27, 256, 5);
+      }
+      for (let x = 0; x < 256; x += 16) {
+        g.fillStyle = "rgba(0,0,0,0.12)";
+        g.fillRect(x, 0, 1, 256);
+      }
+    }),
+  );
 }
 
 /**
@@ -848,6 +922,55 @@ export interface MachineModel {
 }
 
 let hazardMat: THREE.MeshStandardMaterial | null = null;
+let kilnBrick: THREE.MeshStandardMaterial | null = null;
+let rockMat: THREE.MeshStandardMaterial | null = null;
+
+/** A tracked excavator: undercarriage, a turning house with a cab, and a boom, stick and bucket (the `boom` group turns). */
+export function excavator(color = "#f2b632") {
+  const group = new THREE.Group();
+  const paint = mat(color, 0.45, 0.2);
+  const dark = mat("#2b2d33", 0.7);
+  for (const z of [-0.42, 0.42]) group.add(rbox(1.5, 0.32, 0.3, dark, 0, 0, z, 0.1));
+  group.add(box(0.9, 0.2, 0.7, dark, 0, 0.3, 0));
+  const boom = new THREE.Group();
+  boom.position.set(0, 0.5, 0);
+  boom.add(rbox(1.1, 0.55, 0.9, paint, -0.1, 0, 0, 0.06));
+  boom.add(rbox(0.45, 0.5, 0.45, paint, 0.15, 0.55, -0.2, 0.05));
+  boom.add(box(0.38, 0.3, 0.02, mat("#9cc8ea", 0.1, 0.4), 0.18, 0.68, 0.04, false));
+  boom.add(box(0.35, 0.3, 0.86, dark, -0.55, 0.1, 0));
+  const arm1 = rbox(0.18, 1.3, 0.16, paint, 0.75, 0.35, 0.15, 0.04);
+  arm1.rotation.z = -0.9;
+  arm1.position.set(0.85, 0.85, 0.15);
+  boom.add(arm1);
+  const arm2 = rbox(0.14, 0.9, 0.14, paint, 0, 0, 0, 0.04);
+  arm2.rotation.z = 0.5;
+  arm2.position.set(1.35, 0.85, 0.15);
+  boom.add(arm2);
+  boom.add(box(0.36, 0.3, 0.42, dark, 1.55, 0.25, 0.15));
+  group.add(boom);
+  shadows(group);
+  return { group, boom };
+}
+
+/** A big dump truck for the quarry: a cab on the left, a ribbed body tipped back, four tall wheels. */
+export function haulTruck(color = "#f2b632") {
+  const g = new THREE.Group();
+  const paint = mat(color, 0.45, 0.2);
+  g.add(rbox(3.6, 0.5, 2.2, mat("#2b2d33", 0.7), 0, 0.9, 0, 0.08));
+  const bed = rbox(2.6, 1.2, 2.3, paint, 0.4, 1.4, 0, 0.1);
+  bed.rotation.z = 0.08;
+  g.add(bed);
+  g.add(rbox(0.9, 1.0, 1.0, paint, -1.4, 1.4, -0.55, 0.08));
+  g.add(box(0.5, 0.4, 0.02, mat("#9cc8ea", 0.1, 0.4), -1.45, 1.85, -0.04, false));
+  for (const [x, z] of [[-1.2, -1.1], [-1.2, 1.1], [1.1, -1.1], [1.1, 1.1]]) {
+    const wh = wheel(0.75, 0.55, mat("#c9ced8", 0.4, 0.6), 18);
+    wh.rotation.y = Math.PI / 2;
+    wh.position.set(x, 0.75, z);
+    g.add(wh);
+  }
+  shadows(g);
+  return g;
+}
 const inArrow = new THREE.MeshBasicMaterial({ color: "#3d8bff", transparent: true, opacity: 0.85, depthWrite: false });
 const outArrow = new THREE.MeshBasicMaterial({ color: "#2fc488", transparent: true, opacity: 0.85, depthWrite: false });
 let chevronGeo: THREE.BufferGeometry | null = null;
@@ -884,8 +1007,9 @@ export function machine(type: MachineType, w: number, d: number, color: string, 
     m.userData.own = true;
     g.add(m);
   }
-  // Conveyors at each end, under the buffers, with arrows for the flow: materials in (blue), goods out (green).
-  for (const x of [0.5, w - 0.5]) {
+  // Conveyors at each end, under the buffers, with arrows for the flow: materials in (blue), goods out (green). A quarry or mine only has the way out.
+  const dig = isExtractor(type);
+  for (const x of dig ? [mirrored ? 0.5 : w - 0.5] : [0.5, w - 0.5]) {
     g.add(rbox(0.9, 0.45, d - 0.06, grey, x, 0.05, d / 2, 0.04));
     for (let i = 0; i < d * 4; i++) {
       const r = cyl(0.05, 0.86, steel, 8);
@@ -904,14 +1028,126 @@ export function machine(type: MachineType, w: number, d: number, color: string, 
     }
   }
   const moving: THREE.Object3D[] = [];
-  const anim = (o: THREE.Object3D, how: "bob" | "spin" | "slide" | "swing") => {
+  const anim = (o: THREE.Object3D, how: "bob" | "spin" | "slide" | "swing" | "wheel") => {
     o.userData.anim = how;
     moving.push(o);
     return o;
   };
   const mid = w / 2;
   const inner = w - 2;
-  if (style === "press") {
+  const brickMat = (kilnBrick ??= new THREE.MeshStandardMaterial({ map: brickTexture(), roughness: 0.9 }));
+  if (style === "pit") {
+    // A stepped rock face along the back, a dirt floor, and an excavator swinging its bucket.
+    const rock = (rockMat ??= new THREE.MeshStandardMaterial({ map: rockTexture(), roughness: 0.95 }));
+    const dirt = mat("#a88b67", 0.95);
+    g.add(box(w - 1.1, 0.06, d - 0.1, dirt, mid - 0.45, 0, d / 2, false));
+    const benches = [[1.9, 0.75], [1.25, 1.35], [0.65, 1.9]] as const;
+    benches.forEach(([h, dd], i) => g.add(box(w - 1.2 - i * 0.2, h, dd * 0.6, rock, mid - 0.45, 0, 0.05 + (dd * 0.6) / 2 + i * 0.02)));
+    // Loose rock at the foot of the face.
+    for (let i = 0; i < 6; i++) {
+      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18 + (i % 3) * 0.07, 0), rock);
+      r.position.set(0.6 + i * ((w - 2.2) / 5), 0.12, 1.3 + (i % 2) * 0.25);
+      r.rotation.set(i, i * 2, 0);
+      r.castShadow = true;
+      g.add(r);
+    }
+    const ex = excavator(color);
+    ex.group.position.set(mid - 0.2, 0, d - 0.85);
+    ex.group.rotation.y = Math.PI;
+    g.add(ex.group);
+    g.add(anim(ex.boom, "swing"));
+  } else if (style === "shaft") {
+    // A headframe over the shaft: two legs, a back stay, the winding wheels on top, and a winding house.
+    const red = body;
+    const hole = new THREE.Mesh(boxGeo(1.4, 0.04, 1.4), mat("#101216", 0.9));
+    hole.position.set(mid - 0.3, 0.03, d / 2);
+    g.add(hole);
+    g.add(rbox(1.7, 0.18, 1.7, dark, mid - 0.3, 0, d / 2, 0.04));
+    for (const z of [d / 2 - 0.75, d / 2 + 0.75]) {
+      const leg = box(0.16, 4.6, 0.16, red, mid - 0.95, 0, z);
+      g.add(leg);
+      const leg2 = box(0.16, 4.6, 0.16, red, mid + 0.35, 0, z);
+      g.add(leg2);
+      const stay = box(0.14, 4.4, 0.14, red, mid + 0.95, 0, z);
+      stay.rotation.z = 0.32;
+      stay.position.x = mid + 0.95 - 0.7;
+      g.add(stay);
+    }
+    for (const y of [1.3, 2.6, 3.8]) g.add(box(1.4, 0.1, 1.66, red, mid - 0.3, y, d / 2));
+    g.add(box(1.6, 0.2, 1.8, dark, mid - 0.3, 4.55, d / 2));
+    for (const z of [d / 2 - 0.4, d / 2 + 0.4]) {
+      const sheave = new THREE.Group();
+      sheave.position.set(mid - 0.3, 5.15, z);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.06, 8, 24), steel);
+      rim.castShadow = true;
+      sheave.add(rim);
+      for (let k = 0; k < 4; k++) {
+        const spoke = box(0.05, 1.0, 0.05, steel, 0, -0.5, 0);
+        spoke.rotation.z = (k * Math.PI) / 4;
+        sheave.add(spoke);
+      }
+      g.add(anim(sheave, "wheel"));
+    }
+    // Ropes down into the shaft.
+    for (const z of [d / 2 - 0.4, d / 2 + 0.4]) g.add(box(0.03, 4.6, 0.03, mat("#2b2d33", 0.6), mid - 0.75, 0.5, z, false));
+    const cage = box(0.6, 0.8, 0.6, mat("#d5d9e4", 0.5, 0.4), mid - 0.3, 0.2, d / 2);
+    g.add(anim(cage, "bob"));
+    // The winding house behind, with its roof and a door.
+    g.add(rbox(1.0, 1.6, d - 0.6, mat("#c9b9a1", 0.85), w - 1.6, 0, d / 2, 0.05));
+    g.add(box(1.1, 0.12, d - 0.5, dark, w - 1.6, 1.6, d / 2));
+    g.add(box(0.04, 0.9, 0.5, mat("#6b4a2f", 0.7), w - 2.12, 0, d / 2));
+  } else if (style === "crusher") {
+    // A hopper over a jaw that chews, a flywheel turning, a short belt out.
+    g.add(rbox(inner, 0.5, d - 0.4, dark, mid, 0, d / 2, 0.05));
+    const hopper = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.35, 0.9, 4, 1, true), mat(color, 0.5, 0.3));
+    hopper.rotation.y = Math.PI / 4;
+    hopper.position.set(mid - 0.1, 1.7, d / 2);
+    hopper.castShadow = true;
+    (hopper.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+    g.add(hopper);
+    g.add(box(0.9, 0.8, 0.9, body, mid - 0.1, 0.5, d / 2));
+    g.add(anim(box(0.7, 0.5, 0.12, steel, mid - 0.1, 0.85, d / 2 + 0.5), "bob"));
+    const fly = new THREE.Mesh(cylGeo(0.42, 0.42, 0.1, 20), dark);
+    fly.rotation.x = Math.PI / 2;
+    fly.position.set(mid + 0.45, 0.95, d / 2 - 0.55);
+    g.add(anim(fly, "spin"));
+  } else if (style === "furnace") {
+    // A blast furnace: a tall shell on a hearth, a skip hoist up its side, a glowing tap hole and a ladle car.
+    g.add(rbox(inner, 0.5, d - 0.3, mat("#5c5149", 0.9), mid, 0, d / 2, 0.05));
+    const shell = new THREE.Mesh(cylGeo(0.55, 0.85, 3.4, 20), mat("#4b5263", 0.45, 0.6));
+    shell.position.set(mid - 0.2, 2.2, d / 2);
+    shell.castShadow = true;
+    g.add(shell);
+    const top = new THREE.Mesh(cylGeo(0.2, 0.55, 0.6, 16), mat("#3a3f4c", 0.5, 0.5));
+    top.position.set(mid - 0.2, 4.2, d / 2);
+    g.add(top);
+    const stack = cyl(0.1, 1.4, steel, 10);
+    stack.position.set(mid - 0.2, 5.2, d / 2);
+    g.add(stack);
+    for (let k = 0; k < 4; k++) g.add(box(1.25 + k * 0.08, 0.08, 1.25 + k * 0.08, body, mid - 0.2, 1.0 + k * 0.8, d / 2, false));
+    const hoist = box(0.25, 4.2, 0.25, steel, mid + 0.95, 0, d / 2 - 0.5);
+    hoist.rotation.z = 0.35;
+    hoist.position.x = mid + 0.35;
+    g.add(hoist);
+    g.add(box(0.5, 0.3, 0.06, glow("#ff7a1a"), mid - 0.2, 0.62, d / 2 + 0.86, false));
+    g.add(anim(cyl(0.3, 0.45, mat("#2b2d33", 0.6, 0.3), 14), "slide"));
+    moving[moving.length - 1].position.set(mid - 0.2, 0.75, d - 0.3);
+    g.add(box(0.5, 0.06, 0.5, glow("#ffb24a"), mid - 0.2, 0.98, d - 0.3, false));
+  } else if (style === "kiln") {
+    // A brick kiln: a long vaulted chamber, glowing arches, a tall chimney and bricks stacked to cool.
+    g.add(box(inner, 1.2, d - 0.3, brickMat, mid, 0, d / 2));
+    const vault = new THREE.Mesh(new THREE.CylinderGeometry((d - 0.3) / 2, (d - 0.3) / 2, inner, 16, 1, false, 0, Math.PI), brickMat);
+    vault.rotation.z = Math.PI / 2;
+    vault.rotation.y = Math.PI / 2;
+    vault.position.set(mid, 1.2, d / 2);
+    vault.castShadow = true;
+    g.add(vault);
+    for (let i = 0; i < 3; i++) g.add(box(0.36, 0.55, 0.04, glow("#ff8a2a"), mid - inner / 2 + 0.45 + i * ((inner - 0.9) / 2), 0.1, d - 0.14, false));
+    const chimney = cyl(0.22, 3.6, brickMat, 12, 0.3);
+    chimney.position.set(mid + inner / 2 - 0.35, 3.0, 0.4);
+    g.add(chimney);
+    g.add(box(0.5, 0.12, 0.5, dark, mid + inner / 2 - 0.35, 4.8, 0.4));
+  } else if (style === "press") {
     g.add(rbox(inner, 0.6, d - 0.3, dark, mid, 0, d / 2, 0.06));
     for (const [x, z] of [[mid - inner / 2 + 0.3, 0.3], [mid + inner / 2 - 0.3, 0.3], [mid - inner / 2 + 0.3, d - 0.3], [mid + inner / 2 - 0.3, d - 0.3]]) g.add(rbox(0.3, 2.6, 0.3, body, x, 0, z, 0.05));
     g.add(rbox(inner, 0.5, d - 0.2, body, mid, 2.5, d / 2, 0.08));

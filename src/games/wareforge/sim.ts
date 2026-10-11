@@ -16,9 +16,10 @@ import {
   WIDTH_BASE, WIDTH_FULL, WIDTH_MEGA, buyPrice, doorX0, siteDef, supplierFor,
   CARRIER_FEE, FREEZER, FROZEN, LOAN_RATE, MAX_OWN_TRUCKS, MISSIONS, OWN_CARRIER, OWN_TRUCK_COST, OWN_TRUCK_WAGE, THAW_SECS,
   BELT, INDUSTRIES, INDUSTRY_LEVELS, MANAGERS, MAX_STORES, RETAIL_MARKUP, STORES, STORE_HOURS, STORE_WAGE, city, industry, itemIndustry, machineIndustry,
-  AIR, APRON_Z, BID_RANGE, BREAKROOM, CAMPAIGN, FENCE, OFFICE, RIVALS,
+  AIR, APRON_Z, BID_RANGE, BREAKROOM, CAMPAIGN, FENCE, OFFICE, RIVALS, isExtractor,
   type DoorType, type EventKind, type IndustryId, type ItemId, type MachineType, type ManagerId, type MissionKind, type StoreKind, type UpgradeId,
 } from "./data";
+import { estateWorth, newEstate, siteDelivered, stepEstateDay, stepEstateHour, stepEstateMinute, stepEstateTen, type Estate } from "./estate";
 
 /* ------------------------------------------------------------------ state */
 
@@ -185,6 +186,8 @@ export interface Order {
   own?: number;
   /** A restock for one of your stores (no payment: the pallets go on its shelves). */
   store?: number;
+  /** Materials for one of your building sites (no payment: they go on its stockpile). */
+  site?: number;
 }
 
 /** One of your shops in a city: stocked from the warehouse, it sells to shoppers every hour it's open. */
@@ -331,6 +334,9 @@ export interface Ledger {
   retail: number;
   stores: number;
   managers: number;
+  /** Property: building sites (crews, permits, materials sent direct), tax, upkeep; and the rents coming in. */
+  estate: number;
+  rentIn: number;
 }
 
 export interface DayStat {
@@ -348,6 +354,9 @@ export interface DayStat {
   moves: number;
   /** Sold in your stores. */
   retail: number;
+  /** Bricks laid on your sites, and rent collected. */
+  bricks: number;
+  rent: number;
 }
 
 export interface State {
@@ -387,6 +396,8 @@ export interface State {
   campaigns: Partial<Record<IndustryId, number>>;
   rivals: RivalState[];
   tenders: Tender[];
+  /** Land, buildings and building sites. */
+  estate: Estate;
   fx: Fx[];
   /** The tutorial step (and whether it's switched off). */
   tip: number;
@@ -409,7 +420,7 @@ export interface State {
   today: DayStat;
   days: DayStat[];
   history: boolean[];
-  stats: { delivered: number; onTime: number; late: number; failed: number; revenue: number; made: number; madeGoods: number; unloaded: number; moves: number; rushOnTime: number; phones: number; peakStock: number; trains: number; charges: number; contractsDone: number; events: number; madeItems: Partial<Record<ItemId, number>>; borrowed: number; repaid: number; coldShipped: number; ownShipped: number; missions: number; vipOnTime: number; spoiled: number; retail: number; restocks: number; belted: number; storesOpened: number; tendersWon: number; campaigns: number; airDrops: number };
+  stats: { delivered: number; onTime: number; late: number; failed: number; revenue: number; made: number; madeGoods: number; unloaded: number; moves: number; rushOnTime: number; phones: number; peakStock: number; trains: number; charges: number; contractsDone: number; events: number; madeItems: Partial<Record<ItemId, number>>; borrowed: number; repaid: number; coldShipped: number; ownShipped: number; missions: number; vipOnTime: number; spoiled: number; retail: number; restocks: number; belted: number; storesOpened: number; tendersWon: number; campaigns: number; airDrops: number; mined: number; bricks: number; partsBuilt: number; roofs: number; tallest: number; certified: number; tenantsIn: number; propsBought: number; propsSold: number; flips: number; mortgaged: number; permits: number };
   seasonOver: boolean;
   bankrupt: boolean;
   /** Bumped whenever something on the floor is built, moved or removed (the forklifts' map is redrawn). */
@@ -424,9 +435,9 @@ export function rand(s: State) {
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
-const ri = (s: State, a: number, b: number) => a + Math.floor(rand(s) * (b - a + 1));
-const pick = <T,>(s: State, a: readonly T[]) => a[Math.floor(rand(s) * a.length)];
-const nid = (s: State) => ++s.next;
+export const ri = (s: State, a: number, b: number) => a + Math.floor(rand(s) * (b - a + 1));
+export const pick = <T,>(s: State, a: readonly T[]) => a[Math.floor(rand(s) * a.length)];
+export const nid = (s: State) => ++s.next;
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -458,15 +469,15 @@ export function alert(s: State, kind: AlertKind, text: string, focus?: Focus) {
 }
 
 /** Money out (the books still count it in a sandbox, where the cash never moves). */
-function spend(s: State, amount: number, k: keyof Ledger) {
+export function spend(s: State, amount: number, k: keyof Ledger) {
   if (!s.sandbox) s.cash -= amount;
   s.ledger[k] += amount;
   s.today.costs += amount;
 }
-function earn(s: State, amount: number, k: keyof Ledger) {
+export function earn(s: State, amount: number, k: keyof Ledger) {
   if (!s.sandbox) s.cash += amount;
   s.ledger[k] += amount;
-  if (k === "revenue" || k === "retail") {
+  if (k === "revenue" || k === "retail" || k === "rentIn") {
     s.today.revenue += amount;
     s.stats.revenue += amount;
   }
@@ -475,7 +486,7 @@ function earn(s: State, amount: number, k: keyof Ledger) {
 /** Can the business pay for this? (Always, in a sandbox.) */
 export const afford = (s: State, cost: number) => s.sandbox || s.cash >= cost;
 
-const newDay = (d: number): DayStat => ({ day: d, revenue: 0, costs: 0, shipped: 0, received: 0, made: 0, onTime: 0, late: 0, orders: 0, unloads: 0, moves: 0, retail: 0 });
+const newDay = (d: number): DayStat => ({ day: d, revenue: 0, costs: 0, shipped: 0, received: 0, made: 0, onTime: 0, late: 0, orders: 0, unloads: 0, moves: 0, retail: 0, bricks: 0, rent: 0 });
 
 /* ------------------------------------------------------------------ industries */
 
@@ -505,7 +516,7 @@ export function buyLicence(s: State, id: IndustryId): string | null {
 }
 
 /** A money pop for the renderer (and a flash on the cash counter). */
-function pop(s: State, amount: number, text: string) {
+export function pop(s: State, amount: number, text: string) {
   s.fx.push({ id: nid(s), amount: Math.round(amount), text });
   if (s.fx.length > 30) s.fx.splice(0, s.fx.length - 30);
 }
@@ -894,7 +905,8 @@ function makeStruct(s: State, p: Placement): Struct {
   } else if (p.kind === "belt") {
     t.slots.push(addSlot(s, "belt", p.x, p.z, 0.39, t.id));
   } else if (p.kind === "machine") {
-    for (let dz = 0; dz < d; dz++) t.slots.push(addSlot(s, "in", inColumn(t), p.z + dz, 0.55, t.id));
+    // A quarry or a mine digs from the ground: nothing goes in.
+    if (!isExtractor(p.type ?? "press")) for (let dz = 0; dz < d; dz++) t.slots.push(addSlot(s, "in", inColumn(t), p.z + dz, 0.55, t.id));
     for (let dz = 0; dz < d; dz++) t.slots.push(addSlot(s, "out", outColumn(t), p.z + dz, 0.55, t.id));
     t.m = { type: p.type ?? "press", recipe: 0, state: "idle", t: 0, wear: 0, made: 0, on: true, outSlot: -1 };
   }
@@ -1074,15 +1086,16 @@ export function newGame(siteId: string, seed = 1, opts: { sandbox?: boolean } = 
     v: 1, site: def.id, seed, rng: seed >>> 0, time: 7 * HOUR, cash: opts.sandbox ? SANDBOX_CASH : def.cash, startWorth: 0, rep: 60, expanded: def.expanded,
     mega: !!def.mega, rail: !!def.rail, market: {}, contracts: [], event: null,
     loan: 0, cashLog: [], report: null, missions: [], customers: {}, ownTrucks: [], lic: {}, stores: [], managers: {}, fx: [], tip: 0,
-    campaigns: {}, rivals: RIVALS.map((r) => ({ name: r.name, won: 0 })), tenders: [],
+    campaigns: {}, rivals: RIVALS.map((r) => ({ name: r.name, won: 0 })), tenders: [], estate: newEstate(),
     ...(opts.sandbox ? { sandbox: true } : {}),
     slots: [], structs: [], doors: [], pallets: {}, forks: [], trucks: [], orders: [], pos: [], alerts: [], up: {}, goals: {}, auto: {},
     next: 0, lot: 0,
-    ledger: { revenue: 0, purchases: 0, wages: 0, upkeep: 0, rent: 0, penalties: 0, capex: 0, rewards: 0, carriers: 0, interest: 0, spoilage: 0, retail: 0, stores: 0, managers: 0 },
+    ledger: { revenue: 0, purchases: 0, wages: 0, upkeep: 0, rent: 0, penalties: 0, capex: 0, rewards: 0, carriers: 0, interest: 0, spoilage: 0, retail: 0, stores: 0, managers: 0, estate: 0, rentIn: 0 },
     today: newDay(1), days: [], history: [],
     stats: {
       delivered: 0, onTime: 0, late: 0, failed: 0, revenue: 0, made: 0, madeGoods: 0, unloaded: 0, moves: 0, rushOnTime: 0, phones: 0, peakStock: 0, trains: 0, charges: 0, contractsDone: 0, events: 0, madeItems: {},
       borrowed: 0, repaid: 0, coldShipped: 0, ownShipped: 0, missions: 0, vipOnTime: 0, spoiled: 0, retail: 0, restocks: 0, belted: 0, storesOpened: 0, tendersWon: 0, campaigns: 0, airDrops: 0,
+      mined: 0, bricks: 0, partsBuilt: 0, roofs: 0, tallest: 0, certified: 0, tenantsIn: 0, propsBought: 0, propsSold: 0, flips: 0, mortgaged: 0, permits: 0,
     },
     seasonOver: false, bankrupt: false,
   };
@@ -1121,8 +1134,9 @@ export function newGame(siteId: string, seed = 1, opts: { sandbox?: boolean } = 
     const first = makeOrder(s, { customer: who, city: "Philadelphia", lines: [{ item: goods, n: Math.min(6, (def.stock[goods] ?? 0) || 4) }], due: s.time + 5 * HOUR, rush: false });
     first.code = "SHP-78442";
     accept(s, first.id);
-    const m0 = def.machines[0];
-    const inItem = m0 ? MACHINES[m0.type].recipes[m0.recipe].inputs[0] : goods;
+    // The first material the line needs that nothing here makes (a mine's coal, a mill's wheat).
+    const made = new Set(def.machines.map((m) => MACHINES[m.type].recipes[m.recipe].output));
+    const inItem = def.machines.flatMap((m) => MACHINES[m.type].recipes[m.recipe].inputs).find((i) => !made.has(i)) ?? goods;
     const po = buy(s, inItem, 6, true);
     if (po) {
       const tr = s.trucks.find((t) => t.id === po.truck)!;
@@ -1843,7 +1857,7 @@ function stepTruck(s: State, t: Truck, dt: number) {
         o.departed = s.time;
         // Carriers take their cut (a flat fee for a run to your own store); your own trucks don't.
         if (t.own === undefined) {
-          const fee = o.store !== undefined ? RESTOCK_FEE : Math.round(o.value * CARRIER_FEE);
+          const fee = o.store !== undefined || o.site !== undefined ? RESTOCK_FEE : Math.round(o.value * CARRIER_FEE);
           spend(s, fee, "carriers");
         }
         o.delivers = s.time + o.transit * MIN * (up(s, "express") ? 0.75 : 1);
@@ -1885,7 +1899,7 @@ export function setDoorType(s: State, i: number, type: DoorType): string | null 
 
 /* ------------------------------------------------------------------ orders */
 
-function makeOrder(s: State, o: { customer: string; city: string; lines: { item: ItemId; n: number }[]; due: number; rush: boolean; vip?: boolean }): Order {
+export function makeOrder(s: State, o: { customer: string; city: string; lines: { item: ItemId; n: number }[]; due: number; rush: boolean; vip?: boolean }): Order {
   const city = CITIES.find((c) => c.name === o.city) ?? CITIES[0];
   const total = o.lines.reduce((a, l) => a + l.n, 0);
   const prem = 0.97 + rand(s) * 0.15;
@@ -1967,7 +1981,7 @@ export function accept(s: State, id: number): string | null {
   return null;
 }
 
-function confirm(s: State, o: Order) {
+export function confirm(s: State, o: Order) {
   o.state = "confirmed";
   // Book the collection in time to make the deadline, with a margin.
   const eta = Math.max(s.time + 35 * MIN, o.due - o.transit * MIN * (up(s, "express") ? 0.75 : 1) - 100 * MIN);
@@ -2059,7 +2073,7 @@ export function cancel(s: State, id: number, why: "player" | "late" = "player") 
   if (!o || !["confirmed", "picked", "loading"].includes(o.state)) return;
   o.state = "failed";
   // Calling off a restock for your own store costs nothing.
-  const internal = o.store !== undefined;
+  const internal = o.store !== undefined || o.site !== undefined;
   const fee = internal ? 0 : Math.round(o.value * 0.2);
   if (!internal) {
     spend(s, fee, "penalties");
@@ -2145,8 +2159,8 @@ function stepOrders(s: State) {
       const pr = orderProgress(s, o);
       if (pr.picked >= o.total) o.state = "picked";
     }
-    if ((o.state === "confirmed" || o.state === "picked" || o.state === "loading") && s.time > o.due + 3 * HOUR && o.store === undefined) cancel(s, o.id, "late");
-    if (o.state === "transit" && s.time >= o.delivers && o.store !== undefined) {
+    if ((o.state === "confirmed" || o.state === "picked" || o.state === "loading") && s.time > o.due + 3 * HOUR && o.store === undefined && o.site === undefined) cancel(s, o.id, "late");
+    if (o.state === "transit" && s.time >= o.delivers && (o.store !== undefined || o.site !== undefined)) {
       stocked(s, o);
       continue;
     }
@@ -2289,6 +2303,7 @@ function stepMachine(s: State, t: Struct, dt: number) {
       }
       if (r.output === "phone") s.stats.phones++;
       s.stats.madeItems[r.output] = (s.stats.madeItems[r.output] ?? 0) + 1;
+      if (!r.inputs.length) s.stats.mined++;
       m.wear = Math.min(1, m.wear + 0.035 * (up(s, "crew") ? 0.6 : 1) * (m.mk === 2 ? 0.8 : 1));
       m.t = 0;
       m.state = "idle";
@@ -2439,7 +2454,7 @@ export const upgradeCost = (s: State, id: UpgradeId) => {
 
 /** How much more the bank will lend: half your net worth (three quarters with a bank partner), less what you owe. */
 export function creditLimit(s: State) {
-  const gross = s.cash + stockValue(s) + assets(s);
+  const gross = s.cash + stockValue(s) + assets(s) + Math.max(0, estateWorth(s));
   const cap = Math.floor((Math.max(0, gross) * (up(s, "bank") ? 0.75 : 0.5)) / 5_000) * 5_000;
   return Math.max(0, Math.min(500_000, cap) - s.loan);
 }
@@ -2587,10 +2602,15 @@ function stocked(s: State, o: Order) {
   o.state = "delivered";
   o.onTime = true;
   o.paid = 0;
+  homeTruck(s, o);
+  if (o.site !== undefined) {
+    siteDelivered(s, o);
+    alert(s, "info", `Materials #${o.code} delivered to ${o.customer}`, { k: "order", id: o.id });
+    return;
+  }
   const st = s.stores.find((x) => x.id === o.store);
   if (st) for (const l of o.lines) st.stock[l.item] = (st.stock[l.item] ?? 0) + l.n;
   s.stats.restocks++;
-  homeTruck(s, o);
   alert(s, "info", `Restock #${o.code} delivered to ${o.customer}`, { k: "order", id: o.id });
 }
 
@@ -2851,8 +2871,10 @@ function stepManagers(s: State) {
 
 function newMissions(s: State) {
   const d = day(s.time);
-  // Store takings only once you have a store.
-  const pool = MISSIONS.filter((m) => m.kind !== "retail" || s.stores.length > 0);
+  // Store takings only once you have a store; bricks with a crew on a permitted site; rent with tenants.
+  const building = s.estate.props.some((p) => p.permit !== "none" && Object.keys(p.crews).length && p.parts.some((x) => !x.done));
+  const letting = s.estate.props.some((p) => Object.keys(p.tenants).length);
+  const pool = MISSIONS.filter((m) => (m.kind !== "retail" || s.stores.length > 0) && (m.kind !== "bricks" || building) && (m.kind !== "rent" || letting));
   s.missions = [];
   for (let k = 0; k < 3 && pool.length; k++) {
     const m = pool.splice(Math.floor(rand(s) * pool.length), 1)[0];
@@ -2863,7 +2885,7 @@ function newMissions(s: State) {
 
 export function missionProgress(s: State, m: Mission) {
   const t = s.today;
-  return { ship: t.orders, unload: t.unloads, make: t.made, revenue: t.revenue, ontime: t.onTime, moves: t.moves, retail: t.retail }[m.kind];
+  return { ship: t.orders, unload: t.unloads, make: t.made, revenue: t.revenue, ontime: t.onTime, moves: t.moves, retail: t.retail, bricks: t.bricks, rent: t.rent }[m.kind];
 }
 
 function stepMissions(s: State) {
@@ -2918,7 +2940,7 @@ export function assets(s: State) {
   return v;
 }
 
-export const worth = (s: State) => Math.round(s.cash + stockValue(s) + assets(s) - s.loan);
+export const worth = (s: State) => Math.round(s.cash + stockValue(s) + assets(s) + estateWorth(s) - s.loan);
 /** Money in and out over the last game hour (from the hourly log). */
 export const cashTrend = (s: State) => (s.cashLog.length ? Math.round(s.cash - s.cashLog[s.cashLog.length - 1]) : 0);
 /** The season's score (a sandbox doesn't keep one). */
@@ -2998,6 +3020,17 @@ const GOAL_CHECKS: Record<string, (s: State) => boolean> = {
   pizza: (s) => (s.stats.madeItems.pizza ?? 0) + (s.stats.madeItems.icecream ?? 0) >= 1,
   staff: (s) => built(s, "breakroom") >= 1 && built(s, "office") >= 1,
   builder: (s) => s.structs.filter((t) => !t.dead).length >= 60,
+  dig: (s) => s.stats.mined >= 40,
+  goldbar: (s) => (s.stats.madeItems.goldbar ?? 0) >= 1,
+  plot: (s) => s.stats.propsBought >= 1,
+  permit: (s) => s.stats.permits >= 1,
+  bricks10k: (s) => s.stats.bricks >= 10_000,
+  topping: (s) => s.stats.roofs >= 1,
+  keys: (s) => s.stats.certified >= 1,
+  landlord: (s) => s.estate.props.reduce((a, p) => a + Object.keys(p.tenants).length, 0) >= 5,
+  empire: (s) => s.estate.props.length >= 3,
+  skyline: (s) => s.stats.tallest >= 6,
+  flip: (s) => s.stats.flips >= 1,
 };
 
 function stepGoals(s: State) {
@@ -3043,6 +3076,7 @@ function stepHour(s: State) {
   stepTenders(s);
   if (!s.contracts.some((c) => c.state === "offer") && day(s.time) + (s.time % DAY) / DAY > 1.25 && rand(s) < 0.06) offerContract(s);
   stepStores(s);
+  stepEstateHour(s);
 }
 
 /* ------------------------------------------------------------------ the clock */
@@ -3097,12 +3131,14 @@ function stepOnce(s: State, dt: number) {
     const held = stock(s);
     s.stats.peakStock = Math.max(s.stats.peakStock, held);
     stepCold(s, MIN);
+    stepEstateMinute(s);
     stepMissions(s);
     stepGoals(s);
   }
   if (Math.floor(before / (10 * MIN)) !== Math.floor(s.time / (10 * MIN))) {
     stepAuto(s);
     stepManagers(s);
+    stepEstateTen(s);
   }
   // Once a game hour: contracts and events.
   if (Math.floor(before / HOUR) !== Math.floor(s.time / HOUR)) stepHour(s);
@@ -3118,6 +3154,7 @@ function stepOnce(s: State, dt: number) {
     }
     newMissions(s);
     stepMarket(s);
+    stepEstateDay(s);
     alert(s, "info", `Day ${day(s.time)}`);
     if (day(s.time) > SEASON_DAYS && !s.seasonOver) {
       s.seasonOver = true;
@@ -3214,6 +3251,17 @@ export function deserialize(json: string): State | null {
     s.rivals ??= RIVALS.map((r) => ({ name: r.name, won: 0 }));
     s.tenders ??= [];
     for (const k of ["tendersWon", "campaigns", "airDrops"] as const) s.stats[k] ??= 0;
+    // Saves from before the build update.
+    s.estate ??= newEstate();
+    s.ledger.estate ??= 0;
+    s.ledger.rentIn ??= 0;
+    s.today.bricks ??= 0;
+    s.today.rent ??= 0;
+    for (const d of s.days) {
+      d.bricks ??= 0;
+      d.rent ??= 0;
+    }
+    for (const k of ["mined", "bricks", "partsBuilt", "roofs", "tallest", "certified", "tenantsIn", "propsBought", "propsSold", "flips", "mortgaged", "permits"] as const) s.stats[k] ??= 0;
     if (!s.missions.length) newMissions(s);
     return s;
   } catch {

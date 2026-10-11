@@ -632,7 +632,7 @@ describe("WareForge industry update", () => {
     run(back, 3 * HOUR);
     expect(Number.isFinite(sim.worth(back))).toBe(true);
     expect(back.ledger.retail).toBe(0);
-    expect(Object.keys(STORES).length).toBe(7);
+    expect(Object.keys(STORES).length).toBe(9);
   });
 });
 

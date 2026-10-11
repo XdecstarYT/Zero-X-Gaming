@@ -30,7 +30,10 @@ export type ItemId =
   | "aluminium" | "glass" | "body" | "engine" | "tyres" | "car"
   | "chemicals" | "herbs" | "compound" | "medicine" | "cosmetics" | "perfume"
   // The tycoon update: a new product in every trade.
-  | "ecar" | "pizza" | "handbag" | "vitamins" | "sofa";
+  | "ecar" | "pizza" | "handbag" | "vitamins" | "sofa"
+  // The build update: mining, and the materials buildings are made of.
+  | "ore" | "coal" | "stone" | "clay" | "sand" | "goldore" | "gravel"
+  | "bricks" | "rooftiles" | "cement" | "concrete" | "beams" | "goldbar" | "jewellery";
 
 export type Tier = "raw" | "part" | "goods";
 
@@ -119,6 +122,22 @@ export const ITEMS: Record<ItemId, Item> = {
   handbag: { id: "handbag", name: "Handbags", sku: "BAG", tier: "goods", price: 1800, units: 60, kg: 0.9, load: "#b0603c", icon: "👜" },
   vitamins: { id: "vitamins", name: "Vitamins", sku: "VIT", tier: "goods", price: 2200, units: 2000, kg: 0.08, load: "#ffd86b", icon: "🍊" },
   sofa: { id: "sofa", name: "Sofas", sku: "SOF", tier: "goods", price: 1900, units: 4, kg: 45, load: "#8a7bd8", icon: "🛋️" },
+  // Mining: dug from the ground, or bought by the tonne.
+  ore: { id: "ore", name: "Iron ore", sku: "ORE", tier: "raw", price: 120, units: 1, kg: 1000, load: "#8a5a44", icon: "🪨" },
+  coal: { id: "coal", name: "Coal", sku: "COL", tier: "raw", price: 90, units: 1, kg: 1000, load: "#2b2d33", icon: "⬛" },
+  stone: { id: "stone", name: "Limestone", sku: "LST", tier: "raw", price: 80, units: 1, kg: 1000, load: "#d9d3c4", icon: "🏔️" },
+  clay: { id: "clay", name: "Clay", sku: "CLY", tier: "raw", price: 70, units: 1, kg: 1000, load: "#c0703f", icon: "🟠" },
+  sand: { id: "sand", name: "Sand", sku: "SND", tier: "raw", price: 60, units: 1, kg: 1000, load: "#e9d49a", icon: "⏳" },
+  goldore: { id: "goldore", name: "Gold ore", sku: "AUO", tier: "raw", price: 900, units: 1, kg: 800, load: "#b8963c", icon: "🌟" },
+  gravel: { id: "gravel", name: "Crushed stone", sku: "AGG", tier: "part", price: 170, units: 1, kg: 1000, load: "#a7a49c", icon: "🔘" },
+  // Building materials: sold to builders, and used on your own building sites.
+  bricks: { id: "bricks", name: "Bricks", sku: "BRK", tier: "goods", price: 520, units: 750, kg: 2.5, load: "#b5502f", icon: "🧱" },
+  rooftiles: { id: "rooftiles", name: "Roof tiles", sku: "TIL", tier: "goods", price: 480, units: 240, kg: 4, load: "#8c3b2a", icon: "🟥" },
+  cement: { id: "cement", name: "Cement", sku: "CEM", tier: "goods", price: 560, units: 40, kg: 25, load: "#b9bcc2", icon: "🪣" },
+  concrete: { id: "concrete", name: "Concrete blocks", sku: "CON", tier: "goods", price: 1200, units: 60, kg: 18, load: "#9ea3ab", icon: "⬜" },
+  beams: { id: "beams", name: "Steel beams", sku: "BEM", tier: "goods", price: 1100, units: 6, kg: 150, load: "#6e7a8c", icon: "📏" },
+  goldbar: { id: "goldbar", name: "Gold bars", sku: "BAR", tier: "goods", price: 3200, units: 20, kg: 1, load: "#e8c04a", icon: "🥇" },
+  jewellery: { id: "jewellery", name: "Gold jewellery", sku: "JWL", tier: "goods", price: 5400, units: 200, kg: 0.05, load: "#f2d77c", icon: "💍" },
 };
 export const ITEM_IDS = Object.keys(ITEMS) as ItemId[];
 export const RAW: ItemId[] = ITEM_IDS.filter((i) => ITEMS[i].tier === "raw");
@@ -138,10 +157,11 @@ export const buyPrice = (item: ItemId) => Math.round(ITEMS[item].price * (ITEMS[
 
 export type MachineType =
   | "press" | "saw" | "smt" | "assembly" | "winder" | "packline" | "robot"
-  | "mill" | "oven" | "dairy" | "bottler" | "loom" | "sewing" | "shoes" | "bodyshop" | "engines" | "tyreplant" | "carline" | "reactor" | "tablet" | "filler";
+  | "mill" | "oven" | "dairy" | "bottler" | "loom" | "sewing" | "shoes" | "bodyshop" | "engines" | "tyreplant" | "carline" | "reactor" | "tablet" | "filler"
+  | "quarry" | "mineshaft" | "crusher" | "furnace" | "kiln" | "cementworks" | "goldsmith";
 
 /** How a machine looks on the floor. */
-export type MachineStyle = "press" | "saw" | "smt" | "cell" | "oven" | "tank" | "loom" | "line";
+export type MachineStyle = "press" | "saw" | "smt" | "cell" | "oven" | "tank" | "loom" | "line" | "pit" | "shaft" | "crusher" | "furnace" | "kiln";
 
 export interface Recipe {
   inputs: ItemId[];
@@ -311,12 +331,69 @@ export const MACHINES: Record<MachineType, MachineDef> = {
       { inputs: ["herbs", "glass"], output: "perfume", secs: 8 * MIN },
     ],
   },
+  // Mining and building materials. The quarry and the mine shaft dig from the ground: no inputs.
+  quarry: {
+    type: "quarry", name: "Quarry Face", w: 5, d: 3, cost: 30_000, upkeep: 55, color: "#b08a5a", style: "pit",
+    blurb: "An excavator works a stepped rock face: limestone, clay or sand, straight from the ground.",
+    recipes: [
+      { inputs: [], output: "stone", secs: 10 * MIN },
+      { inputs: [], output: "clay", secs: 10 * MIN },
+      { inputs: [], output: "sand", secs: 8 * MIN },
+    ],
+  },
+  mineshaft: {
+    type: "mineshaft", name: "Mine Shaft", w: 4, d: 4, cost: 48_000, upkeep: 80, color: "#c0392b", style: "shaft",
+    blurb: "A headframe over a deep shaft: the winding wheel brings up iron ore, coal or, slowly, gold ore.",
+    recipes: [
+      { inputs: [], output: "ore", secs: 12 * MIN },
+      { inputs: [], output: "coal", secs: 10 * MIN },
+      { inputs: [], output: "goldore", secs: 30 * MIN },
+    ],
+  },
+  crusher: {
+    type: "crusher", name: "Jaw Crusher", w: 3, d: 2, cost: 12_000, upkeep: 25, color: "#e0a03c", style: "crusher",
+    blurb: "Breaks limestone into crushed stone for concrete.",
+    recipes: [{ inputs: ["stone"], output: "gravel", secs: 4 * MIN }],
+  },
+  furnace: {
+    type: "furnace", name: "Steelworks", w: 4, d: 3, cost: 40_000, upkeep: 70, color: "#5b6b86", style: "furnace",
+    blurb: "A blast furnace: smelts iron ore with coal into steel, rolls steel into beams, and refines gold ore into bars.",
+    recipes: [
+      { inputs: ["ore", "coal"], output: "steel", secs: 9 * MIN },
+      { inputs: ["steel", "coal"], output: "beams", secs: 8 * MIN },
+      { inputs: ["goldore", "coal"], output: "goldbar", secs: 14 * MIN },
+    ],
+  },
+  kiln: {
+    type: "kiln", name: "Brick Kiln", w: 4, d: 2, cost: 18_000, upkeep: 35, color: "#b5502f", style: "kiln",
+    blurb: "Fires clay with coal into bricks, clay and sand into roof tiles, and sand into glass.",
+    recipes: [
+      { inputs: ["clay", "coal"], output: "bricks", secs: 8 * MIN },
+      { inputs: ["clay", "sand"], output: "rooftiles", secs: 8 * MIN },
+      { inputs: ["sand", "coal"], output: "glass", secs: 9 * MIN },
+    ],
+  },
+  cementworks: {
+    type: "cementworks", name: "Cement Works", w: 4, d: 3, cost: 26_000, upkeep: 45, color: "#9ea3ab", style: "tank",
+    blurb: "Burns limestone and clay into cement, then mixes cement, crushed stone and sand into concrete blocks.",
+    recipes: [
+      { inputs: ["stone", "clay"], output: "cement", secs: 9 * MIN },
+      { inputs: ["cement", "gravel", "sand"], output: "concrete", secs: 10 * MIN },
+    ],
+  },
+  goldsmith: {
+    type: "goldsmith", name: "Goldsmith's Bench", w: 3, d: 2, cost: 22_000, upkeep: 30, color: "#c9a227", style: "cell",
+    blurb: "Casts and polishes gold bars into rings, chains and bracelets.",
+    recipes: [{ inputs: ["goldbar"], output: "jewellery", secs: 12 * MIN }],
+  },
 };
+/** A machine that digs from the ground (every recipe needs nothing in): no input buffer. */
+export const isExtractor = (t: MachineType) => MACHINES[t].recipes.every((r) => r.inputs.length === 0);
 export const MACHINE_TYPES = Object.keys(MACHINES) as MachineType[];
 
 /* ------------------------------------------------------------------ industries */
 
-export type IndustryId = "goods" | "tech" | "food" | "fashion" | "pharma" | "auto";
+export type IndustryId = "goods" | "tech" | "food" | "fashion" | "pharma" | "auto" | "mining";
 
 export interface Industry {
   id: IndustryId;
@@ -370,6 +447,12 @@ export const INDUSTRIES: Industry[] = [
     machines: ["bodyshop", "engines", "tyreplant", "carline"], goods: ["car", "ecar"],
     inputs: ["aluminium", "glass", "body", "engine", "tyres"],
   },
+  {
+    id: "mining", name: "Mining & materials", icon: "⛏️", color: "#a0703c", cost: 45_000,
+    blurb: "Dig your own limestone, clay, sand, ore, coal and gold; fire bricks and roof tiles, burn cement, cast concrete, roll steel beams and refine gold. Builders buy it all, and your own building sites run on it.",
+    machines: ["quarry", "mineshaft", "crusher", "furnace", "kiln", "cementworks", "goldsmith"], goods: ["bricks", "rooftiles", "cement", "concrete", "beams", "goldbar", "jewellery"],
+    inputs: ["ore", "coal", "stone", "clay", "sand", "goldore", "gravel"],
+  },
 ];
 export const industry = (id: IndustryId) => INDUSTRIES.find((x) => x.id === id)!;
 /** The industry a machine belongs to. */
@@ -381,7 +464,7 @@ export const INDUSTRY_LEVELS = [25, 80];
 
 /* ------------------------------------------------------------------ stores */
 
-export type StoreKind = "discount" | "gadget" | "bikes" | "grocery" | "fashion" | "pharmacy" | "cars";
+export type StoreKind = "discount" | "gadget" | "bikes" | "grocery" | "fashion" | "pharmacy" | "cars" | "builders" | "jeweller";
 
 export interface StoreDef {
   kind: StoreKind;
@@ -401,6 +484,8 @@ export const STORES: Record<StoreKind, StoreDef> = {
   fashion: { kind: "fashion", name: "Fashion boutique", icon: "👗", ind: "fashion", goods: ["tshirt", "jeans", "sneakers", "jacket", "handbag"], cost: 24_000, color: "#e66aa0" },
   pharmacy: { kind: "pharmacy", name: "Pharmacy", icon: "💊", ind: "pharma", goods: ["medicine", "cosmetics", "perfume", "vitamins", "vaccine"], cost: 30_000, color: "#3fb6a8" },
   cars: { kind: "cars", name: "Car dealership", icon: "🚗", ind: "auto", goods: ["car", "ecar"], cost: 60_000, color: "#d64545" },
+  builders: { kind: "builders", name: "Builders' merchant", icon: "🧱", ind: "mining", goods: ["bricks", "rooftiles", "cement", "concrete", "beams"], cost: 28_000, color: "#a0703c" },
+  jeweller: { kind: "jeweller", name: "Jeweller", icon: "💍", ind: "mining", goods: ["jewellery", "goldbar"], cost: 45_000, color: "#c9a227" },
 };
 export const STORE_KINDS = Object.keys(STORES) as StoreKind[];
 /** Shoppers pay this much over the wholesale price; staff are paid by the hour while the store's open. */
@@ -527,7 +612,7 @@ export interface SiteDef {
   /** Where the charging bay starts (x, z). */
   charger: [number, number];
   /** What's round the site. */
-  theme: "river" | "fields" | "works" | "harbor" | "summit" | "snow";
+  theme: "river" | "fields" | "works" | "harbor" | "summit" | "snow" | "quarry";
   /** The cold chain already in place. */
   cold?: boolean;
   /** Freezer racks at the start (origins). */
@@ -689,6 +774,24 @@ export const SITES: SiteDef[] = [
     racks: [], machines: [], stock: {},
     demand: 2.2, goodsMix: ["helmet", "chair", "toolkit", "bicycle", "sofa"], charger: [3, 13], theme: "summit",
   },
+  {
+    id: "wh31", code: "WH-31", name: "Ironridge Quarry", difficulty: "Hard",
+    blurb: "A pit in the hills: a quarry face and a mine shaft dig clay and ore onto conveyors into a brick kiln and a steelworks, with a crusher and a cement works beside them. Builders want bricks, cement and beams, and your own building sites need them too.",
+    cash: 120_000, rent: 200, doors: ["out", "out", "in", "flex", "flex"], forklifts: 3, expanded: true, industries: ["mining"],
+    racks: [...rackRow(3, 31, 41), ...rackRow(7, 31, 41), ...rackRow(11, 31, 41)],
+    machines: [
+      { type: "quarry", x: 3, z: 3, recipe: 1 },
+      { type: "mineshaft", x: 3, z: 8, recipe: 0 },
+      { type: "kiln", x: 14, z: 3, recipe: 0 },
+      { type: "furnace", x: 14, z: 8, recipe: 0 },
+      { type: "crusher", x: 24, z: 3, recipe: 0 },
+      { type: "cementworks", x: 24, z: 8, recipe: 0 },
+    ],
+    // Clay rides from the quarry into the kiln, ore from the shaft into the steelworks; forklifts bring the coal.
+    belts: [[8, 3, 0], [9, 3, 0], [10, 3, 0], [11, 3, 0], [12, 3, 0], [13, 3, 0], [7, 9, 0], [8, 9, 0], [9, 9, 0], [10, 9, 0], [11, 9, 0], [12, 9, 0], [13, 9, 0]],
+    stock: { coal: 6, stone: 3, clay: 2, bricks: 4, cement: 3, beams: 1 },
+    demand: 2.4, goodsMix: ["bricks", "cement", "rooftiles", "concrete", "beams", "toolkit"], charger: [3, 13], theme: "quarry",
+  },
 ];
 export const siteDef = (id: string) => SITES.find((s) => s.id === id) ?? SITES[0];
 
@@ -730,6 +833,8 @@ export const SUPPLIERS: Supplier[] = [
   { name: "Cotton & Hide Co.", items: ["cotton", "dye", "leather"], lead: [40, 80], factor: 1 },
   { name: "Alutech Metals", items: ["aluminium", "glass"], lead: [50, 100], factor: 1 },
   { name: "Chemix Labs", items: ["chemicals", "herbs"], lead: [50, 100], factor: 1 },
+  { name: "Bedrock Aggregates", items: ["stone", "clay", "sand", "gravel"], lead: [30, 60], factor: 1 },
+  { name: "Deepseam Mining", items: ["ore", "coal", "goldore"], lead: [60, 110], factor: 1 },
   { name: "Wholesale Direct", items: [...PARTS, ...GOODS], lead: [50, 100], factor: 1 },
 ];
 export const supplierFor = (item: ItemId) => SUPPLIERS.find((s) => s.items.includes(item)) ?? SUPPLIERS[SUPPLIERS.length - 1];
@@ -766,6 +871,11 @@ export const CUSTOMERS: Customer[] = [
   { name: "Lounge & Co.", likes: ["sofa", "chair"] },
   { name: "Slice Brothers", likes: ["pizza", "cheese", "icecream"] },
   { name: "Greenline Wellness", likes: ["vitamins", "juice", "cosmetics"] },
+  { name: "Summit Builders' Merchants", likes: ["bricks", "cement", "rooftiles", "concrete"] },
+  { name: "Granite Developments", likes: ["beams", "concrete", "cement", "glass"] },
+  { name: "Keystone Homes", likes: ["bricks", "rooftiles", "beams"] },
+  { name: "Bullion Vault & Co.", likes: ["goldbar"] },
+  { name: "Lustre Jewellers", likes: ["jewellery", "goldbar"] },
 ];
 
 export interface City {
@@ -915,11 +1025,22 @@ export const GOALS: GoalDef[] = [
   { id: "pizza", name: "Deep freeze", body: "Make a pallet of frozen pizza or ice cream.", reward: 4_000 },
   { id: "staff", name: "Looking after people", body: "Build a break room and a sales office.", reward: 2_500 },
   { id: "builder", name: "Master builder", body: "Have 60 things built on one site at once.", reward: 8_000 },
+  { id: "dig", name: "Dig deep", body: "Mine 40 pallets from the ground.", reward: 5_000 },
+  { id: "goldbar", name: "Gold rush", body: "Refine a pallet of gold bars.", reward: 6_000 },
+  { id: "plot", name: "Groundbreaker", body: "Buy a plot of land.", reward: 2_000 },
+  { id: "permit", name: "Planning granted", body: "Get planning permission for a building.", reward: 1_500 },
+  { id: "bricks10k", name: "Brick by brick", body: "Lay 10,000 bricks on your building sites.", reward: 6_000 },
+  { id: "topping", name: "Topping out", body: "Finish a roof.", reward: 3_000 },
+  { id: "keys", name: "Keys handed over", body: "Pass a building's final inspection.", reward: 8_000 },
+  { id: "landlord", name: "Landlord", body: "Have five tenants at once.", reward: 6_000 },
+  { id: "empire", name: "Property empire", body: "Own three properties at once.", reward: 12_000 },
+  { id: "skyline", name: "Skyline", body: "Complete a building six storeys tall.", reward: 20_000 },
+  { id: "flip", name: "Flipper", body: "Sell a property for more than it cost you.", reward: 5_000 },
 ];
 
 /* ------------------------------------------------------------------ daily missions */
 
-export type MissionKind = "ship" | "unload" | "make" | "revenue" | "ontime" | "moves" | "retail";
+export type MissionKind = "ship" | "unload" | "make" | "revenue" | "ontime" | "moves" | "retail" | "bricks" | "rent";
 export interface MissionDef {
   kind: MissionKind;
   /** Name with {n} for the target. */
@@ -937,6 +1058,8 @@ export const MISSIONS: MissionDef[] = [
   { kind: "ontime", icon: "⏱", name: "Deliver {n} orders on time today", target: (d) => 2 + d, reward: (d) => 2_500 + d * 400 },
   { kind: "moves", icon: "🚜", name: "Move {n} pallets today", target: (d) => 40 + d * 15, reward: (d) => 1_500 + d * 300 },
   { kind: "retail", icon: "🏪", name: "Sell ${n} in your stores today", target: (d) => 2_500 + d * 1_500, reward: (d) => 2_500 + d * 500 },
+  { kind: "bricks", icon: "🧱", name: "Lay {n} bricks today", target: (d) => 2_000 + d * 1_000, reward: (d) => 2_000 + d * 400 },
+  { kind: "rent", icon: "🔑", name: "Collect ${n} in rent today", target: (d) => 1_500 + d * 1_000, reward: (d) => 2_000 + d * 400 },
 ];
 
 /* ------------------------------------------------------------------ events */
