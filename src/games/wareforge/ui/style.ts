@@ -260,7 +260,7 @@ export const css = `
 .wf-sitetools .tools button.on{background:rgba(47,111,228,.14);color:var(--blue);box-shadow:inset 0 0 0 1.5px rgba(47,111,228,.35)}
 .wf-sitetools .tools button:hover{background:rgba(27,34,54,.05)}
 .wf-sitetools .hint{font-size:11.5px;font-weight:650;text-align:center}
-.wf-sheet.wf-site-sheet{bottom:150px;max-height:min(58vh,560px)}
+.wf-sheet.wf-site-sheet{bottom:150px;max-height:min(560px,calc(100% - 280px))}
 .wf-cellcard{position:absolute;right:12px;top:122px;width:min(330px,calc(100% - 24px));padding:12px;z-index:5;font-size:13px}
 .wf-storecard{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);width:min(560px,calc(100% - 24px));padding:12px;z-index:6}
 @container wf (max-width:820px){
@@ -425,6 +425,12 @@ export const css = `
 }
 @container wf (max-width:340px){
   .wf-kpitoggle{display:none!important}
+}
+/* On a building site or in a store, the place's bar sits under the top bar: move the rest below it. */
+.wf-onsite .wf-event,.wf-onsite .wf-toast{top:128px}
+.wf-onsite .wf-pops{top:calc(100% + 60px)}
+@container wf (max-width:1180px) or (max-height:720px){
+  .wf-onsite .wf-event,.wf-onsite .wf-toast{top:calc(120px + env(safe-area-inset-top))}
 }
 @media (prefers-reduced-motion:reduce){.wf *{animation:none!important;transition:none!important}.wf-pops{display:none}}
 `;

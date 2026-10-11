@@ -9,7 +9,7 @@
 import * as THREE from "three";
 import { Rig } from "@/nextx/rig";
 import { ITEMS, type ItemId } from "../data";
-import { PARTS, fillAt, loadBearing, plotDef, topLevel, units, type Part, type PlotDef, type Property } from "../estate";
+import { PARTS, fillAt, floorAt, loadBearing, plotDef, topLevel, units, type Part, type PlotDef, type Property } from "../estate";
 import type { State } from "../sim";
 import { asphaltTexture, box, brickTexture, car, floorTexture, mat, palletGeometry, person, roofTexture, signTexture, streetLamp, tree, woodTexture, type PersonModel } from "./models";
 import { Daylight, planeHit, type View3D } from "./view";
@@ -23,6 +23,9 @@ const WALL_H = STOREY - SLAB;
 const T = 0.3;
 const COURSES = 36;
 const COURSE_H = WALL_H / COURSES;
+/** The low wall round a flat roof, and the slab a roof is. */
+const PARAPET = 0.75;
+const ROOF_T = 0.26;
 
 /** What the camera's pointed at and which storeys show. */
 export interface BuildCursor {
@@ -143,7 +146,7 @@ export class BuildWorld implements View3D {
     const brick = new THREE.MeshStandardMaterial({ map: brickTexture(), roughness: 0.88 });
     const concrete = new THREE.MeshStandardMaterial({ map: floorTexture(), color: "#c9ccd2", roughness: 0.85 });
     const plan = new THREE.MeshStandardMaterial({ color: "#5aa9ff", transparent: true, opacity: 0.22, roughness: 0.6, depthWrite: false, emissive: "#1d5fd1", emissiveIntensity: 0.25 });
-    const roof = new THREE.MeshStandardMaterial({ map: roofTexture(), roughness: 0.7 });
+    const roof = new THREE.MeshStandardMaterial({ map: roofTexture(), roughness: 0.95 });
     (roof.map as THREE.Texture).repeat.set(1, 1);
     this.materials = {
       brick, concrete, plan, roof,
@@ -157,6 +160,7 @@ export class BuildWorld implements View3D {
       board: new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.85 }),
       pallet: new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.85 }),
       load: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.75 }),
+      plant: mat("#c3c7cf", 0.45, 0.5),
     };
     const stair = (() => {
       const parts: THREE.BufferGeometry[] = [];
@@ -206,6 +210,40 @@ export class BuildWorld implements View3D {
       board: new THREE.BoxGeometry(1, 0.05, 0.6),
       pallet: palletGeometry(),
       load: new THREE.BoxGeometry(1, 1, 1),
+      parapet: arm(PARAPET),
+      parapetPost: (() => {
+        const g = worldBox(T + 0.02, PARAPET, T + 0.02);
+        g.translate(0, PARAPET / 2, 0);
+        return g;
+      })(),
+      // Coping stones along the top: a square one on the post, a run out to the cell's edge.
+      coping: (() => {
+        const a = T / 2 + 0.05;
+        const g = new THREE.BoxGeometry(CELL / 2 - a, 0.07, T + 0.1);
+        g.translate((a + CELL / 2) / 2, PARAPET + 0.035, 0);
+        return g;
+      })(),
+      copingPost: (() => {
+        const g = new THREE.BoxGeometry(T + 0.1, 0.07, T + 0.1);
+        g.translate(0, PARAPET + 0.035, 0);
+        return g;
+      })(),
+      ac: (() => {
+        // A rooftop air-conditioning unit: a box with its fan grille on top.
+        const body = new THREE.BoxGeometry(1.1, 0.7, 0.8);
+        body.translate(0, 0.35, 0);
+        const fan = new THREE.CylinderGeometry(0.28, 0.28, 0.06, 16);
+        fan.translate(0, 0.72, 0);
+        const m = mergeBoxes([body, fan]);
+        body.dispose();
+        fan.dispose();
+        return m;
+      })(),
+      vent: (() => {
+        const g = new THREE.CylinderGeometry(0.09, 0.09, 0.9, 10);
+        g.translate(0, 0.45, 0);
+        return g;
+      })(),
     };
     const P = (geo: string, m: string, shadow = true, colored = false) => new Pool(this.geos[geo], this.materials[m], this.dyn, shadow, colored);
     this.pools = {
@@ -221,6 +259,12 @@ export class BuildWorld implements View3D {
       sill: P("sill", "sill"),
       leaf: P("leaf", "leaf"),
       stairs: P("stairs", "stairs"),
+      parapet: P("parapet", "brick"),
+      parapetPost: P("parapetPost", "brick"),
+      coping: P("coping", "sill"),
+      copingPost: P("copingPost", "sill"),
+      ac: P("ac", "plant"),
+      vent: P("vent", "plant"),
       // The blueprint: the same shapes, see-through blue.
       planFloor: P("found", "plan", false),
       planRoof: P("roof", "plan", false),
@@ -480,6 +524,40 @@ export class BuildWorld implements View3D {
     return out;
   }
 
+  /**
+   * A floor slab's box. Where it ends over a wall it stops just past the wall's outer face, so the
+   * outside of the building runs flush instead of every storey's slab jutting out half a cell.
+   */
+  private floorBox(p: Property, part: Part, y: number) {
+    const wall = (l: number) => {
+      const f = fillAt(p, part.x, part.z, l);
+      return !!f && loadBearing(f.k);
+    };
+    let x0 = -CELL / 2;
+    let x1 = CELL / 2;
+    let z0 = -CELL / 2;
+    let z1 = CELL / 2;
+    if (wall(part.l) || wall(part.l - 1)) {
+      const cut = T / 2 + 0.1;
+      if (!floorAt(p, part.x + 1, part.z, part.l)) x1 = cut;
+      if (!floorAt(p, part.x - 1, part.z, part.l)) x0 = -cut;
+      if (!floorAt(p, part.x, part.z + 1, part.l)) z1 = cut;
+      if (!floorAt(p, part.x, part.z - 1, part.l)) z0 = -cut;
+    }
+    const cx = (part.x + 0.5) * CELL;
+    const cz = (part.z + 0.5) * CELL;
+    return mtx(cx + (x0 + x1) / 2, y, cz + (z0 + z1) / 2, 0, (x1 - x0) / CELL, 1, (z1 - z0) / CELL);
+  }
+
+  /** A finished roof over an outside wall: the wall carries on up as a parapet. */
+  private parapetAt(p: Property, x: number, z: number, l: number) {
+    const r = floorAt(p, x, z, l);
+    if (!r || r.k !== "roof" || !r.done) return false;
+    const below = fillAt(p, x, z, l - 1);
+    if (!below || !loadBearing(below.k) || fillAt(p, x, z, l)) return false;
+    return DIRS.some((d) => !floorAt(p, x + d.dx, z + d.dz, l));
+  }
+
   /** Rebuild what's built and what's planned (when parts are added, finished, or the view's storey changes). */
   private rebuild(p: Property, night: boolean) {
     this.brickCache.clear();
@@ -504,9 +582,27 @@ export class BuildWorld implements View3D {
       const cz = (part.z + 0.5) * CELL;
       const fresh = !part.done && !part.paid && part.prog === 0 && part.stage === 0;
       if (PARTS[part.k].layer === "floor") {
-        const y = part.l * STOREY + SLAB / 2;
-        if (part.done) add(part.k === "found" ? "found" : part.k === "slab" ? "slab" : "roof", part.k === "roof" ? mtx(cx, part.l * STOREY + 0.13, cz) : mtx(cx, y, cz));
-        else add(part.k === "roof" ? "planRoof" : "planFloor", part.k === "roof" ? mtx(cx, part.l * STOREY + 0.13, cz) : mtx(cx, y, cz));
+        const y = part.k === "roof" ? part.l * STOREY + ROOF_T / 2 : part.l * STOREY + SLAB / 2;
+        const m = this.floorBox(p, part, y);
+        if (part.done) add(part.k === "found" ? "found" : part.k === "slab" ? "slab" : "roof", m);
+        else add(part.k === "roof" ? "planRoof" : "planFloor", m);
+        if (part.k === "roof" && part.done) {
+          const yr = part.l * STOREY + ROOF_T;
+          if (this.parapetAt(p, part.x, part.z, part.l)) {
+            add("parapetPost", mtx(cx, yr, cz));
+            add("copingPost", mtx(cx, yr, cz));
+            for (const d of DIRS)
+              if (this.parapetAt(p, part.x + d.dx, part.z + d.dz, part.l)) {
+                add("parapet", mtx(cx, yr, cz, d.ry));
+                add("coping", mtx(cx, yr, cz, d.ry));
+              }
+          } else if (!DIRS.some((d) => !floorAt(p, part.x + d.dx, part.z + d.dz, part.l))) {
+            // Plant on the roof, away from the edge: an air-conditioning unit here, a vent there.
+            const h = (part.x * 73 + part.z * 151 + part.l * 37) % 17;
+            if (h === 3) add("ac", mtx(cx, yr, cz, (part.x + part.z) % 2 ? 0 : Math.PI / 2));
+            else if (h === 9 || h === 14) add("vent", mtx(cx + 0.4, yr, cz - 0.3));
+          }
+        }
         continue;
       }
       const y0 = part.l * STOREY + SLAB;
@@ -536,7 +632,7 @@ export class BuildWorld implements View3D {
         for (const a of arms) add("planArm", mtx(cx, y0, cz, DIRS[a].ry));
       }
     }
-    for (const k of ["found", "slab", "roof", "armFull", "armLow", "armTop", "post", "glass", "lit", "sill", "leaf", "stairs", "planFloor", "planRoof", "planArm", "planPost", "planStairs"]) this.pools[k].set(L[k] ?? []);
+    for (const k of ["found", "slab", "roof", "parapet", "parapetPost", "coping", "copingPost", "ac", "vent", "armFull", "armLow", "armTop", "post", "glass", "lit", "sill", "leaf", "stairs", "planFloor", "planRoof", "planArm", "planPost", "planStairs"]) this.pools[k].set(L[k] ?? []);
   }
 
   /** Work under way, every frame: bricks laid so far, concrete poured, tiles on, windows waiting for glass. */
@@ -557,7 +653,7 @@ export class BuildWorld implements View3D {
       const f = Math.max(0.04, part.prog);
       if (part.prog > 0) active.push(part);
       if (PARTS[part.k].layer === "floor") {
-        if (part.k === "roof") wipRoof.push(mtx(cx - (CELL * (1 - f)) / 2, part.l * STOREY + 0.13, cz, 0, f, 1, 1));
+        if (part.k === "roof") wipRoof.push(mtx(cx - (CELL * (1 - f)) / 2, part.l * STOREY + ROOF_T / 2, cz, 0, f, 1, 1));
         else wip.push(mtx(cx, part.l * STOREY + (SLAB * f) / 2, cz, 0, 1, f, 1));
         continue;
       }

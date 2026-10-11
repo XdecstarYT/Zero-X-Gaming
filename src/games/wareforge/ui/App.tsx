@@ -93,7 +93,7 @@ export function App({ game: g }: { game: Game }) {
   const prop = s && view.k === "prop" ? s.estate.props.find((p) => p.id === view.id) : undefined;
   const store = s && view.k === "store" ? s.stores.find((x) => x.id === view.id) : undefined;
   return (
-    <div ref={root} className={`wf${refract ? " wf-refract" : ""}${prop ? " wf-onsite" : ""}`} data-testid="wf-root">
+    <div ref={root} className={`wf${refract ? " wf-refract" : ""}${prop || store ? " wf-onsite" : ""}`} data-testid="wf-root">
       <GlassDefs prefix="wf" />
       <canvas ref={canvas} className="wf-canvas" aria-label="The warehouse in 3D: drag to move, pinch or scroll to zoom, tap to inspect" tabIndex={0} />
       {g.screen === "title" || !s ? (
@@ -105,7 +105,7 @@ export function App({ game: g }: { game: Game }) {
       ) : prop ? (
         <>
           <TopBar g={g} s={s} />
-          {s.event && <EventBanner s={s} />}
+          {s.event && !g.panel && !g.sheet && <EventBanner s={s} />}
           {g.sheet ? <Sheets g={g} s={s} sheet={g.sheet} /> : <SiteHud g={g} s={s} p={prop} />}
           {(s.bankrupt || (s.seasonOver && !s.goals.__seen)) && <Over g={g} s={s} />}
         </>

@@ -98,7 +98,7 @@ export const PARTS: Record<PartKind, PartDef> = {
   },
   roof: {
     kind: "roof", name: "Roof", icon: "🟥", layer: "floor",
-    blurb: "Timber and clay tiles over the top storey: a room needs a roof (or a floor) over it to be let. Needs a wall below within 6 m.",
+    blurb: "A timber deck, roofing and tiles over the top storey, with a brick parapet round the edge: a room needs a roof (or a floor) over it to be let. Needs a wall below within 6 m.",
     stages: [{ trade: "roofing", work: 20, mats: { rooftiles: 0.2, wood: 0.06 } }],
   },
   wall: {

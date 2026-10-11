@@ -264,12 +264,12 @@ export function SiteHud({ g, s, p }: { g: Game; s: State; p: E.Property }) {
               +
             </button>
           </div>
-          <button className={`wf-btn small ${g.viewLevel !== 99 ? "on" : ""}`} aria-pressed={g.viewLevel !== 99} onClick={() => g.toggleCutaway()} title="Hide the storeys above this one" data-testid="wf-cutaway">
-            👁 <span className="lbl">Cut away</span>
+          <button className={`wf-btn small ${g.viewLevel !== 99 ? "on" : ""}`} aria-pressed={g.viewLevel !== 99} onClick={() => g.toggleCutaway()} title="Hide the storeys above this one" aria-label="Cut away" data-testid="wf-cutaway">
+            <span aria-hidden="true">👁</span> <span className="lbl">Cut away</span>
           </button>
           <span className="spacer" />
           {PANELS.map(([k, icon, label]) => (
-            <button key={k} className={`wf-btn small ${g.panel === k ? "on" : ""}`} aria-pressed={g.panel === k} onClick={() => g.setPanel(k)} data-testid={`wf-panel-${k}`}>
+            <button key={k} className={`wf-btn small ${g.panel === k ? "on" : ""}`} aria-pressed={g.panel === k} aria-label={label} onClick={() => g.setPanel(k)} data-testid={`wf-panel-${k}`}>
               <span aria-hidden="true">{icon}</span> <span className="lbl">{label}</span>
             </button>
           ))}
@@ -500,7 +500,7 @@ function CrewPanel({ g, s, p }: { g: Game; s: State; p: E.Property }) {
   const items = [...new Set([...(Object.keys(need) as ItemId[]), ...(Object.keys(p.stock) as ItemId[])])];
   return (
     <>
-      <div className="wf-bar" style={{ marginTop: 4 }} aria-label={`${Math.round(E.progress(p) * 100)}% built`}>
+      <div className="wf-bar" style={{ marginTop: 4 }} role="img" aria-label={`${Math.round(E.progress(p) * 100)}% built`}>
         <i style={{ width: `${Math.round(E.progress(p) * 100)}%` }} />
       </div>
       <div className="wf-kv">
@@ -681,7 +681,7 @@ function UnitsPanel({ g, s, p }: { g: Game; s: State; p: E.Property }) {
                     {t.name}, {t.kind === "business" ? "a business" : "a household"} · lease to day {sim.day(t.until)}
                     {t.owed ? ` · ${t.owed} h behind with the rent` : ""}
                   </p>
-                  <div className="wf-bar" style={{ marginTop: 6 }} aria-label={`${Math.round(t.happy)}% happy`}>
+                  <div className="wf-bar" style={{ marginTop: 6 }} role="img" aria-label={`${Math.round(t.happy)}% happy`}>
                     <i style={{ width: `${Math.max(3, t.happy)}%`, background: t.happy < 35 ? "linear-gradient(90deg,#f06c70,#d83d43)" : t.happy < 60 ? "linear-gradient(90deg,#f5a524,#e08a00)" : undefined }} />
                   </div>
                   {t.owed > 0 && (

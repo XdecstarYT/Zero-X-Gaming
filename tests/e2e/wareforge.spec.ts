@@ -395,3 +395,148 @@ test.describe("the tycoon update on a phone", () => {
     await expect(page.getByTestId("wf-bid-place")).toContainText("Bid in");
   });
 });
+
+test.describe("the build update", () => {
+  type Part = { k: string; done: boolean };
+  type Prop = { id: number; plot: string; parts: Part[]; permit: string; crews: Record<string, { gangs: number } | undefined> };
+  type G = {
+    s: { cash: number; tipsOff?: boolean; structs: { kind: string; m?: { type: string } }[]; estate: { props: Prop[] } };
+    view: { k: string };
+  };
+  const g = <T,>(page: Page, f: (g: G) => T) => page.evaluate(`(${f.toString()})(window.__wf)`) as Promise<T>;
+  const start = async (page: Page) => {
+    await page.addInitScript(() => {
+      if (!localStorage.getItem("zx-season-s1"))
+        localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+      localStorage.setItem("zx-wareforge-prefs", JSON.stringify({ gfx: "low", sound: false }));
+    });
+    await page.goto("/nextx/play/wareforge?wf");
+    await page.getByTestId("zlink-lock-join").click();
+    await page.getByRole("button", { name: "Play", exact: true }).click();
+    await expect(page.getByTestId("wf-title")).toBeVisible({ timeout: 120_000 });
+  };
+  /** Where the middle of a plot cell is on screen. */
+  const cell = (page: Page, x: number, z: number) =>
+    page.evaluate(
+      `(() => { const cam = window.__wf.build.camera; const v = cam.position.clone().set((${x} + 0.5) * 2, 0.02, (${z} + 0.5) * 2).project(cam); const r = document.querySelector("canvas.wf-canvas").getBoundingClientRect(); return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height }; })()`,
+    ) as Promise<{ x: number; y: number }>;
+
+  test("Ironridge Quarry digs; buy a plot, draw a floor, a ready-made design, planning permission and a crew", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "the phone runs the next test");
+    test.setTimeout(300_000);
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await start(page);
+    await page.getByTestId("wf-site-wh31").click();
+    // The quarry: a pit and a mineshaft dig, the kiln and the steelworks make something of it.
+    const kinds = await g(page, (x) => x.s.structs.map((t) => t.m?.type).filter(Boolean));
+    for (const m of ["quarry", "mineshaft", "kiln", "furnace"]) expect(kinds).toContain(m);
+    await g(page, (x) => {
+      x.s.cash = 5_000_000;
+      x.s.tipsOff = true;
+    });
+    // Land in Philadelphia: buying it opens the site with the plans out.
+    await page.getByTestId("wf-dock-estate").click();
+    await page.getByTestId("wf-est-land").click();
+    await page.getByTestId("wf-buy-plot-ph2").scrollIntoViewIfNeeded();
+    await page.getByTestId("wf-buy-plot-ph2").click();
+    await expect(page.getByTestId("wf-sitebar")).toContainText("Elfreth's Alley");
+    await expect(page.getByTestId("wf-site-status")).toHaveText("Empty plot");
+    await expect(page.getByTestId("wf-site-plan")).toBeVisible();
+    await page.getByTestId("wf-site-close").click();
+    // The floor tool: tap one corner, then the other.
+    await page.getByTestId("wf-etool-found").click();
+    await expect(page.getByTestId("wf-etool-found")).toHaveAttribute("aria-pressed", "true");
+    await page.waitForTimeout(1500);
+    for (const [x, z] of [[1, 1], [3, 2]]) {
+      const pt = await cell(page, x, z);
+      await page.mouse.click(pt.x, pt.y);
+      await page.waitForTimeout(200);
+    }
+    expect(await g(page, (x) => x.s.estate.props[0].parts.filter((p) => p.k === "found").length)).toBe(6);
+    await expect(page.getByTestId("wf-toast")).toContainText("6 foundations planned");
+    await page.getByTestId("wf-etool-found").click();
+    // A ready-made design instead: the units it'll make are listed.
+    await page.getByTestId("wf-panel-plan").click();
+    await page.getByTestId("wf-tpl-house").click();
+    expect(await g(page, (x) => x.s.estate.props[0].parts.some((p) => p.k === "roof"))).toBe(true);
+    await expect(page.getByTestId("wf-planned-units").locator(".wf-trow")).not.toHaveCount(0);
+    await expect(page.getByTestId("wf-estimate")).toBeVisible();
+    // Planning permission, then a gang of bricklayers.
+    await page.getByTestId("wf-apply-permit").click();
+    await expect(page.getByTestId("wf-permit")).toContainText("With the planners");
+    expect(await g(page, (x) => x.s.estate.props[0].permit)).toBe("pending");
+    await page.getByTestId("wf-panel-site").click();
+    await page.getByTestId("wf-crew-brick-more").click();
+    expect(await g(page, (x) => x.s.estate.props[0].crews.brick?.gangs)).toBe(1);
+    await expect(page.getByTestId("wf-site-materials")).toContainText("Bricks");
+    // Back to the warehouse: the property is in the portfolio.
+    await page.getByTestId("wf-site-close").click();
+    await page.getByTestId("wf-site-back").click();
+    expect(await g(page, (x) => x.view.k)).toBe("site");
+    await page.getByTestId("wf-dock-estate").click();
+    await page.getByTestId("wf-est-portfolio").click();
+    await expect(page.getByTestId("wf-prop-ph2")).toContainText("Elfreth's Alley");
+    expect(errors).toEqual([]);
+  });
+});
+
+test.describe("the build update on a phone", () => {
+  test.use({ viewport: devices["Pixel 7"].viewport });
+
+  test("the building site's bar and tools fit a phone, and a store can be visited in 3D", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== "mobile", "the phone layout");
+    test.setTimeout(240_000);
+    await page.addInitScript(() => {
+      if (!localStorage.getItem("zx-season-s1"))
+        localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+      localStorage.setItem("zx-wareforge-prefs", JSON.stringify({ gfx: "low", sound: false }));
+    });
+    await page.goto("/nextx/play/wareforge?wf");
+    await page.getByTestId("zlink-lock-join").click();
+    await page.getByRole("button", { name: "Play", exact: true }).click();
+    await expect(page.getByTestId("wf-title")).toBeVisible({ timeout: 120_000 });
+    await page.getByTestId("wf-site-wh21").click();
+    await page.evaluate(`(window.__wf.s.cash = 5000000, window.__wf.s.tipsOff = true)`);
+    const vp = page.viewportSize()!;
+    const fits = async (id: string) => {
+      const b = (await page.getByTestId(id).boundingBox())!;
+      expect(b.x, id).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width, id).toBeLessThanOrEqual(vp.width);
+      expect(b.y + b.height, id).toBeLessThanOrEqual(vp.height);
+    };
+    await page.getByTestId("wf-dock-estate").scrollIntoViewIfNeeded();
+    await page.getByTestId("wf-dock-estate").click();
+    await page.getByTestId("wf-est-land").click();
+    await page.getByTestId("wf-buy-plot-bo1").scrollIntoViewIfNeeded();
+    await page.getByTestId("wf-buy-plot-bo1").click();
+    await fits("wf-site-plan");
+    await page.getByTestId("wf-site-close").click();
+    await fits("wf-sitebar");
+    await fits("wf-sitetools");
+    // The storey stepper and the cutaway.
+    await page.getByTestId("wf-storey-up").click();
+    await expect(page.getByTestId("wf-storey")).toHaveText("Storey 2");
+    await expect(page.getByTestId("wf-etool-found")).toContainText("Floor");
+    await page.getByTestId("wf-cutaway").click();
+    await expect(page.getByTestId("wf-cutaway")).toHaveAttribute("aria-pressed", "true");
+    // The tools scroll sideways: the last is reachable.
+    await page.getByTestId("wf-etool-lay").scrollIntoViewIfNeeded();
+    await fits("wf-etool-lay");
+    await page.getByTestId("wf-site-back").click();
+    // A supermarket, then inside it.
+    await page.getByTestId("wf-dock-company").scrollIntoViewIfNeeded();
+    await page.getByTestId("wf-dock-company").click();
+    await page.getByTestId("wf-co-stores").scrollIntoViewIfNeeded();
+    await page.getByTestId("wf-co-stores").click();
+    await page.getByTestId("wf-storekind-grocery").click();
+    await page.getByTestId("wf-store-open").click();
+    await page.getByTestId("wf-visit-store").click();
+    await expect(page.getByTestId("wf-storebar")).toContainText("Supermarket");
+    await fits("wf-storebar");
+    await fits("wf-storecard");
+    await page.getByTestId("wf-store-back").click();
+    await expect(page.getByTestId("wf-storebar")).toHaveCount(0);
+    expect(await page.evaluate(`window.__wf.view.k`)).toBe("site");
+  });
+});

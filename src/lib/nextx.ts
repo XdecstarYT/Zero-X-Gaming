@@ -27,16 +27,18 @@ export interface NextXTitle {
 export const NEXTX_TITLES: NextXTitle[] = [
   {
     slug: "wareforge",
-    pitch: "Run a warehouse, a factory and a chain of stores in 3D: build your own plant, go into new industries and ship on time.",
+    pitch: "Run a warehouse, a factory, a quarry and a chain of stores in 3D, then put up buildings brick by brick and let them.",
     accent: "#2f6fe4",
     accent2: "#f6c21c",
     stats: [
-      { v: "12", k: "Sites" },
-      { v: "61", k: "Goods" },
-      { v: "21", k: "Machines" },
+      { v: "13", k: "Sites" },
+      { v: "75", k: "Goods" },
+      { v: "28", k: "Machines" },
     ],
     features: [
-      "Freeport Estate: an open-plan hall you can build anywhere, in a scored game",
+      "Real estate and construction: plan it storey by storey, watch it go up brick by brick, let it",
+      "Mining: quarry, mineshaft, kiln and steelworks make your own bricks, cement and beams",
+      "Walk into your stores in 3D, and an open-plan hall you can build anywhere",
       "A live map of every shipment, tenders against rivals and ad campaigns",
       "Six industries, your own factory and stores in 13 cities, run from one panel",
       "Smooth on phones: NextX Engine graphics with an adaptive resolution",

@@ -364,25 +364,17 @@ export function rockTexture(base = "#9d978d") {
   );
 }
 
-/** Clay roof tiles: overlapping rows with a shadow under each. */
-export function roofTexture(tint = "#b4553c") {
+/** A flat roof: grey membrane under gravel, the welded seams of its sheets showing faintly. */
+export function roofTexture(tint = "#80838a") {
   seed = 71;
-  const c = new THREE.Color(tint);
   return tiled(
     canvasTex(256, 256, (g) => {
-      for (let r = 0; r < 8; r++) {
-        for (let x = 0; x < 256; x += 32) {
-          const k = 0.85 + rnd() * 0.25;
-          g.fillStyle = `rgb(${Math.round(c.r * 255 * k)},${Math.round(c.g * 255 * k)},${Math.round(c.b * 255 * k)})`;
-          g.fillRect(x + (r % 2 ? 16 : 0), r * 32, 32, 32);
-        }
-        g.fillStyle = "rgba(0,0,0,0.3)";
-        g.fillRect(0, r * 32 + 27, 256, 5);
-      }
-      for (let x = 0; x < 256; x += 16) {
-        g.fillStyle = "rgba(0,0,0,0.12)";
-        g.fillRect(x, 0, 1, 256);
-      }
+      g.fillStyle = tint;
+      g.fillRect(0, 0, 256, 256);
+      mottle(g, 256, 30, 14, 46, "235,235,230", "30,32,36", 0.12);
+      speckle(g, 256, 9000, "245,242,232", "28,28,30", 0.35, 1.7);
+      g.fillStyle = "rgba(20,22,26,0.18)";
+      for (let x = 0; x < 256; x += 128) g.fillRect(x, 0, 2, 256);
     }),
   );
 }

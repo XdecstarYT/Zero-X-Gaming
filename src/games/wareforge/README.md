@@ -109,6 +109,22 @@ Older saves load: the new fields get defaults.
 | Events | Fashion week, a bumper harvest, flu season and the motor show, each only for businesses in that trade: prices up, more orders, or cheaper raw food. |
 | Also | 3 upgrades (Market research, Air cargo deal, Ergonomics) and 8 goals. Older saves load with no tenders, campaigns or facilities. |
 
+## The build update
+
+| Area | What's new |
+| --- | --- |
+| Mining | License **mining & materials** ($45,000) and dig your own: a **quarry pit** (stone, clay, sand) and a **mineshaft** (iron ore, coal, gold ore) that need no inputs, a **stone crusher** (gravel), a **steelworks** (steel, steel beams, gold bars), a **brick kiln** (bricks, 750 to a pallet; roof tiles; glass), a **cement works** (cement, ready-mix concrete) and a **goldsmith** (jewellery). 14 new goods, builders' merchant and jeweller stores, and new customers and suppliers. **WH-31 Ironridge Quarry** starts you with the pit, the shaft, the kiln and the steelworks on conveyors. In 3D the pit is a terraced cut with an excavator swinging and a haul truck, the shaft a headframe with its wheel turning, the kiln and the furnace glow. |
+| Land | Property (the new dock button): 17 plots in 13 cities, each with its size (6×5 to 10×8 cells of 2 m), its zoning (residential, commercial, mixed) and how high you may build (3 to 8 storeys). Land is priced by the cell, the size of the city and its property index. Up to eight properties. |
+| Building it | Buy a plot (or tap one in your portfolio) and you're on it, in a street between its neighbours, in 3D. Plan it cell by cell and storey by storey: foundations and floor slabs (a rectangle: tap two corners), brick walls (a line, or a room's four walls), windows (outside walls only), doors, stairs and the roof. Floors need a wall within 6 m to hold them up, walls need a floor, upper storeys need stairs. Or start from a ready-made design (a detached house, terraced houses, an apartment block, shops with flats over, an office block) at the height you choose, and change it. Copy a storey up, roof over the top, cut away the storeys above to see in. |
+| Permits | Planning permission ($1,000 plus $500 a storey) takes 3–6 hours (longer if a neighbour objects). Ask for a height variance ($6,000, a 45% chance, better with a good reputation): two more storeys. |
+| Crews | Hire gangs of concrete workers, bricklayers, carpenters & glaziers and roofers (up to four gangs of each, standard, skilled or master: dearer, quicker, better work). They work 07:00–18:00 (06:00–22:00 on overtime, time and a half). Bricklayers lay 6 bricks a minute a gang: a wall is 300 bricks, and you see every one go on, course by course, with the gang standing at it. Scaffolding goes up round the storeys under way, a tower crane over anything three storeys or more, and the materials stand on pallets out front. **Lay bricks** yourself with the tool, a course at a time. |
+| Materials | A building needs bricks, cement, concrete, steel beams, roof tiles, glass and timber. Send them from your warehouse (a real shipment, picked, loaded and trucked) or have the supplier deliver straight to site (10% more and $250). Auto-supply keeps the site stocked. Crews wait, and are still paid, when something runs short. |
+| Inspections | The foundations, every storey's frame and the finished building are inspected ($300 each): poor work fails and has to be put right. The final inspection gives the certificate you need to let it. |
+| Units and tenants | The building works out its own units: open floor enclosed by walls, under a roof or a floor, with a door to the street or to a stair hall. Flats, houses, shops (on the ground floor, in commercial and mixed zones) and offices, each with its area and windows; let them one by one, or the whole building. Rent follows the area, the city, the light, the condition and the rent level you set; tenants move in and out, get unhappy, fall behind (evict them for $500), and ask for repairs. At night the windows of let units light up. |
+| Money | A property is worth its land plus the more of what's gone into it (less wear) and, once it's certified, 22 days of its market rent. Property tax and insurance by the hour; an uninsured fire burns parts out to be rebuilt. Borrow up to 60% of the value (1.2% a day), pay it off, list it for sale (buyers make offers; 2% to sell), or sell quickly at 88%. Buy ready-built buildings listed on the market, and watch each city's property index drift day by day. Net worth includes your equity; the bank lends against it. |
+| Stores in 3D | **Visit** any of your stores: walk in to the shelves stocked with what it really has, shoppers browsing, queueing at the tills and leaving, staff at work, the sign over the door, and the street outside. Every kind has its own fit-out (a supermarket's aisles and lit fridges, a boutique's rails, a jeweller's cases, a dealership's cars, a builders' merchant's racking). |
+| Also | 11 goals (dig, gold bar, plot, permit, 10,000 bricks, topping out, keys, landlord, empire, skyline, flip), brick-laying and rent missions, and the score cap rises (`20261111100000_wareforge_build.sql`). Older saves load with no properties. |
+
 ## Code
 
 | File | What |
@@ -119,8 +135,14 @@ Older saves load: the new fields get defaults.
 | `audio.ts` | Synthesised sounds (Web Audio) |
 | `render/world.ts` | three.js world, kept in step with the sim each frame; picking |
 | `render/models.ts` | Forklift, truck, train, machine (eight styles), conveyor, charger, sales office, break room, fence, worker, car, office, gatehouse, lamp, crane, tree and pin models; canvas textures |
-| `render/stage.ts` | Renderer, quality tiers, the post chain (GTAO, bloom, grade), loop and input (pan, turn, pinch, wheel, tap) |
+| `estate.ts` | Real estate and construction: plots, the part model and its checks, units, designs, permits, crews, materials, inspections, tenants, value, mortgages, sales and listings |
+| `render/stage.ts` | Renderer, quality tiers, the post chain (GTAO, bloom, grade), loop and input (pan, turn, pinch, wheel, tap); draws the warehouse or whichever other view is in front |
+| `render/view.ts` | What the stage needs from a scene (`View3D`), and the daylight (sky, sun, sky light) the other views share |
+| `render/build.ts` | The building site: the street and its neighbours, every part as built, planned or under way, bricks laid one by one, scaffolding, crane, builders, materials |
+| `render/shop.ts` | A store from inside: the room, the fit-out for its kind, the shelves as stocked, shoppers and staff |
 | `ui/App.tsx`, `ui/style.ts` | The liquid-glass interface (NextX `GlassDefs` with the `wf` prefix) |
+| `ui/Estate.tsx` | The Property sheet, the building site's bar, tools and panels, and the store visit card |
+| `ui/fmt.ts` | Money, time and percentage formats |
 | `index.ts` | The Zero X `GameModule` |
 
 The simulation is plain JSON on a 44×34 tile grid:
@@ -143,5 +165,6 @@ The simulation is plain JSON on a 44×34 tile grid:
 - Facilities (`office`, `breakroom`, `fence`) are structs with no slots; `built(s, kind)` counts them from the cached layout.
 - Tenders close on the hour (`stepTenders`); `winChance(s, bid)` is the exact chance a bid beats the three rivals, shown in the Market.
 - Forklifts route with A* (turns cost a little) round racks and machines.
+- Properties live on `s.estate`. A part is `{ k, x, z, l }` on a 2 m cell and a storey, in one of two layers (floor: found, slab, roof; fill: wall, window, door, stairs), with its stage, progress and quality. `units(p)` flood-fills each storey's open floor into regions, joins regions by stairs and doors, and tells halls from units; it's cached by the property's `rev`. A shipment to a building site is an order with `site` set.
 
 The game plays in the NextX app at `/nextx/play/wareforge` (`/games/wareforge` redirects there). `?wf` on the URL exposes the controller as `window.__wf`, the simulation as `window.__wfsim` and the estate as `window.__wfest` for tests.

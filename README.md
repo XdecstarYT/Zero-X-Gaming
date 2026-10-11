@@ -935,6 +935,13 @@ managers for sales, supply, retail and the plant (`20261103100000_wareforge_indu
 The tycoon update adds WH-30 Freeport Estate, an empty open-plan hall you can build anywhere in a scored game; sales
 offices, break rooms and safety fences; six new products; a Company map of every city and every shipment on the road;
 tenders against three rivals, ad campaigns, air freight and four industry events.
+The build update adds mining (extractor machines with no inputs, a crusher, steelworks, kiln, cement works and
+goldsmith, 14 goods and the WH-31 Ironridge Quarry) and real estate and construction (`estate.ts`): 17 plots of land,
+buildings planned cell by cell and storey by storey (or from five designs), planning permits, crews of four trades
+who lay walls brick by brick, materials trucked to site, inspections, units worked out from the plan and let to
+tenants, valuation, mortgages, sales and listings. The stage can now show other 3D views (`render/view.ts`): the
+building site in its street (`render/build.ts`) and the inside of a store (`render/shop.ts`)
+(`20261111100000_wareforge_build.sql` raises the score cap).
 See `src/games/wareforge/README.md`.
 
 ### NextX titles play in the NextX app
