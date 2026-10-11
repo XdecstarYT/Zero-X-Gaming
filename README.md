@@ -932,6 +932,9 @@ four-times-faster simulation), and adds four industries to license (food & drink
 automotive) with 31 items and 14 machines, conveyors, moving and mirroring anything, a sandbox mode and five new
 sites (an empty greenfield plot and one per industry), stores in 13 cities restocked by truck, a Company panel and
 managers for sales, supply, retail and the plant (`20261103100000_wareforge_industries.sql` raises the score cap).
+The tycoon update adds WH-30 Freeport Estate, an empty open-plan hall you can build anywhere in a scored game; sales
+offices, break rooms and safety fences; six new products; a Company map of every city and every shipment on the road;
+tenders against three rivals, ad campaigns, air freight and four industry events.
 See `src/games/wareforge/README.md`.
 
 ### NextX titles play in the NextX app

@@ -1037,6 +1037,104 @@ export function machine(type: MachineType, w: number, d: number, color: string, 
   return { group: g, moving, light };
 }
 
+/* ------------------------------------------------------------------ facilities */
+
+const glassWall = new THREE.MeshStandardMaterial({ color: "#bcd8f0", transparent: true, opacity: 0.38, roughness: 0.05, metalness: 0.2, depthWrite: false });
+
+/** A glass-walled sales office from its corner: low walls, glazing, desks with screens, a sign. */
+export function salesOffice(w: number, d: number, sign: THREE.Material): THREE.Group {
+  const g = new THREE.Group();
+  const frame = mat("#3a414f", 0.45, 0.5);
+  const carpet = mat("#5b6b86", 0.95);
+  const desk = mat("#e8e2d6", 0.6);
+  const screen = glow("#7fb3ff");
+  g.add(box(w - 0.1, 0.03, d - 0.1, carpet, w / 2, 0, d / 2, false));
+  // Low walls, then glazing above, on a slim frame.
+  for (const [x, z, ww, dd] of [[w / 2, 0.06, w - 0.1, 0.08], [w / 2, d - 0.06, w - 0.1, 0.08], [0.06, d / 2, 0.08, d - 0.1], [w - 0.06, d / 2, 0.08, d - 0.1]] as [number, number, number, number][]) {
+    g.add(box(ww, 0.9, dd, mat("#eef1f6", 0.5), x, 0, z));
+    const pane = new THREE.Mesh(boxGeo(ww, 1.2, dd * 0.5), glassWall);
+    pane.position.set(x, 1.5, z);
+    g.add(pane);
+    g.add(box(ww, 0.06, dd, frame, x, 2.1, z));
+  }
+  for (const [x, z] of [[0.06, 0.06], [w - 0.06, 0.06], [0.06, d - 0.06], [w - 0.06, d - 0.06]]) g.add(box(0.09, 2.16, 0.09, frame, x, 0, z));
+  // Desks in a row with screens and chairs.
+  for (let i = 0; i < Math.floor(w); i++) {
+    const x = 0.5 + i;
+    g.add(box(0.75, 0.05, 0.5, desk, x, 0.72, d / 2 - 0.2));
+    g.add(box(0.05, 0.72, 0.05, frame, x - 0.32, 0, d / 2 - 0.2));
+    g.add(box(0.05, 0.72, 0.05, frame, x + 0.32, 0, d / 2 - 0.2));
+    g.add(box(0.36, 0.24, 0.03, screen, x, 0.8, d / 2 - 0.36, false));
+    g.add(box(0.36, 0.42, 0.36, mat("#2b2f3a", 0.7), x, 0.25, d / 2 + 0.35));
+  }
+  const s = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.42), sign);
+  s.position.set(w / 2, 2.35, d - 0.02);
+  s.userData.own = true;
+  g.add(s);
+  g.add(box(1.7, 0.5, 0.04, frame, w / 2, 2.1, d - 0.05));
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh && (o as THREE.Mesh).material !== glassWall) o.castShadow = true;
+  });
+  return g;
+}
+
+/** A break room from its corner: a small cabin with a coffee machine, a fridge, a table and a sofa. */
+export function breakRoom(w: number, d: number, sign: THREE.Material): THREE.Group {
+  const g = new THREE.Group();
+  const wall = mat("#f2efe8", 0.6);
+  const trim = mat("#1f9d74", 0.45);
+  g.add(box(w - 0.1, 0.03, d - 0.1, mat("#c9a77c", 0.8), w / 2, 0, d / 2, false));
+  // Three walls (open to the front, so you can see in), a green band round the top.
+  g.add(box(w - 0.1, 2.0, 0.08, wall, w / 2, 0, 0.06));
+  g.add(box(0.08, 2.0, d - 0.1, wall, 0.06, 0, d / 2));
+  g.add(box(0.08, 2.0, d - 0.1, wall, w - 0.06, 0, d / 2));
+  g.add(box(w - 0.1, 0.12, 0.1, trim, w / 2, 1.9, 0.06));
+  g.add(box(0.1, 0.12, d - 0.1, trim, 0.06, 1.9, d / 2));
+  g.add(box(0.1, 0.12, d - 0.1, trim, w - 0.06, 1.9, d / 2));
+  // A fridge, a coffee machine on a counter, a table with chairs, a sofa.
+  g.add(rbox(0.5, 1.5, 0.45, mat("#dfe3ea", 0.35, 0.3), 0.4, 0, 0.35, 0.04));
+  g.add(box(0.9, 0.85, 0.42, mat("#8d6e52", 0.7), 1.2, 0, 0.32));
+  g.add(box(0.26, 0.34, 0.26, mat("#2b2f3a", 0.4, 0.3), 1.0, 0.85, 0.3));
+  g.add(box(0.1, 0.05, 0.03, glow("#ff6b3d"), 1.0, 1.02, 0.44, false));
+  const table = cyl(0.32, 0.05, mat("#e8e2d6", 0.6), 18);
+  table.position.set(w / 2, 0.72, d / 2 + 0.2);
+  g.add(table);
+  g.add(box(0.06, 0.7, 0.06, mat("#3a414f", 0.5), w / 2, 0, d / 2 + 0.2));
+  for (const a of [0, Math.PI]) g.add(rbox(0.28, 0.42, 0.28, mat("#1f9d74", 0.6), w / 2 + Math.cos(a) * 0.5, 0, d / 2 + 0.2, 0.05));
+  g.add(rbox(0.4, 0.45, 1.2, mat("#5b6b86", 0.85), w - 0.35, 0, d / 2 + 0.1, 0.1));
+  const s = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.36), sign);
+  s.position.set(w / 2, 1.6, 0.11);
+  s.userData.own = true;
+  g.add(s);
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) o.castShadow = true;
+  });
+  return g;
+}
+
+/** A safety-fence tile centred on its tile: a post, and rails out to each neighbour that's fence too. */
+export function fenceTile(links: { e: boolean; s: boolean; w: boolean; n: boolean }): THREE.Group {
+  const g = new THREE.Group();
+  const yellow = mat("#f5c518", 0.45, 0.2);
+  const black = mat("#1d2027", 0.6);
+  g.add(box(0.12, 1.0, 0.12, yellow, 0, 0, 0));
+  g.add(box(0.14, 0.12, 0.14, black, 0, 1.0, 0));
+  g.add(box(0.22, 0.04, 0.22, black, 0, 0, 0));
+  const rail = (dx: number, dz: number) => {
+    for (const y of [0.45, 0.85]) g.add(box(Math.abs(dx) ? 0.5 : 0.06, 0.07, Math.abs(dz) ? 0.5 : 0.06, yellow, dx * 0.25, y, dz * 0.25));
+  };
+  if (links.e) rail(1, 0);
+  if (links.w) rail(-1, 0);
+  if (links.s) rail(0, 1);
+  if (links.n) rail(0, -1);
+  // A lone post gets a short barrier of its own, across the tile.
+  if (!links.e && !links.w && !links.s && !links.n) for (const y of [0.45, 0.85]) g.add(box(0.9, 0.07, 0.06, yellow, 0, y, 0));
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) o.castShadow = true;
+  });
+  return g;
+}
+
 /* ------------------------------------------------------------------ conveyors */
 
 let beltTex: THREE.CanvasTexture | null = null;

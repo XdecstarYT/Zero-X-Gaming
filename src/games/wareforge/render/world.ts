@@ -10,9 +10,9 @@ import { mergeStatic } from "@/nextx/batch";
 import { SkyEnvironment, makeSky, skyFor, type SkyLight, type SkyMesh } from "@/nextx/look";
 import { Rig } from "@/nextx/rig";
 import { AISLE_Z, BELT, DAY, DOCK_Z, FREEZER, GAME_SECS_PER_REAL, GRID_W, HOUR, ITEMS, MACHINES, RAIL_DOORS, RAIL_Z, ROAD_Z, STAGE_Z, TRUCK_PHASE, WIDTH_FULL, WIDTH_MEGA, doorX0, siteDef, type SiteDef } from "../data";
-import { BELT_DIR, LEVEL_H, doorName, eventOn, rackLevels, route, up, width, type Focus, type Pallet, type State, type Truck } from "../sim";
+import { BELT_DIR, LEVEL_H, doorName, eventOn, grid, openPlan, rackLevels, route, up, width, type Focus, type Pallet, type State, type Truck } from "../sim";
 import {
-  COL, CONTAINER_COLORS, TRAILER_LEN, asphaltTexture, belt, beltTexture, box, boxGeo, car, charger, claddingTexture, crane, doorTexture, fadeTexture, fenceTexture, flakeTexture, floorTexture, forklift, gatehouse,
+  COL, CONTAINER_COLORS, TRAILER_LEN, asphaltTexture, belt, beltTexture, box, boxGeo, breakRoom, car, charger, fenceTile, salesOffice, claddingTexture, crane, doorTexture, fadeTexture, fenceTexture, flakeTexture, floorTexture, forklift, gatehouse,
   grassTexture, hazardTexture, lampMat, letteringTexture, loadTexture, machine, mat, office, palletGeometry, person, pin, pine, rbox, signTexture, streetLamp, train, tree, truck,
   windowMat, woodTexture, type ForkModel, type MachineModel, type PersonModel, type TrainModel, type TruckModel,
 } from "./models";
@@ -651,9 +651,14 @@ export class World {
       m.userData.own = true;
       G.add(m);
     };
-    paint(2, AISLE_Z[0] - 0.05, W - 2, 0.1, COL.line);
-    paint(2, AISLE_Z[1] + 1 - 0.05, W - 2, 0.1, COL.line);
-    for (let x = 3; x < W - 1; x += 1.6) paint(x, AISLE_Z[0] + 0.96, 0.7, 0.08, "#ffffff");
+    if (openPlan(s)) {
+      // Open plan: no fixed aisle, just the line where the dock lanes start.
+      paint(2, STAGE_Z[0] - 0.05, W - 2, 0.1, COL.line);
+    } else {
+      paint(2, AISLE_Z[0] - 0.05, W - 2, 0.1, COL.line);
+      paint(2, AISLE_Z[1] + 1 - 0.05, W - 2, 0.1, COL.line);
+      for (let x = 3; x < W - 1; x += 1.6) paint(x, AISLE_Z[0] + 0.96, 0.7, 0.08, "#ffffff");
+    }
     // Metal-clad walls: the ribs keep their spacing on every wall (a texture every two tiles along it).
     const clad = (w: number, h: number, d: number, x: number, y: number, z: number, m = sf.clad) => {
       const geo = new THREE.BoxGeometry(w, h, d);
@@ -843,6 +848,7 @@ export class World {
     const beams: THREE.Matrix4[] = [];
     const guards: THREE.Matrix4[] = [];
     const L = rackLevels(s);
+    const fences = new Set(s.structs.filter((t) => !t.dead && t.kind === "fence").map((t) => `${t.x},${t.z}`));
     const m4 = (x: number, y: number, z: number, sx: number, sy: number, sz: number) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(), new THREE.Vector3(sx, sy, sz));
     for (const t of s.structs) {
       if (t.dead) continue;
@@ -889,6 +895,15 @@ export class World {
         ch.group.position.set(t.x, 0, t.z);
         G.add(ch.group);
         this.chargers.set(t.id, { leds: ch.leds });
+      } else if (t.kind === "office" || t.kind === "breakroom") {
+        const f = t.kind === "office" ? salesOffice(t.w, t.d, this.signMat("SALES", "#2f6fe4")) : breakRoom(t.w, t.d, this.signMat("BREAK ROOM", "#1f9d74"));
+        f.position.set(t.x, 0, t.z);
+        G.add(f);
+      } else if (t.kind === "fence") {
+        const at = (x: number, z: number) => fences.has(`${x},${z}`);
+        const f = fenceTile({ e: at(t.x + 1, t.z), w: at(t.x - 1, t.z), s: at(t.x, t.z + 1), n: at(t.x, t.z - 1) });
+        f.position.set(t.x + 0.5, 0, t.z + 0.5);
+        G.add(f);
       } else if (t.kind === "belt") {
         const b = belt(this.beltMat);
         b.position.set(t.x + 0.5, 0, t.z + 0.5);
@@ -942,7 +957,7 @@ export class World {
     };
     for (const t of s.structs) {
       if (t.dead) continue;
-      const a = t.kind === "machine" ? 0.55 : t.kind === "floor" ? 0.12 : t.kind === "charger" ? 0.32 : t.kind === "belt" ? 0.22 : 0.45;
+      const a = t.kind === "machine" ? 0.55 : t.kind === "floor" ? 0.12 : t.kind === "charger" ? 0.32 : t.kind === "belt" || t.kind === "fence" ? 0.22 : t.kind === "office" || t.kind === "breakroom" ? 0.35 : 0.45;
       soft(t.x + 0.05, t.z + 0.05, t.x + t.w - 0.05, t.z + t.d - 0.05, a, t.kind === "floor" ? 0.3 : 0.65);
     }
     const edge = (ax: number, ay: number, bx: number, by: number, rx: number, ry: number, rw: number, rh: number, a: number) => {
@@ -1295,7 +1310,9 @@ export class World {
         // Walk to somewhere on the walkway, the apron or the aisle.
         const zs = [2, AISLE_Z[1], 19];
         const tx = 2 + Math.floor(((Math.sin(this.time * 1.7 + i * 13.1) + 1) / 2) * (W - 3));
-        const tz = zs[(i + Math.floor(this.time)) % zs.length];
+        let tz = zs[(i + Math.floor(this.time)) % zs.length];
+        // Somewhere they can stand (an open-plan floor may have something built there).
+        if (grid(s)[tz * GRID_W + tx] !== 0) tz = 19;
         w.path = route(s, w.x, w.z, tx, tz);
         w.wait = 2 + (i % 4);
       }
@@ -1411,7 +1428,7 @@ export class World {
       out.push({ box: new THREE.Box3(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1)), focus });
     for (const t of s.structs) {
       if (t.dead) continue;
-      const h = t.kind === "machine" ? 2.8 : t.kind === "rack" ? rackLevels(s) * LEVEL_H : t.kind === "freezer" ? FREEZER.levels * LEVEL_H : t.kind === "charger" ? 1.4 : 0.9;
+      const h = t.kind === "machine" ? 2.8 : t.kind === "rack" ? rackLevels(s) * LEVEL_H : t.kind === "freezer" ? FREEZER.levels * LEVEL_H : t.kind === "charger" ? 1.4 : t.kind === "office" || t.kind === "breakroom" ? 2.2 : 0.9;
       add(t.x, 0, t.z, t.x + t.w, h, t.z + t.d, { k: "struct", id: t.id });
     }
     for (const d of s.doors) add(doorX0(d.i), 0, STAGE_Z[0], doorX0(d.i) + 3, 0.2, DOCK_Z + 1, { k: "door", id: d.i });

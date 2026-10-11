@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { PoweredBy } from "@/nextx/PoweredBy";
 import { GlassDefs, canRefract, trackSheen } from "@/nextx/glass";
 import {
-  BELT, CARRIERS, CARRIER_FEE, CHARGER, CITIES, EVENTS, FORKLIFT_COST, FREEZER, FROZEN, GOALS, HIGH_TECH, HOUR, INDUSTRIES, INDUSTRY_LEVELS, ITEMS, MACHINES, MANAGERS, MAX_FORKLIFTS, MAX_OWN_TRUCKS, MAX_STORES,
+  AIR, BELT, BREAKROOM, CAMPAIGN, CARRIERS, CARRIER_FEE, CHARGER, CITIES, FENCE, OFFICE, RIVALS, SUPPLIERS, EVENTS, FORKLIFT_COST, FREEZER, FROZEN, GOALS, HIGH_TECH, HOUR, INDUSTRIES, INDUSTRY_LEVELS, ITEMS, MACHINES, MANAGERS, MAX_FORKLIFTS, MAX_OWN_TRUCKS, MAX_STORES,
   OWN_TRUCK_COST, OWN_TRUCK_WAGE, RACK, FLOOR, RAIL_CAP, RAW, PARTS, GOODS, SEASON_DAYS, SPEEDS, STORES, STORE_HOURS, STORE_KINDS, THAW_SECS, UPGRADES,
-  buyPrice, city, itemIndustry, machineIndustry, siteDef, supplierFor, type DoorType, type ItemId, type StoreKind,
+  BID_RANGE, buyPrice, city, itemIndustry, machineIndustry, siteDef, supplierFor, type DoorType, type IndustryId, type ItemId, type StoreKind,
 } from "../data";
 import { TIPS, type CompanyTab, type Game, type Sheet } from "../game";
 import * as sim from "../sim";
@@ -164,6 +164,7 @@ function Title({ g }: { g: Game }) {
               {!d.racks.length && <>·<span>an empty floor</span></>}
               {d.rail && <>·<span>rail</span></>}
               {d.mega && <>·<span>Mega hall</span></>}
+              {d.openPlan && <>·<b className="wf-up">open plan: build anywhere</b></>}
               {(d.industries ?? []).map((i) => (
                 <span key={i}>· {INDUSTRIES.find((x) => x.id === i)!.icon} {INDUSTRIES.find((x) => x.id === i)!.name}</span>
               ))}
@@ -808,6 +809,38 @@ function StructInfo({ g, s, id }: { g: Game; s: State; id: number }) {
       </>
     );
   }
+  if (sim.FACILITIES.includes(t.kind)) {
+    const n = sim.built(s, t.kind);
+    const def = t.kind === "office" ? OFFICE : t.kind === "breakroom" ? BREAKROOM : FENCE;
+    const effect =
+      t.kind === "office"
+        ? `Customers order ${8 * Math.min(2, n)}% more (${n} office${n === 1 ? "" : "s"}, two count)`
+        : t.kind === "breakroom"
+          ? `Forklift drivers work ${Math.round((sim.breakBonus(s) - 1) * 100)}% quicker (${n} break room${n === 1 ? "" : "s"}, three count${sim.up(s, "ergonomics") ? ", doubled by Ergonomics" : ""})`
+          : `${n} tile${n === 1 ? "" : "s"} of fence: forklifts go round`;
+    return (
+      <>
+        <div className="wf-eyebrow">Facility</div>
+        <div className="title">{def.name}</div>
+        <div className="wf-chips">
+          <span className={`wf-pill ${t.kind === "fence" ? "grey" : "good"}`} data-testid="wf-facility-effect">
+            {effect}
+          </span>
+        </div>
+        <p className="dim" style={{ fontSize: 12, margin: "8px 0 0" }}>
+          {def.blurb}
+        </p>
+        <div className="wf-seg" style={{ marginTop: 12 }}>
+          <button className="wf-btn small" onClick={() => g.startMove(t.id)} data-testid="wf-move">
+            ✥ Move
+          </button>
+          <button className="wf-btn small" onClick={() => g.removeStruct(t.id)}>
+            Remove
+          </button>
+        </div>
+      </>
+    );
+  }
   if (t.kind === "charger") {
     const using = s.forks.filter((f) => f.charger >= 0 && Math.floor(f.charger / 2) === t.id);
     return (
@@ -1087,9 +1120,9 @@ function Toolbar({ g }: { g: Game }) {
   const moving = t.kind === "move" && t.id !== undefined ? g.s?.structs[t.id] : undefined;
   const kind = moving ? moving.kind : t.kind;
   const what = (k: string, type?: string) =>
-    k === "machine" ? MACHINES[type as keyof typeof MACHINES].name : k === "rack" ? "Pallet rack" : k === "freezer" ? FREEZER.name : k === "charger" ? CHARGER.name : k === "belt" ? BELT.name : "Floor block";
+    k === "machine" ? MACHINES[type as keyof typeof MACHINES].name : k === "rack" ? "Pallet rack" : k === "freezer" ? FREEZER.name : k === "charger" ? CHARGER.name : k === "belt" ? BELT.name : k === "office" ? OFFICE.name : k === "breakroom" ? BREAKROOM.name : k === "fence" ? FENCE.name : "Floor block";
   const name = t.kind === "remove" ? "Remove: tap a rack or machine" : t.kind === "move" ? (moving ? `Moving: ${what(moving.kind, moving.m?.type)}` : "Move: tap what to pick up") : what(t.kind, t.type);
-  const hint = t.kind === "remove" ? "" : t.kind === "move" && !moving ? "it must be empty" : t.kind === "move" ? "tap where it goes" : t.kind === "belt" ? "tap tile by tile to lay a line" : "tap the floor to build";
+  const hint = t.kind === "remove" ? "" : t.kind === "move" && !moving ? "it must be empty" : t.kind === "move" ? "tap where it goes" : t.kind === "belt" || t.kind === "fence" ? "tap tile by tile to lay a line" : "tap the floor to build";
   return (
     <div className="wf-toolbar wf-glass wf-capsule" data-testid="wf-toolbar">
       <span>{name}</span>
@@ -1316,7 +1349,9 @@ function BuySheet({ g, s }: { g: Game; s: State }) {
     const ind = itemIndustry(id);
     return !ind || sim.licensed(s, ind) || siteDef(s.site).goodsMix.includes(id);
   };
-  const [rail, setRail] = useState(false);
+  const [mode, setMode] = useState<"truck" | "rail" | "air">("truck");
+  const rail = mode === "rail" && s.rail;
+  const air = mode === "air";
   const max = rail ? RAIL_CAP : 12;
   const group = (title: string, items: ItemId[]) => (
     <>
@@ -1324,7 +1359,7 @@ function BuySheet({ g, s }: { g: Game; s: State }) {
       <div className="wf-list">
         {items.map((id) => {
           const it = ITEMS[id];
-          const cost = sim.purchaseCost(s, id, Math.min(n, max), rail);
+          const cost = sim.purchaseCost(s, id, Math.min(n, max), rail, air);
           const mk = sim.marketOf(s, id);
           const auto = s.auto[id];
           return (
@@ -1339,7 +1374,7 @@ function BuySheet({ g, s }: { g: Game; s: State }) {
               </div>
               <div className="wf-between" style={{ marginTop: 6 }}>
                 <span className="dim" style={{ fontSize: 12 }}>
-                  {money(sim.unitCost(s, id, rail))}/pallet{" "}
+                  {money(sim.unitCost(s, id, rail, air))}/pallet{" "}
                   {Math.abs(mk - 1) > 0.01 && (
                     <b className={mk > 1 ? "wf-down" : "wf-up"} title="Today's market">
                       {mk > 1 ? "▲" : "▼"} {Math.abs(Math.round((mk - 1) * 100))}%
@@ -1351,7 +1386,7 @@ function BuySheet({ g, s }: { g: Game; s: State }) {
                   <button className={`wf-btn small ${auto ? "on" : ""}`} onClick={() => g.setAuto(id, auto ? 0 : 4, n)} title="Keep at least 4 pallets: reorder automatically">
                     {auto ? "Auto ✓" : "Auto"}
                   </button>
-                  <button className="wf-btn small primary" disabled={!sim.afford(s, cost)} onClick={() => g.buy(id, Math.min(n, max), rail)} data-testid={`wf-buy-${id}`}>
+                  <button className="wf-btn small primary" disabled={!sim.afford(s, cost)} onClick={() => g.buy(id, Math.min(n, max), rail, air)} data-testid={`wf-buy-${id}`}>
                     Buy {Math.min(n, max)} · {money(cost)}
                   </button>
                 </div>
@@ -1365,7 +1400,7 @@ function BuySheet({ g, s }: { g: Game; s: State }) {
   return (
     <>
       <div className="wf-between">
-        <span className="muted" style={{ fontSize: 13 }}>Pallets per {rail ? "train" : "truck"}</span>
+        <span className="muted" style={{ fontSize: 13 }}>Pallets per {rail ? "train" : air ? "flight" : "truck"}</span>
         <div className="wf-stepper">
           <button className="wf-btn icon small" onClick={() => setN(Math.max(1, n - 1))} aria-label="Fewer">
             −
@@ -1376,18 +1411,22 @@ function BuySheet({ g, s }: { g: Game; s: State }) {
           </button>
         </div>
       </div>
-      {s.rail && (
-        <div className="wf-seg" style={{ marginTop: 8 }}>
-          <button className={`wf-btn small ${!rail ? "on" : ""}`} onClick={() => setRail(false)}>
-            🚚 By truck
+      <div className="wf-seg" style={{ marginTop: 8 }} role="group" aria-label="How it comes">
+        <button className={`wf-btn small ${mode === "truck" || (mode === "rail" && !s.rail) ? "on" : ""}`} aria-pressed={mode === "truck"} onClick={() => setMode("truck")}>
+          🚚 Truck
+        </button>
+        {s.rail && (
+          <button className={`wf-btn small ${rail ? "on" : ""}`} aria-pressed={rail} onClick={() => setMode("rail")} data-testid="wf-buy-rail">
+            🚆 Rail (up to {RAIL_CAP}, 10% off)
           </button>
-          <button className={`wf-btn small ${rail ? "on" : ""}`} onClick={() => setRail(true)} data-testid="wf-buy-rail">
-            🚆 By rail (up to {RAIL_CAP}, 10% off)
-          </button>
-        </div>
-      )}
+        )}
+        <button className={`wf-btn small ${air ? "on" : ""}`} aria-pressed={air} onClick={() => setMode("air")} data-testid="wf-buy-air">
+          ✈️ Air (4× faster)
+        </button>
+      </div>
       <p className="dim" style={{ fontSize: 12, margin: "6px 0 0" }}>
-        Plus {rail ? "$60 freight a train" : "$120 freight a truck"}. Prices move with the market every day. Auto keeps four pallets in stock and reorders when you fall below.
+        Plus {money(sim.freight(s, rail, air))} freight a {rail ? "train" : air ? "flight" : "truck"}
+        {air ? `, and pallets cost ${Math.round((AIR.surcharge - 1) * (sim.up(s, "aircargo") ? 0.6 : 1) * 100)}% more (lands in a quarter of the time${sim.up(s, "aircargo") ? ", Air cargo deal applied" : ""})` : ""}. Prices move with the market every day. Auto keeps four pallets in stock and reorders when you fall below.
       </p>
       {group("Finished goods (wholesale)", GOODS.filter((id) => !FROZEN.includes(id) && trades(id)))}
       {sim.up(s, "cold") && group("Frozen (keep in freezer racks)", FROZEN)}
@@ -1402,11 +1441,25 @@ function BuySheet({ g, s }: { g: Game; s: State }) {
   );
 }
 
+const FACILITY_TILES = [
+  ["office", OFFICE, "🏢"],
+  ["breakroom", BREAKROOM, "☕"],
+  ["fence", FENCE, "🚧"],
+] as const;
+
 function BuildSheet({ g, s }: { g: Game; s: State }) {
+  const open = sim.openPlan(s);
   return (
     <>
-      <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
-        Pick something, then tap the floor inside the building (anywhere behind the yellow aisle). Racks are picked from the side the arrow points to; machines take materials in at the blue arrows and send goods out at the green. Anything can be moved later, free.
+      <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }} data-testid="wf-build-intro">
+        {open ? (
+          <>
+            <b>Open plan:</b> build anywhere in the hall, the old aisle included, right up to the yellow line by the dock lanes. Forklifts drive round whatever you put down, so leave them a way through.{" "}
+          </>
+        ) : (
+          "Pick something, then tap the floor inside the building (anywhere behind the yellow aisle). "
+        )}
+        Racks are picked from the side the arrow points to; machines take materials in at the blue arrows and send goods out at the green. Anything can be moved later, free.
       </p>
       <div className="wf-section">Storage</div>
       <div className="wf-grid2">
@@ -1442,6 +1495,23 @@ function BuildSheet({ g, s }: { g: Game; s: State }) {
           <small>{BELT.blurb}</small>
           <b>{money(BELT.cost)} a tile</b>
         </button>
+      </div>
+      <div className="wf-section">Facilities</div>
+      <div className="wf-grid2">
+        {FACILITY_TILES.map(([k, d, icon]) => {
+          const n = sim.built(s, k);
+          return (
+            <button key={k} className="wf-tile" onClick={() => g.setTool({ kind: k, rot: 0 })} disabled={!sim.afford(s, d.cost)} data-testid={`wf-build-${k}`}>
+              <span className="big">{icon}</span>
+              <b>{d.name}</b>
+              <small>{d.blurb}</small>
+              <b>
+                {money(d.cost)}
+                {k === "fence" ? " a tile" : ""} <span className="dim">· {d.w}×{d.d}{n ? ` · ${n} built` : ""}</span>
+              </b>
+            </button>
+          );
+        })}
       </div>
       {INDUSTRIES.map((ind) => {
         const ok = sim.licensed(s, ind.id);
@@ -1860,8 +1930,10 @@ function Over({ g, s }: { g: Game; s: State }) {
 
 const CO_TABS: [CompanyTab, string][] = [
   ["overview", "Overview"],
+  ["map", "Map"],
   ["industries", "Industries"],
   ["production", "Production"],
+  ["market", "Market"],
   ["stores", "Stores"],
   ["managers", "Managers"],
 ];
@@ -1878,8 +1950,10 @@ function CompanySheet({ g, s }: { g: Game; s: State }) {
         ))}
       </div>
       {tab === "overview" && <CompanyOverview g={g} s={s} />}
+      {tab === "map" && <MapTab g={g} s={s} />}
       {tab === "industries" && <IndustriesTab g={g} s={s} />}
       {tab === "production" && <ProductionTab g={g} s={s} />}
+      {tab === "market" && <MarketTab g={g} s={s} />}
       {tab === "stores" && <StoresTab g={g} s={s} />}
       {tab === "managers" && <ManagersTab g={g} s={s} />}
     </>
@@ -2197,7 +2271,7 @@ function StoreCard({ g, s, st }: { g: Game; s: State; st: Store }) {
 function StoresTab({ g, s }: { g: Game; s: State }) {
   const open = STORE_KINDS.filter((k) => sim.licensed(s, STORES[k].ind));
   const [kind, setKind] = useState<StoreKind>(open[0] ?? "discount");
-  const [where, setWhere] = useState("New York");
+  const [where, setWhere] = useState(g.storeCity);
   const def = STORES[kind];
   const cost = sim.storeCost(kind, where);
   return (
@@ -2275,6 +2349,380 @@ function ManagersTab({ g, s }: { g: Game; s: State }) {
       <p className="dim" style={{ fontSize: 12, margin: "8px 0 0" }}>
         Salaries: {money(sim.managerWages(s))} an hour · {money(s.ledger.managers)} paid so far.
       </p>
+    </>
+  );
+}
+
+/* ---------------------------------------------------------------- the map */
+
+/** The map is a schematic of the north-east (100 × 72 map units): cities sit where they are, nudged apart where they'd touch. */
+const MAP_H = 72;
+type Side = "l" | "r" | "b";
+const PLACES: Record<string, { x: number; y: number; side: Side }> = {
+  Cleveland: { x: 10, y: 22, side: "b" },
+  Buffalo: { x: 31, y: 9, side: "b" },
+  Pittsburgh: { x: 21.5, y: 34, side: "b" },
+  Albany: { x: 72.5, y: 10.5, side: "l" },
+  Boston: { x: 94, y: 13.5, side: "l" },
+  Providence: { x: 90, y: 20.5, side: "b" },
+  Hartford: { x: 81, y: 20.5, side: "l" },
+  "New York": { x: 72, y: 31.5, side: "r" },
+  Newark: { x: 66, y: 27.5, side: "l" },
+  Philadelphia: { x: 59.5, y: 41, side: "l" },
+  Baltimore: { x: 50, y: 46, side: "r" },
+  Washington: { x: 44, y: 52, side: "l" },
+  Richmond: { x: 42.5, y: 65, side: "r" },
+};
+const HOME = { x: 66, y: 37 };
+/** Where each supplier ships from. */
+const SUPPLIER_CITY: Record<string, string> = {
+  "Ironvale Steel": "Pittsburgh",
+  "Voltcell Energy": "Buffalo",
+  "Polymer & Co.": "Newark",
+  Timberline: "Albany",
+  Circuitra: "Boston",
+  "Arctic Freight": "Baltimore",
+  "Harvest Farms": "Richmond",
+  "Cotton & Hide Co.": "Washington",
+  "Alutech Metals": "Cleveland",
+  "Chemix Labs": "Philadelphia",
+  "Wholesale Direct": "Hartford",
+};
+const LAND = {
+  ocean:
+    "M100,4 L96.7,7.5 98.4,10.2 95.5,12.9 95.1,14 97.9,17.2 100,19.5 100,21.5 96.7,22.1 92.6,23.2 88.5,24.8 80.3,25.1 74.6,28 72.5,29.6 81.1,28.2 88.5,27.2 78.7,31.3 71.3,32.7 70.5,34.5 70.1,37.7 68,44.2 62.7,50.3 59.8,46.4 57.8,43.1 59,48.5 61.5,51.7 61.9,56.1 60.2,60.4 57.4,64.7 54.5,70.1 54.1,72 100,72Z",
+  erie: "M0,21 L7.4,22.6 17.2,17.8 23,15.1 30.3,8.1 27.9,7 19.7,10.6 9.8,10.8 2.5,16.2 0,17.2Z",
+  ontario: "M23,0 L23,3.6 29.5,4.1 41,3.6 50,1.6 52.5,0Z",
+  bay: "M54.5,72 L55.2,66 56.5,60 56.2,55 55,50 53.3,43.7 52.6,45 52.5,49 52,54 51,60 50,66 51.5,72Z",
+};
+/** Shipment colours (validated together on the map's land colour; the legend and the list below carry the same thing in words). */
+const OUT = "#2a78d6";
+const IN = "#eb6834";
+
+interface Trip {
+  key: string;
+  dir: "out" | "in";
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  p: number;
+  what: string;
+  place: string;
+  eta: number;
+  air?: boolean;
+  store?: boolean;
+}
+
+function trips(s: State): Trip[] {
+  const out: Trip[] = [];
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  for (const o of s.orders) {
+    if (o.state !== "transit") continue;
+    const to = PLACES[o.city];
+    if (!to) continue;
+    out.push({
+      key: `o${o.id}`, dir: "out", from: HOME, to, p: clamp((s.time - o.departed) / Math.max(1, o.delivers - o.departed)), place: o.city, eta: o.delivers - s.time,
+      what: `${o.lines.map((l) => `${l.n} × ${ITEMS[l.item].name}`).join(", ")} for ${o.store !== undefined ? "your store" : o.customer}`, store: o.store !== undefined,
+    });
+  }
+  for (const po of s.pos) {
+    if (po.done) continue;
+    const t = s.trucks.find((x) => x.id === po.truck);
+    if (!t || t.state !== "transit") continue;
+    const where = SUPPLIER_CITY[po.supplier] ?? "Hartford";
+    out.push({
+      key: `p${po.id}`, dir: "in", from: PLACES[where], to: HOME, p: clamp((s.time - po.ordered) / Math.max(1, t.eta - po.ordered)), place: where, eta: t.eta - s.time,
+      what: `${po.n} × ${ITEMS[po.item].name} from ${po.supplier}`, air: po.air,
+    });
+  }
+  return out.sort((a, b) => a.eta - b.eta);
+}
+
+function MapTab({ g, s }: { g: Game; s: State }) {
+  const [sel, setSel] = useState<string | null>(null);
+  const list = trips(s);
+  const nOut = list.filter((t) => t.dir === "out").length;
+  const c = sel ? city(sel) : null;
+  const stores = sel ? s.stores.filter((x) => x.city === sel) : [];
+  const here = sel ? list.filter((t) => t.place === sel) : [];
+  const sups = sel ? SUPPLIERS.filter((x) => SUPPLIER_CITY[x.name] === sel) : [];
+  const tenders = sel ? s.tenders.filter((t) => t.state === "open" && t.city === sel) : [];
+  const site = siteDef(s.site);
+  return (
+    <>
+      <div className="wf-legend" aria-label="Map key">
+        <span>
+          <i className="ln" style={{ background: OUT }} /> To customers and stores ({nOut})
+        </span>
+        <span>
+          <i className="ln" style={{ background: IN }} /> From suppliers ({list.length - nOut})
+        </span>
+        <span>
+          <i className="ln dash" /> By air
+        </span>
+        <span>
+          <i className="sq" /> Your store
+        </span>
+      </div>
+      <div className="wf-map" data-testid="wf-map">
+        <svg viewBox={`0 0 100 ${MAP_H}`} preserveAspectRatio="none" aria-hidden="true">
+          <rect width="100" height={MAP_H} className="land" />
+          <path d={LAND.ocean} className="water" />
+          <path d={LAND.erie} className="water" />
+          <path d={LAND.ontario} className="water" />
+          <path d={LAND.bay} className="water" />
+          {Object.entries(PLACES).map(([n, p]) => (
+            <line key={n} x1={HOME.x} y1={HOME.y} x2={p.x} y2={p.y} className={`road ${n === sel ? "on" : ""}`} vectorEffect="non-scaling-stroke" />
+          ))}
+          {list.map((t) => (
+            <line key={t.key} x1={t.from.x} y1={t.from.y} x2={t.to.x} y2={t.to.y} stroke={t.dir === "out" ? OUT : IN} strokeWidth="2" strokeDasharray={t.air ? "5 4" : undefined} strokeLinecap="round" opacity={0.55} vectorEffect="non-scaling-stroke" />
+          ))}
+        </svg>
+        {list.map((t) => (
+          <span
+            key={t.key}
+            className="wf-map-dot"
+            style={{ left: `${t.from.x + (t.to.x - t.from.x) * t.p}%`, top: `${((t.from.y + (t.to.y - t.from.y) * t.p) / MAP_H) * 100}%`, background: t.dir === "out" ? OUT : IN }}
+            aria-hidden="true"
+          />
+        ))}
+        <span className="wf-map-home" style={{ left: `${HOME.x}%`, top: `${(HOME.y / MAP_H) * 100}%` }}>
+          <i aria-hidden="true">🏭</i>
+          <b>{site.code}</b>
+        </span>
+        {CITIES.map((cc) => {
+          const p = PLACES[cc.name];
+          if (!p) return null;
+          const has = s.stores.some((x) => x.city === cc.name);
+          return (
+            <button
+              key={cc.name}
+              className={`wf-map-city ${p.side} ${has ? "store" : ""} ${sel === cc.name ? "on" : ""}`}
+              style={{ left: `${p.x}%`, top: `${(p.y / MAP_H) * 100}%` }}
+              onClick={() => setSel(sel === cc.name ? null : cc.name)}
+              aria-pressed={sel === cc.name}
+              title={`${cc.name}: ${cc.transit} min by road${has ? ", your store" : ""}`}
+              data-testid={`wf-city-${cc.name.replace(/ /g, "-").toLowerCase()}`}
+            >
+              <i style={{ width: 7 + cc.pop * 5, height: 7 + cc.pop * 5 }} />
+              <span>{cc.name}</span>
+            </button>
+          );
+        })}
+      </div>
+      {c && sel ? (
+        <div className="wf-item" style={{ marginTop: 10 }} data-testid="wf-city-card">
+          <div className="wf-between">
+            <h4>📍 {c.name}</h4>
+            <span className="wf-pill grey">{c.pop >= 1.2 ? "Big city" : c.pop >= 0.95 ? "Average city" : "Small city"}</span>
+          </div>
+          <p>
+            {c.transit} min by road · store rent from {money(Math.round(30 * c.pop))}/h · {Math.round(c.pop * 100)}% of the usual shoppers
+            {sups.length ? ` · ${sups.map((x) => x.name).join(", ")} ship${sups.length === 1 ? "s" : ""} from here` : ""}
+          </p>
+          {stores.map((st) => (
+            <div key={st.id} className="wf-between" style={{ fontSize: 13, marginTop: 6 }}>
+              <span>
+                {STORES[st.kind].icon} {st.name}
+              </span>
+              <b className="num wf-up">{money(st.today)} today</b>
+            </div>
+          ))}
+          {(here.length > 0 || tenders.length > 0) && (
+            <small className="dim" style={{ display: "block", marginTop: 6 }}>
+              {here.length ? `${here.length} shipment${here.length === 1 ? "" : "s"} on the road` : ""}
+              {here.length && tenders.length ? " · " : ""}
+              {tenders.length ? `${tenders.length} tender${tenders.length === 1 ? "" : "s"} open` : ""}
+            </small>
+          )}
+          <div className="wf-seg" style={{ marginTop: 10 }}>
+            <button className="wf-btn small primary" onClick={() => g.openCompany("stores", c.name)} data-testid="wf-city-store">
+              {stores.length ? "🏪 Manage stores" : "🏪 Open a store here"}
+            </button>
+            {tenders.length > 0 && (
+              <button className="wf-btn small" onClick={() => g.openCompany("market")}>
+                📑 Tenders
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p className="dim" style={{ fontSize: 12, margin: "8px 0 0" }}>
+          Tap a city for its shoppers, road time and your stores there. Dots are shipments on the road now.
+        </p>
+      )}
+      <div className="wf-section">On the road</div>
+      <div className="wf-list" data-testid="wf-road">
+        {list.slice(0, 14).map((t) => (
+          <div key={t.key} className="wf-trow" style={{ gridTemplateColumns: "auto 1fr auto" }}>
+            <i className="wf-dir" style={{ "--c": t.dir === "out" ? OUT : IN } as React.CSSProperties} role="img" aria-label={t.dir === "out" ? "Outbound" : "Inbound"}>
+              {t.air ? "✈" : t.dir === "out" ? "→" : "←"}
+            </i>
+            <span style={{ minWidth: 0 }}>
+              {t.dir === "out" ? `To ${t.place}` : `From ${t.place}`}
+              <span className="sub">{t.what}</span>
+            </span>
+            <b className="num" style={{ fontSize: 12.5 }}>
+              {t.eta > 0 ? mins(t.eta) : "Arriving"}
+            </b>
+          </div>
+        ))}
+        {list.length > 14 && <small className="dim">and {list.length - 14} more</small>}
+        {!list.length && <p className="dim" style={{ fontSize: 12.5, margin: 0 }}>Nothing on the road right now.</p>}
+      </div>
+    </>
+  );
+}
+
+/* ---------------------------------------------------------------- the market */
+
+function TenderCard({ g, s, t }: { g: Game; s: State; t: sim.Tender }) {
+  const [bid, setBid] = useState(t.bid ?? 1);
+  const intel = sim.up(s, "intel");
+  const chance = sim.winChance(s, bid);
+  const per = Math.round(t.list * bid);
+  const total = per * t.n * t.count;
+  const it = ITEMS[t.item];
+  const step = (d: number) => setBid(Math.round(Math.max(BID_RANGE[0], Math.min(BID_RANGE[1], bid + d)) * 100) / 100);
+  const odds = chance >= 0.7 ? ["Keen: very likely to win", "good"] : chance >= 0.35 ? ["Fair: a good chance", ""] : chance > 0.05 ? ["Dear: a long shot", "warn"] : ["Too dear to win", "bad"];
+  return (
+    <div className="wf-item" data-testid="wf-tender">
+      <div className="wf-between">
+        <h4>
+          {it.icon} {t.customer}
+        </h4>
+        <span className="wf-pill warn">Closes in {mins(t.closes - s.time)}</span>
+      </div>
+      <p>
+        {t.count} shipments of {t.n} × {it.name.toLowerCase()} to {t.city}, every {t.every} h. List {money(t.list)} a pallet; a 15% bonus if every shipment is on time.
+      </p>
+      <div className="wf-between" style={{ marginTop: 8, flexWrap: "wrap", gap: 8 }}>
+        <div className="wf-stepper" aria-label="Your bid">
+          <button className="wf-btn icon small" onClick={() => step(-0.01)} aria-label="Bid lower" data-testid="wf-bid-down">
+            −
+          </button>
+          <output className="num" style={{ minWidth: 92 }} data-testid="wf-bid">
+            {Math.round(bid * 100)}% of list
+          </output>
+          <button className="wf-btn icon small" onClick={() => step(0.01)} aria-label="Bid higher">
+            +
+          </button>
+        </div>
+        <span className={`wf-pill ${odds[1]}`}>
+          {odds[0]}
+          {intel ? ` (${Math.round(chance * 100)}%)` : ""}
+        </span>
+      </div>
+      <small className="dim" style={{ display: "block", marginTop: 6 }}>
+        {money(per)} a pallet · {money(total)} for the run
+        {intel && s.rivals.some((r) => r.last !== undefined) ? ` · last time rivals bid ${s.rivals.filter((r) => r.last !== undefined).map((r) => `${r.name.split(" ")[0]} ${Math.round(r.last! * 100)}%`).join(", ")}` : ""}
+      </small>
+      <div className="wf-seg" style={{ marginTop: 10 }}>
+        <button className="wf-btn small primary" onClick={() => g.bidTender(t.id, bid)} data-testid="wf-bid-place">
+          {t.bid === undefined ? "Place bid" : t.bid === bid ? `Bid in ✓ ${Math.round(t.bid * 100)}%` : "Change bid"}
+        </button>
+        {t.bid !== undefined && (
+          <button className="wf-btn small" onClick={() => g.bidTender(t.id, 0)}>
+            Withdraw
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MarketTab({ g, s }: { g: Game; s: State }) {
+  const open = s.tenders.filter((t) => t.state === "open");
+  const shut = s.tenders.filter((t) => t.state !== "open").slice(-6).reverse();
+  const table = [{ name: "You", color: "#1b2236", won: s.stats.tendersWon, you: true }, ...s.rivals.map((r) => ({ name: r.name, color: RIVALS.find((x) => x.name === r.name)?.color ?? "#8a93a8", won: r.won, you: false }))].sort((a, b) => b.won - a.won);
+  const live = sim.activeCampaigns(s);
+  const hot = s.event ? EVENTS.find((x) => x.kind === s.event!.kind) : undefined;
+  return (
+    <>
+      <div className="wf-kv" style={{ marginTop: 10 }}>
+        <div>
+          <small>Tenders won</small>
+          <b className="num">{s.stats.tendersWon}</b>
+        </div>
+        <div>
+          <small>Reputation</small>
+          <b className="num">{Math.round(s.rep)}/100</b>
+        </div>
+        <div>
+          <small>Ads running</small>
+          <b className="num">{live.length ? live.map((i) => INDUSTRIES.find((x) => x.id === i)!.icon).join(" ") : "None"}</b>
+        </div>
+        <div>
+          <small>The news</small>
+          <b style={{ fontSize: 12.5 }}>{hot ? `${hot.icon} ${hot.name}` : "A quiet market"}</b>
+        </div>
+      </div>
+      <div className="wf-section">Tenders</div>
+      <p className="muted" style={{ fontSize: 12.5, margin: "0 0 8px" }}>
+        Big customers put runs of shipments out to tender. You and three rivals bid a price; the keenest wins, and a good reputation counts for a few percent. Win, and it&apos;s a contract at your price.
+      </p>
+      <div className="wf-list">
+        {open.map((t) => (
+          <TenderCard key={t.id} g={g} s={s} t={t} />
+        ))}
+        {!open.length && <p className="dim" style={{ fontSize: 12.5, margin: 0 }} data-testid="wf-no-tenders">No tenders open: one comes up every few hours from day two.</p>}
+      </div>
+      {shut.length > 0 && (
+        <>
+          <div className="wf-section">Results</div>
+          <div className="wf-list">
+            {shut.map((t) => (
+              <div key={t.id} className="wf-trow" style={{ gridTemplateColumns: "auto 1fr auto" }}>
+                <b aria-hidden="true">{ITEMS[t.item].icon}</b>
+                <span style={{ minWidth: 0 }}>
+                  {t.customer}
+                  <span className="sub">
+                    {t.winner === "You" ? `You won at ${Math.round((t.winBid ?? 1) * 100)}%` : `${t.winner} won${sim.up(s, "intel") && t.winBid ? ` at ${Math.round(t.winBid * 100)}%` : ""}`}
+                    {t.bid !== undefined && t.winner !== "You" ? ` · you bid ${Math.round(t.bid * 100)}%` : ""}
+                  </span>
+                </span>
+                <span className={`wf-pill ${t.state === "won" ? "good" : "grey"}`}>{t.state === "won" ? "Won" : "Lost"}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <div className="wf-section">The league · tenders won</div>
+      <div className="wf-list" data-testid="wf-league">
+        {table.map((r, i) => (
+          <div key={r.name} className="wf-trow" style={{ gridTemplateColumns: "auto auto 1fr auto" }}>
+            <b className="num dim">{i + 1}</b>
+            <i className="wf-swatch" style={{ background: r.color }} aria-hidden="true" />
+            <span>{r.you ? <b>You</b> : r.name}</span>
+            <b className="num">{r.won}</b>
+          </div>
+        ))}
+      </div>
+      <div className="wf-section">Ad campaigns</div>
+      <p className="muted" style={{ fontSize: 12.5, margin: "0 0 8px" }}>
+        {money(CAMPAIGN.cost)} for {CAMPAIGN.hours} hours: a quarter more orders come in, and most of the offers are for that trade&apos;s goods.
+      </p>
+      <div className="wf-list">
+        {INDUSTRIES.filter((i) => sim.licensed(s, i.id)).map((ind) => {
+          const until = s.campaigns[ind.id as IndustryId] ?? 0;
+          const on = until > s.time;
+          return (
+            <div key={ind.id} className="wf-trow" style={{ gridTemplateColumns: "auto 1fr auto" }}>
+              <b aria-hidden="true">{ind.icon}</b>
+              <span>
+                {ind.name}
+                <span className="sub">{on ? `On air for another ${mins(until - s.time)}` : ind.goods.slice(0, 4).map((x) => ITEMS[x].name).join(", ")}</span>
+              </span>
+              {on ? (
+                <span className="wf-pill good">Running</span>
+              ) : (
+                <button className="wf-btn small primary" disabled={!sim.afford(s, CAMPAIGN.cost)} onClick={() => g.runCampaign(ind.id)} data-testid={`wf-campaign-${ind.id}`}>
+                  Run · {short(CAMPAIGN.cost)}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </>
   );
 }

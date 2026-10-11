@@ -735,6 +735,32 @@ describe("WareForge tycoon update", () => {
     expect(sim.bidTender(s, t2.id, 0.9)).toMatch(/closed/);
   });
 
+  it("the win chance shown for a bid matches how often it wins", () => {
+    const s = sim.newGame("wh01", 70);
+    expect(sim.winChance(s, 0.8)).toBeGreaterThan(sim.winChance(s, 0.95));
+    expect(sim.winChance(s, 0.95)).toBeGreaterThan(sim.winChance(s, 1.1));
+    expect(sim.winChance(s, 1.25)).toBe(0);
+    const bid = 0.88;
+    const p = sim.winChance(s, bid);
+    expect(p).toBeGreaterThan(0.1);
+    expect(p).toBeLessThan(0.9);
+    let won = 0;
+    const runs = 300;
+    for (let i = 0; i < runs; i++) {
+      const g = sim.newGame("wh01", 1000 + i);
+      const t = sim.offerTender(g);
+      sim.bidTender(g, t.id, bid);
+      t.closes = g.time;
+      sim.tick(g, HOUR);
+      if (t.state === "won") won++;
+    }
+    expect(Math.abs(won / runs - p)).toBeLessThan(0.1);
+    // Market research makes the same bid likelier to win.
+    s.cash = 1e6;
+    sim.buyUpgrade(s, "intel");
+    expect(sim.winChance(s, bid)).toBeGreaterThan(p);
+  });
+
   it("ad campaigns bring offers for their trade; industry events only come to businesses in the trade", () => {
     const s = sim.newGame("wh01", 65);
     s.cash = 1e6;

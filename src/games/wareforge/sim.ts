@@ -2739,6 +2739,14 @@ export function bidTender(s: State, id: number, bid: number): string | null {
 /** How a bid is judged: price, then reputation (a good name is worth a few percent), then market research. */
 export const bidScore = (s: State, bid: number) => bid * (1.1 - (s.rep / 100) * 0.2) * (up(s, "intel") ? 0.95 : 1);
 
+/** The chance a bid beats every rival (each bids round its usual edge, give or take 12%). */
+export function winChance(s: State, bid: number) {
+  const me = bidScore(s, bid);
+  let p = 1;
+  for (const r of RIVALS) p *= Math.max(0, Math.min(1, (1.12 - me / (r.edge * 0.98)) / 0.24));
+  return p;
+}
+
 /** Close the tenders that are due: rivals bid, the keenest price wins; win, and it's a contract. */
 function stepTenders(s: State) {
   for (const t of s.tenders) {

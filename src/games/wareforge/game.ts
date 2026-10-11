@@ -92,6 +92,8 @@ export class Game {
   photo = false;
   /** The Company panel's page. */
   companyTab: CompanyTab = "overview";
+  /** The city the Stores page starts on (picked on the map). */
+  storeCity = "New York";
   readonly sound = new Sound();
   private tipBase: TipBase = { orders: 0, pos: 0, structs: 0 };
   private tipAt = -1;
@@ -427,8 +429,9 @@ export class Game {
   }
 
   /** The Company panel at one of its pages. */
-  openCompany(tab: CompanyTab) {
+  openCompany(tab: CompanyTab, storeCity?: string) {
     this.companyTab = tab;
+    if (storeCity) this.storeCity = storeCity;
     this.sheet = "company";
     this.bump();
   }

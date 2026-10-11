@@ -272,3 +272,126 @@ test.describe("the industry update on a phone", () => {
     expect(b.x + b.width).toBeLessThanOrEqual(vp.width);
   });
 });
+
+test.describe("the tycoon update", () => {
+  type G = {
+    s: { cash: number; sandbox?: boolean; structs: { kind: string; dead?: boolean }[]; tenders: { id: number; bid?: number; state: string }[]; campaigns: Record<string, number>; time: number; pos: { air?: boolean }[] };
+    select: (f: { k: string; id: number } | null) => void;
+  };
+  type Sim = { offerTender: (s: unknown) => { id: number }; placeError: (s: unknown, p: { kind: string; x: number; z: number }) => string | null };
+  const g = <T,>(page: Page, f: (g: G, sim: Sim) => T) => page.evaluate(`(${f.toString()})(window.__wf, window.__wfsim)`) as Promise<T>;
+  const start = async (page: Page) => {
+    await page.addInitScript(() => {
+      if (!localStorage.getItem("zx-season-s1"))
+        localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+      localStorage.setItem("zx-wareforge-prefs", JSON.stringify({ gfx: "low", sound: false }));
+    });
+    await page.goto("/nextx/play/wareforge?wf");
+    await page.getByTestId("zlink-lock-join").click();
+    await page.getByRole("button", { name: "Play", exact: true }).click();
+    await expect(page.getByTestId("wf-title")).toBeVisible({ timeout: 120_000 });
+  };
+
+  test("Freeport Estate: free build in a scored game, a break room, a tender, an ad campaign, the map and air freight", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "the phone runs the next test");
+    test.setTimeout(300_000);
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await start(page);
+    await expect(page.getByTestId("wf-sandbox")).toHaveAttribute("aria-pressed", "false");
+    await page.getByTestId("wf-site-wh30").click();
+    // Real money and a score: not the sandbox.
+    await expect(page.getByTestId("wf-cash-value")).toHaveText(/^\$[\d,]+$/);
+    expect(await g(page, (x) => x.s.sandbox)).toBeFalsy();
+    // Open plan: the old aisle is buildable here (never the dock lanes).
+    expect(await g(page, (x, sim) => sim.placeError(x.s, { kind: "rack", x: 30, z: 15 }))).toBeNull();
+    expect(await g(page, (x, sim) => sim.placeError(x.s, { kind: "rack", x: 30, z: 17 }))).toMatch(/dock lanes/);
+    // A break room, built by tapping the floor: the inspector says what it does.
+    await page.getByTestId("wf-dock-build").click();
+    await expect(page.getByTestId("wf-build-intro")).toContainText("Open plan");
+    await page.getByTestId("wf-build-breakroom").click();
+    const n = await g(page, (x) => x.s.structs.length);
+    const box = (await page.locator("canvas.wf-canvas").boundingBox())!;
+    for (const [fx, fy] of [[0.5, 0.42], [0.45, 0.38], [0.56, 0.4], [0.4, 0.45], [0.6, 0.35], [0.5, 0.33]]) {
+      await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+      await page.waitForTimeout(250);
+      if ((await g(page, (x) => x.s.structs.length)) > n) break;
+    }
+    expect(await g(page, (x) => x.s.structs.filter((t) => t.kind === "breakroom" && !t.dead).length)).toBe(1);
+    await page.getByTestId("wf-tool-done").click();
+    await page.getByTestId("wf-sheet-close").click();
+    await g(page, (x) => x.select({ k: "struct", id: x.s.structs.findIndex((t) => t.kind === "breakroom") }));
+    await expect(page.getByTestId("wf-facility-effect")).toContainText("5% quicker");
+    // A tender: bid under list.
+    const id = await g(page, (x, sim) => sim.offerTender(x.s).id);
+    await page.getByTestId("wf-dock-company").click();
+    await page.getByTestId("wf-co-market").click();
+    await page.getByTestId("wf-bid-down").click();
+    await page.getByTestId("wf-bid-down").click();
+    await expect(page.getByTestId("wf-bid")).toHaveText("98% of list");
+    await page.getByTestId("wf-bid-place").click();
+    expect(await g(page, (x) => x.s.tenders[0].bid)).toBe(0.98);
+    expect(await g(page, (x) => x.s.tenders[0].id)).toBe(id);
+    // An ad campaign for the trade you're in.
+    await page.getByTestId("wf-campaign-goods").click();
+    expect(await g(page, (x) => x.s.campaigns.goods > x.s.time)).toBe(true);
+    // The map: tap a city, and open a store there.
+    await page.getByTestId("wf-co-map").click();
+    await expect(page.getByTestId("wf-map")).toBeVisible();
+    await page.getByTestId("wf-city-boston").click();
+    await expect(page.getByTestId("wf-city-card")).toContainText("Boston");
+    await page.getByTestId("wf-city-store").click();
+    await expect(page.getByTestId("wf-store-city")).toHaveValue("Boston");
+    // Air freight.
+    await page.getByTestId("wf-sheet-close").click();
+    await page.getByTestId("wf-dock-buy").click();
+    await page.getByTestId("wf-buy-air").click();
+    await page.getByTestId("wf-buy-helmet").click();
+    expect(await g(page, (x) => x.s.pos[x.s.pos.length - 1].air)).toBe(true);
+    // It's on the map, coming in.
+    await page.getByTestId("wf-dock-company").click();
+    await page.getByTestId("wf-co-map").click();
+    await expect(page.getByTestId("wf-road")).toContainText("PPE Safety Helmet");
+    expect(errors).toEqual([]);
+  });
+});
+
+test.describe("the tycoon update on a phone", () => {
+  test.use({ viewport: devices["Pixel 7"].viewport });
+
+  test("the map and the market fit a phone", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== "mobile", "the phone layout");
+    test.setTimeout(240_000);
+    await page.addInitScript(() => {
+      if (!localStorage.getItem("zx-season-s1"))
+        localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+      localStorage.setItem("zx-wareforge-prefs", JSON.stringify({ gfx: "low", sound: false }));
+    });
+    await page.goto("/nextx/play/wareforge?wf");
+    await page.getByTestId("zlink-lock-join").click();
+    await page.getByRole("button", { name: "Play", exact: true }).click();
+    await expect(page.getByTestId("wf-title")).toBeVisible({ timeout: 120_000 });
+    await page.getByTestId("wf-site-wh30").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("wf-title")).toContainText("open plan: build anywhere");
+    await page.getByTestId("wf-site-wh30").click();
+    await page.evaluate(`window.__wfsim.offerTender(window.__wf.s)`);
+    await page.getByTestId("wf-dock-company").click();
+    const vp = page.viewportSize()!;
+    const fits = async (id: string) => {
+      const b = (await page.getByTestId(id).boundingBox())!;
+      expect(b.x, id).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width, id).toBeLessThanOrEqual(vp.width);
+    };
+    await page.getByTestId("wf-co-map").click();
+    await fits("wf-map");
+    // Every city is on the map, and can be tapped.
+    for (const c of ["cleveland", "boston", "richmond", "new-york", "newark"]) await fits(`wf-city-${c}`);
+    await page.getByTestId("wf-city-richmond").click();
+    await expect(page.getByTestId("wf-city-card")).toContainText("Richmond");
+    await page.getByTestId("wf-co-market").scrollIntoViewIfNeeded();
+    await page.getByTestId("wf-co-market").click();
+    await fits("wf-tender");
+    await page.getByTestId("wf-bid-place").click();
+    await expect(page.getByTestId("wf-bid-place")).toContainText("Bid in");
+  });
+});

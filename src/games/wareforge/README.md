@@ -96,6 +96,19 @@ Older saves load: the new fields get defaults.
 | Managers | A sales manager accepts the offers you have the stock for; a supply manager orders what working machines need; a retail manager restocks every store; a plant engineer services and repairs machines. $30–35 an hour each. |
 | Also | 2 upgrades (point of sale, fast conveyors), 11 goals, a store takings mission, and the score cap rises (`20261103100000_wareforge_industries.sql`). Older saves load with no licences, stores or managers. |
 
+## The tycoon update
+
+| Area | What's new |
+| --- | --- |
+| Freeport Estate | **WH-30**, the free-build map in normal, scored play: the whole 78-bay hall empty and open plan, four doors and two forklifts, $220,000. Build anywhere inside, the old main aisle included; only the dock lanes in front of the doors are kept clear (a yellow line marks the edge). Forklifts route round whatever you put down and park on the nearest clear tile. |
+| Facilities | A **sales office** (3×2, $9,000): customers order 8% more, two count. A **break room** (2×2, $4,000): forklift drivers work 5% quicker, three count (twice that with the Ergonomics upgrade). A **safety fence** ($40 a tile) that links up with its neighbours: mark walkways and lay out your own aisles. All three can be moved and removed. |
+| Products | Electric cars (car assembly line: body, motor, battery pack and tyres), frozen pizza (bakery oven), ice cream made in-house (dairy works), handbags (sewing line), vitamins (tablet press) and sofas (assembly cell), sold in the matching stores, and three new customers. |
+| Map | Company → Map: the north-east with your site, every city sized by its shoppers, your stores, and every shipment on the road as a moving dot (blue out to customers and stores, orange in from suppliers, dashed by air). Tap a city for its road time, rent, suppliers and your stores there, and open a store in it. A list under the map says the same in words. |
+| Market | Company → Market: tenders from big customers (a run of four to seven shipments). Bid a price against list; three rivals bid too and the keenest wins, with a good reputation worth a few percent. Win and it's a contract at your price, with a 15% bonus if every shipment is on time. A league of tenders won, the day's news, and **ad campaigns** ($6,000 for 12 hours): a quarter more orders, most of them for that trade. |
+| Air freight | Buy any stock by air: it lands in a quarter of the time for a $400 fee and 25% on the price (less with the Air cargo deal). |
+| Events | Fashion week, a bumper harvest, flu season and the motor show, each only for businesses in that trade: prices up, more orders, or cheaper raw food. |
+| Also | 3 upgrades (Market research, Air cargo deal, Ergonomics) and 8 goals. Older saves load with no tenders, campaigns or facilities. |
+
 ## Code
 
 | File | What |
@@ -105,7 +118,7 @@ Older saves load: the new fields get defaults.
 | `game.ts` | Controller: state, clock and speed, selection, build tool, follow camera, photo mode, tips, sounds, saving (`zx-wareforge-save`), score |
 | `audio.ts` | Synthesised sounds (Web Audio) |
 | `render/world.ts` | three.js world, kept in step with the sim each frame; picking |
-| `render/models.ts` | Forklift, truck, train, machine (eight styles), conveyor, charger, worker, car, office, gatehouse, lamp, crane, tree and pin models; canvas textures |
+| `render/models.ts` | Forklift, truck, train, machine (eight styles), conveyor, charger, sales office, break room, fence, worker, car, office, gatehouse, lamp, crane, tree and pin models; canvas textures |
 | `render/stage.ts` | Renderer, quality tiers, the post chain (GTAO, bloom, grade), loop and input (pan, turn, pinch, wheel, tap) |
 | `ui/App.tsx`, `ui/style.ts` | The liquid-glass interface (NextX `GlassDefs` with the `wf` prefix) |
 | `index.ts` | The Zero X `GameModule` |
@@ -115,7 +128,7 @@ The simulation is plain JSON on a 44×34 tile grid:
 | Tiles | Area |
 | --- | --- |
 | z 2–14 | Inside, buildable |
-| z 15–16 | Main aisle |
+| z 15–16 | Main aisle (buildable on an open-plan site) |
 | z 17–18 | Staging lanes |
 | z 19 | Apron |
 | z 20 | Dock wall |
@@ -127,6 +140,8 @@ The simulation is plain JSON on a 44×34 tile grid:
 - Idle forklifts pick the most urgent job: load > unload > clear a machine (or the end of a conveyor) > pick an order > feed a machine > put away.
 - Conveyors are structs with one `belt` slot; a pallet's `bt` is how far it's ridden toward the next tile. `cutOff()` lists anything forklifts can't reach (conveyor-served slots excepted); every site starts with none.
 - Stores, licences and managers live on the state (`stores`, `lic`, `managers`); a restock is an order with `store` set (no payment).
+- Facilities (`office`, `breakroom`, `fence`) are structs with no slots; `built(s, kind)` counts them from the cached layout.
+- Tenders close on the hour (`stepTenders`); `winChance(s, bid)` is the exact chance a bid beats the three rivals, shown in the Market.
 - Forklifts route with A* (turns cost a little) round racks and machines.
 
-The game plays in the NextX app at `/nextx/play/wareforge` (`/games/wareforge` redirects there). `?wf` on the URL exposes the controller as `window.__wf` for tests.
+The game plays in the NextX app at `/nextx/play/wareforge` (`/games/wareforge` redirects there). `?wf` on the URL exposes the controller as `window.__wf` and the simulation as `window.__wfsim` for tests.

@@ -243,6 +243,34 @@ export const css = `
 .wf-chart .lab.lo{bottom:24px}
 .wf-chart .readout{position:absolute;left:12px;right:12px;bottom:5px;font-size:12px;display:flex;gap:6px;align-items:baseline;pointer-events:none}
 
+/* ---- the company map and the market ---- */
+.wf-legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:10px 0 8px;font-size:11.5px;font-weight:650;color:var(--ink2)}
+.wf-legend span{display:inline-flex;align-items:center;gap:6px}
+.wf-legend .ln{display:block;width:16px;height:3px;border-radius:2px}
+.wf-legend .ln.dash{background:repeating-linear-gradient(90deg,var(--ink2) 0 5px,transparent 5px 8px)}
+.wf-legend .sq{display:block;width:10px;height:10px;border-radius:3px;background:var(--ink)}
+.wf-map{position:relative;aspect-ratio:100/72;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#dce8f6}
+.wf-map svg{position:absolute;inset:0;width:100%;height:100%}
+.wf-map .land{fill:#f4f7fb}
+.wf-map .water{fill:#dce8f6;stroke:#b9cde6;stroke-width:.25}
+.wf-map .road{stroke:#cbd3df;stroke-width:1;stroke-dasharray:2 3}
+.wf-map .road.on{stroke:var(--ink2);stroke-dasharray:none}
+.wf-map-dot{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;box-shadow:0 0 0 2px #f4f7fb;pointer-events:none;z-index:2;transition:left .9s linear,top .9s linear}
+.wf-map-home{position:absolute;width:24px;height:24px;margin:-12px 0 0 -12px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px var(--ink),0 2px 6px rgba(27,34,54,.25);display:grid;place-items:center;font-size:12px;pointer-events:none;z-index:3}
+.wf-map-home i{font-style:normal;line-height:1}
+.wf-map-home b,.wf-map-city>span{position:absolute;font-size:10.5px;font-weight:750;color:var(--ink);white-space:nowrap;pointer-events:none;text-shadow:0 0 3px #f4f7fb,0 0 3px #f4f7fb,0 0 2px #f4f7fb}
+.wf-map-home b{left:calc(100% + 5px);top:50%;transform:translateY(-50%);font-weight:850}
+.wf-map-city{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;display:grid;place-items:center;border-radius:50%;z-index:1}
+.wf-map-city>i{display:block;border-radius:50%;background:#fff;box-shadow:0 0 0 1.5px var(--ink2)}
+.wf-map-city.store>i{border-radius:3px;background:var(--ink);box-shadow:0 0 0 2px #fff}
+.wf-map-city.on>i{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--blue)}
+.wf-map-city.on>span{color:var(--blue)}
+.wf-map-city.r>span{left:calc(50% + 9px);top:50%;transform:translateY(-50%)}
+.wf-map-city.l>span{right:calc(50% + 9px);top:50%;transform:translateY(-50%)}
+.wf-map-city.b>span{top:calc(50% + 7px);left:50%;transform:translateX(-50%)}
+.wf-dir{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;font-style:normal;font-size:13px;font-weight:800;color:var(--ink);background:rgba(27,34,54,.05);border-left:4px solid var(--c)}
+.wf-swatch{display:block;width:10px;height:10px;border-radius:3px}
+
 /* ---- the day's report, tips, photo mode ---- */
 @keyframes wf-fade{from{opacity:0}}
 .wf-report{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(400px,calc(100% - 24px));max-height:calc(100% - 180px);overflow:auto;z-index:8;animation:wf-fade .35s ease both}

@@ -4,6 +4,7 @@ import { ScoreEmitter } from "../engine/emitter";
 import type { GameFactory, GameInitOptions, GameModule, ScoreListener } from "../types";
 import { GAME_SLUG } from "./data";
 import { Game } from "./game";
+import * as sim from "./sim";
 import { App } from "./ui/App";
 import { css } from "./ui/style";
 
@@ -35,7 +36,8 @@ class WareForge implements GameModule {
     }, options.settings);
     this.root = createRoot(el);
     this.root.render(createElement(App, { game: this.game }));
-    if (new URLSearchParams(window.location.search).has("wf")) (window as unknown as { __wf?: Game }).__wf = this.game;
+    // Test hooks: the controller, and the simulation it runs.
+    if (new URLSearchParams(window.location.search).has("wf")) Object.assign(window, { __wf: this.game, __wfsim: sim });
   }
 
   start() {
