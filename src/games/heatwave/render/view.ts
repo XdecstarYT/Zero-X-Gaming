@@ -86,6 +86,8 @@ export class HeatwaveView {
   private env: SkyEnvironment;
   private sun: THREE.DirectionalLight;
   private hemi: THREE.HemisphereLight;
+  /** After dark: a warm streetlight fill from over the camera's shoulder, so paintwork reads. */
+  private fill = new THREE.DirectionalLight("#ffcf9a", 0);
   private sea: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   private composer: EffectComposer | null = null;
   private bloom: UnrealBloomPass | null = null;
@@ -113,8 +115,10 @@ export class HeatwaveView {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
+    // Stats cover the whole frame (the composer's passes would otherwise reset them).
+    this.renderer.info.autoReset = false;
     this.renderer.shadowMap.enabled = quality !== "low";
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.scene.fog = new THREE.Fog("#bcd7ef", 200, quality === "high" ? 900 : quality === "medium" ? 700 : 480);
     this.scene.background = new THREE.Color("#bcd7ef");
     this.sky = makeSky();
@@ -123,6 +127,7 @@ export class HeatwaveView {
     this.env = new SkyEnvironment(this.renderer, this.sky, 64);
     this.hemi = new THREE.HemisphereLight("#dce9ff", "#8d8c78", 0.5);
     this.scene.add(this.hemi);
+    this.scene.add(this.fill, this.fill.target);
     this.sun = new THREE.DirectionalLight("#fff1d8", 3);
     this.sun.castShadow = quality !== "low";
     const sm = high ? 2048 : 1024;
@@ -225,6 +230,9 @@ export class HeatwaveView {
     } else this.rig.update(s, dt, now, aiming);
     const pos = this.cinema ? { x: this.cinema.x, z: this.cinema.z } : playerPos(s);
     this.daylight(s, pos.x, pos.z);
+    this.fill.intensity = this.night * 0.9;
+    this.fill.position.set(cam.position.x, cam.position.y + 6, cam.position.z);
+    this.fill.target.position.set(pos.x, 0, pos.z);
     this.city.update(cam.position.x, cam.position.z);
     this.city.setNight(this.night);
     this.actors.sync(s, cam.position.x, cam.position.z, dt, this.night);
@@ -236,6 +244,7 @@ export class HeatwaveView {
     this.sea.position.z = Math.round(cam.position.z / 50) * 50;
     const u = this.sea.material.uniforms;
     u.uTime.value = this.t;
+    this.renderer.info.reset();
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, cam);
     void player;
@@ -282,7 +291,8 @@ export class HeatwaveView {
     } else fog.near = 200;
     (this.scene.background as THREE.Color).copy(fog.color);
     this.scene.environment = this.env.update(`${Math.round(el * 12)}|${Math.round(storm * 4)}`);
-    this.scene.environmentIntensity = 0.8;
+    // More sky reflection after dark, so paintwork still reads under the lamps.
+    this.scene.environmentIntensity = 0.8 + this.night * 0.7;
     const w = this.sea.material.uniforms;
     w.uSunDir.value.copy(this.sunDir);
     w.uSunColor.value.copy(L.sun);

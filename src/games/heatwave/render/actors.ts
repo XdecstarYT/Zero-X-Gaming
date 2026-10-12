@@ -19,6 +19,7 @@ interface PedView {
   key: string;
   step: number;
   guns: Partial<Record<WeaponId, THREE.Object3D>>;
+  shadow?: boolean;
 }
 
 interface CarView {
@@ -30,6 +31,10 @@ interface CarView {
   driver?: PedModel;
   driverKey?: string;
   wrecked: boolean;
+  shadow?: boolean;
+  /** Small parts (plates, trim, lamps, rims) dropped when the car is far off. */
+  fine: THREE.Object3D[];
+  near?: boolean;
   sign?: THREE.Mesh;
 }
 
@@ -38,6 +43,21 @@ const KERB = 0.16;
 
 const smokeMat = new THREE.SpriteMaterial({ color: "#3a3a3a", transparent: true, opacity: 0.55, depthWrite: false });
 const fireMat = new THREE.SpriteMaterial({ color: "#ff8a2a", transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
+
+/** Additive see-through bits (lamp glows, the headlight pool) never cast a shadow. */
+function castsNone(o: THREE.Object3D) {
+  const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+  return !m || (m.transparent && m.blending === THREE.AdditiveBlending);
+}
+
+/** A lamp glow: an unlit one isn't drawn at all. */
+function glowOn(gl: THREE.Sprite, opacity: number) {
+  (gl.material as THREE.SpriteMaterial).opacity = opacity;
+  gl.visible = opacity > 0;
+}
+
+/** Roof heights of the shared car bodies (m), for seating the driver under them. */
+const ROOF: Record<string, number> = { sedan: 1.46, cruiser: 1.49, slicktop: 1.47, suv: 1.86, interceptor: 1.8, van: 2.28, transport: 2.45, ambulance: 2.67, pickup: 1.85, sports: 1.1, pursuit: 1.15 };
 
 export class Actors {
   private peds = new Map<number, PedView>();
@@ -78,7 +98,8 @@ export class Actors {
 
   sync(s: State, camX: number, camZ: number, dt: number, night: number) {
     this.t += dt;
-    const far = this.quality === "low" ? 95 : 150;
+    const far = this.quality === "low" ? 85 : this.quality === "medium" ? 115 : 150;
+    const lowQ = this.quality === "low";
     // People.
     const live = new Set<number>();
     for (const p of s.peds) {
@@ -95,6 +116,12 @@ export class Actors {
         this.scene.add(v.m.group);
       }
       this.posePed(s, p, v, dt);
+      // Only the people near the camera cast shadows.
+      const sh = !lowQ && d < 45;
+      if (v.shadow !== sh) {
+        v.shadow = sh;
+        v.m.group.traverse((o) => ((o as THREE.Mesh).castShadow = sh));
+      }
     }
     for (const [id, v] of this.peds)
       if (!live.has(id)) {
@@ -105,7 +132,7 @@ export class Actors {
     const liveC = new Set<number>();
     for (const c of s.cars) {
       const d = Math.hypot(c.x - camX, c.z - camZ);
-      if (d > (VEHICLES[c.kind].air ? 900 : far + 120) && !c.seats.includes(s.player)) continue;
+      if (d > (VEHICLES[c.kind].air ? 900 : far + 90) && !c.seats.includes(s.player)) continue;
       liveC.add(c.id);
       let v = this.cars.get(c.id);
       const key = `${c.kind}:${c.color}`;
@@ -116,6 +143,16 @@ export class Actors {
         this.scene.add(v.group);
       }
       this.poseCar(s, c, v, d, dt, night);
+      const near = d < 50 || c.seats.includes(s.player);
+      if (v.near !== near) {
+        v.near = near;
+        for (const o of v.fine) o.visible = near;
+      }
+      const sh = !lowQ && d < 80;
+      if (v.shadow !== sh) {
+        v.shadow = sh;
+        v.group.traverse((o) => ((o as THREE.Mesh).castShadow = sh && !castsNone(o)));
+      }
     }
     for (const [id, v] of this.cars)
       if (!liveC.has(id)) {
@@ -149,6 +186,9 @@ export class Actors {
     if (p.role === "cop") outfit.hat = p.look.seed % 3 === 0 ? "none" : "police";
     const m = buildPed({ skin: L.skin, shirt: L.shirt, pants: L.pants, hair: L.hair, seed: L.seed, lod: this.quality === "low" && p.role !== "player" ? "low" : "high", officer: p.role === "cop", outfit: outfit as never });
     m.group.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+    // A fixed sphere round the body (any pose fits) so people off screen aren't drawn.
+    m.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 1.7);
+    m.mesh.frustumCulled = true;
     return m;
   }
 
@@ -169,7 +209,7 @@ export class Actors {
     if (p.state === "dead") pose = "dead";
     else if (p.state === "down") pose = "down";
     else if (p.swim) pose = "prone";
-    else if (isPl && s.down?.kind === "busted") pose = "cuffed";
+    else if (isPl && s.down?.kind === "arrested") pose = "cuffed";
     else if (p.cuffT > 0.3) pose = "handsup";
     else if (p.ai.mode === "cower") pose = "handsup";
     else if (p.ai.mode === "flee") pose = "panic";
@@ -203,7 +243,7 @@ export class Actors {
   private makeCar(c: Car, key: string): CarView {
     const spec = VEHICLES[c.kind];
     const group = new THREE.Group();
-    const v: CarView = { key, group, wheel: 0, wrecked: false };
+    const v: CarView = { key, group, wheel: 0, wrecked: false, fine: [] };
     if (spec.body === "bike") v.custom = buildBike(c.color);
     else if (spec.body === "boat") v.custom = buildBoat(c.color);
     else if (spec.body === "airboat") v.custom = buildBoat(c.color, true);
@@ -213,7 +253,14 @@ export class Actors {
       v.kit = buildCar(spec.body as never, c.color, c.plate, this.quality === "low" ? "low" : "high", !spec.police && spec.body !== "ambulance");
       v.kit.group.scale.setScalar(spec.scale);
       group.add(v.kit.group);
-      v.kit.group.traverse((o) => ((o as THREE.Mesh).castShadow = this.quality !== "low"));
+      v.kit.group.traverse((o) => ((o as THREE.Mesh).castShadow = this.quality !== "low" && !castsNone(o)));
+      const kit = v.kit;
+      kit.group.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh || mesh === kit.beam || mesh.material === kit.red || mesh.material === kit.blue) return;
+        if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+        if (mesh.geometry.boundingSphere!.radius < 0.3) v.fine.push(mesh);
+      });
       if (c.kind === "taxi") {
         v.sign = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.9), new THREE.MeshStandardMaterial({ color: "#ffe066", emissive: "#ffcc33", emissiveIntensity: 0.8 }));
         v.sign.position.set(-0.3, 1.62, 0);
@@ -248,8 +295,8 @@ export class Actors {
       m.tail.emissiveIntensity = c.brake ? 3 : lit ? 1 : 0.2;
       (m.heads.material as THREE.MeshStandardMaterial).emissiveIntensity = lit && c.hp > 0 ? 2.6 : 0.3;
       (m.reverse.material as THREE.MeshStandardMaterial).emissiveIntensity = vf < -0.5 ? 2 : 0;
-      for (const gl of m.headGlow) (gl.material as THREE.SpriteMaterial).opacity = lit && !c.wrecked ? 0.85 : 0;
-      for (const gl of m.tailGlow) (gl.material as THREE.SpriteMaterial).opacity = c.brake ? 0.9 : lit ? 0.4 : 0;
+      for (const gl of m.headGlow) glowOn(gl, lit && !c.wrecked ? 0.75 : 0);
+      for (const gl of m.tailGlow) glowOn(gl, c.brake ? 0.9 : lit ? 0.4 : 0);
       (m.beam.material as THREE.MeshBasicMaterial).opacity = night * 0.5;
       m.beam.visible = lit && !c.wrecked && d < 120;
       const blink = Math.floor(this.t * 2.6) % 2 === 0;
@@ -262,8 +309,8 @@ export class Actors {
         const b = on && phase >= 2;
         m.red.emissiveIntensity = r ? 8 : on ? 0.4 : 0;
         m.blue.emissiveIntensity = b ? 8 : on ? 0.4 : 0;
-        for (const gl of m.redGlow ?? []) (gl.material as THREE.SpriteMaterial).opacity = r ? 1 : 0;
-        for (const gl of m.blueGlow ?? []) (gl.material as THREE.SpriteMaterial).opacity = b ? 1 : 0;
+        for (const gl of m.redGlow ?? []) glowOn(gl, r ? 1 : 0);
+        for (const gl of m.blueGlow ?? []) glowOn(gl, b ? 1 : 0);
       }
     }
     if (v.custom) {
@@ -291,7 +338,9 @@ export class Actors {
       dm.group.visible = true;
       const bike = spec.body === "bike";
       const boat = spec.water;
-      dm.group.position.set(bike ? -0.15 : boat ? -0.6 : spec.len * -0.02, bike ? 0.55 : boat ? 0.35 : 0.08, bike ? 0 : -spec.wid * 0.22);
+      // Seated so the head clears the roof line (a coupe sits you low, a van high).
+      const seatY = bike ? 0.55 : boat ? 0.35 : Math.max(-0.3, Math.min(0.6, (ROOF[spec.body] ?? 1.46) * spec.scale - 1.42));
+      dm.group.position.set(bike ? -0.15 : boat ? -0.6 : spec.len * -0.02, seatY, bike ? 0 : -spec.wid * 0.22);
       dm.group.rotation.set(0, 0, 0);
       posePed(dm, bike ? "sit" : boat ? "stand" : "sit", 0, 0, this.t, dt);
       if (spec.air) dm.group.visible = false;

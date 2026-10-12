@@ -106,6 +106,7 @@ export class CityView {
   readonly mats: Record<string, THREE.Material>;
   readonly signals: SignalHead[] = [];
   private radius: number;
+  private detailR: number;
   night = 0;
 
   constructor(
@@ -114,6 +115,7 @@ export class CityView {
     private sim: State,
   ) {
     this.radius = quality === "high" ? 560 : quality === "medium" ? 430 : 330;
+    this.detailR = quality === "high" ? 380 : quality === "medium" ? 280 : 190;
     const asphalt = asphaltDetail();
     asphalt.normal.repeat.set(1, 1);
     const slab = concrete();
@@ -188,9 +190,11 @@ export class CityView {
         const z = Z0 + (j + 0.5) * CHUNK;
         const d = Math.hypot(x - cx, z - cz) - CHUNK * 0.7;
         const k = j * CX + i;
+        const have = this.chunks.get(k);
+        if (have) (have.userData.detail as THREE.Object3D).visible = d < this.detailR;
         if (d < this.radius) {
-          if (!this.chunks.has(k)) need.push({ i: k, d });
-        } else if (d > this.radius + 120 && this.chunks.has(k)) this.unload(k);
+          if (!have) need.push({ i: k, d });
+        } else if (d > this.radius + 120 && have) this.unload(k);
       }
     need.sort((a, b) => a.d - b.d);
     for (const n of all ? need : need.slice(0, 1)) this.load(n.i);
@@ -227,12 +231,17 @@ export class CityView {
     const j = Math.floor(k / CX);
     const x0 = X0 + i * CHUNK;
     const z0 = Z0 + j * CHUNK;
+    // Fine detail (props, markings, kerbs, shop signs) is only drawn on the nearer chunks.
+    const detail = new THREE.Group();
+    detail.name = "detail";
+    g.add(detail);
+    g.userData.detail = detail;
     this.ground(g, x0, z0);
-    this.roads(g, d, k);
+    this.roads(g, d, k, detail);
     this.bridges(g, d);
     this.piers(g, d);
-    this.buildings(g, d.buildings);
-    this.props(g, d.props);
+    this.buildings(g, d.buildings, detail);
+    this.props(detail, d.props);
     this.chunks.set(k, g);
     this.root.add(g);
     // Hide the low-detail skyline's buildings that this chunk now draws properly? They sit inside
@@ -350,7 +359,7 @@ export class CityView {
 
   /* -------------------------------------------------------------- roads */
 
-  private roads(g: THREE.Group, d: ChunkData, chunk: number) {
+  private roads(g: THREE.Group, d: ChunkData, chunk: number, detail: THREE.Group) {
     const asphalt = new Sheet();
     const marks = new Sheet();
     const walk = new Sheet();
@@ -455,21 +464,20 @@ export class CityView {
         this.signals.push(head);
       }
     }
-    const add = (sh: Sheet, mat: THREE.Material, shadow = false) => {
+    const add = (sh: Sheet, mat: THREE.Material, to = g) => {
       if (sh.empty) return;
       const m = new THREE.Mesh(sh.geometry(), mat);
       m.receiveShadow = true;
-      m.castShadow = shadow;
-      g.add(m);
+      to.add(m);
     };
     add(asphalt, this.mats.road);
-    add(marks, this.mats.mark);
+    add(marks, this.mats.mark, detail);
     add(walk, this.mats.walk);
-    add(curbs, this.mats.curb);
+    add(curbs, this.mats.curb, detail);
     if (poles.length) {
       const m = new THREE.Mesh(merge(poles), this.mats.prop);
       m.castShadow = this.quality === "high";
-      g.add(m);
+      detail.add(m);
     }
   }
 
@@ -493,7 +501,6 @@ export class CityView {
       const seg = pc.seg;
       if (!seg.bridge) continue;
       const A = nodes[seg.a];
-      const B = nodes[seg.b];
       const ns = seg.axis === "ns";
       const half = ROAD[seg.cls].half + 1.6;
       for (const [w0, w1] of seg.wet) {
@@ -598,7 +605,7 @@ export class CityView {
     return c.multiplyScalar(k);
   }
 
-  private buildings(g: THREE.Group, list: Building[]) {
+  private buildings(g: THREE.Group, list: Building[], detail: THREE.Group) {
     if (!list.length) return;
     const sheets = new Map<string, Sheet>();
     const sheet = (k: string) => sheets.get(k) ?? sheets.set(k, new Sheet()).get(k)!;
@@ -718,7 +725,7 @@ export class CityView {
       m.receiveShadow = true;
       g.add(m);
     }
-    for (const { b, text } of signs) this.sign(g, b, text);
+    for (const { b, text } of signs) this.sign(b.kind === "hotel" ? g : detail, b, text);
   }
 
   private sign(g: THREE.Group, b: Building, text: string) {
@@ -801,7 +808,7 @@ export class CityView {
     if (glows.length) {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.Float32BufferAttribute(glows, 3));
-      const mat = new THREE.PointsMaterial({ map: glowTex(), color: "#ffd9a0", size: 5, sizeAttenuation: true, transparent: true, opacity: this.night, depthWrite: false, blending: THREE.AdditiveBlending });
+      const mat = new THREE.PointsMaterial({ map: glowTex(), color: "#ffd9a0", size: 3.6, sizeAttenuation: true, transparent: true, opacity: this.night, depthWrite: false, blending: THREE.AdditiveBlending });
       this.glowMats.push(mat);
       const pts = new THREE.Points(geo, mat);
       pts.userData.glows = true;

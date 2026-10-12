@@ -381,8 +381,8 @@ export function kill(s: State, q: Ped, by: number) {
     if (i === 0 && c.ai.mode !== "wreck") c.ai.mode = "idle";
   }
   if (q.role === "player") {
-    if (!s.down) s.down = { kind: "wasted", t: 4.5 };
-    emit(s, { kind: "wasted" });
+    if (!s.down) s.down = { kind: "hospitalised", t: 4.5 };
+    emit(s, { kind: "hospitalised" });
     return;
   }
   const killer = pedById(s, by);

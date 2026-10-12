@@ -124,7 +124,6 @@ function Title({ game }: { game: Game }) {
 function Hud({ game, s }: { game: Game; s: State }) {
   const h = game.hud();
   const p = player(s);
-  const now = performance.now() / 1000;
   const prompt = game.prompt();
   return (
     <div className="hw-hud" data-testid="hw-hud">
@@ -174,7 +173,7 @@ function Hud({ game, s }: { game: Game; s: State }) {
       </div>
       <div className="hw-bl">
         <Minimap game={game} s={s} />
-        <div className="hw-bars" aria-label={`Health ${Math.round(h.hp)}, armour ${Math.round(h.armor)}`}>
+        <div className="hw-bars" role="img" aria-label={`Health ${Math.round(h.hp)}, armour ${Math.round(h.armor)}`}>
           <i className="hp" style={{ width: `${Math.max(0, Math.min(100, h.hp))}%` }} />
           <i className="ar" style={{ width: `${Math.max(0, Math.min(100, h.armor))}%` }} />
         </div>
@@ -202,7 +201,7 @@ function Hud({ game, s }: { game: Game; s: State }) {
             {prompt}
           </p>
         )}
-        {!s.story.run && !h.objective && !prompt && h.next && h.next.lead !== s.chars[s.active].id && now % 20 < 6 && (
+        {!s.story.run && !h.objective && !prompt && h.next && h.next.lead !== s.chars[s.active].id && s.t % 20 < 6 && (
           <p className="hw-prompt dim">Switch to {LEADS[h.next.lead].name} to carry on the story (phone · Leads).</p>
         )}
       </div>
@@ -291,8 +290,7 @@ function Touch({ game, s }: { game: Game; s: State }) {
         dx = (dx / d) * R;
         dy = (dy / d) * R;
       }
-      game.touch.mx = dx / R;
-      game.touch.my = -dy / R;
+      game.touchStick(dx / R, -dy / R);
       setKnob({ ox: stick.current.ox, oy: stick.current.oy, x: stick.current.ox + dx, y: stick.current.oy + dy });
     } else if (look.current?.id === e.pointerId) {
       game.touchLook(e.clientX - look.current.x, e.clientY - look.current.y);
@@ -303,8 +301,7 @@ function Touch({ game, s }: { game: Game; s: State }) {
   const up = (e: RPointerEvent<HTMLDivElement>) => {
     if (stick.current?.id === e.pointerId) {
       stick.current = null;
-      game.touch.mx = 0;
-      game.touch.my = 0;
+      game.touchStick(0, 0);
       setKnob(null);
     }
     if (look.current?.id === e.pointerId) look.current = null;
@@ -316,18 +313,18 @@ function Touch({ game, s }: { game: Game; s: State }) {
       data-testid={testid}
       onPointerDown={(e) => {
         e.stopPropagation();
-        game.touch[k] = true;
+        game.touchHold(k, true);
         (e.currentTarget as HTMLElement).classList.add("on");
       }}
       onPointerUp={(e) => {
-        game.touch[k] = false;
+        game.touchHold(k, false);
         (e.currentTarget as HTMLElement).classList.remove("on");
       }}
       onPointerLeave={(e) => {
-        game.touch[k] = false;
+        game.touchHold(k, false);
         (e.currentTarget as HTMLElement).classList.remove("on");
       }}
-      onPointerCancel={() => (game.touch[k] = false)}
+      onPointerCancel={() => game.touchHold(k, false)}
     >
       {label}
     </button>
@@ -371,8 +368,7 @@ function Touch({ game, s }: { game: Game; s: State }) {
               data-testid="hw-t-aim"
               onPointerDown={(e) => {
                 e.stopPropagation();
-                game.touchAimToggle = !game.touchAimToggle;
-                game.bump();
+                game.toggleAim();
               }}
             >
               Aim
@@ -667,7 +663,7 @@ function Stats({ s }: { s: State }) {
     ["Sun tokens", `${s.story.tokens.length} / ${TOKENS.length}`],
   ];
   return (
-    <div className="hw-list" data-testid="hw-stats">
+    <div className="hw-list" data-testid="hw-stats" tabIndex={0} aria-label="Stats">
       <dl className="hw-stats">
         {rows.map(([k, v]) => (
           <div key={k}>

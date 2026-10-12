@@ -944,9 +944,39 @@ building site in its street (`render/build.ts`) and the inside of a store (`rend
 (`20261111100000_wareforge_build.sql` raises the score cap).
 See `src/games/wareforge/README.md`.
 
+### Heatwave (ZLink+ exclusive, NextX)
+
+An open-world crime action game (`src/games/heatwave/`; `20261112100000_heatwave.sql`), the fourth NextX title.
+Port Solano is an island city generated from a seed (`world.ts`):
+- a coastline with a beach, a river and an island;
+- nine districts;
+- avenues and streets with lit junctions;
+- buildings by district, props and points of interest.
+
+A pure fixed-step simulation runs on top of it, headless in the tests:
+- on foot and swimming;
+- car, bike and boat physics;
+- traffic that obeys the lights;
+- pavement pedestrians and gangs;
+- hitscan, melee and grenades with lock-on;
+- witnesses and a five-star wanted level with police cars, officers, tactical vans and helicopters;
+- twelve story missions for two switchable leads, races, exports, hold-ups and tokens;
+- shops and saves.
+
+The three.js renderer:
+- streams the city in 160 m chunks, with near-only detail and a far skyline;
+- has a shader sea with shallows and surf;
+- reuses Code 3's car and people kits (with a new `civilian` option on `buildCar`);
+- runs sunrise to a lamp-lit night with bloom on high.
+
+The React HUD has a turning minimap with GPS, a phone (map, jobs, leads, stats, settings), shops and touch controls.
+The NextX app's backdrop for it is a slow orbit over the Strand (`src/nextx/backdrops.ts`).
+The score is money earned ÷ 10 plus mission points (cap 500,000; members only).
+See `src/games/heatwave/README.md`.
+
 ### NextX titles play in the NextX app
 
-WareForge, YourGov and Zero City are ZLink+ games that run inside the NextX app at `/nextx/play/<slug>`
+Heatwave, WareForge, YourGov and Zero City are ZLink+ games that run inside the NextX app at `/nextx/play/<slug>`
 (`src/components/nextx/NextXPlayer.tsx`). `next.config.ts` redirects their `/games/<slug>` pages there
 (keeping the query string), and `gameHref()` in `src/lib/nextx.ts` points every link at the right place.
 The ZLink+ page has a NextX section and marks NextX titles.

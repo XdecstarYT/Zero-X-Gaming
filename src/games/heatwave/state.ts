@@ -208,7 +208,7 @@ export interface Grenade {
   by: number;
 }
 
-export type EvKind = "toast" | "shot" | "hit" | "boom" | "crash" | "money" | "wanted" | "lost" | "busted" | "wasted" | "mission" | "pass" | "fail" | "pickup" | "horn" | "siren" | "punch" | "glass" | "dialog" | "unlock" | "stunt";
+export type EvKind = "toast" | "shot" | "hit" | "boom" | "crash" | "money" | "wanted" | "lost" | "arrested" | "hospitalised" | "mission" | "pass" | "fail" | "pickup" | "horn" | "siren" | "punch" | "glass" | "dialog" | "unlock" | "stunt";
 export interface Ev {
   kind: EvKind;
   text?: string;
@@ -296,8 +296,8 @@ export interface State {
   pickups: Pickup[];
   events: Ev[];
   waypoint: { x: number; z: number } | null;
-  /** Busted / wasted: the screen fades and you're moved (seconds left). */
-  down: { kind: "busted" | "wasted"; t: number } | null;
+  /** Arrested or hospitalised: the screen fades and you're moved (seconds left). */
+  down: { kind: "arrested" | "hospitalised"; t: number } | null;
   radio: StationId;
   settings: Settings;
   /** Mission and side-job state (missions.ts). */

@@ -389,20 +389,20 @@ function stepPickups(s: State) {
   s.pickups = s.pickups.filter((k) => k.respawn > 0 || k.takenAt < 0);
 }
 
-/* ------------------------------------------------------------------ busted and wasted */
+/* ------------------------------------------------------------------ arrested and hospitalised */
 
 function stepDown(s: State, dt: number) {
   const d = s.down!;
   d.t -= dt;
   if (d.t > 0) return;
   const p = player(s);
-  if (s.story.run) failMission(s, d.kind === "busted" ? "You were arrested." : "You were hospitalised.");
+  if (s.story.run) failMission(s, d.kind === "arrested" ? "You were arrested." : "You were hospitalised.");
   const kind = d.kind;
   s.down = null;
   const pos = playerPos(s);
   if (p.car >= 0) leave(s, p);
   let spot: Poi;
-  if (kind === "wasted") {
+  if (kind === "hospitalised") {
     spot = nearestPoi(s, "hospital", pos.x, pos.z);
     const bill = Math.min(s.money, HOSPITAL_BILL);
     s.money -= bill;

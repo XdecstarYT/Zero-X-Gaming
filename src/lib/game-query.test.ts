@@ -12,7 +12,7 @@ describe("queryGames", () => {
   });
 
   it("filters by category", () => {
-    expect(slugs(queryGames(GAMES, { category: "shooter" })).sort()).toEqual(["neon-siege", "trenches"]);
+    expect(slugs(queryGames(GAMES, { category: "shooter" })).sort()).toEqual(["heatwave", "neon-siege", "trenches"]);
     expect(slugs(queryGames(GAMES, { category: "puzzle" }))).toEqual(["linkwave"]);
     expect(queryGames(GAMES, { category: "trivia" })).toEqual([]);
   });
@@ -28,7 +28,7 @@ describe("queryGames", () => {
   });
 
   it("sorts newest first", () => {
-    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("wareforge");
+    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("heatwave");
   });
 
   it("sorts by rating", () => {

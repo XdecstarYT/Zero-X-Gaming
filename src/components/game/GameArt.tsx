@@ -71,6 +71,8 @@ export function GameArt({
         <YourGovArt />
       ) : game.slug === "wareforge" ? (
         <WareForgeArt />
+      ) : game.slug === "heatwave" ? (
+        <HeatwaveArt id={id} />
       ) : game.slug === "lifeline" ? (
         <LifelineArt id={id} />
       ) : game.category === "sports" ? (
@@ -639,6 +641,66 @@ function StoreArt({ a, b }: { a: string; b: string }) {
           $
         </text>
       </g>
+    </g>
+  );
+}
+
+function HeatwaveArt({ id }: { id: string }) {
+  // Sunset over Port Solano: a striped sun on the sea, the skyline and palms in silhouette,
+  // a coupe on the beach road and five wanted stars.
+  const palm = (x: number, h: number, lean: number, k: string) => (
+    <g key={k} fill="#1a0b26">
+      <path d={`M${x} 160 Q${x + lean * 0.5} ${160 - h * 0.5} ${x + lean} ${160 - h} l2 0 Q${x + lean * 0.5 + 3} ${160 - h * 0.5} ${x + 4} 160z`} />
+      {[-58, -28, 6, 34, 62].map((a, i) => (
+        <path key={i} d={`M${x + lean + 1} ${160 - h} q${Math.cos(((a - 90) * Math.PI) / 180) * 14} ${Math.sin(((a - 90) * Math.PI) / 180) * 10 - 4} ${Math.sin((a * Math.PI) / 180) * 26} ${8 + Math.abs(a) / 6} q${-Math.sin((a * Math.PI) / 180) * 8} -6 ${-Math.sin((a * Math.PI) / 180) * 26} ${-(8 + Math.abs(a) / 6)}z`} />
+      ))}
+    </g>
+  );
+  const towers = [[96, 70], [110, 52], [124, 84], [136, 60], [150, 40], [166, 74], [180, 58], [194, 88], [206, 66]];
+  return (
+    <g>
+      <defs>
+        <linearGradient id={`${id}-hws`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#2a0f4a" />
+          <stop offset=".55" stopColor="#c2367a" />
+          <stop offset="1" stopColor="#ff9a4a" />
+        </linearGradient>
+        <linearGradient id={`${id}-hwsun`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffe36a" />
+          <stop offset="1" stopColor="#ff4f8b" />
+        </linearGradient>
+        <linearGradient id={`${id}-hwsea`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#5a2a7a" />
+          <stop offset="1" stopColor="#14082a" />
+        </linearGradient>
+      </defs>
+      <rect width="320" height="200" fill={`url(#${id}-hws)`} />
+      <circle cx="160" cy="118" r="58" fill={`url(#${id}-hwsun)`} />
+      {[0, 1, 2, 3, 4].map((i) => (
+        <rect key={i} x="96" y={104 + i * 9} width="128" height={2 + i * 0.8} fill="#c2367a" opacity=".85" />
+      ))}
+      {towers.map(([x, h], i) => (
+        <rect key={i} x={x} y={140 - h} width="13" height={h} fill="#2b1140" />
+      ))}
+      <rect y="140" width="320" height="60" fill={`url(#${id}-hwsea)`} />
+      {[0, 1, 2, 3].map((i) => (
+        <rect key={i} x={130 - i * 6} y={146 + i * 7} width={60 + i * 12} height="2" rx="1" fill="#ffb36a" opacity={0.7 - i * 0.14} />
+      ))}
+      <path d="M0 168h320v32H0z" fill="#1a0b26" />
+      {palm(30, 92, 10, "p1")}
+      {palm(62, 70, -8, "p2")}
+      {palm(272, 96, -12, "p3")}
+      {palm(300, 68, 6, "p4")}
+      <g transform="translate(118 160)">
+        <path d="M0 14 6 6 28 2 44 2 58 8 84 10 88 16 84 20H2z" fill="#0d0617" />
+        <path d="M30 4 42 4 52 8 26 8z" fill="#ff4fa3" opacity=".55" />
+        <circle cx="18" cy="20" r="5" fill="#0d0617" stroke="#ff4fa3" strokeWidth="1.2" />
+        <circle cx="70" cy="20" r="5" fill="#0d0617" stroke="#ff4fa3" strokeWidth="1.2" />
+        <rect x="84" y="12" width="5" height="3" rx="1" fill="#ffe36a" />
+      </g>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <path key={i} transform={`translate(${222 + i * 18} 22)`} d="M7 0 9 5 14 5 10 8.5 11.5 14 7 10.6 2.5 14 4 8.5 0 5 5 5z" fill={i < 3 ? "#ffe36a" : "none"} stroke="#ffe36a" strokeWidth="1.2" />
+      ))}
     </g>
   );
 }

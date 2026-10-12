@@ -36,9 +36,11 @@ export const css = `
 .hw-help li{margin:4px 0}
 
 /* ---- HUD ---- */
-.hw-hud{position:absolute;inset:0;pointer-events:none;text-shadow:0 2px 3px rgba(0,0,0,.65),0 0 1px #000}
+/* Above the touch layer, so its chips and the minimap take taps; everything else falls through to the sticks. */
+.hw-hud{position:absolute;inset:0;z-index:5;pointer-events:none;text-shadow:0 2px 3px rgba(0,0,0,.65),0 0 1px #000}
 .hw-hud button{pointer-events:auto}
 .hw-tl{position:absolute;left:14px;top:12px;display:flex;flex-direction:column;align-items:flex-start;gap:6px;max-width:46%}
+[data-immersive] .hw-tl{left:max(66px,calc(env(safe-area-inset-left) + 58px))}
 .hw-where b{display:block;font-size:17px;font-weight:900;letter-spacing:.01em}
 .hw-where small{font-size:12px;font-weight:700;opacity:.85}
 .hw-chip{border:0;display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:rgba(10,12,22,.5);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);font-size:12px;font-weight:800;text-shadow:none;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
@@ -88,8 +90,8 @@ export const css = `
 .hw-banner h3{margin:0;font-size:clamp(32px,7cqw,64px);font-weight:900;font-style:italic;letter-spacing:.02em;text-transform:uppercase}
 .hw-banner p{margin:4px 0 0;font-size:17px;font-weight:800}
 .hw-banner.pass h3{color:#ffd23f}
-.hw-banner.fail h3,.hw-banner.wasted h3{color:#ff4a4a}
-.hw-banner.busted h3{color:#5aa0ff}
+.hw-banner.fail h3,.hw-banner.hospitalised h3{color:#ff4a4a}
+.hw-banner.arrested h3{color:#5aa0ff}
 .hw-banner.mission h3{color:#fff;font-size:clamp(28px,5.5cqw,48px)}
 .hw-banner.mission p{color:#ffd9ec}
 @keyframes hw-banner{from{opacity:0;transform:scale(1.15)}}

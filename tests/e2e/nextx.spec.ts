@@ -1,11 +1,13 @@
 import { expect, test } from "./fixtures";
 
-test("NextX: the logo plays in, the library shows YourGov and Zero City, and the tabs work", async ({ page }) => {
+test("NextX: the logo plays in, the library shows its titles, and the tabs work", async ({ page }) => {
   await page.goto("/nextx");
   await page.getByTestId("nextx-intro").click({ timeout: 2000 }).catch(() => {});
   await expect(page.getByTestId("nextx-title-yourgov")).toBeVisible();
   await expect(page.getByTestId("nextx-title-zero-city")).toBeVisible();
+  await expect(page.getByTestId("nextx-title-heatwave")).toBeVisible();
   await expect(page.getByTestId("nextx-launch-yourgov")).toHaveAttribute("href", "/nextx/play/yourgov");
+  await expect(page.getByTestId("nextx-launch-heatwave")).toHaveAttribute("href", "/nextx/play/heatwave");
   const tab = (id: string) => page.locator(`[data-testid="nextx-tab-${id}"]:visible, [data-testid="nextx-mtab-${id}"]:visible`).first();
   await tab("studio").click();
   await expect(page.getByTestId("nextx-studio")).toBeVisible();
@@ -24,8 +26,11 @@ test("NextX titles run in the NextX app: their old pages send you there, and ZLi
   await expect(page.getByTestId("zlink-lock-join")).toBeVisible();
   await page.getByTestId("nextx-back").click();
   await expect(page.getByTestId("nextx-app")).toBeVisible();
+  await page.goto("/games/heatwave");
+  await expect(page).toHaveURL(/\/nextx\/play\/heatwave$/);
   await page.goto("/zlink");
   await expect(page.getByTestId("zlink-nextx")).toContainText("WareForge");
+  await expect(page.getByTestId("zlink-nextx")).toContainText("Heatwave");
 });
 
 test("NextX titles fill the screen, even where the browser has no element fullscreen (iPhone)", async ({ page }, testInfo) => {

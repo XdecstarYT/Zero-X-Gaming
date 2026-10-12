@@ -303,16 +303,16 @@ export function stepCop(s: State, p: Ped, dt: number, walk: (p: Ped, tx: number,
     p.vz *= 0.5;
     if (Math.hypot(pl.vx, pl.vz) < 2.2) pl.cuffT += dt;
     if (pl.cuffT > 1.5 && !s.down) {
-      s.down = { kind: "busted", t: 4 };
-      emit(s, { kind: "busted" });
+      s.down = { kind: "arrested", t: 4 };
+      emit(s, { kind: "arrested" });
     }
     return;
   }
   if (!canShoot && pc && speedOf(pc) < 1 && d < 3.4) {
     pl.cuffT += dt;
     if (pl.cuffT > 2 && !s.down) {
-      s.down = { kind: "busted", t: 4 };
-      emit(s, { kind: "busted" });
+      s.down = { kind: "arrested", t: 4 };
+      emit(s, { kind: "arrested" });
     }
     return;
   }

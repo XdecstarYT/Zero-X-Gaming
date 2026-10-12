@@ -2,7 +2,7 @@ import { HeatAudio } from "./audio";
 import { LEADS, PREFS_KEY, SAVE_KEY, STATIONS, VEHICLES, WEAPONS, type StationId } from "./data";
 import { missionDef, missionStart, nextStory, STORY } from "./missions";
 import * as sim from "./sim";
-import { player, playerCar, playerPos, type Ev, type State } from "./state";
+import { player, playerCar, playerPos, type State } from "./state";
 import { HeatwaveView } from "./render/view";
 import type { Quality } from "./render/city";
 import { carToEnter } from "./vehicles";
@@ -40,7 +40,7 @@ export interface Banner {
   id: number;
   title: string;
   sub: string;
-  kind: "pass" | "fail" | "wasted" | "busted" | "mission" | "info";
+  kind: "pass" | "fail" | "hospitalised" | "arrested" | "mission" | "info";
   until: number;
 }
 
@@ -95,6 +95,8 @@ export class Game {
   private frameAvg = 1 / 60;
   private scaleT = 0;
   private finalSent = false;
+  /** The score of the game you went back to the title from (reported if you leave from there). */
+  private banked: number | null = null;
   private toastId = 1;
   radioShown = 0;
   onScore: (n: number) => void = () => {};
@@ -394,12 +396,12 @@ export class Game {
           this.say("You lost the police", "good");
           this.audio.sting("lost");
           break;
-        case "wasted":
-          this.banner = { id: this.toastId++, title: "Hospitalised", sub: "You were taken to the hospital", kind: "wasted", until: now + 4.5 };
+        case "hospitalised":
+          this.banner = { id: this.toastId++, title: "Hospitalised", sub: "You were taken to the hospital", kind: "hospitalised", until: now + 4.5 };
           this.audio.sting("fail");
           break;
-        case "busted":
-          this.banner = { id: this.toastId++, title: "Arrested", sub: "You were taken in", kind: "busted", until: now + 4 };
+        case "arrested":
+          this.banner = { id: this.toastId++, title: "Arrested", sub: "You were taken in", kind: "arrested", until: now + 4 };
           this.audio.sting("fail");
           break;
         case "mission":
@@ -410,6 +412,7 @@ export class Game {
           this.banner = { id: this.toastId++, title: "Mission passed", sub: `${e.text}${e.n ? ` · +$${e.n.toLocaleString("en-US")}` : ""}`, kind: "pass", until: now + 5 };
           this.audio.sting("pass");
           this.persist();
+          if (STORY.every((m) => s.story.done.includes(m.id))) this.submitFinal();
           break;
         case "fail":
           this.banner = { id: this.toastId++, title: "Mission failed", sub: e.text ?? "", kind: "fail", until: now + 4.5 };
@@ -524,8 +527,9 @@ export class Game {
   sleep() {
     const s = this.s;
     if (!s) return;
-    s.clock = s.clock < 8 * 60 || s.clock > 20 * 60 ? 8 * 60 : 20 * 60;
-    if (s.clock === 8 * 60) s.day++;
+    // Sleep through to 8 in the morning (tomorrow's, if it's evening) or to 8 in the evening.
+    if (s.clock >= 20 * 60) s.day++;
+    s.clock = s.clock < 8 * 60 || s.clock >= 20 * 60 ? 8 * 60 : 20 * 60;
     const p = player(s);
     p.hp = 100;
     this.persist();
@@ -570,15 +574,20 @@ export class Game {
     }
   }
 
+  /**
+   * The final score goes in when the story's done or you leave the game (not when you go back to the
+   * title: that only saves, and the platform would otherwise call it game over).
+   */
   submitFinal() {
-    if (this.finalSent || !this.s) return;
+    const n = this.s ? sim.score(this.s) : this.banked;
+    if (this.finalSent || n === null) return;
     this.finalSent = true;
-    this.onFinal(sim.score(this.s));
+    this.onFinal(n);
   }
 
   quitToTitle() {
     this.persist();
-    this.submitFinal();
+    if (this.s) this.banked = sim.score(this.s);
     this.view?.dispose();
     this.view = null;
     this.s = null;
@@ -675,6 +684,23 @@ export class Game {
   touchLook(dx: number, dy: number) {
     this.look.dx += dx * 1.6;
     this.look.dy += dy * 1.6;
+  }
+
+  /** Touch: the move stick (−1 … 1 each way). */
+  touchStick(mx: number, my: number) {
+    this.touch.mx = mx;
+    this.touch.my = my;
+  }
+
+  /** Touch: a button held down (fire, aim, run, gas, brake, drift). */
+  touchHold(k: "fire" | "aim" | "sprint" | "gas" | "brake" | "handbrake", on: boolean) {
+    this.touch[k] = on;
+  }
+
+  /** Touch: the Aim button stays on until it's tapped again. */
+  toggleAim() {
+    this.touchAimToggle = !this.touchAimToggle;
+    this.bump();
   }
 
   press(edge: "enter" | "next" | "prev" | "jump" | "reload" | "Space") {

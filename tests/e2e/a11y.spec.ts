@@ -20,6 +20,7 @@ const PAGES = [
   "/nextx",
   "/games/wareforge",
   "/nextx/play/wareforge",
+  "/nextx/play/heatwave",
   "/profile",
   "/settings",
 ];
