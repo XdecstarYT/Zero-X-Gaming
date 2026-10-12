@@ -1,0 +1,338 @@
+import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { GRADE, makeSky, SkyEnvironment, skyFor, type SkyLight, type SkyMesh } from "@/nextx/look";
+import { light } from "../traffic";
+import { player, playerPos, type State } from "../state";
+import { WATER_Y } from "../world";
+import { Actors } from "./actors";
+import { CamRig } from "./camera";
+import { CityView, glowTex, type Quality } from "./city";
+import { Fx } from "./fx";
+import { puff, rippleNormal, shoreMask } from "./textures";
+
+/**
+ * Heatwave in 3D: the renderer, the city, people and traffic, effects, a sky that runs from dawn
+ * to dusk with the game clock (storms darken it), the sea with turquoise shallows and a line of
+ * surf on the beaches, traffic lights that change, and a post chain (bloom and a grade) where the
+ * device can take it.
+ */
+
+const SEA_VS = `
+varying vec3 vWorld;
+#include <fog_pars_vertex>
+void main(){
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vWorld = w.xyz;
+  vec4 mvPosition = viewMatrix * w;
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}`;
+
+const SEA_FS = `
+uniform sampler2D uNormal; uniform sampler2D uShore; uniform vec4 uBounds;
+uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uSky; uniform vec3 uHorizon;
+uniform float uTime; uniform float uNight; uniform float uStorm;
+varying vec3 vWorld;
+#include <fog_pars_fragment>
+void main(){
+  vec2 p = vWorld.xz;
+  vec3 n1 = texture2D(uNormal, p * 0.045 + vec2(uTime * 0.012, uTime * 0.007)).xyz * 2.0 - 1.0;
+  vec3 n2 = texture2D(uNormal, p * 0.11 - vec2(uTime * 0.017, -uTime * 0.01)).xyz * 2.0 - 1.0;
+  vec3 n = normalize(vec3(n1.x + n2.x * 0.6, 3.2 - uStorm * 1.4, n1.y + n2.y * 0.6));
+  vec3 v = normalize(cameraPosition - vWorld);
+  float fres = pow(1.0 - max(dot(n, v), 0.0), 4.0) * 0.85 + 0.06;
+  vec2 suv = (p - uBounds.xy) / uBounds.zw;
+  vec2 shore = texture2D(uShore, clamp(suv, 0.001, 0.999)).rg;
+  float shallow = shore.r;
+  vec3 deep = mix(vec3(0.02, 0.18, 0.30), vec3(0.03, 0.08, 0.12), uStorm);
+  vec3 shal = mix(vec3(0.10, 0.62, 0.64), vec3(0.18, 0.32, 0.34), uStorm);
+  vec3 col = mix(deep, shal, smoothstep(0.0, 1.0, shallow));
+  vec3 refl = mix(uHorizon, uSky, clamp(v.y * 2.0, 0.0, 1.0));
+  col = mix(col, refl, fres);
+  vec3 h = normalize(normalize(uSunDir) + v);
+  col += uSunColor * pow(max(dot(n, h), 0.0), 260.0) * 2.4 * (1.0 - uNight);
+  // Surf where it shoals onto the sand.
+  float edge = smoothstep(0.82, 0.97, shallow);
+  float wave = 0.5 + 0.5 * sin(dot(p, vec2(0.13, 0.21)) - uTime * 1.6 + n1.x * 3.0);
+  float foam = edge * smoothstep(0.35, 0.9, wave + n2.y * 0.6);
+  col = mix(col, vec3(0.95, 0.97, 0.98) * (1.0 - uNight * 0.7), foam * 0.75);
+  col *= 1.0 - uNight * 0.78;
+  float a = mix(0.82, 0.96, 1.0 - shallow) ;
+  gl_FragColor = vec4(col, a);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  #include <fog_fragment>
+}`;
+
+export interface Markers {
+  goals: { x: number; z: number; r: number }[];
+}
+
+const MOON = new THREE.Color("#c4d2f2");
+const FILL = new THREE.Color();
+
+export class HeatwaveView {
+  readonly renderer: THREE.WebGLRenderer;
+  readonly scene = new THREE.Scene();
+  readonly rig = new CamRig();
+  readonly city: CityView;
+  readonly actors: Actors;
+  readonly fx: Fx;
+  private sky: SkyMesh;
+  private env: SkyEnvironment;
+  private sun: THREE.DirectionalLight;
+  private hemi: THREE.HemisphereLight;
+  private sea: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  private composer: EffectComposer | null = null;
+  private bloom: UnrealBloomPass | null = null;
+  private grade: ShaderPass | null = null;
+  private bulbs: THREE.InstancedMesh;
+  private bulbList: { x: number; y: number; z: number; ry: number; node: import("../world").Node; axis: "ns" | "ew" }[] = [];
+  private bulbT = 0;
+  private skyL: SkyLight = skyFor(1);
+  private sunDir = new THREE.Vector3();
+  private t = 0;
+  night = 0;
+  scale = 1;
+  /** A cinematic orbit (the NextX app's backdrop) instead of the third-person camera. */
+  cinema: { x: number; z: number; dist: number; height: number; speed: number; a: number } | null = null;
+  private w = 1;
+  private h = 1;
+
+  constructor(
+    canvas: HTMLCanvasElement,
+    s: State,
+    readonly quality: Quality,
+  ) {
+    const high = quality === "high";
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== "low", powerPreference: "high-performance", stencil: false });
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.shadowMap.enabled = quality !== "low";
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.scene.fog = new THREE.Fog("#bcd7ef", 200, quality === "high" ? 900 : quality === "medium" ? 700 : 480);
+    this.scene.background = new THREE.Color("#bcd7ef");
+    this.sky = makeSky();
+    this.sky.scale.setScalar(1800);
+    this.scene.add(this.sky);
+    this.env = new SkyEnvironment(this.renderer, this.sky, 64);
+    this.hemi = new THREE.HemisphereLight("#dce9ff", "#8d8c78", 0.5);
+    this.scene.add(this.hemi);
+    this.sun = new THREE.DirectionalLight("#fff1d8", 3);
+    this.sun.castShadow = quality !== "low";
+    const sm = high ? 2048 : 1024;
+    this.sun.shadow.mapSize.set(sm, sm);
+    const R = high ? 70 : 50;
+    const sc = this.sun.shadow.camera;
+    sc.left = sc.bottom = -R;
+    sc.right = sc.top = R;
+    sc.near = 10;
+    sc.far = 400;
+    this.sun.shadow.bias = -0.0005;
+    this.sun.shadow.normalBias = 0.05;
+    this.scene.add(this.sun, this.sun.target);
+    // The sea.
+    const B = { x0: -1150, z0: -1100, x1: 1350, z1: 1400 };
+    this.sea = new THREE.Mesh(
+      new THREE.PlaneGeometry(5000, 5000).rotateX(-Math.PI / 2),
+      new THREE.ShaderMaterial({
+        vertexShader: SEA_VS,
+        fragmentShader: SEA_FS,
+        transparent: true,
+        fog: true,
+        depthWrite: false,
+        uniforms: THREE.UniformsUtils.merge([
+          THREE.UniformsLib.fog,
+          {
+            uNormal: { value: rippleNormal() },
+            uShore: { value: shoreMask(B.x0, B.z0, B.x1, B.z1, quality === "low" ? 384 : 512) },
+            uBounds: { value: new THREE.Vector4(B.x0, B.z0, B.x1 - B.x0, B.z1 - B.z0) },
+            uSunDir: { value: new THREE.Vector3(0.3, 0.8, 0.5) },
+            uSunColor: { value: new THREE.Color("#fff3dc") },
+            uSky: { value: new THREE.Color("#3f86d6") },
+            uHorizon: { value: new THREE.Color("#bcd7ef") },
+            uTime: { value: 0 },
+            uNight: { value: 0 },
+            uStorm: { value: 0 },
+          },
+        ]),
+      }),
+    );
+    this.sea.position.y = WATER_Y;
+    this.sea.renderOrder = 2;
+    this.scene.add(this.sea);
+    this.city = new CityView(s.city, quality, s);
+    this.scene.add(this.city.root);
+    const smoke = puff();
+    this.actors = new Actors(this.scene, quality, smoke);
+    this.fx = new Fx(this.scene, glowTex(), smoke, quality);
+    // Traffic light bulbs (three per head), coloured each frame.
+    this.bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false }), 900);
+    this.bulbs.count = 0;
+    this.bulbs.frustumCulled = false;
+    this.scene.add(this.bulbs);
+    if (quality !== "low") {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.addPass(new RenderPass(this.scene, this.rig.camera));
+      if (high) {
+        this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.35, 0.6, 0.86);
+        this.composer.addPass(this.bloom);
+      }
+      this.grade = new ShaderPass(GRADE);
+      this.grade.uniforms.uSat.value = 1.12;
+      this.grade.uniforms.uWarm.value = 0.03;
+      this.composer.addPass(this.grade);
+      this.composer.addPass(new OutputPass());
+    }
+    // Load the city round the player before the first frame.
+    const pos = playerPos(s);
+    this.city.update(pos.x, pos.z, true);
+  }
+
+  resize(w: number, h: number, dpr: number) {
+    this.w = w;
+    this.h = h;
+    const cap = this.quality === "high" ? 2 : this.quality === "medium" ? 1.5 : 1.25;
+    const pr = Math.min(dpr, cap) * this.scale;
+    this.renderer.setPixelRatio(pr);
+    this.renderer.setSize(w, h, false);
+    this.composer?.setPixelRatio(pr);
+    this.composer?.setSize(w, h);
+    this.bloom?.setSize(w * pr * 0.5, h * pr * 0.5);
+    this.rig.resize(w, h);
+  }
+
+  /** Adaptive resolution: step down when frames run slow. */
+  setScale(k: number) {
+    if (Math.abs(k - this.scale) < 0.01) return;
+    this.scale = k;
+    this.resize(this.w, this.h, window.devicePixelRatio || 1);
+  }
+
+  frame(s: State, dt: number, markers: Markers, now: number, aiming: boolean) {
+    this.t += dt;
+    const cam = this.rig.camera;
+    if (this.cinema) {
+      const c = this.cinema;
+      c.a += dt * c.speed;
+      cam.position.set(c.x + Math.cos(c.a) * c.dist, c.height, c.z + Math.sin(c.a) * c.dist);
+      cam.lookAt(c.x, 8, c.z);
+    } else this.rig.update(s, dt, now, aiming);
+    const pos = this.cinema ? { x: this.cinema.x, z: this.cinema.z } : playerPos(s);
+    this.daylight(s, pos.x, pos.z);
+    this.city.update(cam.position.x, cam.position.z);
+    this.city.setNight(this.night);
+    this.actors.sync(s, cam.position.x, cam.position.z, dt, this.night);
+    this.fx.update(s, cam, dt, markers.goals);
+    this.signals(s, cam.position.x, cam.position.z, dt);
+    this.sky.position.copy(cam.position);
+    this.sky.material.uniforms.uTime.value += dt;
+    this.sea.position.x = Math.round(cam.position.x / 50) * 50;
+    this.sea.position.z = Math.round(cam.position.z / 50) * 50;
+    const u = this.sea.material.uniforms;
+    u.uTime.value = this.t;
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, cam);
+    void player;
+  }
+
+  /** The sun and sky for the clock (and the weather). */
+  private daylight(s: State, px: number, pz: number) {
+    const h = s.clock / 60;
+    const el = Math.sin((Math.PI * (h - 6)) / 12);
+    const storm = s.weather.rain;
+    const cloudy = s.weather.kind === "cloudy" ? 0.5 : 0;
+    const L = skyFor(el, this.skyL);
+    if (storm > 0.01) {
+      const g = new THREE.Color("#7d8696");
+      L.zenith.lerp(g, 0.7 * storm);
+      L.horizon.lerp(g, 0.6 * storm);
+      L.sunI *= 1 - 0.6 * storm;
+    }
+    const day = Math.min(1, Math.max(0, el * 1.6 + 0.12));
+    this.night = 1 - day;
+    const az = (Math.PI * (h - 6)) / 12;
+    const sunUp = el > -0.05;
+    if (sunUp) this.sunDir.set(-Math.cos(az) * 0.9, 0.25 + Math.max(0, el) * 0.9, 0.45).normalize();
+    else this.sunDir.set(-0.3, 0.8, 0.4).normalize();
+    this.sun.position.set(px + this.sunDir.x * 200, this.sunDir.y * 200, pz + this.sunDir.z * 200);
+    this.sun.target.position.set(px, 0, pz);
+    this.sun.color.copy(L.sun);
+    // After dark a cool moon and a bluish sky fill keep the streets readable.
+    this.sun.intensity = sunUp ? L.sunI : 0.55;
+    if (!sunUp) this.sun.color.set("#9fb4e8");
+    this.hemi.intensity = Math.max(L.hemiI * 0.6, this.night * 0.5);
+    this.hemi.color.copy(L.zenith).lerp(FILL.setScalar(1).lerp(MOON, this.night), 0.55 + this.night * 0.2);
+    const su = this.sky.material.uniforms;
+    su.uZenith.value.copy(L.zenith);
+    su.uHorizon.value.copy(L.horizon);
+    su.uSunDir.value.copy(sunUp ? this.sunDir : new THREE.Vector3(0, -1, 0));
+    su.uSunColor.value.copy(L.sun).multiplyScalar(sunUp ? 1 : 0.1);
+    su.uNight.value = this.night;
+    su.uCloud.value = Math.max(storm, cloudy, 0.15);
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.copy(L.horizon).lerp(L.zenith, 0.15);
+    if (storm > 0.01) {
+      fog.near = 200 - storm * 140;
+    } else fog.near = 200;
+    (this.scene.background as THREE.Color).copy(fog.color);
+    this.scene.environment = this.env.update(`${Math.round(el * 12)}|${Math.round(storm * 4)}`);
+    this.scene.environmentIntensity = 0.8;
+    const w = this.sea.material.uniforms;
+    w.uSunDir.value.copy(this.sunDir);
+    w.uSunColor.value.copy(L.sun);
+    w.uSky.value.copy(L.zenith);
+    w.uHorizon.value.copy(L.horizon);
+    w.uNight.value = this.night;
+    w.uStorm.value = storm;
+    if (this.bloom) this.bloom.strength = 0.22 + this.night * 0.55;
+    this.renderer.toneMappingExposure = 1.05 + this.night * 0.25;
+  }
+
+  /** Traffic lights near the camera, lit red, amber or green. */
+  private signals(s: State, cx: number, cz: number, dt: number) {
+    this.bulbT -= dt;
+    if (this.bulbT <= 0) {
+      this.bulbT = 0.5;
+      this.bulbList = this.city.signals.filter((h) => Math.abs(h.x - cx) < 180 && Math.abs(h.z - cz) < 180);
+      const m4 = new THREE.Matrix4();
+      const n = Math.min(300, this.bulbList.length);
+      for (let i = 0; i < n; i++) {
+        const h = this.bulbList[i];
+        for (let k = 0; k < 3; k++) {
+          m4.makeTranslation(h.x, h.y - k * 0.36, h.z);
+          this.bulbs.setMatrixAt(i * 3 + k, m4);
+        }
+      }
+      this.bulbs.count = n * 3;
+      this.bulbs.instanceMatrix.needsUpdate = true;
+    }
+    const red = new THREE.Color("#ff2a1a");
+    const amber = new THREE.Color("#ffb21a");
+    const green = new THREE.Color("#2aff7a");
+    const off = new THREE.Color("#181818");
+    const n = this.bulbs.count / 3;
+    for (let i = 0; i < n; i++) {
+      const h = this.bulbList[i];
+      const st = light(s, h.node, h.axis);
+      this.bulbs.setColorAt(i * 3, st === "red" ? red : off);
+      this.bulbs.setColorAt(i * 3 + 1, st === "amber" ? amber : off);
+      this.bulbs.setColorAt(i * 3 + 2, st === "green" ? green : off);
+    }
+    if (this.bulbs.instanceColor) this.bulbs.instanceColor.needsUpdate = true;
+  }
+
+  dispose() {
+    this.city.dispose();
+    this.actors.dispose();
+    this.fx.dispose();
+    this.env.dispose();
+    this.composer?.dispose();
+    this.renderer.dispose();
+  }
+}

@@ -2,7 +2,7 @@
  * NextX: Zero X's next-generation game production label. Its own app (/nextx) shows the titles
  * made to the NextX standard: photoreal 3D worlds, deep simulations, phone-first interfaces.
  */
-export const NEXTX_SLUGS = ["wareforge", "yourgov", "zero-city"] as const;
+export const NEXTX_SLUGS = ["heatwave", "wareforge", "yourgov", "zero-city"] as const;
 export type NextXSlug = (typeof NEXTX_SLUGS)[number];
 
 export const isNextX = (slug: string) => (NEXTX_SLUGS as readonly string[]).includes(slug);
@@ -25,6 +25,23 @@ export interface NextXTitle {
 }
 
 export const NEXTX_TITLES: NextXTitle[] = [
+  {
+    slug: "heatwave",
+    pitch: "An open-world crime story in a sun-baked island city: two leads, any car, the police on your tail.",
+    accent: "#ff4fa3",
+    accent2: "#ffb347",
+    stats: [
+      { v: "12", k: "Story missions" },
+      { v: "18", k: "Vehicles" },
+      { v: "9", k: "Districts" },
+    ],
+    features: [
+      "Port Solano: beaches, towers, a harbor, swamps and island mansions, sunrise to neon night",
+      "Steal any car, bike or boat; traffic that stops at the lights; police chases up to five stars",
+      "Nina and Dex: switch between two leads through twelve story missions",
+      "Phone first: touch controls, a turning minimap with GPS, four radio stations",
+    ],
+  },
   {
     slug: "wareforge",
     pitch: "Run a warehouse, a factory, a quarry and a chain of stores in 3D, then put up buildings brick by brick and let them.",
@@ -98,5 +115,6 @@ export const NEXTX_ENGINE = [
   { title: "Filmic grading", from: "Both", body: "ACES tone mapping, bloom and ambient occlusion where the device can take it." },
   { title: "Adaptive quality", from: "Both", body: "High detail on desktops, a lighter path on phones, chosen for you." },
   { title: "Phone-first layout", from: "All three", body: "Dock, sheets and tab bars that fit a thumb, upright or sideways." },
+  { title: "Open-world streaming", from: "Heatwave", body: "A whole island city streamed in round you as you drive: traffic, people, police and the sea, with a skyline to the horizon." },
   { title: "Logistics simulation", from: "WareForge", body: "Forklifts that find their own way round your racks, trucks that back onto the doors, machines that wear and break." },
 ];

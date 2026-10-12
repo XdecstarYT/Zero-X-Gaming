@@ -291,8 +291,8 @@ interface CarGeo {
 
 const geoCache = new Map<string, CarGeo>();
 
-function carGeometry(kind: CarKind, detail: "high" | "low"): CarGeo {
-  const cacheKey = `${kind}|${detail}`;
+function carGeometry(kind: CarKind, detail: "high" | "low", civilian = false): CarGeo {
+  const cacheKey = `${kind}|${detail}|${civilian}`;
   const hit = geoCache.get(cacheKey);
   if (hit) return hit;
   SEG = detail === "high" ? 2 : 1;
@@ -309,7 +309,7 @@ function carGeometry(kind: CarKind, detail: "high" | "low"): CarGeo {
   const chrome: THREE.BufferGeometry[] = [];
   const seams: THREE.BufferGeometry[] = [];
   const stripe: THREE.BufferGeometry[] = [];
-  const police = !!s.police && kind !== "slicktop" && kind !== "ambulance" && kind !== "transport";
+  const police = !civilian && !!s.police && kind !== "slicktop" && kind !== "ambulance" && kind !== "transport";
   const whiteBody = kind === "ambulance" || kind === "transport";
   const bodyList = whiteBody ? white : body;
 
@@ -474,9 +474,10 @@ function sprite(color: string, size: number, x: number, y: number, z: number) {
   return s;
 }
 
-export function buildCar(kind: CarKind, color: string, plate = "", detail: "high" | "low" = "high"): CarModel {
-  const g = carGeometry(kind, detail);
-  const s = SPECS[kind];
+/** `civilian` builds a police body (the pursuit coupe, say) as a plain road car: no livery, no lights. */
+export function buildCar(kind: CarKind, color: string, plate = "", detail: "high" | "low" = "high", civilian = false): CarModel {
+  const g = carGeometry(kind, detail, civilian);
+  const s = civilian ? { ...SPECS[kind], police: false } : SPECS[kind];
   const sh = SHAPES[kind];
   const group = new THREE.Group();
   const policeLivery = !!s.police && kind !== "slicktop" && kind !== "ambulance" && kind !== "transport";

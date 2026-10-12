@@ -23,6 +23,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   yourgov: () => import("./yourgov/index"),
   lifeline: () => import("./lifeline/index"),
   wareforge: () => import("./wareforge/index"),
+  heatwave: () => import("./heatwave/index"),
 };
 
 export function hasGame(slug: string) {

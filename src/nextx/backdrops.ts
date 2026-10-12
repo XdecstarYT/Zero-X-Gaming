@@ -3,10 +3,13 @@
  * living background: YourGov's country (photoreal terrain, a physical sky, a sea with surf,
  * drifting clouds) turning slowly in the sun, Zero City's island city (PBR buildings, roads,
  * image-based light, ACES tone mapping) orbiting at golden hour, and WareForge's warehouse yard
- * at work (trucks backing onto the doors, forklifts running the aisles).
+ * at work (trucks backing onto the doors, forklifts running the aisles), and Heatwave's Port Solano
+ * at golden hour (traffic on Seabreeze Boulevard, the beach, the towers behind).
  *
  * Load this module lazily: it pulls in three.js and both games' renderers.
  */
+import { newGame as newPort, NO_INPUT, step as stepPort } from "@/games/heatwave/sim";
+import { HeatwaveView } from "@/games/heatwave/render/view";
 import { newGame as newWarehouse, tick as tickWarehouse } from "@/games/wareforge/sim";
 import { Stage as WarehouseStage } from "@/games/wareforge/render/stage";
 import { Stage3D } from "@/games/yourgov/render/stage";
@@ -17,7 +20,7 @@ import { CameraRig } from "@/games/zero-city/render/camera";
 import { Engine } from "@/games/zero-city/render/engine";
 import { defaultSettings } from "@/games/zero-city/settings";
 
-export type BackdropKind = "country" | "city" | "warehouse";
+export type BackdropKind = "country" | "city" | "warehouse" | "port";
 export type Quality = "high" | "low";
 
 export interface Backdrop {
@@ -152,8 +155,56 @@ function warehouseBackdrop(host: HTMLElement, quality: Quality, still: boolean):
   };
 }
 
+/** Heatwave's Port Solano at golden hour: the beach, the Strand and the towers, traffic moving. */
+function portBackdrop(host: HTMLElement, quality: Quality, still: boolean): Backdrop {
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none";
+  canvas.setAttribute("aria-hidden", "true");
+  host.appendChild(canvas);
+  const s = newPort(7);
+  s.density = quality === "low" ? { cars: 14, peds: 16 } : { cars: 26, peds: 30 };
+  s.clock = 18.1 * 60;
+  const view = new HeatwaveView(canvas, s, quality === "low" ? "low" : "medium");
+  view.cinema = { x: 420, z: -260, dist: 210, height: 75, speed: still ? 0 : 0.03, a: 2.4 };
+  const size = () => view.resize(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight), window.devicePixelRatio || 1);
+  size();
+  const ro = new ResizeObserver(size);
+  ro.observe(host);
+  let raf = 0;
+  let last = performance.now();
+  let first = true;
+  let done: () => void = () => {};
+  const ready = new Promise<void>((r) => (done = r));
+  const loop = () => {
+    raf = requestAnimationFrame(loop);
+    if (document.hidden) return;
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    if (!still) stepPort(s, NO_INPUT, dt);
+    s.clock = 18.1 * 60;
+    view.city.update(view.cinema!.x, view.cinema!.z);
+    view.frame(s, dt, { goals: [] }, now / 1000, false);
+    if (first) {
+      first = false;
+      done();
+    }
+  };
+  raf = requestAnimationFrame(loop);
+  return {
+    ready,
+    dispose() {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      view.dispose();
+      canvas.remove();
+    },
+  };
+}
+
 /** Mount a backdrop in `host` (which should be positioned). Throws if WebGL isn't available. */
 export function mountBackdrop(kind: BackdropKind, host: HTMLElement, quality: Quality = pickQuality(), still = false): Backdrop {
+  if (kind === "port") return portBackdrop(host, quality, still);
   if (kind === "warehouse") return warehouseBackdrop(host, quality, still);
   return kind === "country" ? countryBackdrop(host, quality, still) : cityBackdrop(host, quality, still);
 }

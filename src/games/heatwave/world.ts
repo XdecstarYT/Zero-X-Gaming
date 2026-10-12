@@ -532,6 +532,7 @@ export function generate(seed = 7): City {
   const rng = createRng(seed);
   const roads = buildRoads();
   roadsRef = roads;
+  segCells = null;
   nodesRef = roads.nodes;
   bridgeSegs = roads.segs.filter((s) => s.bridge);
   const buildings: Building[] = [];
@@ -803,7 +804,8 @@ function streetscape(rng: Rng, roads: Roads, props: Prop[]) {
         const px = x + ox;
         const pz = z + oz;
         if (groundY(px, pz) < -0.05) continue;
-        const ry = s.axis === "ns" ? (side > 0 ? Math.PI : 0) : side > 0 ? -Math.PI / 2 : Math.PI / 2;
+        // Lamps reach their arm (local +x) out over the road.
+        const ry = s.axis === "ns" ? (side > 0 ? Math.PI : 0) : side > 0 ? Math.PI / 2 : -Math.PI / 2;
         if (i % 2 === 0) props.push({ kind: "lamp", x: px, z: pz, ry, s: 1 });
         else if (palmy && dist !== "glades") props.push({ kind: "palm", x: px + (s.axis === "ns" ? side * 1.2 : 0), z: pz + (s.axis === "ew" ? side * 1.2 : 0), ry: rng.range(0, 6.28), s: rng.range(0.9, 1.25) });
         else if (dist === "midtown" || dist === "downtown") props.push({ kind: "tree", x: px + (s.axis === "ns" ? side * 1.2 : 0), z: pz + (s.axis === "ew" ? side * 1.2 : 0), ry: rng.range(0, 6.28), s: rng.range(0.8, 1.1) });
@@ -880,10 +882,52 @@ function keysExtras(rng: Rng, props: Prop[]) {
 /* -------------------------------------------------------------------------------- lookups */
 
 let roadsRef: Roads | null = null;
+/** Road segments by 50 m cell (with a 16 m margin), for quick lookups. */
+let segCells: Map<number, number[]> | null = null;
+
+function segIndex(r: Roads) {
+  if (segCells) return segCells;
+  segCells = new Map();
+  for (const s of r.segs) {
+    const A = r.nodes[s.a];
+    const B = r.nodes[s.b];
+    const m = 16;
+    const x0 = Math.floor((Math.min(A.x, B.x) - m) / CELL);
+    const x1 = Math.floor((Math.max(A.x, B.x) + m) / CELL);
+    const z0 = Math.floor((Math.min(A.z, B.z) - m) / CELL);
+    const z1 = Math.floor((Math.max(A.z, B.z) + m) / CELL);
+    for (let cx = x0; cx <= x1; cx++)
+      for (let cz = z0; cz <= z1; cz++) {
+        const k = cellKey(cx, cz);
+        const list = segCells.get(k);
+        if (list) list.push(s.id);
+        else segCells.set(k, [s.id]);
+      }
+  }
+  return segCells;
+}
+
+const NONE: number[] = [];
+/** Segments whose street could touch (x, z) (within 16 m). */
+export function segsAt(r: Roads, x: number, z: number) {
+  return segIndex(r).get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) ?? NONE;
+}
 
 /** Is (x, z) within `pad` metres of a road's carriageway? */
 export function nearRoad(x: number, z: number, pad = 0) {
   const r = roadsRef ?? (roadsRef = buildRoads());
+  if (pad <= 8) {
+    for (const id of segsAt(r, x, z)) {
+      const s = r.segs[id];
+      const a = r.nodes[s.a];
+      const b = r.nodes[s.b];
+      const h = ROAD[s.cls].half + pad;
+      if (s.axis === "ns") {
+        if (Math.abs(x - a.x) <= h && z >= a.z - h && z <= b.z + h) return true;
+      } else if (Math.abs(z - a.z) <= h && x >= a.x - h && x <= b.x + h) return true;
+    }
+    return false;
+  }
   for (const s of r.segs) {
     const a = r.nodes[s.a];
     const b = r.nodes[s.b];
@@ -1027,7 +1071,8 @@ export function clearLine(city: City, ax: number, az: number, bx: number, bz: nu
 /** The road segment a point is on (within the carriageway, plus pad), if any. */
 export function segAt(city: City, x: number, z: number, pad = 0): Seg | null {
   const { nodes, segs } = city.roads;
-  for (const s of segs) {
+  for (const id of segsAt(city.roads, x, z)) {
+    const s = segs[id];
     const a = nodes[s.a];
     const b = nodes[s.b];
     const h = ROAD[s.cls].half + pad;

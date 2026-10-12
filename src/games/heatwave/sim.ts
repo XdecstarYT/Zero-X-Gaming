@@ -621,4 +621,4 @@ export function charOf(s: State, id: CharId) {
   return s.chars.find((c) => c.id === id)!;
 }
 
-export { player, playerCar, playerPos };
+export { player, playerCar, playerPos, speedOf };
