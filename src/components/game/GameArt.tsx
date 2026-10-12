@@ -699,7 +699,7 @@ function HeatwaveArt({ id }: { id: string }) {
         <rect x="84" y="12" width="5" height="3" rx="1" fill="#ffe36a" />
       </g>
       {[0, 1, 2, 3, 4].map((i) => (
-        <path key={i} transform={`translate(${222 + i * 18} 22)`} d="M7 0 9 5 14 5 10 8.5 11.5 14 7 10.6 2.5 14 4 8.5 0 5 5 5z" fill={i < 3 ? "#ffe36a" : "none"} stroke="#ffe36a" strokeWidth="1.2" />
+        <path key={i} transform={`translate(${222 + i * 18} 178)`} d="M7 0 9 5 14 5 10 8.5 11.5 14 7 10.6 2.5 14 4 8.5 0 5 5 5z" fill={i < 3 ? "#ffe36a" : "none"} stroke="#ffe36a" strokeWidth="1.2" />
       ))}
     </g>
   );
