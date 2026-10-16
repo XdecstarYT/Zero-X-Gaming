@@ -23,6 +23,7 @@ import {
   type State,
 } from "./state";
 import { aiDrive, populate } from "./traffic";
+import { spawnTrams, stepTram } from "./trams";
 import { carToEnter, collideCars, collideWorld, doorSpot, hitPeds, leave, NO_DRIVE, seat, stepCar, type Drive } from "./vehicles";
 import { districtAt, groundY, streetName, WATER_Y, type Poi } from "./world";
 
@@ -63,6 +64,7 @@ export function newGame(seed = 7, opts: { empty?: boolean } = {}) {
   const s = createState(seed, opts);
   spawnLead(s);
   // Fill the streets before the first frame.
+  spawnTrams(s);
   for (let i = 0; i < 90; i++) populate(s, 0.2, () => spawnPed(s));
   return s;
 }
@@ -144,6 +146,10 @@ export function step(s: State, inp: Input, dt: number) {
     const spec = VEHICLES[c.kind];
     if (spec.air) {
       stepHeli(s, c, dt);
+      continue;
+    }
+    if (c.tram) {
+      stepTram(s, c, dt);
       continue;
     }
     let d: Drive = NO_DRIVE;
@@ -599,6 +605,7 @@ export function load(json: string, seed = 7): State | null {
     s.day = f.day;
     s.radio = f.radio;
     spawnLead(s);
+    spawnTrams(s);
     for (let i = 0; i < 90; i++) populate(s, 0.2, () => spawnPed(s));
     return s;
   } catch {

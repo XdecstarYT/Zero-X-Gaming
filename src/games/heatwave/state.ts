@@ -159,6 +159,8 @@ export interface Car {
   own: boolean;
   /** Seconds since it was last near the player (for despawning). */
   idleT: number;
+  /** A tram: which route and track, how far along it, its speed and its dwell at a stop. */
+  tram?: { route: number; dir: 0 | 1; s: number; v: number; dwell: number; stop: number };
 }
 
 export interface Wanted {

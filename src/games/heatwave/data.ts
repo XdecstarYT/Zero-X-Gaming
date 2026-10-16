@@ -10,7 +10,7 @@ export const PREFS_KEY = "zx-heatwave-prefs";
 /* ------------------------------------------------------------------ vehicles */
 
 /** The body each vehicle borrows from the shared car kit (Code 3's models), or a model of its own. */
-export type Body = "sedan" | "suv" | "van" | "pickup" | "sports" | "cruiser" | "interceptor" | "pursuit" | "transport" | "ambulance" | "bike" | "boat" | "airboat" | "heli";
+export type Body = "sedan" | "suv" | "van" | "pickup" | "sports" | "cruiser" | "interceptor" | "pursuit" | "transport" | "ambulance" | "bike" | "boat" | "airboat" | "heli" | "tram";
 
 export type VehicleKind =
   | "brisa"
@@ -30,7 +30,9 @@ export type VehicleKind =
   | "bike"
   | "speedboat"
   | "airboat"
-  | "heli";
+  | "heli"
+  | "tram"
+  | "wtram";
 
 export interface VehicleSpec {
   name: string;
@@ -59,30 +61,32 @@ export interface VehicleSpec {
 }
 
 export const VEHICLES: Record<VehicleKind, VehicleSpec> = {
-  brisa: { name: "Brisa", body: "sedan", scale: 0.88, len: 4.0, wid: 1.65, top: 38, accel: 6, brake: 11, grip: 9, mass: 1.1, lock: 0.62, base: 2.4, hp: 800, seats: 4, value: 1200 },
+  brisa: { name: "Wattle Hatch", body: "sedan", scale: 0.88, len: 4.0, wid: 1.65, top: 38, accel: 6, brake: 11, grip: 9, mass: 1.1, lock: 0.62, base: 2.4, hp: 800, seats: 4, value: 1200 },
   aria: { name: "Norden Aria", body: "sedan", scale: 1, len: 4.6, wid: 1.85, top: 43, accel: 6.8, brake: 11.5, grip: 9.2, mass: 1.5, lock: 0.58, base: 2.75, hp: 1000, seats: 4, value: 2000 },
-  taxi: { name: "Sunline Cab", body: "sedan", scale: 1, len: 4.6, wid: 1.85, top: 42, accel: 6.5, brake: 11, grip: 9, mass: 1.5, lock: 0.58, base: 2.75, hp: 1000, seats: 4, value: 1500, colors: ["#f2c230"] },
+  taxi: { name: "Melbourne Cab", body: "sedan", scale: 1, len: 4.6, wid: 1.85, top: 42, accel: 6.5, brake: 11, grip: 9, mass: 1.5, lock: 0.58, base: 2.75, hp: 1000, seats: 4, value: 1500, colors: ["#f2c230"] },
   trek: { name: "Halvor Trek", body: "suv", scale: 1, len: 4.9, wid: 2, top: 41, accel: 6.3, brake: 10.5, grip: 8.3, mass: 2.1, lock: 0.56, base: 2.9, hp: 1250, seats: 4, value: 2600 },
-  ranger: { name: "Mesa Ranger", body: "pickup", scale: 1, len: 5.5, wid: 2, top: 41, accel: 6.2, brake: 10, grip: 7.8, mass: 2.3, lock: 0.55, base: 3.2, hp: 1300, seats: 2, value: 2300 },
+  ranger: { name: "Murray Ute", body: "pickup", scale: 1, len: 5.5, wid: 2, top: 41, accel: 6.2, brake: 10, grip: 7.8, mass: 2.3, lock: 0.55, base: 3.2, hp: 1300, seats: 2, value: 2300 },
   cargo: { name: "Orrin Cargo", body: "van", scale: 1, len: 5.3, wid: 2.05, top: 35, accel: 4.8, brake: 9, grip: 7.2, mass: 2.6, lock: 0.55, base: 3.2, hp: 1400, seats: 2, value: 1800 },
   vanta: { name: "Vanta GT", body: "sports", scale: 1, len: 4.4, wid: 1.9, top: 61, accel: 10.5, brake: 13.5, grip: 10.8, mass: 1.35, lock: 0.58, base: 2.6, hp: 900, seats: 2, value: 9000, colors: ["#d81e2b", "#f2c230", "#e8e8e6", "#1c1f24", "#1f66d6", "#f08a5d"] },
   stallion: { name: "Castell Stallion", body: "pursuit", scale: 1, len: 4.7, wid: 1.95, top: 56, accel: 9.5, brake: 12, grip: 9.6, mass: 1.6, lock: 0.56, base: 2.8, hp: 1050, seats: 2, value: 6500, colors: ["#7a1d1d", "#1d3f7a", "#1c1f24", "#f2b134", "#2f5a3a", "#e8e8e6"] },
   furia: { name: "Furia RS", body: "pursuit", scale: 0.96, len: 4.5, wid: 1.95, top: 72, accel: 12.5, brake: 15, grip: 12, mass: 1.4, lock: 0.56, base: 2.65, hp: 850, seats: 2, value: 22000, colors: ["#e14b6a", "#3fd0c9", "#f2c230", "#e8e8e6", "#7a5cc4"] },
-  police: { name: "SPD Cruiser", body: "cruiser", scale: 1, len: 5, wid: 1.9, top: 54, accel: 8.6, brake: 12.5, grip: 10.2, mass: 1.8, lock: 0.57, base: 2.9, hp: 1300, seats: 4, police: true, value: 0 },
-  policeSuv: { name: "SPD Interceptor", body: "interceptor", scale: 1, len: 5.05, wid: 2, top: 55, accel: 9, brake: 12.5, grip: 10, mass: 2.2, lock: 0.56, base: 3, hp: 1500, seats: 4, police: true, value: 0 },
-  swat: { name: "SPD Tactical", body: "transport", scale: 1, len: 5.9, wid: 2.1, top: 42, accel: 6, brake: 9.5, grip: 7.6, mass: 3.2, lock: 0.52, base: 3.6, hp: 2600, seats: 4, police: true, value: 0 },
+  police: { name: "Police Commodore", body: "cruiser", scale: 1, len: 5, wid: 1.9, top: 54, accel: 8.6, brake: 12.5, grip: 10.2, mass: 1.8, lock: 0.57, base: 2.9, hp: 1300, seats: 4, police: true, value: 0 },
+  policeSuv: { name: "Police Highway Patrol", body: "interceptor", scale: 1, len: 5.05, wid: 2, top: 55, accel: 9, brake: 12.5, grip: 10, mass: 2.2, lock: 0.56, base: 3, hp: 1500, seats: 4, police: true, value: 0 },
+  swat: { name: "Police Critical Response", body: "transport", scale: 1, len: 5.9, wid: 2.1, top: 42, accel: 6, brake: 9.5, grip: 7.6, mass: 3.2, lock: 0.52, base: 3.6, hp: 2600, seats: 4, police: true, value: 0 },
   ambulance: { name: "Ambulance", body: "ambulance", scale: 1, len: 6.2, wid: 2.2, top: 42, accel: 5.4, brake: 9, grip: 7, mass: 3.2, lock: 0.52, base: 3.8, hp: 1800, seats: 2, value: 0 },
   armored: { name: "Securitas Armoured Van", body: "van", scale: 1.05, len: 5.6, wid: 2.15, top: 34, accel: 4.2, brake: 8.5, grip: 7, mass: 4.2, lock: 0.5, base: 3.4, hp: 4200, seats: 2, value: 0, colors: ["#3d4a3f"] },
   bike: { name: "Rapido 600", body: "bike", scale: 1, len: 2.1, wid: 0.8, top: 58, accel: 11, brake: 13, grip: 11, mass: 0.35, lock: 0.5, base: 1.45, hp: 500, seats: 2, value: 3000, colors: ["#d81e2b", "#1c1f24", "#f2c230", "#1f66d6", "#e8e8e6"] },
   speedboat: { name: "Squall Speedboat", body: "boat", scale: 1, len: 7, wid: 2.4, top: 30, accel: 6, brake: 4, grip: 2.2, mass: 1.8, lock: 0.5, base: 4, hp: 1400, seats: 4, water: true, value: 0, colors: ["#e8e8e6", "#1f66d6", "#d81e2b"] },
-  airboat: { name: "Gator Airboat", body: "airboat", scale: 1, len: 4.6, wid: 2.2, top: 24, accel: 6, brake: 3, grip: 1.6, mass: 0.9, lock: 0.6, base: 2.6, hp: 900, seats: 2, water: true, value: 0, colors: ["#4d5a3a"] },
-  heli: { name: "SPD Air One", body: "heli", scale: 1, len: 11, wid: 2.4, top: 40, accel: 8, brake: 8, grip: 4, mass: 2.5, lock: 0, base: 0, hp: 1800, seats: 2, air: true, police: true, value: 0 },
+  airboat: { name: "Yarra Runabout", body: "airboat", scale: 1, len: 4.6, wid: 2.2, top: 24, accel: 6, brake: 3, grip: 1.6, mass: 0.9, lock: 0.6, base: 2.6, hp: 900, seats: 2, water: true, value: 0, colors: ["#4d5a3a"] },
+  heli: { name: "Police Air Wing", body: "heli", scale: 1, len: 11, wid: 2.4, top: 40, accel: 8, brake: 8, grip: 4, mass: 2.5, lock: 0, base: 0, hp: 1800, seats: 2, air: true, police: true, value: 0 },
+  tram: { name: "E-Class Tram", body: "tram", scale: 1, len: 33, wid: 2.65, top: 16, accel: 1.3, brake: 2.4, grip: 20, mass: 40, lock: 0, base: 10, hp: 99999, seats: 1, value: 0 },
+  wtram: { name: "W-Class Tram", body: "tram", scale: 1, len: 14.5, wid: 2.7, top: 11, accel: 1.1, brake: 2.2, grip: 20, mass: 20, lock: 0, base: 8, hp: 99999, seats: 1, value: 0, colors: ["#2f5a3a"] },
 };
 
 /** Ordinary traffic, by district feel (weighted lists). */
 export const TRAFFIC: VehicleKind[] = ["aria", "aria", "aria", "brisa", "brisa", "trek", "trek", "ranger", "cargo", "taxi", "taxi", "stallion", "vanta", "bike"];
 export const RICH_TRAFFIC: VehicleKind[] = ["vanta", "vanta", "furia", "trek", "trek", "stallion", "aria", "bike"];
-export const GLADES_TRAFFIC: VehicleKind[] = ["ranger", "ranger", "ranger", "cargo", "brisa", "trek"];
+export const DOCK_TRAFFIC: VehicleKind[] = ["ranger", "ranger", "ranger", "cargo", "brisa", "trek"];
 export const PAINT = ["#1c1f24", "#e8e8e6", "#8a8f96", "#7a1d1d", "#1d3f7a", "#2f5a3a", "#c9b27a", "#b8c4cf", "#3a3a44", "#d0662b", "#6b2d6b", "#3fa7a0", "#e14b6a", "#f2b134"];
 
 /* ------------------------------------------------------------------ weapons */
@@ -154,7 +158,7 @@ export const LEADS: Record<CharId, Lead> = {
     id: "nina",
     name: "Nina",
     full: "Nina Cruz",
-    blurb: "Grew up on the Strand, drove getaway for her cousin at nineteen. Never been caught, never stopped looking over her shoulder.",
+    blurb: "Grew up above a cake shop on Acland St, drove getaway for her cousin at nineteen. Never been caught, never stopped looking over her shoulder.",
     skin: "#c8916a",
     hair: "#24170f",
     female: true,
@@ -169,7 +173,7 @@ export const LEADS: Record<CharId, Lead> = {
     id: "dex",
     name: "Dex",
     full: "Dex Holloway",
-    blurb: "Twelve years humping containers at the Harbor, laid off with a bad back and a worse temper. Owes money to the wrong man.",
+    blurb: "Twelve years a wharfie at Swanson Dock, laid off with a bad back and a worse temper. Owes money to the wrong bloke in Footscray.",
     skin: "#e2b48f",
     hair: "#6b4a2e",
     female: false,
@@ -235,8 +239,8 @@ export const HEAT: { cars: number; foot: boolean; shoot: boolean; heli: number; 
 export const STATIONS = [
   { id: "off", name: "Radio off", genre: "" },
   { id: "neon", name: "Neon 88", genre: "Synthwave" },
-  { id: "calle", name: "Calle 104", genre: "Latin & reggaeton" },
-  { id: "tide", name: "Low Tide FM", genre: "Chill & lo-fi" },
+  { id: "calle", name: "Laneway 104", genre: "Latin & reggaeton" },
+  { id: "tide", name: "Bayside FM", genre: "Chill & lo-fi" },
   { id: "bass", name: "Bass Coast", genre: "Hip-hop & trap" },
 ] as const;
 export type StationId = (typeof STATIONS)[number]["id"];

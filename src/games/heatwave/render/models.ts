@@ -120,23 +120,76 @@ export function propTemplate(kind: Prop["kind"], s = 1, color = "#ffffff"): Prop
     }
     case "tree": {
       t.solid.push(cyl(0.28, 0.2, 3.2, "#5a4632"));
-      for (const g of cross(5.2, 4.6, 3)) t.leaves.push(g);
+      for (const g of cross(5.2, 4.6, 3)) t.leaves.push(paint(g, "#d8f0b8"));
       t.solid.push(paint(new THREE.IcosahedronGeometry(1.9, 1).toNonIndexed().translate(0, 4.4, 0), "#3e5f2a", 0.15));
       break;
     }
-    case "mangrove": {
-      for (let k = 0; k < 6; k++) {
-        const g = cyl(0.06, 0.05, 1.6, "#4a3c2a", 0, 0, 0, 5);
+    case "plane":
+    case "elm": {
+      // London plane trees and elms: a stout, mottled trunk forking into a big rounded crown.
+      const elm = kind === "elm";
+      const H = elm ? 5.2 : 4.4;
+      t.solid.push(cyl(0.34, 0.24, H, elm ? "#4e4436" : "#8a8270", 0, 0, 0, 8));
+      for (let k = 0; k < 3; k++) {
+        const g = cyl(0.16, 0.1, 3.2, elm ? "#4e4436" : "#8a8270", 0, 0, 0, 6);
         g.rotateZ(0.5);
-        g.rotateY((k / 6) * Math.PI * 2);
-        g.translate(Math.cos((k / 6) * Math.PI * 2) * 0.5, 0, Math.sin((k / 6) * Math.PI * 2) * 0.5);
+        g.rotateY(k * 2.1);
+        g.translate(0, H - 0.3, 0);
         t.solid.push(g);
       }
-      t.solid.push(cyl(0.18, 0.14, 2.6, "#4a3c2a", 0, 0.8));
-      t.solid.push(paint(new THREE.IcosahedronGeometry(1.8, 1).toNonIndexed().scale(1.2, 0.75, 1.2).translate(0, 3.6, 0), "#2f4a24", 0.2));
-      for (const g of cross(4.4, 3.6, 2)) t.leaves.push(g);
+      const R = elm ? 4.6 : 4.1;
+      for (const [dx, dy, dz, r] of [[0, H + 2.4, 0, R], [1.8, H + 1.3, 1.1, R * 0.7], [-1.7, H + 1.5, -0.9, R * 0.72], [0.6, H + 3.6, -1.2, R * 0.6]] as [number, number, number, number][]) {
+        for (const g of cross(r * 2, 0, 4)) t.leaves.push(paint(g.translate(dx, dy, dz), elm ? "#c4dc9e" : "#dcefa8", 0.12));
+        // A small dark core so the crown never looks hollow.
+        t.solid.push(paint(new THREE.IcosahedronGeometry(r * 0.38, 1).toNonIndexed().translate(dx, dy, dz), elm ? "#41602f" : "#577a34", 0.18));
+      }
       break;
     }
+    case "gum": {
+      // A eucalypt: a tall pale trunk that leans and forks, with thin, drooping grey-green clumps.
+      const H = 9;
+      const pale = "#d9d2c4";
+      for (let i = 0; i < 5; i++) {
+        const g = cyl(0.3 - i * 0.04, 0.26 - i * 0.04, H / 5 + 0.1, i % 2 ? pale : "#cfc5b2", 0, 0, 0, 7);
+        g.translate(Math.sin(i * 0.6) * 0.5, (i / 5) * H, 0);
+        t.solid.push(g);
+      }
+      for (let k = 0; k < 4; k++) {
+        const g = cyl(0.12, 0.07, 4, pale, 0, 0, 0, 5);
+        g.rotateZ(0.7 - (k % 2) * 0.2);
+        g.rotateY(k * 1.6);
+        g.translate(0.4, H * 0.7, 0);
+        t.solid.push(g);
+      }
+      for (const [dx, dy, dz, r] of [[2.4, H + 0.6, 0.4, 3.2], [-1.8, H + 1.6, -1.4, 3], [0.4, H + 3, 1.6, 2.8], [-0.6, H - 0.4, 2.2, 2.4], [1.2, H + 2.2, -2, 2.4]] as [number, number, number, number][]) {
+        for (const g of cross(r * 2, 0, 2)) t.leaves.push(paint(g.scale(1, 0.75, 1).translate(dx, dy, dz), "#a9b89a"));
+      }
+      break;
+    }
+    case "bin":
+      t.solid.push(cyl(0.3, 0.32, 1, "#2f4a3a", 0, 0, 0, 10), cyl(0.34, 0.34, 0.08, "#c8102e", 0, 1, 0, 10));
+      break;
+    case "beachbox": {
+      // A Middle Park bathing box: weatherboard walls, a pitched corrugated roof, painted doors.
+      t.solid.push(box(2.4, 2.2, 2.4, "#efe9dc"), box(1.6, 1.8, 0.06, color, 0, 0.1, 1.22), box(0.12, 2.2, 2.46, color, -1.18, 0), box(0.12, 2.2, 2.46, color, 1.18, 0));
+      const roof = new THREE.CylinderGeometry(0.01, 1.9, 1, 4, 1).toNonIndexed();
+      roof.rotateY(Math.PI / 4);
+      roof.scale(1, 1, 1);
+      roof.translate(0, 2.7, 0);
+      t.solid.push(paint(roof, "#8a8f96"));
+      break;
+    }
+    case "tennis":
+      t.solid.push(box(10.97, 0.04, 23.77, "#2f6f5a", 0, 0), box(8.23, 0.05, 23.77, "#3f8a6a", 0, 0.01), box(0.05, 1.07, 12.8, "#f6f1e7", 0, 0, 0, Math.PI / 2));
+      for (const [x, z] of [[-6.5, -13.5], [6.5, -13.5], [-6.5, 13.5], [6.5, 13.5]]) t.solid.push(box(0.08, 3, 0.08, "#2b2f36", x, 0, z));
+      break;
+    case "flame":
+      // The casino's gas towers along the river: dark pillars that burst into flame at night.
+      t.solid.push(cyl(0.9, 0.7, 11, "#2b2f36", 0, 0, 0, 10), cyl(1, 1, 0.5, "#c9a24a", 0, 11, 0, 10));
+      t.glows.push([0, 12.5, 0]);
+      break;
+    case "graffiti":
+      break;
     case "lamp": {
       t.solid.push(cyl(0.12, 0.08, 7.6, "#3a3f47"));
       t.solid.push(box(2.4, 0.12, 0.12, "#3a3f47", 1.1, 7.45));
@@ -146,9 +199,6 @@ export function propTemplate(kind: Prop["kind"], s = 1, color = "#ffffff"): Prop
     }
     case "bench":
       t.solid.push(box(1.8, 0.08, 0.5, "#8a6a48", 0, 0.45), box(1.8, 0.5, 0.06, "#8a6a48", 0, 0.5, -0.24), box(0.06, 0.45, 0.45, "#3a3f47", -0.8), box(0.06, 0.45, 0.45, "#3a3f47", 0.8));
-      break;
-    case "hydrant":
-      t.solid.push(cyl(0.16, 0.14, 0.7, "#c8102e"), paint(new THREE.SphereGeometry(0.15, 8, 6).toNonIndexed().translate(0, 0.72, 0), "#c8102e"), box(0.45, 0.1, 0.1, "#c8102e", 0, 0.4));
       break;
     case "busstop":
       t.solid.push(box(4, 0.1, 1.6, "#2b2f36", 0, 2.6), box(4, 2.2, 0.06, "#9fc7d6", 0, 0.3, -0.75), box(0.1, 2.6, 0.1, "#2b2f36", -1.9, 0, -0.75), box(0.1, 2.6, 0.1, "#2b2f36", 1.9, 0, -0.75), box(2.6, 0.08, 0.45, "#8a6a48", 0, 0.45, -0.45), box(1.2, 1.8, 0.1, "#f2b134", 2.3, 0.4, -0.2));

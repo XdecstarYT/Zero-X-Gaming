@@ -118,7 +118,7 @@ export function circles(c: Car, out: { x: number; z: number; r: number }[] = [])
   const spec = VEHICLES[c.kind];
   out.length = 0;
   const r = spec.wid / 2 + 0.05;
-  const n = spec.len > 5 ? 3 : 2;
+  const n = spec.len > 12 ? Math.ceil(spec.len / 2.6) : spec.len > 5 ? 3 : 2;
   const fx = Math.cos(c.h);
   const fz = Math.sin(c.h);
   for (let i = 0; i < n; i++) {
@@ -187,7 +187,8 @@ export function collideCars(s: State, a: Car, b: Car) {
   const sa = VEHICLES[a.kind];
   const sb = VEHICLES[b.kind];
   if (sa.air || sb.air) return;
-  if (Math.abs(a.x - b.x) > 8 || Math.abs(a.z - b.z) > 8) return;
+  const reach = (sa.len + sb.len) / 2 + 2;
+  if (Math.abs(a.x - b.x) > reach || Math.abs(a.z - b.z) > reach) return;
   if (!!sa.water !== !!sb.water) return;
   circles(a, circ);
   circles(b, circB);
@@ -301,7 +302,8 @@ export function setHooks(boom: typeof boomHook, kill: typeof killHook) {
 /** Where someone stands to get in a seat (driver's door is on the left). */
 export function doorSpot(c: Car, seat: number) {
   const spec = VEHICLES[c.kind];
-  const side = seat % 2 === 0 ? -1 : 1;
+  // Right-hand drive: the driver gets in on the right.
+  const side = seat % 2 === 0 ? 1 : -1;
   const back = seat >= 2 ? -0.9 : 0.25;
   const fx = Math.cos(c.h);
   const fz = Math.sin(c.h);
@@ -314,7 +316,7 @@ export function carToEnter(s: State, p: Ped, reach = 3.4) {
   let best: Car | undefined;
   let bd = Infinity;
   for (const c of s.cars) {
-    if (c.wrecked || VEHICLES[c.kind].air) continue;
+    if (c.wrecked || VEHICLES[c.kind].air || c.tram) continue;
     const spec = VEHICLES[c.kind];
     const d = Math.hypot(c.x - p.x, c.z - p.z) - spec.len / 2 + 1;
     if (d < reach && d < bd && c.sink < 1.5) {

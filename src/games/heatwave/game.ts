@@ -28,7 +28,7 @@ export interface Prefs {
   mph: boolean;
 }
 
-const DEFAULT_PREFS: Prefs = { quality: "auto", volume: 0.8, music: 0.55, sens: 1, invert: false, aimAssist: true, touchLayout: "right", mph: true };
+const DEFAULT_PREFS: Prefs = { quality: "auto", volume: 0.8, music: 0.55, sens: 1, invert: false, aimAssist: true, touchLayout: "right", mph: false };
 
 export interface Toast {
   id: number;
@@ -170,7 +170,8 @@ export class Game {
 
   quality(): Quality {
     if (this.prefs.quality !== "auto") return this.prefs.quality;
-    if (this.coarse) return "low";
+    // Phones: the newer ones (eight cores and up) get the full atmosphere at medium.
+    if (this.coarse) return (navigator.hardwareConcurrency || 4) >= 8 ? "medium" : "low";
     const cores = navigator.hardwareConcurrency || 4;
     return cores >= 8 ? "high" : "medium";
   }
@@ -178,7 +179,7 @@ export class Game {
   newGame() {
     this.s = sim.newGame(7);
     this.startPlay();
-    this.say("Port Solano. Find the yellow marker to start the story.", "info");
+    this.say("Melbourne. Find the yellow marker to start the story.", "info");
   }
 
   continueGame() {

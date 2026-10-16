@@ -2,15 +2,16 @@ import { VEHICLES } from "../data";
 import { missionStart, nextStory, TOKENS } from "../missions";
 import { isCop } from "../police";
 import { player, playerCar, playerPos, type State } from "../state";
-import { districtAt, groundY, PIERS, ROAD, WATER_Y, type City, type Poi } from "../world";
+import { tracksFor } from "../trams";
+import { BOUNDS, districtAt, groundY, PIERS, ROAD, WATER_Y, type City, type District, type Poi } from "../world";
 
 /**
- * The map of Port Solano, painted once onto a canvas (sea and shallows, the districts, parks,
- * beaches, roads, buildings, piers), then drawn as the turning minimap and the phone's full map,
+ * The map of Melbourne, painted once onto a canvas (the bay, the Yarra and the lakes, the suburbs,
+ * parks, beaches, roads and tram lines, buildings and landmarks, piers), then drawn as the turning minimap and the phone's full map,
  * with blips on top: you, the mission marker, shops, safehouses, the police, the GPS route.
  */
 
-export const MAP = { x0: -1150, z0: -1100, x1: 1350, z1: 1400 };
+export const MAP = BOUNDS;
 const PX = 2;
 
 let base: HTMLCanvasElement | null = null;
@@ -24,16 +25,24 @@ export function baseMap(city: City) {
   c.height = H;
   const g = c.getContext("2d")!;
   const img = g.createImageData(W, H);
-  const LAND: Record<string, [number, number, number]> = {
-    downtown: [196, 196, 192],
-    midtown: [200, 204, 188],
-    strand: [236, 214, 214],
+  const LAND: Record<District, [number, number, number]> = {
+    cbd: [190, 190, 188],
+    southbank: [194, 194, 196],
+    docklands: [190, 196, 202],
+    docks: [182, 184, 186],
+    port: [196, 196, 190],
+    westmelb: [204, 200, 190],
+    carlton: [214, 206, 192],
+    fitzroy: [216, 204, 196],
+    eastmelb: [208, 210, 196],
+    richmond: [214, 206, 196],
+    southmelb: [212, 208, 196],
+    domain: [176, 206, 160],
+    southyarra: [206, 214, 196],
+    toorak: [200, 220, 190],
+    albertpark: [200, 216, 196],
+    stkilda: [228, 210, 206],
     beach: [242, 226, 180],
-    callesol: [238, 214, 184],
-    heights: [196, 222, 178],
-    harbor: [186, 190, 194],
-    glades: [150, 172, 122],
-    keys: [210, 232, 214],
   };
   // Coarse: sample the ground every 4 m and fill 2×2 pixels.
   for (let j = 0; j < H; j += 2)
@@ -44,7 +53,7 @@ export function baseMap(city: City) {
       let col: [number, number, number];
       if (y < WATER_Y + 0.15) {
         const k = Math.max(0, Math.min(1, (WATER_Y - y) / 4));
-        col = [Math.round(78 - k * 50), Math.round(180 - k * 80), Math.round(196 - k * 50)];
+        col = [Math.round(70 - k * 46), Math.round(150 - k * 70), Math.round(170 - k * 50)];
       } else if (y < -0.05) col = [236, 220, 172];
       else {
         col = LAND[districtAt(x, z)];
@@ -65,6 +74,18 @@ export function baseMap(city: City) {
   // Buildings.
   g.fillStyle = "rgba(90,90,96,0.32)";
   for (const b of city.buildings) g.fillRect(X(b.x - b.hw), Z(b.z - b.hd), (b.hw * 2) / PX, (b.hd * 2) / PX);
+  // Landmarks.
+  g.fillStyle = "rgba(70,70,80,0.55)";
+  for (const l of city.landmarks) {
+    if (l.kind === "westgate" || l.kind === "bolte" || l.kind === "cruiseship") continue;
+    for (const p of l.parts ?? []) {
+      if (p.round) {
+        g.beginPath();
+        g.ellipse(X(p.x), Z(p.z), p.hw / PX, p.hd / PX, 0, 0, Math.PI * 2);
+        g.fill();
+      } else g.fillRect(X(p.x - p.hw), Z(p.z - p.hd), (p.hw * 2) / PX, (p.hd * 2) / PX);
+    }
+  }
   // Piers.
   g.fillStyle = "#b28f68";
   for (const p of PIERS) g.fillRect(X(p.x0), Z(p.z0), (p.x1 - p.x0) / PX, (p.z1 - p.z0) / PX);
@@ -75,7 +96,7 @@ export function baseMap(city: City) {
       const A = nodes[s.a];
       const B = nodes[s.b];
       const w = (ROAD[s.cls].half * 2 + (pass ? 0 : 3)) / PX;
-      g.strokeStyle = pass ? (s.cls === "avenue" ? "#ffffff" : "#f4f4f2") : "rgba(60,60,70,0.45)";
+      g.strokeStyle = pass ? (s.cls === "boulevard" ? "#fff6dc" : s.cls === "avenue" ? "#ffffff" : s.cls === "lane" ? "#e4e2dc" : "#f4f4f2") : "rgba(60,60,70,0.45)";
       g.lineWidth = w;
       g.lineCap = "square";
       g.beginPath();
@@ -83,6 +104,15 @@ export function baseMap(city: City) {
       g.lineTo(X(B.x), Z(B.z));
       g.stroke();
     }
+  }
+  // Tram lines: thin green rails down the middle of their roads.
+  g.strokeStyle = "rgba(60,150,60,0.75)";
+  g.lineWidth = 1;
+  for (const t of tracksFor(city)) {
+    if (t.dir) continue;
+    g.beginPath();
+    for (let i = 0; i < t.x.length; i += 3) (i ? g.lineTo : g.moveTo).call(g, X(t.x[i]), Z(t.z[i]));
+    g.stroke();
   }
   base = c;
   return c;

@@ -3,7 +3,7 @@ import { aimAt, fire, losClear, startReload, tickWeapon } from "./combat";
 import { isCop, stepCop } from "./police";
 import { carById, clamp, makePed, pedById, player, playerPos, type Ped, type State } from "./state";
 import { randomLook } from "./traffic";
-import { districtAt, eastCoast, groundY, onDeck, pushOut, ROAD, WATER_Y, type Solid } from "./world";
+import { districtAt, groundY, onDeck, pushOut, ROAD, sandSpot, WATER_Y, type Solid } from "./world";
 
 /**
  * People: the player on foot (walk, run, sprint, jump, swim), and everyone else: walking the
@@ -192,9 +192,9 @@ function beachStroll(s: State, p: Ped, dt: number) {
   if (d < 1 || p.ai.timer < -30) {
     if (p.ai.timer < 0) {
       // Somewhere new along the sand.
-      const z = p.z + s.rng.range(-50, 50);
-      p.ai.dx = s.rng.range(478, eastCoast(z) - 14);
-      p.ai.dz = z;
+      const spot = sandSpot(p.x, p.z, 45, s.rng.next);
+      p.ai.dx = spot ? spot.x : p.x;
+      p.ai.dz = spot ? spot.z : p.z;
       p.ai.timer = s.rng.range(6, 26);
       p.ai.side = s.rng.next() < 0.35 ? 2 : 0;
     }
@@ -365,23 +365,24 @@ function partnerCover(s: State, p: Ped) {
 /* ------------------------------------------------------------------ spawning */
 
 const GANGS = [
-  { tag: "kings", shirt: "#1aa39a", pants: "#1c1f24", where: (x: number, z: number) => districtAt(x, z) === "harbor" },
-  { tag: "gators", shirt: "#4d5a3a", pants: "#3d4530", where: (x: number, z: number) => districtAt(x, z) === "glades" },
-  { tag: "sol", shirt: "#d81e2b", pants: "#1c1f24", where: (x: number, z: number) => districtAt(x, z) === "callesol" && z > 150 },
+  // Wharfies gone bad round the docks, in their hi-vis.
+  { tag: "dockrats", shirt: "#f28a1a", pants: "#2b3a55", where: (x: number, z: number) => districtAt(x, z) === "docks" || districtAt(x, z) === "westmelb" },
+  { tag: "smithst", shirt: "#1c1f24", pants: "#1c1f24", where: (x: number, z: number) => districtAt(x, z) === "fitzroy" },
+  { tag: "esplanade", shirt: "#d81e2b", pants: "#e8dcc0", where: (x: number, z: number) => districtAt(x, z) === "stkilda" && x < -100 },
 ];
 
 export function spawnPed(s: State) {
   const pos = playerPos(s);
   const night = s.clock < 6 * 60 || s.clock > 21 * 60;
   const dist = districtAt(pos.x, pos.z);
-  const want = Math.round(s.density.peds * (night ? 0.55 : 1) * (dist === "glades" ? 0.45 : dist === "beach" && !night ? 1.25 : 1));
+  const want = Math.round(s.density.peds * (night ? 0.55 : 1) * (dist === "docks" ? 0.45 : dist === "cbd" ? 1.35 : dist === "beach" && !night ? 1.25 : 1));
   const civs = s.peds.filter((p) => p.role === "civ" && p.car < 0 && p.state !== "dead").length;
   if (civs >= want) return;
   // On the beach, by day.
-  if (!night && pos.x > 360 && pos.x < 700 && s.rng.next() < 0.55) {
-    const z = pos.z + s.rng.range(-110, 110);
-    const x = s.rng.range(478, eastCoast(z) - 12);
-    if (Math.hypot(x - pos.x, z - pos.z) < 30 || groundY(x, z) < -0.3) return;
+  const sand = !night && s.rng.next() < 0.55 ? sandSpot(pos.x, pos.z, 120, s.rng.next) : null;
+  if (sand) {
+    const { x, z } = sand;
+    if (Math.hypot(x - pos.x, z - pos.z) < 30) return;
     const p = makePed(s, "civ", x, z, s.rng.range(0, 6.28), randomLook(s, true));
     p.ai.mode = "beach";
     p.ai.dx = x;

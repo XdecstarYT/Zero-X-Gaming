@@ -1,24 +1,22 @@
 import * as THREE from "three";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { GRADE, makeSky, SkyEnvironment, skyFor, type SkyLight, type SkyMesh } from "@/nextx/look";
+import { SkyEnvironment, skyFor, type SkyLight } from "@/nextx/look";
 import { light } from "../traffic";
 import { player, playerPos, type State } from "../state";
-import { WATER_Y } from "../world";
+import { BOUNDS, WATER_Y } from "../world";
 import { Actors } from "./actors";
 import { CamRig } from "./camera";
 import { CityView, glowTex, type Quality } from "./city";
+import { FACADE_UNIFORMS } from "./facade";
 import { Fx } from "./fx";
+import { Post } from "./post";
+import { makeMelbSky, type SkyMesh } from "./sky";
 import { puff, rippleNormal, shoreMask } from "./textures";
 
 /**
- * Heatwave in 3D: the renderer, the city, people and traffic, effects, a sky that runs from dawn
- * to dusk with the game clock (storms darken it), the sea with turquoise shallows and a line of
- * surf on the beaches, traffic lights that change, and a post chain (bloom and a grade) where the
- * device can take it.
+ * Heatwave in 3D: the renderer, Melbourne, people, traffic and trams, effects, a scattering sky
+ * with lit clouds that runs from dawn to dusk with the game clock (storms darken it, rain wets the
+ * roads), the bay and the Yarra, traffic lights that change, and the post chain: height fog lit by
+ * the sun, light shafts, heat shimmer, ambient occlusion, bloom and a filmic grade.
  */
 
 const SEA_VS = `
@@ -48,15 +46,18 @@ void main(){
   vec2 suv = (p - uBounds.xy) / uBounds.zw;
   vec2 shore = texture2D(uShore, clamp(suv, 0.001, 0.999)).rg;
   float shallow = shore.r;
-  vec3 deep = mix(vec3(0.02, 0.18, 0.30), vec3(0.03, 0.08, 0.12), uStorm);
-  vec3 shal = mix(vec3(0.10, 0.62, 0.64), vec3(0.18, 0.32, 0.34), uStorm);
+  vec3 deep = mix(vec3(0.015, 0.09, 0.13), vec3(0.03, 0.06, 0.08), uStorm);
+  vec3 shal = mix(vec3(0.07, 0.36, 0.36), vec3(0.14, 0.24, 0.24), uStorm);
   vec3 col = mix(deep, shal, smoothstep(0.0, 1.0, shallow));
   vec3 refl = mix(uHorizon, uSky, clamp(v.y * 2.0, 0.0, 1.0));
   col = mix(col, refl, fres);
   vec3 h = normalize(normalize(uSunDir) + v);
-  col += uSunColor * pow(max(dot(n, h), 0.0), 260.0) * 2.4 * (1.0 - uNight);
+  col += uSunColor * pow(max(dot(n, h), 0.0), 320.0) * 9.0 * (1.0 - uNight);
+  // A wide glitter path under a low sun.
+  col += uSunColor * pow(max(dot(n, h), 0.0), 40.0) * 0.35 * (1.0 - uNight);
   // Surf where it shoals onto the sand.
-  float edge = smoothstep(0.82, 0.97, shallow);
+  // (Only on the bay's beaches, not along the river and the lakes.)
+  float edge = smoothstep(0.82, 0.97, shallow) * smoothstep(560.0, 660.0, p.y) * step(p.x, -330.0);
   float wave = 0.5 + 0.5 * sin(dot(p, vec2(0.13, 0.21)) - uTime * 1.6 + n1.x * 3.0);
   float foam = edge * smoothstep(0.35, 0.9, wave + n2.y * 0.6);
   col = mix(col, vec3(0.95, 0.97, 0.98) * (1.0 - uNight * 0.7), foam * 0.75);
@@ -89,9 +90,8 @@ export class HeatwaveView {
   /** After dark: a warm streetlight fill from over the camera's shoulder, so paintwork reads. */
   private fill = new THREE.DirectionalLight("#ffcf9a", 0);
   private sea: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
-  private composer: EffectComposer | null = null;
-  private bloom: UnrealBloomPass | null = null;
-  private grade: ShaderPass | null = null;
+  private post: Post;
+  private fogColor = new THREE.Color();
   private bulbs: THREE.InstancedMesh;
   private bulbList: { x: number; y: number; z: number; ry: number; node: import("../world").Node; axis: "ns" | "ew" }[] = [];
   private bulbT = 0;
@@ -100,6 +100,8 @@ export class HeatwaveView {
   private t = 0;
   night = 0;
   scale = 1;
+  /** Roads stay wet a while after the rain stops. */
+  private wet = 0;
   /** A cinematic orbit (the NextX app's backdrop) instead of the third-person camera. */
   cinema: { x: number; z: number; dist: number; height: number; speed: number; a: number } | null = null;
   private w = 1;
@@ -111,7 +113,8 @@ export class HeatwaveView {
     readonly quality: Quality,
   ) {
     const high = quality === "high";
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== "low", powerPreference: "high-performance", stencil: false });
+    // Antialiasing happens in the post chain's multisampled target.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance", stencil: false });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -119,9 +122,10 @@ export class HeatwaveView {
     this.renderer.info.autoReset = false;
     this.renderer.shadowMap.enabled = quality !== "low";
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    this.scene.fog = new THREE.Fog("#bcd7ef", 200, quality === "high" ? 900 : quality === "medium" ? 700 : 480);
+    // Low draws three's own fog; the others fog in the post chain (by height, lit by the sun).
+    if (quality === "low") this.scene.fog = new THREE.Fog("#bcd7ef", 200, 480);
     this.scene.background = new THREE.Color("#bcd7ef");
-    this.sky = makeSky();
+    this.sky = makeMelbSky();
     this.sky.scale.setScalar(1800);
     this.scene.add(this.sky);
     this.env = new SkyEnvironment(this.renderer, this.sky, 64);
@@ -142,7 +146,7 @@ export class HeatwaveView {
     this.sun.shadow.normalBias = 0.05;
     this.scene.add(this.sun, this.sun.target);
     // The sea.
-    const B = { x0: -1150, z0: -1100, x1: 1350, z1: 1400 };
+    const B = BOUNDS;
     this.sea = new THREE.Mesh(
       new THREE.PlaneGeometry(5000, 5000).rotateX(-Math.PI / 2),
       new THREE.ShaderMaterial({
@@ -170,6 +174,8 @@ export class HeatwaveView {
     );
     this.sea.position.y = WATER_Y;
     this.sea.renderOrder = 2;
+    // It writes depth so the fog knows where the water is.
+    this.sea.material.depthWrite = true;
     this.scene.add(this.sea);
     this.city = new CityView(s.city, quality, s);
     this.scene.add(this.city.root);
@@ -181,19 +187,7 @@ export class HeatwaveView {
     this.bulbs.count = 0;
     this.bulbs.frustumCulled = false;
     this.scene.add(this.bulbs);
-    if (quality !== "low") {
-      this.composer = new EffectComposer(this.renderer);
-      this.composer.addPass(new RenderPass(this.scene, this.rig.camera));
-      if (high) {
-        this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.35, 0.6, 0.86);
-        this.composer.addPass(this.bloom);
-      }
-      this.grade = new ShaderPass(GRADE);
-      this.grade.uniforms.uSat.value = 1.12;
-      this.grade.uniforms.uWarm.value = 0.03;
-      this.composer.addPass(this.grade);
-      this.composer.addPass(new OutputPass());
-    }
+    this.post = new Post(this.renderer, quality);
     // Load the city round the player before the first frame.
     const pos = playerPos(s);
     this.city.update(pos.x, pos.z, true);
@@ -206,9 +200,7 @@ export class HeatwaveView {
     const pr = Math.min(dpr, cap) * this.scale;
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
-    this.composer?.setPixelRatio(pr);
-    this.composer?.setSize(w, h);
-    this.bloom?.setSize(w * pr * 0.5, h * pr * 0.5);
+    this.post.setSize(Math.max(1, Math.round(w * pr)), Math.max(1, Math.round(h * pr)));
     this.rig.resize(w, h);
   }
 
@@ -235,6 +227,10 @@ export class HeatwaveView {
     this.fill.target.position.set(pos.x, 0, pos.z);
     this.city.update(cam.position.x, cam.position.z);
     this.city.setNight(this.night);
+    this.city.setWet(Math.max(s.weather.rain, this.wet * 0.999));
+    this.wet = Math.max(s.weather.rain, this.wet - dt * 0.004);
+    this.city.tick(dt);
+    FACADE_UNIFORMS.uTime.value = this.t;
     this.actors.sync(s, cam.position.x, cam.position.z, dt, this.night);
     this.fx.update(s, cam, dt, markers.goals);
     this.signals(s, cam.position.x, cam.position.z, dt);
@@ -245,8 +241,19 @@ export class HeatwaveView {
     const u = this.sea.material.uniforms;
     u.uTime.value = this.t;
     this.renderer.info.reset();
-    if (this.composer) this.composer.render();
-    else this.renderer.render(this.scene, cam);
+    const storm = s.weather.rain;
+    const h = s.clock / 60;
+    const midday = Math.max(0, Math.sin((Math.PI * (h - 6)) / 12));
+    this.post.render(this.scene, cam, {
+      sunDir: this.sunDir,
+      sunColor: this.sun.color,
+      fogColor: this.fogColor,
+      density: 0.0011 + storm * 0.0045 + (s.weather.kind === "cloudy" ? 0.0006 : 0) + this.night * 0.0004,
+      night: this.night,
+      haze: this.quality === "low" ? 0 : (1 - storm) * (s.weather.kind === "clear" ? 1 : 0.3) * Math.max(0, midday - 0.4) * 1.6,
+      time: this.t,
+      exposure: this.renderer.toneMappingExposure,
+    });
     void player;
   }
 
@@ -263,12 +270,14 @@ export class HeatwaveView {
       L.horizon.lerp(g, 0.6 * storm);
       L.sunI *= 1 - 0.6 * storm;
     }
-    const day = Math.min(1, Math.max(0, el * 1.6 + 0.12));
+    // Full day until the sun's low; dark by the end of civil twilight.
+    const day = Math.min(1, Math.max(0, el * 2.6 + 0.32));
     this.night = 1 - day;
     const az = (Math.PI * (h - 6)) / 12;
     const sunUp = el > -0.05;
-    if (sunUp) this.sunDir.set(-Math.cos(az) * 0.9, 0.25 + Math.max(0, el) * 0.9, 0.45).normalize();
-    else this.sunDir.set(-0.3, 0.8, 0.4).normalize();
+    // Southern hemisphere: up in the east, across the north (−z), down in the west.
+    if (sunUp) this.sunDir.set(Math.cos(az) * 0.9, 0.25 + Math.max(0, el) * 0.9, -0.45).normalize();
+    else this.sunDir.set(0.3, 0.8, -0.4).normalize();
     this.sun.position.set(px + this.sunDir.x * 200, this.sunDir.y * 200, pz + this.sunDir.z * 200);
     this.sun.target.position.set(px, 0, pz);
     this.sun.color.copy(L.sun);
@@ -284,12 +293,15 @@ export class HeatwaveView {
     su.uSunColor.value.copy(L.sun).multiplyScalar(sunUp ? 1 : 0.1);
     su.uNight.value = this.night;
     su.uCloud.value = Math.max(storm, cloudy, 0.15);
-    const fog = this.scene.fog as THREE.Fog;
-    fog.color.copy(L.horizon).lerp(L.zenith, 0.15);
-    if (storm > 0.01) {
+    su.uRain.value = storm;
+    su.uSunH.value = el;
+    this.fogColor.copy(L.horizon).lerp(L.zenith, 0.12);
+    const fog = this.scene.fog as THREE.Fog | null;
+    if (fog) {
+      fog.color.copy(this.fogColor);
       fog.near = 200 - storm * 140;
-    } else fog.near = 200;
-    (this.scene.background as THREE.Color).copy(fog.color);
+    }
+    (this.scene.background as THREE.Color).copy(this.fogColor);
     this.scene.environment = this.env.update(`${Math.round(el * 12)}|${Math.round(storm * 4)}`);
     // More sky reflection after dark, so paintwork still reads under the lamps.
     this.scene.environmentIntensity = 0.8 + this.night * 0.7;
@@ -300,7 +312,7 @@ export class HeatwaveView {
     w.uHorizon.value.copy(L.horizon);
     w.uNight.value = this.night;
     w.uStorm.value = storm;
-    if (this.bloom) this.bloom.strength = 0.22 + this.night * 0.55;
+    this.post.bloomStrength = 0.14 + this.night * 0.5;
     this.renderer.toneMappingExposure = 1.05 + this.night * 0.25;
   }
 
@@ -342,7 +354,7 @@ export class HeatwaveView {
     this.actors.dispose();
     this.fx.dispose();
     this.env.dispose();
-    this.composer?.dispose();
+    this.post.dispose();
     this.renderer.dispose();
   }
 }

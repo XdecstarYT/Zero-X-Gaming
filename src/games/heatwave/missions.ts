@@ -7,8 +7,8 @@ import { leave, seat } from "./vehicles";
 import { groundY, route, WATER_Y } from "./world";
 
 /**
- * The story of Nina Cruz and Dex Holloway, twelve missions long, and the side jobs: store
- * hold-ups, street races, cars for the chop shop and the hidden sun tokens.
+ * The story of Nina Cruz and Dex Holloway, twelve missions across Melbourne, and the side jobs:
+ * milk bar hold-ups, street races, cars for the chop shop and the hidden sun tokens.
  *
  * A mission is a list of steps; each step sets itself up once and then reports each tick
  * whether it's done, still going, or failed (and why). Mission people and vehicles are tagged
@@ -85,6 +85,23 @@ function goTo(x: number, z: number, text: string, o: { r?: number; car?: boolean
       if (Math.hypot(pos.x - x, pos.z - z) > (o.r ?? 5)) return;
       if (o.stop && c && speedOf(c) > 2) return;
       return "next";
+    },
+  };
+}
+
+/** Go to a fixed place (its door), in a car or on foot. */
+function goToPoi(id: string, text: string, r = 6, foot = false): Step {
+  return {
+    enter: (s, run) => {
+      const p = poi(s.city, id);
+      run.text = text;
+      run.goal = { x: p.x, z: p.z, r };
+    },
+    tick: (s) => {
+      const p = poi(s.city, id);
+      const pos = playerPos(s);
+      if (foot && playerCar(s)) return;
+      return Math.hypot(pos.x - p.x, pos.z - p.z) <= r ? "next" : undefined;
     },
   };
 }
@@ -285,54 +302,54 @@ const SAL = "#c9853a";
 export const STORY: MissionDef[] = [
   {
     id: "sunburn",
-    name: "Sunburn",
+    name: "Knock-Off",
     lead: "nina",
     from: "Nina",
     x: 0,
     z: 0,
-    blurb: "Dex has walked off his last shift at the Harbor. Pick him up before he does something stupid.",
+    blurb: "Dex has walked off his last shift at Swanson Dock. Pick him up before he does something stupid.",
     pay: 500,
     steps: [
       talk([
-        ["Dex", "Nina? It's me. They let me go. Twelve years, and they let me go."],
+        ["Dex", "Nina? It's me. They let me go. Twelve years on the wharf, and they let me go."],
         ["Nina", "Where are you?"],
-        ["Dex", "Outside the gate at the Harbor. Come get me before I put the foreman in the water."],
+        ["Dex", "Outside the gate on Footscray Rd. Come get me before I put the foreman in the drink."],
       ]),
       {
         enter: (s, r) => {
-          r.text = "Get in your car (the red Stallion outside).";
+          r.text = "Get in your car (the red Stallion out the front).";
           const c = s.cars.find((x) => x.tag === "ride-nina" && !x.wrecked);
           r.goal = c ? { x: c.x, z: c.z, r: 3 } : null;
         },
         tick: (s) => (playerCar(s) ? "next" : undefined),
       },
-      goTo(40, 518, "Drive to the Harbor gate on Cargo Way.", { car: true, r: 9 }),
+      goTo(-1290, -440, "Drive to the Swanson Dock gate on Footscray Rd.", { car: true, r: 12 }),
       partnerJoin("fists"),
       talk([
-        ["Dex", "Twelve years. You know what I've got to show for it? A bad back and a loan from Sal Moreno."],
-        ["Nina", "Sal Moreno? Dex..."],
-        ["Dex", "Take me home. I need to think."],
+        ["Dex", "Twelve years. You know what I've got to show for it? A crook back and a loan off Vince Kostas."],
+        ["Nina", "Vince Kostas? From Footscray? Dex..."],
+        ["Dex", "Just take me home. I need to think."],
       ]),
-      goTo(-790, -78, "Take Dex home to his trailer in the Glades.", { car: true, r: 10, stop: true }),
+      goTo(-889, 652, "Take Dex home to his cottage in Port Melbourne.", { car: true, r: 12, stop: true }),
       talk([
-        ["Nina", "Get some sleep. Call me tomorrow."],
-        ["Dex", "I've got an idea, Nina. You won't like it."],
+        ["Nina", "Get some sleep. Ring me tomorrow."],
+        ["Dex", "I've got an idea, Nina. You're not gonna like it."],
       ]),
     ],
   },
   {
     id: "change",
-    name: "Loose Change",
+    name: "Milk Run",
     lead: "dex",
     from: "Dex",
     x: 0,
     z: 0,
-    blurb: "Sal wants his first payment. Dex knows a Quik Stop in Palm Heights with a fat till.",
+    blurb: "Vince wants his first payment. Dex knows a milk bar in South Melbourne with a fat till and no camera.",
     pay: 0,
     steps: [
       talk([
-        ["Dex", "Sal wants a payment by Friday. I've got eleven dollars."],
-        ["Dex", "There's a pistol in the drawer. And a Quik Stop on Hibiscus with no camera."],
+        ["Dex", "Vince wants a payment by Friday. I've got eleven bucks and a Myki card."],
+        ["Dex", "There's a pistol in the drawer. And a milk bar on Park St with no camera."],
       ]),
       act((s) => {
         const p = player(s);
@@ -341,32 +358,36 @@ export const STORY: MissionDef[] = [
           emit(s, { kind: "pickup", text: "Pistol" });
         }
       }),
-      goTo(-466, 80, "Drive to the Quik Stop in Palm Heights.", { r: 12 }),
+      goTo(-554, 590, "Get to the milk bar on Park St, South Melbourne.", { r: 14 }),
       holdUp("store-3", [1200, 1800]),
-      lose("The alarm's gone. Lose the police."),
-      goTo(-790, -78, "Lie low back at the trailer.", { r: 10 }),
+      lose("The alarm's gone off. Lose the cops."),
+      goTo(-889, 652, "Lie low back at the cottage.", { r: 12 }),
     ],
   },
   {
     id: "wheels",
-    name: "Hot Wheels",
+    name: "Toorak Tourist",
     lead: "nina",
-    from: "Rico at Dockside Motors",
+    from: "Ricky at Dockside Motors",
     x: 0,
     z: 0,
-    blurb: "Dockside Motors will pay well for a Furia RS. There's one in a driveway on Marina Keys.",
+    blurb: "Dockside Motors will pay well for a Furia RS. There's one in a driveway in Toorak.",
     pay: 6000,
     steps: [
       talk([
-        ["Rico", "You're Nina? Dex says you can drive. I need a Furia RS, and I need it clean."],
-        ["Rico", "Villa Esmeralda on the Keys. Owner's away; his security isn't."],
+        ["Ricky", "You're Nina? Dex reckons you can drive. I need a Furia RS, and I need it clean."],
+        ["Ricky", "Coonara House in Toorak. Owner's in Noosa; his security isn't."],
       ]),
       act((s, r) => {
         const v = poi(s.city, "mansion");
-        spawnCar(s, r, "furia", "furia", v.x - v.fx * 2 + 8, v.z - 9, Math.PI / 2, "#3fd0c9");
+        spawnCar(s, r, "furia", "furia", v.x - v.fx * 2 + 8, v.z - v.fz * 2 - 9, Math.PI / 2, "#3fd0c9");
         for (let i = 0; i < 2; i++) spawnPed(s, r, "guard", v.x - 6 + i * 12, v.z - 4, { weapon: "pistol", shirt: "#1c1f24", pants: "#1c1f24", hostile: false, mode: "guard" });
       }),
-      goTo(1000, 330, "Drive over the Causeway to Marina Keys.", { r: 30 }),
+      act((s, r) => {
+        const v = poi(s.city, "mansion");
+        r.goal = { x: v.x, z: v.z, r: 30 };
+      }),
+      goToPoi("mansion", "Drive out to Toorak.", 30),
       {
         enter: (s, r) => {
           r.text = "Take the Furia RS (the guards will fight for it).";
@@ -375,7 +396,6 @@ export const STORY: MissionDef[] = [
           const c = taggedCar(s, r, "furia");
           if (!c || c.wrecked) return "The Furia was destroyed.";
           r.goal = { x: c.x, z: c.z, r: 3 };
-          // The guards don't like visitors near the car.
           for (const g of s.peds.filter((p) => p.tag === `${r.id}:guard` && p.state === "ok")) {
             const pl = player(s);
             if (Math.hypot(pl.x - c.x, pl.z - c.z) < 14 && !g.hostile) {
@@ -406,7 +426,7 @@ export const STORY: MissionDef[] = [
           if (hp < 0.35) return "The Furia's too damaged now.";
           if (Math.hypot(c.x - ch.x, c.z - ch.z) < 8 && speedOf(c) < 2) {
             if (s.wanted.level > 0) {
-              r.text = "Lose the police first: Rico won't open up with cops on you.";
+              r.text = "Lose the cops first: Ricky won't open the roller door with the cops on you.";
               return;
             }
             r.pay = Math.round(6000 * Math.min(1, hp + 0.15));
@@ -418,42 +438,42 @@ export const STORY: MissionDef[] = [
           }
         },
       },
-      talk([["Rico", "Beautiful. Come back any time: there's a car I want every day. Check the board."]]),
+      talk([["Ricky", "Beauty. Come back any time: there's a car I want every day. Check the board."]]),
     ],
   },
   {
     id: "collect",
     name: "Collections",
     lead: "dex",
-    from: "Sal Moreno",
+    from: "Vince Kostas",
     x: 0,
     z: 0,
-    blurb: "Sal will take the debt in work instead: collect from three people who owe him.",
+    blurb: "Vince will take the debt in work instead: collect from three people who owe him.",
     pay: 2500,
     steps: [
       talk([
-        ["Sal", "Dex. You're short. But you've got big hands, and three of my friends have short memories."],
-        ["Sal", "Remind them. Bring me what they owe. Don't kill anybody: dead men don't pay."],
+        ["Vince", "Dex. You're short. But you've got big hands, and three of my friends have short memories."],
+        ["Vince", "Remind them. Bring me what they owe. Don't kill anybody: dead blokes don't pay."],
       ]),
       act((s, r) => {
         r.n = 0;
         const spots = [
-          [-354, 180],
-          [246, 280],
-          [-66, -20],
+          [1000, 13],
+          [612, -720],
+          [-150, 184],
         ];
         spots.forEach(([x, z], i) => spawnPed(s, r, `debtor${i}`, x, z, { weapon: i === 1 ? "bat" : "fists", mode: "idle", hp: 70 }));
       }),
       ...[0, 1, 2].flatMap((i): Step[] => [
         {
           enter: (s, r) => {
-            r.text = `Collect from debtor ${i + 1} of 3: knock them down.`;
+            r.text = `Collect from debtor ${i + 1} of 3 (${["Swan St, Richmond", "Brunswick St, Fitzroy", "the Southbank promenade"][i]}): knock them down.`;
           },
           tick: (s, r) => {
             const d = taggedPed(s, r, `debtor${i}`);
             if (!d) return "A debtor got away.";
             r.goal = { x: d.x, z: d.z, r: 0 };
-            if (d.state === "dead") return "Sal said don't kill anybody.";
+            if (d.state === "dead") return "Vince said don't kill anybody.";
             const pl = player(s);
             if (Math.hypot(pl.x - d.x, pl.z - d.z) < 12 && d.ai.mode === "idle") {
               d.ai.mode = s.rng.next() < 0.5 ? "fight" : "flee";
@@ -473,28 +493,28 @@ export const STORY: MissionDef[] = [
           },
         },
       ]),
-      goTo(145, 60, "Bring the money to Sal at Café Brisa on Marlin St.", { r: 4, foot: true }),
-      talk([["Sal", "See? Everybody's happy. Keep a little for yourself. I'll be in touch."]]),
+      goTo(230, -620, "Bring the money to Vince at Caffè Milano on Lygon St.", { r: 4, foot: true }),
+      talk([["Vince", "See? Everybody's happy. Keep a little for yourself. I'll be in touch."]]),
     ],
   },
   {
     id: "lowtide",
     name: "Low Tide",
     lead: "nina",
-    from: "Rico at Dockside Motors",
+    from: "Ricky at Dockside Motors",
     x: 0,
     z: 0,
-    blurb: "A courier's taking a package out by boat. Rico wants it. Boats are waiting at Solano Pier.",
+    blurb: "A courier's running a package across the bay by boat. Ricky wants it. There's a speedboat at the end of St Kilda Pier.",
     pay: 3500,
     steps: [
       talk([
-        ["Rico", "A courier runs a package from the river mouth out to the Keys every Tuesday. Today's Tuesday."],
-        ["Rico", "There's a speedboat at the end of Solano Pier. The keys are in it. Don't ask."],
+        ["Ricky", "A courier runs a package across the bay to Station Pier every Tuesday. Today's Tuesday."],
+        ["Ricky", "There's a speedboat tied up at the end of St Kilda Pier. Keys are in it. Don't ask."],
       ]),
       act((s, r) => {
-        spawnCar(s, r, "boat", "speedboat", 792, -218, 0, "#e8e8e6");
+        spawnCar(s, r, "boat", "speedboat", -728, 1196, Math.PI, "#e8e8e6");
       }),
-      goTo(770, -205, "Run to the end of Solano Pier.", { r: 8, foot: true }),
+      goTo(-705, 1181, "Run out to the end of St Kilda Pier.", { r: 9, foot: true }),
       {
         enter: (s, r) => {
           r.text = "Get in the speedboat.";
@@ -507,10 +527,10 @@ export const STORY: MissionDef[] = [
         },
       },
       act((s, r) => {
-        const c = spawnCar(s, r, "courier", "speedboat", 700, -150, 0, "#1f66d6");
-        const d = spawnPed(s, r, "courierman", 700, -150, { weapon: "smg", hostile: true });
+        const c = spawnCar(s, r, "courier", "speedboat", -820, 1260, Math.PI, "#1f66d6");
+        const d = spawnPed(s, r, "courierman", c.x, c.z, { weapon: "smg", hostile: true });
         seat(s, d, c, 0);
-        setCarGoto(c, s, [{ x: 760, z: -40 }, { x: 830, z: 120 }, { x: 760, z: 260 }, { x: 720, z: 420 }, { x: 760, z: 600 }, { x: 900, z: 680 }, { x: 1100, z: 640 }], 22);
+        setCarGoto(c, s, [{ x: -900, z: 1320 }, { x: -1040, z: 1360 }, { x: -1180, z: 1240 }, { x: -1250, z: 1080 }, { x: -1340, z: 920 }, { x: -1460, z: 800 }, { x: -1620, z: 700 }], 22);
       }),
       stopCar("courier", "Catch the courier's boat and stop it (shoot it up).", { stopAt: 0.45, far: 320 }),
       act((s, r) => {
@@ -520,7 +540,7 @@ export const STORY: MissionDef[] = [
       }),
       {
         enter: (s, r) => {
-          r.text = "Grab the package from the water.";
+          r.text = "Grab the package out of the water.";
         },
         tick: (s, r) => {
           const k = s.pickups.find((p) => p.id === r.n);
@@ -534,7 +554,7 @@ export const STORY: MissionDef[] = [
           }
         },
       },
-      goTo(785, 582, "Bring it to the Yacht Club jetty on Marina Keys.", { r: 14 }),
+      goTo(-940, 1160, "Bring it to the end of Station Pier.", { r: 16 }),
       lose(),
     ],
   },
@@ -545,23 +565,23 @@ export const STORY: MissionDef[] = [
     from: "Dex",
     x: 0,
     z: 0,
-    blurb: "The Saltwater Kings keep a van of stolen electronics in a Harbor yard. Dex knows the yard.",
+    blurb: "The Dock Rats keep a van of knocked-off electronics in a Swanson Dock yard. Dex knows the yard.",
     pay: 5000,
     steps: [
       talk([
-        ["Dex", "The Kings use yard nine to stash what they lift off the boats. I used to load those vans."],
-        ["Dex", "Take the van, bring it to the Glades. Rico's got a buyer."],
+        ["Dex", "The Dock Rats use yard nine to stash what they lift off the boats. I used to load those vans."],
+        ["Dex", "Take the van, bring it to the lock-up in Kensington. Ricky's got a buyer."],
       ]),
       act((s, r) => {
-        spawnCar(s, r, "van", "cargo", 180, 470, 0, "#e8e8e6");
-        const spots = [[170, 460], [192, 482], [160, 486], [200, 455], [176, 500]];
-        spots.forEach(([x, z], i) => spawnPed(s, r, "king", x, z, { weapon: i % 2 ? "smg" : "pistol", shirt: "#1aa39a", pants: "#1c1f24", hostile: false, mode: "guard", role: "gang" }));
+        spawnCar(s, r, "van", "cargo", -1300, -205, 0, "#e8e8e6");
+        const spots = [[-1310, -215], [-1288, -193], [-1320, -190], [-1280, -220], [-1304, -175]];
+        spots.forEach(([x, z], i) => spawnPed(s, r, "rat", x, z, { weapon: i % 2 ? "smg" : "pistol", shirt: "#f28a1a", pants: "#2b3a55", hostile: false, mode: "guard", role: "gang" }));
       }),
-      goTo(180, 440, "Go to yard nine at the Harbor.", { r: 25 }),
+      goTo(-1300, -230, "Go to yard nine at Swanson Dock.", { r: 25 }),
       {
         enter: (s, r) => {
-          r.text = "Take the van (the Kings will shoot).";
-          for (const p of s.peds) if (p.tag === `${r.id}:king`) {
+          r.text = "Take the van (the Dock Rats will shoot).";
+          for (const p of s.peds) if (p.tag === `${r.id}:rat`) {
             p.hostile = true;
           }
         },
@@ -573,7 +593,7 @@ export const STORY: MissionDef[] = [
         },
       },
       wantedStep(2),
-      goTo(-760, -40, "Drive the van to the Glades. Lose the police on the way.", { tag: "van", r: 12, stop: true }),
+      goTo(-1370, -780, "Drive the van to the lock-up on Kensington Rd. Lose the cops on the way.", { tag: "van", r: 14, stop: true }),
       lose(),
     ],
   },
@@ -581,10 +601,10 @@ export const STORY: MissionDef[] = [
     id: "pier",
     name: "Pier Pressure",
     lead: "nina",
-    from: "Rico",
+    from: "Ricky",
     x: 0,
     z: 0,
-    blurb: "Rico's buyer wants to meet on Solano Pier at dusk. Bring Dex. Bring guns.",
+    blurb: "Ricky's buyer wants to meet on St Kilda Pier at dusk. Bring Dex. Bring guns.",
     pay: 4000,
     steps: [
       partnerJoin("smg"),
@@ -592,17 +612,17 @@ export const STORY: MissionDef[] = [
         ["Dex", "I don't like piers. One way on, one way off."],
         ["Nina", "That's why you're here."],
       ]),
-      goTo(640, -205, "Walk out onto Solano Pier to meet the buyer.", { r: 8 }),
+      goTo(-560, 1181, "Walk out along St Kilda Pier to meet the buyer.", { r: 8 }),
       act((s, r) => {
-        for (let i = 0; i < 7; i++) spawnPed(s, r, "crew", 700 + (i % 4) * 14, -205 + (i % 2 ? 4 : -4), { weapon: i % 3 === 0 ? "shotgun" : "smg", shirt: "#d81e2b", pants: "#1c1f24", hostile: true, mode: "fight", role: "gang" }).ai.target = s.player;
+        for (let i = 0; i < 7; i++) spawnPed(s, r, "crew", -640 - (i % 4) * 14, 1181 + (i % 2 ? 3 : -3), { weapon: i % 3 === 0 ? "shotgun" : "smg", shirt: "#d81e2b", pants: "#e8dcc0", hostile: true, mode: "fight", role: "gang" }).ai.target = s.player;
       }),
       talk([
-        ["Dex", "That's not a buyer. That's the Sol crew!"],
+        ["Dex", "That's no buyer. That's the Esplanade boys!"],
         ["Nina", "Get down!"],
       ], 1.6),
-      killAll("crew", "Take out the Sol crew."),
+      killAll("crew", "Take out the Esplanade crew."),
       wantedStep(2),
-      lose("Get off the pier and lose the police."),
+      lose("Get off the pier and lose the cops."),
     ],
   },
   {
@@ -612,20 +632,20 @@ export const STORY: MissionDef[] = [
     from: "Dex",
     x: 0,
     z: 0,
-    blurb: "Dex has a big idea: the Solano Union Bank. First, look the place over.",
+    blurb: "Dex has a big idea: the Southern Cross Reserve Bank on Collins St. First, look the place over.",
     pay: 1000,
     steps: [
       talk([
-        ["Dex", "Sal's never letting us go. One job, Nina. One big one, and we're out."],
-        ["Nina", "The Union Bank? You're out of your mind."],
-        ["Dex", "Just look at it. Front door, the alley, the loading bay. Take pictures."],
+        ["Dex", "Vince is never letting us go. One job, Nina. One big one, and we're out."],
+        ["Nina", "The Reserve Bank on Collins St? You're off your head."],
+        ["Dex", "Just look at it. Front doors, the laneway out the back, the side on William St. Take photos."],
       ]),
       ...[
-        [134, -392, "the front doors"],
-        [158, -436, "the alley"],
-        [104, -436, "the loading bay"],
+        [-160, -99, "the front doors on Collins St"],
+        [-160, -51.5, "the back, on Flinders Lane"],
+        [-209, -80, "the side, on William St"],
       ].flatMap(([x, z, what]): Step[] => [
-        goTo(x as number, z as number, `Photograph ${what} of the Union Bank (stand on the marker, on foot).`, { r: 3, foot: true }),
+        goTo(x as number, z as number, `Photograph ${what} (stand on the marker, on foot).`, { r: 3, foot: true }),
         wait(1.5, "Click..."),
         act((s) => emit(s, { kind: "toast", text: "Photo taken" })),
       ]),
@@ -643,9 +663,9 @@ export const STORY: MissionDef[] = [
     pay: 2000,
     steps: [
       act((s, r) => {
-        spawnCar(s, r, "trek", "trek", -400, -385, Math.PI / 2, "#1c1f24");
+        spawnCar(s, r, "trek", "trek", 1110, -326, 0, "#1c1f24");
       }),
-      goTo(-560, -480, "Go to Bullseye Arms in Midtown.", { r: 6, foot: true }),
+      goToPoi("gun-rich", "Go to Bullseye Arms in Richmond.", 6, true),
       act((s) => {
         const p = player(s);
         if (p.ammo.rifle === undefined) {
@@ -653,11 +673,11 @@ export const STORY: MissionDef[] = [
           emit(s, { kind: "pickup", text: "Carbine Rifle" });
         }
         p.armor = 100;
-        toast(s, "Rico's friend left you a rifle and armour.");
+        toast(s, "Ricky's mate left you a rifle and a vest.");
       }),
       {
         enter: (s, r) => {
-          r.text = "Steal the black Halvor Trek parked on Royal Palm St.";
+          r.text = "Pinch the black Halvor Trek parked on Gipps St.";
         },
         tick: (s, r) => {
           const c = taggedCar(s, r, "trek");
@@ -666,7 +686,24 @@ export const STORY: MissionDef[] = [
           if (playerCar(s) === c) return "next";
         },
       },
-      goTo(-40, 560, "Stash it at Dockside Motors (lose any police first).", { tag: "trek", r: 8, stop: true }),
+      {
+        enter: (s, r) => {
+          const ch = poi(s.city, "chop");
+          r.text = "Stash it at Dockside Motors (lose any cops first).";
+          r.goal = { x: ch.x, z: ch.z, r: 8 };
+        },
+        tick: (s, r) => {
+          const c = taggedCar(s, r, "trek");
+          if (!c || c.wrecked) return "The Trek was destroyed.";
+          const ch = poi(s.city, "chop");
+          if (playerCar(s) !== c) {
+            r.text = "Get back in the Trek.";
+            return;
+          }
+          r.text = "Stash it at Dockside Motors (lose any cops first).";
+          if (Math.hypot(c.x - ch.x, c.z - ch.z) < 8 && speedOf(c) < 2) return "next";
+        },
+      },
       lose(),
     ],
   },
@@ -677,21 +714,21 @@ export const STORY: MissionDef[] = [
     from: "Dex",
     x: 0,
     z: 0,
-    blurb: "A Securitas van runs Midtown's takings to the bank every afternoon. Stop it.",
+    blurb: "A Securitas van runs the casino's takings into Collins St every afternoon. Stop it.",
     pay: 15000,
     steps: [
       partnerJoin("rifle"),
       talk([
-        ["Dex", "Securitas van leaves Bayfront every afternoon. Two guards, one driver."],
-        ["Nina", "We stop it, we take the cases, we're gone before the cops finish their donuts."],
+        ["Dex", "Securitas van leaves South Melbourne every arvo. Two guards, one driver."],
+        ["Nina", "We stop it, we grab the cases, we're gone before the cops finish their dim sims."],
       ]),
       act((s, r) => {
-        const c = spawnCar(s, r, "armored", "armored", -560, -620, Math.PI / 2, "#3d4a3f");
+        const c = spawnCar(s, r, "armored", "armored", -640, 452, Math.PI, "#3d4a3f");
         const d = spawnPed(s, r, "guard", c.x, c.z, { weapon: "pistol", shirt: "#3d4a3f", pants: "#2b2f36", hp: 140 });
         seat(s, d, c, 0);
         const g = spawnPed(s, r, "guard", c.x, c.z, { weapon: "smg", shirt: "#3d4a3f", pants: "#2b2f36", hp: 140 });
         seat(s, g, c, 1);
-        setCarGoto(c, s, roadPath(s, [{ x: -560, z: -620 }, { x: -260, z: -240 }, { x: 40, z: -240 }, { x: 140, z: -400 }]), 13);
+        setCarGoto(c, s, roadPath(s, [{ x: -640, z: 450 }, { x: -440, z: 380 }, { x: -440, z: -110 }, { x: -160, z: -110 }]), 13);
       }),
       stopCar("armored", "Stop the armoured van (ram it, shoot it) before it reaches the bank.", { stopAt: 0.35, far: 300 }),
       act((s, r) => {
@@ -716,36 +753,36 @@ export const STORY: MissionDef[] = [
         for (let i = 0; i < 3; i++) s.pickups.push({ id: s.nextId++, kind: "cash", x: x - 3 + i * 1.5, z: z + 2.5, n: 1500, respawn: 0, takenAt: -1 });
       }),
       wait(4, "Grab the cash cases!"),
-      lose("Get away and lose the police."),
+      lose("Get away and lose the cops."),
     ],
   },
   {
     id: "double",
     name: "Double Cross",
     lead: "dex",
-    from: "Sal Moreno",
+    from: "Vince Kostas",
     x: 0,
     z: 0,
-    blurb: "Sal found out about the bank. Sal wants a cut. Sal sent friends.",
+    blurb: "Vince found out about the bank. Vince wants a cut. Vince sent friends.",
     pay: 6000,
     steps: [
       talk([
-        ["Sal", "Dex. My friend. You're planning a party at the Union Bank and you didn't invite me?"],
-        ["Sal", "Look out the window."],
+        ["Vince", "Dex. Mate. You're planning a party on Collins St and you didn't invite me?"],
+        ["Vince", "Have a look out the window."],
       ]),
       act((s, r) => {
         const home = poi(s.city, "safe-dex");
         for (let i = 0; i < 6; i++) spawnPed(s, r, "goon", home.x + 18 + (i % 3) * 5, home.z - 14 + Math.floor(i / 3) * 26, { weapon: i % 2 ? "smg" : "shotgun", shirt: SAL, pants: "#2b2f36", hostile: true, mode: "fight", role: "gang" }).ai.target = s.player;
       }),
-      killAll("goon", "Fight off Sal's men."),
+      killAll("goon", "Fight off Vince's blokes."),
       act((s, r) => {
-        const c = spawnCar(s, r, "sal", "vanta", -660, -120, -Math.PI / 2, "#e8e8e6");
+        const c = spawnCar(s, r, "sal", "vanta", -900, 560, -Math.PI / 2, "#e8e8e6");
         const d = spawnPed(s, r, "salman", c.x, c.z, { weapon: "pistol", shirt: SAL, pants: "#e8dcc0", hp: 160 });
         seat(s, d, c, 0);
-        setCarGoto(c, s, roadPath(s, [{ x: -660, z: -120 }, { x: -260, z: -70 }, { x: 40, z: 130 }, { x: 340, z: 330 }, { x: 930, z: 330 }]), 28);
+        setCarGoto(c, s, roadPath(s, [{ x: -900, z: 560 }, { x: -440, z: 560 }, { x: 110, z: 700 }, { x: 900, z: 700 }, { x: 1340, z: 700 }]), 28);
       }),
-      talk([["Dex", "That's Sal's car! He's running!"]], 1.5),
-      stopCar("sal", "Chase down Sal's white Vanta GT and stop him.", { stopAt: 0.25, far: 360 }),
+      talk([["Dex", "That's Vince's car! He's doing a runner!"]], 1.5),
+      stopCar("sal", "Chase down Vince's white Vanta GT and stop him.", { stopAt: 0.25, far: 360 }),
       act((s, r) => {
         const c = taggedCar(s, r, "sal");
         const d = taggedPed(s, r, "salman");
@@ -756,7 +793,7 @@ export const STORY: MissionDef[] = [
           d.ai.target = s.player;
         }
       }),
-      killAll("salman", "Settle it with Sal."),
+      killAll("salman", "Settle it with Vince."),
       lose(),
     ],
   },
@@ -767,46 +804,46 @@ export const STORY: MissionDef[] = [
     from: "Dex",
     x: 0,
     z: 0,
-    blurb: "The Solano Union Bank. The vault. Then the sea.",
+    blurb: "The Southern Cross Reserve Bank. The vault. Then down the Yarra and out to the bay.",
     pay: 250000,
     steps: [
       partnerJoin("rifle"),
       talk([
-        ["Dex", "Last time, Nina. Then it's a boat, the Keys, and a long way south."],
+        ["Dex", "Last time, Nina. Then it's a boat down the Yarra, out through the Heads, and a long way north."],
         ["Nina", "Masks on."],
       ]),
-      goTo(134, -392, "Go into the Solano Union Bank (front doors, on foot).", { r: 3, foot: true }),
+      goTo(-160, -99, "Go into the Reserve Bank (front doors on Collins St, on foot).", { r: 3, foot: true }),
       act((s, r) => {
-        raise(s, 3, 134, -392);
+        raise(s, 3, -160, -99);
         r.timer = 0;
-        for (let i = 0; i < 4; i++) spawnPed(s, r, "secur", 120 + i * 9, -410, { weapon: "pistol", shirt: "#3d4a3f", pants: "#2b2f36", hostile: true, mode: "fight", hp: 120 }).ai.target = s.player;
+        for (let i = 0; i < 4; i++) spawnPed(s, r, "secur", -184 + i * 12, -97, { weapon: "pistol", shirt: "#3d4a3f", pants: "#2b2f36", hostile: true, mode: "fight", hp: 120 }).ai.target = s.player;
       }),
       {
         enter: (s, r) => {
           r.text = "Hold the vault while Dex drills it.";
-          r.goal = { x: 134, z: -392, r: 12 };
+          r.goal = { x: -160, z: -99, r: 12 };
           r.timer = 45;
         },
         tick: (s, r, dt) => {
           const pos = playerPos(s);
-          if (Math.hypot(pos.x - 134, pos.z + 392) > 40) {
+          if (Math.hypot(pos.x + 160, pos.z + 99) > 40) {
             r.text = "Get back to the bank!";
             return;
           }
           r.timer -= dt;
           r.text = `Hold the bank while Dex drills the vault: ${Math.ceil(r.timer)} s`;
-          if (r.timer < 22) raise(s, 4, 134, -392);
+          if (r.timer < 22) raise(s, 4, -160, -99);
           if (r.timer <= 0) return "next";
         },
       },
       act((s, r) => {
-        for (let i = 0; i < 4; i++) s.pickups.push({ id: s.nextId++, kind: "cash", x: 130 + i * 1.6, z: -390, n: 2500, respawn: 0, takenAt: -1 });
-        spawnCar(s, r, "getaway", "furia", 160, -372, Math.PI, "#141518");
-        spawnCar(s, r, "yacht", "speedboat", 790, 612, 0, "#e8e8e6");
+        for (let i = 0; i < 4; i++) s.pickups.push({ id: s.nextId++, kind: "cash", x: -164 + i * 1.6, z: -100, n: 2500, respawn: 0, takenAt: -1 });
+        spawnCar(s, r, "getaway", "furia", -130, -106, Math.PI, "#141518");
+        spawnCar(s, r, "yacht", "speedboat", -945, 110, Math.PI / 2, "#e8e8e6");
       }),
-      talk([["Dex", "We're in! Grab the bags, the car's out front!"]], 2),
+      talk([["Dex", "We're in! Grab the bags, the car's out the front!"]], 2),
       wantedStep(5),
-      goTo(782, 585, "Get to the Yacht Club jetty on Marina Keys.", { r: 12 }),
+      goTo(-924, 60, "Get to the Harbour Jetty in Docklands.", { r: 14 }),
       {
         enter: (s, r) => {
           r.text = "Get in the speedboat.";
@@ -818,7 +855,7 @@ export const STORY: MissionDef[] = [
           if (playerCar(s) === b) return "next";
         },
       },
-      goTo(1180, 900, "Head out to sea, south-east, past the Keys.", { tag: "yacht", r: 40 }),
+      goTo(-1760, 640, "Run down the Yarra, under the West Gate, and out into the bay.", { tag: "yacht", r: 70 }),
       act((s) => {
         const w = s.wanted;
         w.level = 0;
@@ -826,8 +863,8 @@ export const STORY: MissionDef[] = [
         emit(s, { kind: "lost", n: 5 });
       }),
       talk([
-        ["Nina", "Do you see them?"],
-        ["Dex", "I see sea. A lot of sea. We did it."],
+        ["Nina", "Can you see them?"],
+        ["Dex", "I can see the bay. A lot of bay. We did it."],
         ["Nina", "We did it."],
       ]),
     ],
@@ -839,11 +876,11 @@ const STARTS: Record<string, { x: number; z: number } | string> = {
   sunburn: "safe-nina",
   change: "safe-dex",
   wheels: "chop",
-  collect: { x: 145, z: 60 },
+  collect: { x: 230, z: -640 },
   lowtide: "chop",
   boxjob: "safe-dex",
   pier: "safe-nina",
-  casing: { x: 120, z: -360 },
+  casing: { x: -135, z: -99 },
   gearup: "safe-dex",
   armored: "safe-nina",
   double: "safe-dex",
@@ -980,16 +1017,16 @@ export interface Race {
 }
 
 export const RACES: Race[] = [
-  { id: "race-strand", name: "Strand Sprint", car: "vanta", prize: 1500, pts: [{ x: 450, z: -700 }, { x: 450, z: -240 }, { x: 340, z: -240 }, { x: 340, z: 130 }, { x: 450, z: 130 }, { x: 450, z: 560 }] },
-  { id: "race-downtown", name: "Downtown Loop", car: "stallion", prize: 2000, pts: [{ x: -160, z: -650 }, { x: 240, z: -650 }, { x: 240, z: -340 }, { x: -60, z: -340 }, { x: -60, z: -540 }, { x: 140, z: -540 }, { x: 140, z: -240 }, { x: -160, z: -240 }] },
-  { id: "race-glades", name: "Glades Run", car: "ranger", prize: 2500, pts: [{ x: -660, z: -650 }, { x: -660, z: 330 }, { x: -780, z: 330 }, { x: -780, z: -70 }, { x: -560, z: -70 }, { x: -560, z: 530 }] },
-  { id: "race-causeway", name: "Causeway Dash", car: "furia", prize: 4000, pts: [{ x: -260, z: 330 }, { x: 450, z: 330 }, { x: 930, z: 330 }, { x: 930, z: 560 }, { x: 830, z: 560 }, { x: 830, z: 200 }, { x: 1030, z: 200 }] },
+  { id: "race-hoddle", name: "Hoddle Grid Hustle", car: "vanta", prize: 1500, pts: [{ x: -440, z: -400 }, { x: -440, z: -110 }, { x: 330, z: -110 }, { x: 330, z: -440 }, { x: -220, z: -440 }, { x: -220, z: 0 }, { x: 440, z: 0 }] },
+  { id: "race-beachrd", name: "Beach Road Run", car: "stallion", prize: 2000, pts: [{ x: 110, z: 300 }, { x: 110, z: 1130 }, { x: -330, z: 1130 }, { x: -330, z: 1560 }, { x: 0, z: 1560 }, { x: 0, z: 1130 }] },
+  { id: "race-docks", name: "Dockyard Dash", car: "ranger", prize: 2500, pts: [{ x: -440, z: -560 }, { x: -1380, z: -560 }, { x: -1380, z: -440 }, { x: -1200, z: -440 }, { x: -1200, z: 40 }, { x: -1200, z: -330 }, { x: -660, z: -330 }, { x: -660, z: -10 }] },
+  { id: "race-lake", name: "Albert Park Grand Prix", car: "furia", prize: 4000, pts: [{ x: -440, z: 820 }, { x: -440, z: 1040 }, { x: 0, z: 1040 }, { x: 0, z: 800 }, { x: -440, z: 800 }, { x: -440, z: 1040 }, { x: 0, z: 1040 }, { x: 0, z: 820 }] },
 ];
 
 /** Hidden sun tokens: 20 of them, $250 each, a bonus for the set. */
 export const TOKENS: { x: number; z: number }[] = [
-  { x: 780, z: -205 }, { x: -880, z: -70 }, { x: 1080, z: 380 }, { x: -460, z: -545 }, { x: 60, z: 790 }, { x: 600, z: -700 }, { x: 560, z: 420 }, { x: -820, z: 600 }, { x: 300, z: -760 }, { x: -110, z: 80 },
-  { x: 200, z: 600 }, { x: -620, z: 20 }, { x: 930, z: 230 }, { x: 140, z: -150 }, { x: -260, z: -700 }, { x: 395, z: -10 }, { x: -700, z: -560 }, { x: 0, z: 300 }, { x: 830, z: 470 }, { x: -380, z: 600 },
+  { x: -705, z: 1181 }, { x: 165, z: -30 }, { x: -1250, z: -380 }, { x: 680, z: 210 }, { x: 370, z: 480 }, { x: 760, z: 330 }, { x: -220, z: 1010 }, { x: -400, z: 1450 }, { x: 385, z: -615 }, { x: 680, z: -830 },
+  { x: -60, z: -470 }, { x: -980, z: -150 }, { x: 1340, z: 1050 }, { x: 900, z: -800 }, { x: -1060, z: 760 }, { x: 55, z: -55 }, { x: -980, z: 1140 }, { x: 520, z: -12 }, { x: -270, z: 1340 }, { x: 1180, z: 420 },
 ];
 
 export const SIDE: MissionDef[] = RACES.map((race) => ({
@@ -1114,7 +1151,7 @@ function sideJobs(s: State, dt: number) {
       s.cars = s.cars.filter((c) => c !== pc);
     }
   }
-  // Hold-ups at any Quik Stop (once a day each).
+  // Hold-ups at any milk bar (once every ten minutes each).
   if (!s.story.run && !pc) {
     for (const st of s.city.pois) {
       if (st.kind !== "store") continue;

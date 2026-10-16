@@ -333,3 +333,240 @@ export function planks() {
   }
   return tex(c);
 }
+
+/** Corrugated iron (roofs and verandahs): ribs across u, one tile = 1 m. Greyscale, tinted by vertex colour. */
+export function corrugated() {
+  const N = 128;
+  const { c, g } = canvas(N);
+  for (let x = 0; x < N; x++) {
+    const k = 0.5 + 0.5 * Math.sin((x / N) * Math.PI * 2 * 13);
+    const v = Math.floor(150 + k * 90);
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.fillRect(x, 0, 1, N);
+  }
+  const r = createRng(91);
+  for (let i = 0; i < 60; i++) {
+    g.fillStyle = `rgba(90,80,70,${0.05 + r.next() * 0.08})`;
+    g.fillRect(r.next() * N, r.next() * N, 2 + r.next() * 10, 1 + r.next() * 3);
+  }
+  return tex(c);
+}
+
+/** Cast-iron lace for a verandah frieze (on transparent): one tile = 1.2 m. */
+export function lace() {
+  const W = 128;
+  const H = 48;
+  const { c, g } = canvas(W, H);
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = "#ffffff";
+  g.lineWidth = 2.2;
+  g.strokeRect(1, 1, W - 2, H - 2);
+  for (let k = 0; k < 4; k++) {
+    const cx = 16 + k * 32;
+    g.beginPath();
+    g.arc(cx, H / 2, 11, 0, Math.PI * 2);
+    g.stroke();
+    g.beginPath();
+    g.arc(cx, H / 2, 5, 0, Math.PI * 2);
+    g.stroke();
+    for (let a = 0; a < 8; a++) {
+      g.beginPath();
+      g.moveTo(cx + Math.cos((a / 8) * Math.PI * 2) * 5, H / 2 + Math.sin((a / 8) * Math.PI * 2) * 5);
+      g.lineTo(cx + Math.cos((a / 8) * Math.PI * 2) * 11, H / 2 + Math.sin((a / 8) * Math.PI * 2) * 11);
+      g.stroke();
+    }
+    g.beginPath();
+    g.moveTo(cx + 16, 2);
+    g.quadraticCurveTo(cx + 10, H / 2, cx + 16, H - 2);
+    g.quadraticCurveTo(cx + 22, H / 2, cx + 16, 2);
+    g.stroke();
+  }
+  const t = tex(c);
+  return t;
+}
+
+const TAGS = ["HEAT", "MELB", "KOSTAS", "YARRA", "WHARF", "SKATE", "NO CAPS", "LANEWAY", "OI", "3000", "TRAMS", "DEX"];
+
+/** A wall of laneway graffiti (Hosier Lane style), several variants. */
+export function graffiti(seed: number) {
+  const W = 512;
+  const H = 256;
+  const { c, g } = canvas(W, H);
+  const r = createRng(seed * 31 + 7);
+  const PAL = ["#ff4fa3", "#3fd0ff", "#ffd23f", "#7dff8a", "#c58bff", "#ff7a3c", "#ffffff", "#1c1f24", "#e8243c", "#2ad1a3"];
+  // Old paint underneath: big flat patches.
+  g.fillStyle = "#6b6560";
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 14; i++) {
+    g.fillStyle = r.pick(PAL);
+    g.globalAlpha = 0.85;
+    const x = r.next() * W;
+    const y = r.next() * H;
+    g.beginPath();
+    g.ellipse(x, y, 30 + r.next() * 90, 20 + r.next() * 60, r.next() * 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  // Characters, eyes, drips.
+  for (let i = 0; i < 6; i++) {
+    const x = r.next() * W;
+    const y = 40 + r.next() * (H - 80);
+    const s = 18 + r.next() * 30;
+    g.globalAlpha = 1;
+    g.fillStyle = "#ffffff";
+    g.beginPath();
+    g.arc(x, y, s, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = r.pick(PAL);
+    g.beginPath();
+    g.arc(x + s * 0.2, y, s * 0.45, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#111";
+    g.beginPath();
+    g.arc(x + s * 0.25, y, s * 0.18, 0, Math.PI * 2);
+    g.fill();
+  }
+  // Tags.
+  for (let i = 0; i < 9; i++) {
+    g.save();
+    g.translate(r.next() * W, 30 + r.next() * (H - 40));
+    g.rotate((r.next() - 0.5) * 0.4);
+    const size = 22 + r.next() * 44;
+    g.font = `900 ${size}px Impact, "Arial Black", sans-serif`;
+    g.lineWidth = Math.max(3, size * 0.12);
+    g.strokeStyle = r.pick(PAL);
+    g.fillStyle = r.pick(PAL);
+    const word = r.pick(TAGS);
+    g.strokeText(word, 0, 0);
+    g.fillText(word, 0, 0);
+    g.restore();
+  }
+  // Drips.
+  g.globalAlpha = 0.8;
+  for (let i = 0; i < 40; i++) {
+    g.fillStyle = r.pick(PAL);
+    const x = r.next() * W;
+    const y = r.next() * H;
+    g.fillRect(x, y, 2, 10 + r.next() * 40);
+  }
+  g.globalAlpha = 1;
+  return tex(c);
+}
+
+/** A tram stop sign: the stop number in a green and white flag. */
+export function tramStopSign(num: number) {
+  const { c, g } = canvas(64, 128);
+  g.fillStyle = "#e8eae6";
+  g.fillRect(0, 0, 64, 128);
+  g.fillStyle = "#77b82a";
+  g.fillRect(0, 0, 64, 46);
+  g.fillStyle = "#ffffff";
+  g.font = "bold 30px Arial, sans-serif";
+  g.textAlign = "center";
+  g.fillText(String(num), 32, 34);
+  g.fillStyle = "#1c1f24";
+  g.font = "bold 13px Arial, sans-serif";
+  g.fillText("TRAM", 32, 72);
+  g.fillText("STOP", 32, 90);
+  g.fillStyle = "#f2b134";
+  g.fillRect(0, 112, 64, 16);
+  return tex(c, true, false);
+}
+
+/** The fun park's gate: a huge grinning face (the mouth is the way in). */
+export function moonFace() {
+  const { c, g } = canvas(256);
+  const gr = g.createRadialGradient(128, 118, 20, 128, 128, 140);
+  gr.addColorStop(0, "#fff1c2");
+  gr.addColorStop(1, "#e7b65a");
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 256, 256);
+  // Hair rays round the top.
+  g.fillStyle = "#d7352b";
+  for (let k = 0; k < 9; k++) {
+    const a = Math.PI + (k / 8) * Math.PI;
+    g.beginPath();
+    g.moveTo(128 + Math.cos(a) * 100, 120 + Math.sin(a) * 100);
+    g.lineTo(128 + Math.cos(a - 0.12) * 128, 120 + Math.sin(a - 0.12) * 128);
+    g.lineTo(128 + Math.cos(a + 0.12) * 128, 120 + Math.sin(a + 0.12) * 128);
+    g.fill();
+  }
+  // Eyes and brows.
+  for (const x of [84, 172]) {
+    g.fillStyle = "#ffffff";
+    g.beginPath();
+    g.ellipse(x, 92, 22, 26, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#1f4a8a";
+    g.beginPath();
+    g.arc(x + 4, 96, 11, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#111";
+    g.beginPath();
+    g.arc(x + 5, 97, 5, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = "#5a2a14";
+    g.lineWidth = 6;
+    g.beginPath();
+    g.arc(x, 82, 30, Math.PI * 1.15, Math.PI * 1.85);
+    g.stroke();
+  }
+  // Rosy cheeks, the nose.
+  g.fillStyle = "rgba(230,90,80,0.45)";
+  for (const x of [58, 198]) {
+    g.beginPath();
+    g.arc(x, 150, 18, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = "#e08a5a";
+  g.beginPath();
+  g.ellipse(128, 136, 12, 16, 0, 0, Math.PI * 2);
+  g.fill();
+  // The grin, with teeth top and bottom, dark inside (the gate).
+  g.fillStyle = "#7a1414";
+  g.beginPath();
+  g.moveTo(54, 168);
+  g.quadraticCurveTo(128, 280, 202, 168);
+  g.quadraticCurveTo(128, 196, 54, 168);
+  g.fill();
+  g.fillStyle = "#1a0d0a";
+  g.beginPath();
+  g.moveTo(80, 182);
+  g.quadraticCurveTo(128, 250, 176, 182);
+  g.quadraticCurveTo(128, 200, 80, 182);
+  g.fill();
+  g.fillStyle = "#ffffff";
+  for (let k = 0; k < 8; k++) g.fillRect(64 + k * 16, 170 + Math.abs(k - 3.5) * -2 + 6, 12, 12);
+  return tex(c, true, false);
+}
+
+/** The big screen in the square: a bright broadcast frame. */
+export function bigScreen() {
+  const { c, g } = canvas(256, 144);
+  const gr = g.createLinearGradient(0, 0, 256, 144);
+  gr.addColorStop(0, "#0a3d7a");
+  gr.addColorStop(1, "#1aa36b");
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 256, 144);
+  g.fillStyle = "#3f9a3f";
+  g.beginPath();
+  g.ellipse(128, 120, 140, 50, 0, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = "rgba(255,255,255,0.7)";
+  g.lineWidth = 2;
+  g.beginPath();
+  g.ellipse(128, 120, 120, 40, 0, 0, Math.PI * 2);
+  g.stroke();
+  g.fillStyle = "#ffffff";
+  g.font = "900 26px Arial, sans-serif";
+  g.fillText("LIVE", 12, 30);
+  g.fillStyle = "#e8243c";
+  g.beginPath();
+  g.arc(78, 21, 6, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "rgba(0,0,0,0.6)";
+  g.fillRect(0, 110, 256, 34);
+  g.fillStyle = "#ffffff";
+  g.font = "bold 18px Arial, sans-serif";
+  g.fillText("HAWKS 12.9 (81)  v  MAGPIES 11.8 (74)", 10, 133, 236);
+  return tex(c, true, false);
+}

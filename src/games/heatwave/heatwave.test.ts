@@ -17,7 +17,7 @@ function run(s: State, secs: number, until?: () => boolean) {
   return false;
 }
 
-describe("Heatwave: Port Solano", () => {
+describe("Heatwave: Melbourne", () => {
   const city = generate(7);
 
   it("is the same city every time from the same seed", () => {
@@ -28,9 +28,9 @@ describe("Heatwave: Port Solano", () => {
 
   it("has every district, a road network, and the places a story needs, all on dry land", () => {
     const seen = new Set(city.buildings.map((b) => districtAt(b.x, b.z)));
-    for (const d of ["downtown", "midtown", "strand", "callesol", "heights", "harbor", "glades", "keys"]) expect(seen).toContain(d);
+    for (const d of ["cbd", "southbank", "docklands", "docks", "carlton", "fitzroy", "richmond", "southmelb", "port", "southyarra", "toorak", "stkilda"]) expect(seen).toContain(d);
     expect(city.roads.segs.length).toBeGreaterThan(100);
-    for (const id of ["safe-nina", "safe-dex", "hospital", "police-hq", "gun-cs", "clothes-strand", "respray-cs", "store-1"]) {
+    for (const id of ["safe-nina", "safe-dex", "hospital", "police-hq", "gun-rich", "clothes-chapel", "respray-port", "store-1", "chop", "mansion"]) {
       const p = city.pois.find((x) => x.id === id);
       expect(p, id).toBeDefined();
       expect(isWater(p!.x, p!.z), id).toBe(false);
@@ -54,8 +54,8 @@ describe("Heatwave: Port Solano", () => {
     expect(bad).toEqual([]);
   });
 
-  it("routes by road from the Glades to the beach", () => {
-    const path = route(city, -780, -60, 450, -300);
+  it("routes by road from Swanson Dock to St Kilda", () => {
+    const path = route(city, -1380, -200, -110, 1300);
     expect(path).not.toBeNull();
     expect(path!.length).toBeGreaterThan(3);
   });
@@ -117,24 +117,24 @@ describe("Heatwave: the simulation", () => {
     expect(player(s).ammo.pistol).toBeUndefined();
   });
 
-  it("plays the first story mission through: pick Dex up at the Harbor and take him home", { timeout: 120_000 }, () => {
+  it("plays the first story mission through: pick Dex up at Swanson Dock and take him home", { timeout: 120_000 }, () => {
     const s = sim.newGame(7);
     expect(startMission(s, "sunburn")).toBe(true);
     // The call, then the car.
     expect(run(s, 15, () => s.story.run!.text.startsWith("Get in your car"))).toBe(true);
     const car = s.cars.find((x) => x.tag === "ride-nina")!;
     seat(s, player(s), car, 0);
-    expect(run(s, 2, () => s.story.run!.text.includes("Harbor gate"))).toBe(true);
+    expect(run(s, 2, () => s.story.run!.text.includes("Swanson Dock gate"))).toBe(true);
     const put = (x: number, z: number) => {
       car.x = x;
       car.z = z;
       car.vx = car.vz = 0;
     };
-    put(40, 518);
-    // Dex gets in, they talk, then home to the Glades.
-    expect(run(s, 20, () => s.story.run!.text.includes("trailer"))).toBe(true);
+    put(-1290, -440);
+    // Dex gets in, they talk, then home to Port Melbourne.
+    expect(run(s, 20, () => s.story.run!.text.includes("cottage"))).toBe(true);
     expect(car.seats.filter((id) => id >= 0).length).toBe(2);
-    put(-790, -78);
+    put(-889, 652);
     expect(run(s, 15, () => !s.story.run)).toBe(true);
     expect(s.story.done).toContain("sunburn");
     expect(s.money).toBe(START_MONEY + 500);
@@ -161,6 +161,23 @@ describe("Heatwave: the simulation", () => {
     expect(player(t).ammo.smg).toBeGreaterThan(0);
     expect(Math.hypot(player(t).x - p.x, player(t).z - p.z)).toBeLessThan(1);
     expect(sim.load("not json")).toBeNull();
+  });
+
+  it("runs the trams: they move along their lines, stop at stops and keep to the left", { timeout: 120_000 }, () => {
+    const s = sim.newGame(7);
+    const trams = s.cars.filter((c) => c.tram);
+    expect(trams.length).toBeGreaterThan(20);
+    const start = trams.map((c) => c.tram!.s + c.tram!.dir * 1e5);
+    let stopped = 0;
+    for (let i = 0; i < 60 * 40; i++) {
+      sim.step(s, sim.NO_INPUT, 1 / 60);
+      if (i % 60 === 0) stopped += trams.filter((c) => c.tram!.dwell > 0).length;
+    }
+    expect(trams.filter((c, i) => c.tram!.s + c.tram!.dir * 1e5 !== start[i]).length).toBeGreaterThan(trams.length * 0.8);
+    expect(stopped).toBeGreaterThan(0);
+    // A tram heading north up Swanston St runs on the west side of the road (keep left).
+    const t = trams.find((c) => Math.abs(c.x - 110) < 6 && Math.abs(Math.sin(c.h) + 1) < 0.05);
+    if (t) expect(t.x).toBeLessThan(110);
   });
 
   it("switches leads, each with their own home and ride", { timeout: 60_000 }, () => {

@@ -1,11 +1,11 @@
-import { GLADES_TRAFFIC, LEADS, PAINT, RICH_TRAFFIC, TRAFFIC, VEHICLES, type VehicleKind } from "./data";
+import { DOCK_TRAFFIC, LEADS, PAINT, RICH_TRAFFIC, TRAFFIC, VEHICLES, type VehicleKind } from "./data";
 import { policeDrive } from "./police";
 import { carById, clamp, fwdSpeed, makeCar, makePed, pedById, player, playerPos, speedOf, type Car, type Look, type State } from "./state";
 import { NO_DRIVE, seat, type Drive } from "./vehicles";
 import { districtAt, groundY, nearestRoad, onDeck, ROAD, WATER_Y, type Node, type Seg } from "./world";
 
 /**
- * Traffic: drivers keep to their lane on the right, stop at red lights, keep their distance,
+ * Traffic: drivers keep to their lane on the left (this is Melbourne), stop at red lights, keep their distance,
  * pick a way at every junction, honk, and flee when there's shooting. Cars are spawned on the
  * roads round the player (out of sight, in the haze) and taken away again behind them; parked
  * cars sit in driveways and outside the shops.
@@ -43,8 +43,9 @@ export function laneLine(s: State, segId: number, fwd: boolean, lane: number) {
   const fx = Math.cos(h);
   const fz = Math.sin(h);
   const off = ROAD[seg.cls].lanes[Math.min(lane, ROAD[seg.cls].lanes.length - 1)];
-  const rx = -fz * off;
-  const rz = fx * off;
+  // Australia: keep left.
+  const rx = fz * off;
+  const rz = -fx * off;
   const ha = junctionHalf(s, A, seg.axis);
   const hb = junctionHalf(s, B, seg.axis);
   return { ax: A.x + rx + fx * ha, az: A.z + rz + fz * ha, bx: B.x + rx - fx * hb, bz: B.z + rz - fz * hb, h, len: seg.len - ha - hb, A, B, seg, hb, ox: A.x + rx, oz: A.z + rz };
@@ -141,11 +142,11 @@ export function trafficDrive(s: State, c: Car, dt: number, flee = false): Drive 
     const n = chooseNext(s, c, L.seg, c.ai.fwd);
     c.ai.next = n.id;
     c.ai.nextFwd = n.fwd;
-    // Turning right: the kerb lane; left: the inside one.
+    // Keeping left: turning left from the kerb lane, right from the inside one.
     const nn = laneLine(s, n.id, n.fwd, 0);
     const turn = Math.atan2(Math.sin(nn.h - L.h), Math.cos(nn.h - L.h));
     const lanes = ROAD[segs[n.id].cls].lanes.length;
-    c.ai.lane = turn > 0.3 ? lanes - 1 : turn < -0.3 ? 0 : Math.min(c.ai.lane, lanes - 1);
+    c.ai.lane = turn < -0.3 ? lanes - 1 : turn > 0.3 ? 0 : Math.min(c.ai.lane, lanes - 1);
   }
   const N = laneLine(s, c.ai.next, c.ai.nextFwd, Math.min(c.ai.lane, ROAD[segs[c.ai.next].cls].lanes.length - 1));
   const turning = Math.abs(Math.atan2(Math.sin(N.h - L.h), Math.cos(N.h - L.h))) > 0.3;
@@ -330,9 +331,9 @@ export function roadSpawn(s: State, x: number, z: number, rMin: number, rMax: nu
 function trafficKind(s: State, x: number, z: number): VehicleKind {
   const d = districtAt(x, z);
   if (s.rng.next() < 0.05) return "police";
-  if (d === "keys" || (d === "strand" && s.rng.next() < 0.4)) return s.rng.pick(RICH_TRAFFIC);
-  if (d === "glades") return s.rng.pick(GLADES_TRAFFIC);
-  if (d === "harbor" && s.rng.next() < 0.3) return "cargo";
+  if (d === "toorak" || ((d === "southyarra" || d === "southbank" || d === "stkilda") && s.rng.next() < 0.3)) return s.rng.pick(RICH_TRAFFIC);
+  if (d === "docks" || d === "westmelb") return s.rng.pick(DOCK_TRAFFIC);
+  if (d === "cbd" && s.rng.next() < 0.18) return "taxi";
   return s.rng.pick(TRAFFIC);
 }
 
@@ -421,7 +422,7 @@ function parked(s: State, x: number, z: number) {
     const r = nearestRoad(s.city, home.x + home.fz * 7, home.z - home.fx * 7);
     const k = Math.hypot(home.x - r.x, home.z - r.z) || 1;
     const off = ROAD[r.seg.cls].half - 1.4;
-    const h = r.seg.axis === "ns" ? (home.x > r.x ? -Math.PI / 2 : Math.PI / 2) : home.z > r.z ? 0 : Math.PI;
+    const h = r.seg.axis === "ns" ? (home.x > r.x ? Math.PI / 2 : -Math.PI / 2) : home.z > r.z ? Math.PI : 0;
     const c = makeCar(s, L.ride, r.x + ((home.x - r.x) / k) * off, r.z + ((home.z - r.z) / k) * off, h, L.rideColor, { own: true, tag: `ride-${ch.id}` });
     c.ai.mode = "parked";
   }

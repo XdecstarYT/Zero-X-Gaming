@@ -6,6 +6,7 @@ import { fwdSpeed, speedOf, type Car, type Ped, type State } from "../state";
 import { ROAD, segAt, WATER_Y } from "../world";
 import { buildBike, buildBoat, buildHeli, weaponModel, type CustomVehicle } from "./models";
 import type { Quality } from "./city";
+import { buildTram, poseTram, type TramModel } from "./tram";
 
 /**
  * People and vehicles, drawn from the simulation each frame: articulated people (the shared
@@ -27,6 +28,7 @@ interface CarView {
   group: THREE.Group;
   kit?: CarModel;
   custom?: CustomVehicle;
+  tram?: TramModel;
   wheel: number;
   driver?: PedModel;
   driverKey?: string;
@@ -244,6 +246,11 @@ export class Actors {
     const spec = VEHICLES[c.kind];
     const group = new THREE.Group();
     const v: CarView = { key, group, wheel: 0, wrecked: false, fine: [] };
+    if (spec.body === "tram") {
+      v.tram = buildTram(c.kind === "wtram" ? "wtram" : "tram", c.tram?.route ?? 0);
+      group.add(v.tram.group);
+      return v;
+    }
     if (spec.body === "bike") v.custom = buildBike(c.color);
     else if (spec.body === "boat") v.custom = buildBoat(c.color);
     else if (spec.body === "airboat") v.custom = buildBoat(c.color, true);
@@ -273,6 +280,13 @@ export class Actors {
   private poseCar(s: State, c: Car, v: CarView, d: number, dt: number, night: number) {
     const spec = VEHICLES[c.kind];
     const g = v.group;
+    if (v.tram) {
+      // The sections are placed in the world along the rails.
+      g.position.set(0, 0, 0);
+      g.rotation.set(0, 0, 0);
+      poseTram(s, c, v.tram, night);
+      return;
+    }
     const vf = fwdSpeed(c);
     const sp = speedOf(c);
     g.position.set(c.x, c.y + (spec.water ? 0.25 : 0), c.z);
@@ -340,7 +354,7 @@ export class Actors {
       const boat = spec.water;
       // Seated so the head clears the roof line (a coupe sits you low, a van high).
       const seatY = bike ? 0.55 : boat ? 0.35 : Math.max(-0.3, Math.min(0.6, (ROOF[spec.body] ?? 1.46) * spec.scale - 1.42));
-      dm.group.position.set(bike ? -0.15 : boat ? -0.6 : spec.len * -0.02, seatY, bike ? 0 : -spec.wid * 0.22);
+      dm.group.position.set(bike ? -0.15 : boat ? -0.6 : spec.len * -0.02, seatY, bike ? 0 : spec.wid * 0.22);
       dm.group.rotation.set(0, 0, 0);
       posePed(dm, bike ? "sit" : boat ? "stand" : "sit", 0, 0, this.t, dt);
       if (spec.air) dm.group.visible = false;
