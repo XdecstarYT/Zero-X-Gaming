@@ -68,7 +68,7 @@ void main() {
 #endif
   // Height fog (integrated along the ray), coloured by the sky and lit toward the sun.
   float sunAmt = pow(max(dot(rd, normalize(uSunDir)), 0.0), 8.0);
-  vec3 fogCol = uFogColor + uSunColor * sunAmt * 0.45 * (1.0 - uNight);
+  vec3 fogCol = uFogColor + uSunColor * sunAmt * 0.25 * (1.0 - uNight);
   float dy = rd.y;
   float base = uDensity * exp(-uFalloff * max(uCam.y, 0.0));
   float L = min(dist, 2400.0);
@@ -208,13 +208,13 @@ export class Post {
           uExposure: { value: 1 },
           uTime: { value: 0 },
           uTexel: { value: new THREE.Vector2() },
-          uSat: { value: 1.22 },
-          uContrast: { value: 0.34 },
-          uVignette: { value: 0.55 },
-          uGrain: { value: 0.022 },
-          uFringe: { value: 0.012 },
-          uShadow: { value: new THREE.Vector3(0.9, 1.0, 1.08) },
-          uHigh: { value: new THREE.Vector3(1.07, 1.0, 0.9) },
+          uSat: { value: 1.06 },
+          uContrast: { value: 0.2 },
+          uVignette: { value: 0.38 },
+          uGrain: { value: 0.012 },
+          uFringe: { value: 0.006 },
+          uShadow: { value: new THREE.Vector3(0.96, 1.0, 1.04) },
+          uHigh: { value: new THREE.Vector3(1.03, 1.0, 0.96) },
           uSplit: { value: 1 },
         },
         depthTest: false,
@@ -259,7 +259,7 @@ export class Post {
       this.v.copy(p.sunDir).multiplyScalar(1000).add(cam.position).project(cam);
       const facing = cam.getWorldDirection(new THREE.Vector3()).dot(p.sunDir);
       u.uSunUv.value.set(this.v.x * 0.5 + 0.5, this.v.y * 0.5 + 0.5);
-      u.uRays.value = facing > 0.1 && p.sunDir.y > 0.02 ? 0.55 * Math.min(1, (facing - 0.1) * 2.5) * (1 - p.night) : 0;
+      u.uRays.value = facing > 0.1 && p.sunDir.y > 0.02 ? 0.26 * Math.min(1, (facing - 0.1) * 2.5) * (1 - p.night) : 0;
       r.setRenderTarget(this.mid);
       this.atmos.render(r);
       src = this.mid;

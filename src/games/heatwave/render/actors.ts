@@ -1,11 +1,11 @@
 import * as THREE from "three";
-import { buildCar, type CarModel } from "../../code-3/models";
 import { BONES, buildPed, posePed, type PedModel, type Pose } from "../../code-3/people3d";
 import { VEHICLES, WEAPONS, type WeaponId } from "../data";
 import { fwdSpeed, speedOf, type Car, type Ped, type State } from "../state";
 import { segAt, WATER_Y } from "../world";
 import { buildBike, buildBoat, buildHeli, weaponModel, type CustomVehicle } from "./models";
 import type { Quality } from "./city";
+import { buildHwCar, LAMP, LIVERY, roofHeight, WheelBatch, type BodyKind, type HwCar } from "./cars";
 import { buildTram, poseTram, type TramModel } from "./tram";
 
 /**
@@ -26,7 +26,7 @@ interface PedView {
 interface CarView {
   key: string;
   group: THREE.Group;
-  kit?: CarModel;
+  kit?: HwCar;
   custom?: CustomVehicle;
   tram?: TramModel;
   wheel: number;
@@ -58,8 +58,6 @@ function glowOn(gl: THREE.Sprite, opacity: number) {
   gl.visible = opacity > 0;
 }
 
-/** Roof heights of the shared car bodies (m), for seating the driver under them. */
-const ROOF: Record<string, number> = { sedan: 1.46, cruiser: 1.49, slicktop: 1.47, suv: 1.86, interceptor: 1.8, van: 2.28, transport: 2.45, ambulance: 2.67, pickup: 1.85, sports: 1.1, pursuit: 1.15 };
 
 export class Actors {
   private peds = new Map<number, PedView>();
@@ -70,6 +68,7 @@ export class Actors {
   private smoke: THREE.Sprite[] = [];
   private smokeI = 0;
   private t = 0;
+  private wheels: WheelBatch;
 
   constructor(
     private scene: THREE.Scene,
@@ -84,6 +83,7 @@ export class Actors {
     this.skids.frustumCulled = false;
     this.skids.renderOrder = 1;
     scene.add(this.skids);
+    this.wheels = new WheelBatch(scene, quality !== "low");
     for (let i = 0; i < 48; i++) {
       const sp = new THREE.Sprite(smokeMat);
       sp.visible = false;
@@ -132,6 +132,7 @@ export class Actors {
       }
     // Vehicles.
     const liveC = new Set<number>();
+    this.wheels.begin();
     for (const c of s.cars) {
       const d = Math.hypot(c.x - camX, c.z - camZ);
       if (d > (VEHICLES[c.kind].air ? 900 : far + 90) && !c.seats.includes(s.player)) continue;
@@ -149,6 +150,7 @@ export class Actors {
       if (v.near !== near) {
         v.near = near;
         for (const o of v.fine) o.visible = near;
+        v.kit?.setNear(near);
       }
       const sh = !lowQ && d < 80;
       if (v.shadow !== sh) {
@@ -161,6 +163,8 @@ export class Actors {
         this.scene.remove(v.group);
         this.cars.delete(id);
       }
+    for (const v of this.cars.values()) if (v.kit && v.group.visible) this.wheels.add(v.kit);
+    this.wheels.end();
     // Smoke drifts up and fades.
     for (const sp of this.smoke) {
       if (!sp.visible) continue;
@@ -257,18 +261,15 @@ export class Actors {
     else if (spec.body === "heli") v.custom = buildHeli();
     if (v.custom) group.add(v.custom.group);
     else {
-      v.kit = buildCar(spec.body as never, c.color, c.plate, this.quality === "low" ? "low" : "high", !spec.police && spec.body !== "ambulance");
+      // Victoria Police: white with the blue-and-white chequer and a light bar; the Critical
+      // Response van dark with the chequer; the ambulance white with a red chequer.
+      const body = spec.body as BodyKind;
+      const livery = spec.body === "ambulance" ? LIVERY.ambulance : spec.body === "transport" ? LIVERY.response : spec.police ? LIVERY.police : LIVERY.none;
+      const bar = spec.body === "ambulance" ? "ems" : spec.police ? "police" : null;
+      v.kit = buildHwCar(body, c.color, this.quality !== "low", livery, bar);
       v.kit.group.scale.setScalar(spec.scale);
+      v.kit.body.castShadow = this.quality !== "low";
       group.add(v.kit.group);
-      v.kit.group.traverse((o) => ((o as THREE.Mesh).castShadow = this.quality !== "low" && !castsNone(o)));
-      const kit = v.kit;
-      kit.group.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        if (!mesh.isMesh || mesh === kit.beam || mesh.material === kit.red || mesh.material === kit.blue) return;
-        if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
-        if (mesh.geometry.boundingSphere!.radius < 0.3) v.fine.push(mesh);
-      });
-      if (spec.police && spec.body !== "transport" && spec.body !== "ambulance") victoriaLivery(kit);
       if (c.kind === "taxi") {
         v.sign = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.9), new THREE.MeshStandardMaterial({ color: "#ffe066", emissive: "#ffcc33", emissiveIntensity: 0.8 }));
         v.sign.position.set(-0.3, 1.62, 0);
@@ -304,26 +305,27 @@ export class Actors {
       const m = v.kit;
       m.wheels.forEach((w, i) => {
         w.rotation.y = i < 2 ? steer : 0;
-        (w.children[0] as THREE.Object3D).rotation.z = -v.wheel;
+        (w.children[0] as THREE.Object3D).rotation.z = -v.wheel * (0.34 / m.wheelR);
       });
       const lit = night > 0.15 || s.weather.rain > 0.5;
-      m.tail.emissiveIntensity = c.brake ? 3 : lit ? 1 : 0.2;
-      (m.heads.material as THREE.MeshStandardMaterial).emissiveIntensity = lit && c.hp > 0 ? 2.6 : 0.3;
-      (m.reverse.material as THREE.MeshStandardMaterial).emissiveIntensity = vf < -0.5 ? 2 : 0;
+      const L = m.lamps;
+      L[LAMP.tail] = c.wrecked ? 0 : c.brake ? 3 : lit ? 1 : 0.15;
+      L[LAMP.head] = lit && c.hp > 0 && !c.wrecked ? 2.6 : 0.25;
+      L[LAMP.reverse] = vf < -0.5 ? 2 : 0;
       for (const gl of m.headGlow) glowOn(gl, lit && !c.wrecked ? 0.75 : 0);
       for (const gl of m.tailGlow) glowOn(gl, c.brake ? 0.9 : lit ? 0.4 : 0);
       (m.beam.material as THREE.MeshBasicMaterial).opacity = night * 0.5;
       m.beam.visible = lit && !c.wrecked && d < 120;
       const blink = Math.floor(this.t * 2.6) % 2 === 0;
-      m.amberL.emissiveIntensity = c.alarm > 0 && blink ? 5 : 0.1;
-      m.amberR.emissiveIntensity = c.alarm > 0 && blink ? 5 : 0.1;
-      if (m.red && m.blue) {
+      L[LAMP.amberL] = c.alarm > 0 && blink ? 5 : 0.05;
+      L[LAMP.amberR] = c.alarm > 0 && blink ? 5 : 0.05;
+      if (m.redGlow && m.blueGlow) {
         const phase = Math.floor(this.t * 8) % 4;
         const on = c.siren && !c.wrecked;
         const r = on && phase < 2;
         const b = on && phase >= 2;
-        m.red.emissiveIntensity = r ? 8 : on ? 0.4 : 0;
-        m.blue.emissiveIntensity = b ? 8 : on ? 0.4 : 0;
+        L[LAMP.red] = r ? 8 : on ? 0.4 : 0;
+        L[LAMP.blue] = b ? 8 : on ? 0.4 : 0;
         for (const gl of m.redGlow ?? []) glowOn(gl, r ? 1 : 0);
         for (const gl of m.blueGlow ?? []) glowOn(gl, b ? 1 : 0);
       }
@@ -340,7 +342,8 @@ export class Actors {
     }
     // Who's at the wheel (seen through the glass, close by).
     const drv = s.peds.find((p) => p.id === c.seats[0]);
-    const showDriver = drv && d < (this.quality === "low" ? 35 : 70) && !c.wrecked;
+    // Car glass is dark and mirrored, so only riders (bikes, boats) are drawn.
+    const showDriver = drv && !v.kit && d < (this.quality === "low" ? 35 : 70) && !c.wrecked;
     if (showDriver) {
       const k = lookKey(drv);
       if (!v.driver || v.driverKey !== k) {
@@ -354,7 +357,7 @@ export class Actors {
       const bike = spec.body === "bike";
       const boat = spec.water;
       // Seated so the head clears the roof line (a coupe sits you low, a van high).
-      const seatY = bike ? 0.55 : boat ? 0.35 : Math.max(-0.3, Math.min(0.6, (ROOF[spec.body] ?? 1.46) * spec.scale - 1.42));
+      const seatY = bike ? 0.55 : boat ? 0.35 : Math.max(-0.3, Math.min(0.6, (v.kit ? roofHeight(spec.body as BodyKind) : 1.46) * spec.scale - 1.42));
       dm.group.position.set(bike ? -0.15 : boat ? -0.6 : spec.len * -0.02, seatY, bike ? 0 : spec.wid * 0.22);
       dm.group.rotation.set(0, 0, 0);
       posePed(dm, bike ? "sit" : boat ? "stand" : "sit", 0, 0, this.t, dt);
@@ -363,7 +366,9 @@ export class Actors {
     // Wrecks go black.
     if (c.wrecked && !v.wrecked) {
       v.wrecked = true;
+      v.kit?.wreck();
       g.traverse((o) => {
+        if (v.kit && o === v.kit.body) return;
         const mm = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
         if (!mm || !("color" in mm)) return;
         const cl = mm.clone();
@@ -422,39 +427,6 @@ export class Actors {
     for (const v of this.cars.values()) this.scene.remove(v.group);
     this.scene.remove(this.skids);
     for (const sp of this.smoke) this.scene.remove(sp);
-  }
-}
-
-let checker: THREE.MeshStandardMaterial | null = null;
-
-/** Repaint a police car the Victoria way: white, with a blue-and-white chequered band down each side. */
-function victoriaLivery(kit: CarModel) {
-  const bodyMesh = kit.group.children[0] as THREE.Mesh;
-  (bodyMesh.material as THREE.MeshStandardMaterial).color.set("#f2f4f6");
-  if (!checker) {
-    const c = document.createElement("canvas");
-    c.width = 128;
-    c.height = 16;
-    const g = c.getContext("2d")!;
-    for (let i = 0; i < 16; i++)
-      for (let j = 0; j < 2; j++) {
-        g.fillStyle = (i + j) % 2 ? "#ffffff" : "#16358a";
-        g.fillRect(i * 8, j * 8, 8, 8);
-      }
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.wrapS = THREE.RepeatWrapping;
-    checker = new THREE.MeshStandardMaterial({ map: t, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-  }
-  bodyMesh.geometry.computeBoundingBox();
-  const bb = bodyMesh.geometry.boundingBox!;
-  const len = (bb.max.x - bb.min.x) * 0.86;
-  const y = bb.min.y + (bb.max.y - bb.min.y) * 0.5;
-  for (const side of [-1, 1]) {
-    const band = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.2), checker);
-    band.position.set((bb.max.x + bb.min.x) / 2, y, side * (bb.max.z + 0.004));
-    if (side < 0) band.rotation.y = Math.PI;
-    kit.group.add(band);
   }
 }
 

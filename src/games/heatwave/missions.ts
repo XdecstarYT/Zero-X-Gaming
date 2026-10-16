@@ -780,12 +780,12 @@ export const STORY: MissionDef[] = [
     from: "Dex",
     x: 0,
     z: 0,
-    blurb: "A Securitas van runs the casino's takings into Collins St every afternoon. Stop it.",
+    blurb: "An Ironside van runs the casino's takings into Collins St every afternoon. Stop it.",
     pay: 15000,
     steps: [
       partnerJoin("rifle"),
       talk([
-        ["Dex", "Securitas van leaves South Melbourne every arvo. Two guards, one driver."],
+        ["Dex", "Ironside van leaves South Melbourne every arvo. Two guards, one driver."],
         ["Nina", "We stop it, we grab the cases, we're gone before the cops finish their dim sims."],
       ]),
       act((s, r) => {

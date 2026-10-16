@@ -28,7 +28,7 @@ screen (`mapdata.ts`). `world.ts` turns it into the game's city:
 - **On foot**: walk, run, sprint and jump; swim in the bay, the Yarra and the lakes.
 - **Vehicles**: get into any car, bike or boat. Step onto a tram when it is stopped: at the front you take the cab and drive it (W to go, S to brake; the rails steer), anywhere else you ride as a passenger. It's free in the CBD (the Free Tram Zone) and $5 outside it. If someone's driving, you drag them out, and a locked parked car means breaking the glass. There are 17 to drive:
   - Cars and vans: the Wattle Hatch, Norden Aria, Melbourne Cab, Halvor Trek, Murray Ute, Orrin Cargo, Vanta GT, Castell Stallion and Furia RS.
-  - Police and service vehicles: the Police Commodore, Highway Patrol and Critical Response van (white, with a blue-and-white chequered band), the ambulance and the Securitas armoured van.
+  - Police and service vehicles: the Police Patrol Sedan, Highway Patrol and Critical Response van (white, with a blue-and-white chequered band), the ambulance and the Ironside armoured van.
   - The Rapido 600 bike, the Squall speedboat and the Yarra Runabout.
   - The Police Air Wing helicopter hunts you.
 

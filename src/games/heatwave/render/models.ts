@@ -79,12 +79,36 @@ function cross(size: number, y: number, n = 3) {
     g.translate(0, y, 0);
     list.push(g);
   }
+  // Two cards tipped over, so the crown isn't a neat star from any side.
+  for (const tilt of [0.75, -0.75]) {
+    const g = new THREE.PlaneGeometry(size * 0.85, size * 0.85).toNonIndexed();
+    g.rotateX(tilt);
+    g.rotateY(tilt * 1.9 + n);
+    g.translate(0, y + size * 0.05, 0);
+    list.push(g);
+  }
   // A flat one on top so it's not see-through from above.
   const top = new THREE.PlaneGeometry(size * 0.9, size * 0.9).toNonIndexed();
   top.rotateX(-Math.PI / 2);
   top.translate(0, y + size * 0.12, 0);
   list.push(top);
   return list;
+}
+
+/** A leafy mass: a ball pushed in and out by noise, so its outline is ragged, not faceted. */
+function clump(r: number, x: number, y: number, z: number, color: string, seed = 0) {
+  const g = new THREE.IcosahedronGeometry(r, 1);
+  const p = g.attributes.position as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const n = Math.sin(v.x * 2.7 + seed) * Math.sin(v.y * 3.1 + seed * 1.7) * Math.sin(v.z * 2.3 - seed);
+    v.multiplyScalar(1 + n * 0.32).setY(v.y * 0.86);
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  g.translate(x, y, z);
+  return paint(g.index ? g.toNonIndexed() : g, color, 0.22);
 }
 
 const cache = new Map<string, PropTemplate>();
@@ -121,7 +145,7 @@ export function propTemplate(kind: Prop["kind"], s = 1, color = "#ffffff"): Prop
     case "tree": {
       t.solid.push(cyl(0.28, 0.2, 3.2, "#5a4632"));
       for (const g of cross(5.2, 4.6, 3)) t.leaves.push(paint(g, "#d8f0b8"));
-      t.solid.push(paint(new THREE.IcosahedronGeometry(1.9, 1).toNonIndexed().translate(0, 4.4, 0), "#3e5f2a", 0.15));
+      t.solid.push(clump(1.9, 0, 4.4, 0, "#3e5f2a", 1.3));
       break;
     }
     case "plane":
@@ -141,7 +165,7 @@ export function propTemplate(kind: Prop["kind"], s = 1, color = "#ffffff"): Prop
       for (const [dx, dy, dz, r] of [[0, H + 2.4, 0, R], [1.8, H + 1.3, 1.1, R * 0.7], [-1.7, H + 1.5, -0.9, R * 0.72], [0.6, H + 3.6, -1.2, R * 0.6]] as [number, number, number, number][]) {
         for (const g of cross(r * 2, 0, 4)) t.leaves.push(paint(g.translate(dx, dy, dz), elm ? "#c4dc9e" : "#dcefa8", 0.12));
         // A small dark core so the crown never looks hollow.
-        t.solid.push(paint(new THREE.IcosahedronGeometry(r * 0.38, 1).toNonIndexed().translate(dx, dy, dz), elm ? "#41602f" : "#577a34", 0.18));
+        t.solid.push(clump(r * 0.42, dx, dy, dz, elm ? "#41602f" : "#577a34", dx + dz));
       }
       break;
     }

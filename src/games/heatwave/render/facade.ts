@@ -266,8 +266,10 @@ void fFacade(vec3 base) {
 
   // Average look for far away: wall and glass mixed, the lit-window glow spread out.
   float glassFrac = type == 0 ? 0.8 : ww * win.y;
-  vec3 avgAlb = mix(type == 0 ? acc : wallc, vec3(0.16, 0.19, 0.23), glassFrac * 0.85);
-  vec3 avgEmit = vec3(1.0, 0.82, 0.58) * glassFrac * (type == 0 ? 0.5 : 0.42) * 0.3 * uNight + vec3(0.6, 0.66, 0.72) * glassFrac * 0.12 * uDay;
+  // Curtain walls keep their tinted glass (it's the sky they mirror that lights them).
+  vec3 tint = wallc * 0.34 + vec3(0.015, 0.02, 0.03);
+  vec3 avgAlb = type == 0 ? mix(acc, tint, 0.84) : mix(wallc, vec3(0.16, 0.19, 0.23), glassFrac * 0.85);
+  vec3 avgEmit = vec3(1.0, 0.82, 0.58) * glassFrac * (type == 0 ? 0.5 : 0.42) * 0.3 * uNight + vec3(0.6, 0.66, 0.72) * glassFrac * (type == 0 ? 0.04 : 0.12) * uDay;
   // Further still, keep the storeys: a band of glass and a band of wall per floor, which only
   // melts away once a floor is a couple of pixels tall.
   if (!ground && type != 0) {
@@ -281,13 +283,13 @@ void fFacade(vec3 base) {
     float slabL = 1.0 - smoothstep(0.0, 0.14, c.y);
     float lod2 = smoothstep(fhh * 0.12, fhh * 0.45, fw);
     float mull = 1.0 - smoothstep(0.0, 0.1, abs(c.x - 0.5) * 2.0 - 0.88);
-    vec3 farGlass = mix(vec3(0.08, 0.1, 0.13), acc * 1.15, max(slabL, mull * 0.5));
+    vec3 farGlass = mix(tint, acc * 1.15, max(slabL, mull * 0.5));
     avgAlb = mix(farGlass, avgAlb, lod2);
   }
   fAlb = mix(alb, avgAlb, lod);
   fEmit = mix(emit, avgEmit, lod);
-  fRough = mix(rough, 0.5, lod);
-  fMetal = mix(fMetal, type == 0 ? 0.5 : 0.15, lod);
+  fRough = mix(rough, type == 0 ? 0.16 : 0.5, lod);
+  fMetal = mix(fMetal, type == 0 ? 0.8 : 0.15, lod);
   // Rain darkens and slicks the walls a little.
   fAlb *= 1.0 - uWet * 0.18;
   fRough = mix(fRough, fRough * 0.6, uWet);

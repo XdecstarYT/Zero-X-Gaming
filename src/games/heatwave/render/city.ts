@@ -95,7 +95,7 @@ export class CityView {
     private quality: Quality,
     private sim: State,
   ) {
-    this.radius = quality === "high" ? 560 : quality === "medium" ? 430 : 320;
+    this.radius = quality === "high" ? 560 : quality === "medium" ? 400 : 300;
     this.detailR = quality === "high" ? 340 : quality === "medium" ? 250 : 170;
     const asphalt = asphaltDetail();
     asphalt.normal.repeat.set(1, 1);
@@ -319,7 +319,8 @@ export class CityView {
   }
 
   private ground(g: THREE.Group, x0: number, z0: number) {
-    const step = this.quality === "low" ? 8 : 4;
+    // The ground's colour comes from the 4 m map raster; 8 m cells are plenty but on high.
+    const step = this.quality === "high" ? 4 : 8;
     const n = CHUNK / step + 1;
     const pos = new Float32Array(n * n * 3);
     const col = new Float32Array(n * n * 3);

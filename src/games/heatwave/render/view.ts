@@ -109,7 +109,7 @@ export class HeatwaveView {
   /** Roads stay wet a while after the rain stops. */
   private wet = 0;
   /** A cinematic orbit (the NextX app's backdrop) instead of the third-person camera. */
-  cinema: { x: number; z: number; dist: number; height: number; speed: number; a: number } | null = null;
+  cinema: { x: number; z: number; dist: number; height: number; speed: number; a: number; ty?: number } | null = null;
   private w = 1;
   private h = 1;
 
@@ -224,7 +224,7 @@ export class HeatwaveView {
       const c = this.cinema;
       c.a += dt * c.speed;
       cam.position.set(c.x + Math.cos(c.a) * c.dist, c.height, c.z + Math.sin(c.a) * c.dist);
-      cam.lookAt(c.x, 8, c.z);
+      cam.lookAt(c.x, c.ty ?? 8, c.z);
     } else this.rig.update(s, dt, now, aiming);
     const pos = this.cinema ? { x: this.cinema.x, z: this.cinema.z } : playerPos(s);
     this.daylight(s, pos.x, pos.z);
@@ -254,7 +254,8 @@ export class HeatwaveView {
       sunDir: this.sunDir,
       sunColor: this.sun.color,
       fogColor: this.fogColor,
-      density: 0.0011 + storm * 0.0045 + (s.weather.kind === "cloudy" ? 0.0006 : 0) + this.night * 0.0004,
+      // Clear summer air: a city several kilometres across stays in view, softened by distance.
+      density: 0.00055 + storm * 0.0045 + (s.weather.kind === "cloudy" ? 0.0005 : 0) + this.night * 0.0003,
       night: this.night,
       haze: this.quality === "low" ? 0 : (1 - storm) * (s.weather.kind === "clear" ? 1 : 0.3) * Math.max(0, midday - 0.4) * 1.6,
       time: this.t,
