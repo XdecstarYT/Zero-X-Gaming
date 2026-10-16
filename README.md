@@ -947,16 +947,19 @@ See `src/games/wareforge/README.md`.
 ### Heatwave (ZLink+ exclusive, NextX)
 
 An open-world crime action game (`src/games/heatwave/`; `20261112100000_heatwave.sql`), the fourth NextX title.
-Port Solano is an island city generated from a seed (`world.ts`):
-- a coastline with a beach, a river and an island;
-- nine districts;
-- avenues and streets with lit junctions;
-- buildings by district, props and points of interest.
+It is set in Melbourne, generated from a fixed layout and a seed (`world.ts`):
+- the bay's shore, the Yarra, Victoria Harbour and the lakes;
+- seventeen districts, from the Hoddle Grid and Southbank to Fitzroy, Toorak and St Kilda;
+- real street names, from boulevards to laneways, with lit junctions;
+- eight tram routes (`trams.ts`);
+- 22 landmarks;
+- buildings by district (wall type, roof, verandahs), props and points of interest.
 
 A pure fixed-step simulation runs on top of it, headless in the tests:
 - on foot and swimming;
 - car, bike and boat physics;
-- traffic that obeys the lights;
+- left-hand traffic that obeys the lights;
+- trams that run their routes, stop and wait for anything on the track;
 - pavement pedestrians and gangs;
 - hitscan, melee and grenades with lock-on;
 - witnesses and a five-star wanted level with police cars, officers, tactical vans and helicopters;
@@ -965,12 +968,16 @@ A pure fixed-step simulation runs on top of it, headless in the tests:
 
 The three.js renderer:
 - streams the city in 160 m chunks, with near-only detail and a far skyline;
-- has a shader sea with shallows and surf;
-- reuses Code 3's car and people kits (with a new `civilian` option on `buildCar`);
-- runs sunrise to a lamp-lit night with bloom on high.
+- draws every wall with one facade shader (eight wall types, interior-mapped rooms, night lights);
+- models the landmarks, iron roofs and lace verandahs, tram rails, wires and articulated trams;
+- has a scattering sky with lit clouds and a shader bay;
+- reuses Code 3's car and people kits (with a new `civilian` option on `buildCar`, and police in Victoria livery);
+- runs a post chain: sunlit height fog, light shafts, heat shimmer, SSAO, bloom and a filmic grade.
+
+Graphics are mobile first: phones with eight or more cores get the full atmosphere at medium.
 
 The React HUD has a turning minimap with GPS, a phone (map, jobs, leads, stats, settings), shops and touch controls.
-The NextX app's backdrop for it is a slow orbit over the Strand (`src/nextx/backdrops.ts`).
+The NextX app's backdrop for it is a slow orbit over the Yarra and Flinders Street Station (`src/nextx/backdrops.ts`).
 The score is money earned ÷ 10 plus mission points (cap 500,000; members only).
 See `src/games/heatwave/README.md`.
 

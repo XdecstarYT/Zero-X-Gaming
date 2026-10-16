@@ -24,7 +24,7 @@ async function open(page: Page, errors: string[]) {
   await expect(page.getByTestId("hw-hud")).toBeVisible({ timeout: 120_000 });
 }
 
-test("Heatwave: members only; a new game in Port Solano, the phone, a gun store, a car, the police and saving", async ({ page }, testInfo) => {
+test("Heatwave: members only; a new game in Melbourne, the phone, a gun store, a car, the police and saving", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === "mobile", "the phone run below covers touch");
   test.setTimeout(300_000);
   await page.setViewportSize({ width: 1280, height: 760 });
@@ -39,14 +39,14 @@ test("Heatwave: members only; a new game in Port Solano, the phone, a gun store,
   await expect(page.getByTestId("hw-phone")).toBeVisible();
   await expect(page.getByTestId("hw-map")).toBeVisible();
   await page.getByTestId("hw-tab-missions").click();
-  await expect(page.getByTestId("hw-jobs")).toContainText("Sunburn");
+  await expect(page.getByTestId("hw-jobs")).toContainText("Knock-Off");
   await page.getByTestId("hw-tab-leads").click();
   await expect(page.getByTestId("hw-leads")).toContainText("Dex");
   await page.getByTestId("hw-phone-close").click();
   await expect(page.getByTestId("hw-phone")).toBeHidden();
 
   // Walk up to a gun store and buy a pistol.
-  await hw(page, `(() => { g.s.money = 5000; const d = g.s.city.pois.find((x) => x.id === "gun-cs"); const p = sim.player(g.s); p.x = d.x; p.z = d.z; })()`);
+  await hw(page, `(() => { g.s.money = 5000; const d = g.s.city.pois.find((x) => x.id === "gun-rich"); const p = sim.player(g.s); p.x = d.x; p.z = d.z; })()`);
   await expect(page.getByTestId("hw-shop")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("hw-shop")).toContainText("Bullseye Arms");
   await page.getByTestId("hw-buy-pistol").getByRole("button").click();
@@ -94,7 +94,7 @@ test("Heatwave on a phone: landscape touch controls and the phone", async ({ pag
   await page.getByTestId("hw-phone-btn").tap();
   await expect(page.getByTestId("hw-phone")).toBeVisible();
   await page.getByTestId("hw-tab-missions").tap();
-  await expect(page.getByTestId("hw-jobs")).toContainText("Sunburn");
+  await expect(page.getByTestId("hw-jobs")).toContainText("Knock-Off");
   await page.getByTestId("hw-phone-close").tap();
   await expect(page.getByTestId("hw-phone")).toBeHidden();
   expect(errors).toEqual([]);

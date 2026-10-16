@@ -112,7 +112,6 @@ function chooseNext(s: State, c: Car, seg: Seg, fwd: boolean) {
     const outH = Math.atan2(far.z - B.z, far.x - B.x);
     const turn = Math.atan2(Math.sin(outH - inH), Math.cos(outH - inH));
     const w = Math.abs(turn) < 0.3 ? 2 : 1;
-    // Keep off the long bridges to the Keys unless already headed that way.
     opts.push({ id, fwd: nf, w });
   }
   if (!opts.length) return { id: seg.id, fwd: !fwd };

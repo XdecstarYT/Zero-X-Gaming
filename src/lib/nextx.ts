@@ -27,17 +27,17 @@ export interface NextXTitle {
 export const NEXTX_TITLES: NextXTitle[] = [
   {
     slug: "heatwave",
-    pitch: "An open-world crime story in a sun-baked island city: two leads, any car, the police on your tail.",
+    pitch: "An open-world crime story in Melbourne in a heatwave: two leads, any car or tram line, the police on your tail.",
     accent: "#ff4fa3",
     accent2: "#ffb347",
     stats: [
       { v: "12", k: "Story missions" },
       { v: "18", k: "Vehicles" },
-      { v: "9", k: "Districts" },
+      { v: "17", k: "Districts" },
     ],
     features: [
-      "Port Solano: beaches, towers, a harbor, swamps and island mansions, sunrise to neon night",
-      "Steal any car, bike or boat; traffic that stops at the lights; police chases up to five stars",
+      "Melbourne: the Hoddle Grid, the Yarra, Docklands, St Kilda and the bay, the MCG and 20 more landmarks",
+      "Drive on the left past eight tram routes; steal any car, bike or boat; Victoria-style police chases up to five stars",
       "Nina and Dex: switch between two leads through twelve story missions",
       "Phone first: touch controls, a turning minimap with GPS, four radio stations",
     ],

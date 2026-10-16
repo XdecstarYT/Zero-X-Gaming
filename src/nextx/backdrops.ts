@@ -3,8 +3,8 @@
  * living background: YourGov's country (photoreal terrain, a physical sky, a sea with surf,
  * drifting clouds) turning slowly in the sun, Zero City's island city (PBR buildings, roads,
  * image-based light, ACES tone mapping) orbiting at golden hour, and WareForge's warehouse yard
- * at work (trucks backing onto the doors, forklifts running the aisles), and Heatwave's Port Solano
- * at golden hour (traffic on Seabreeze Boulevard, the beach, the towers behind).
+ * at work (trucks backing onto the doors, forklifts running the aisles), and Heatwave's Melbourne
+ * at golden hour (the river, Flinders Street Station and the towers, trams under the wires).
  *
  * Load this module lazily: it pulls in three.js and both games' renderers.
  */
@@ -155,7 +155,7 @@ function warehouseBackdrop(host: HTMLElement, quality: Quality, still: boolean):
   };
 }
 
-/** Heatwave's Port Solano at golden hour: the beach, the Strand and the towers, traffic moving. */
+/** Heatwave's Melbourne at golden hour: the Yarra, Flinders Street Station and the city towers, trams moving. */
 function portBackdrop(host: HTMLElement, quality: Quality, still: boolean): Backdrop {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none";
@@ -165,7 +165,7 @@ function portBackdrop(host: HTMLElement, quality: Quality, still: boolean): Back
   s.density = quality === "low" ? { cars: 14, peds: 16 } : { cars: 26, peds: 30 };
   s.clock = 18.1 * 60;
   const view = new HeatwaveView(canvas, s, quality === "low" ? "low" : "medium");
-  view.cinema = { x: 420, z: -260, dist: 210, height: 75, speed: still ? 0 : 0.03, a: 2.4 };
+  view.cinema = { x: 40, z: 60, dist: 300, height: 80, speed: still ? 0 : 0.02, a: 1.75 };
   const size = () => view.resize(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight), window.devicePixelRatio || 1);
   size();
   const ro = new ResizeObserver(size);

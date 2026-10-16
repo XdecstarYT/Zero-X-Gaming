@@ -37,7 +37,7 @@ export function App({ game }: { game: Game }) {
   const s = game.s;
   return (
     <div ref={root} className={`hw${game.coarse ? " hw-touch" : ""}`} data-testid="hw-root">
-      <canvas ref={canvas} className="hw-canvas" aria-label="Port Solano in 3D. Click to look round with the mouse." tabIndex={0} data-testid="hw-canvas" />
+      <canvas ref={canvas} className="hw-canvas" aria-label="Melbourne in 3D. Click to look round with the mouse." tabIndex={0} data-testid="hw-canvas" />
       {game.screen === "title" || !s ? (
         <Title game={game} />
       ) : (
@@ -61,11 +61,11 @@ function Title({ game }: { game: Game }) {
     <div className="hw-title" data-testid="hw-title">
       <div className="hw-sun" aria-hidden />
       <div className="hw-title-card">
-        <p className="hw-kicker">NextX · Port Solano</p>
+        <p className="hw-kicker">NextX · Melbourne</p>
         <h2 className="hw-logo">
           HEAT<span>WAVE</span>
         </h2>
-        <p className="hw-tag">Two outlaws. One sun-baked city. Get rich, or get caught.</p>
+        <p className="hw-tag">Two outlaws. One scorching Melbourne summer. Get rich, or get caught.</p>
         <div className="hw-leads">
           {(["nina", "dex"] as const).map((id) => (
             <div key={id} className={`hw-lead ${id}`}>
@@ -454,7 +454,7 @@ function MapTab({ game, s }: { game: Game; s: State }) {
       <canvas
         ref={ref}
         data-testid="hw-map"
-        aria-label="Map of Port Solano: drag to move, pinch or scroll to zoom, tap to set a waypoint"
+        aria-label="Map of Melbourne: drag to move, pinch or scroll to zoom, tap to set a waypoint"
         onWheel={(e) => zoom(e.deltaY > 0 ? 0.85 : 1.18)}
         onPointerDown={(e) => {
           pinch.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -598,14 +598,14 @@ function Jobs({ game, s }: { game: Game; s: State }) {
       </div>
       <div className="hw-row">
         <span className="t">
-          <b>🏪 Quik Stop hold-ups</b>
-          <small>Aim a gun at the till in any Quik Stop. {s.stats.stores} done. Brings two stars.</small>
+          <b>🏪 Milk bar hold-ups</b>
+          <small>Aim a gun at the till in any milk bar. {s.stats.stores} done. Brings two stars.</small>
         </span>
       </div>
       <div className="hw-row">
         <span className="t">
           <b>☀️ Sun tokens · {s.story.tokens.length} / {TOKENS.length}</b>
-          <small>Hidden all over Port Solano: $250 each, $5,000 for the set.</small>
+          <small>Hidden all over Melbourne: $250 each, $5,000 for the set.</small>
         </span>
       </div>
     </div>

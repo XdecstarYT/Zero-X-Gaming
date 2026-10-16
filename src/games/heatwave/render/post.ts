@@ -163,7 +163,7 @@ export class Post {
     this.scene = new THREE.WebGLRenderTarget(1, 1, {
       type: THREE.HalfFloatType,
       samples: quality === "high" ? 4 : quality === "medium" ? 2 : 0,
-      depthTexture: full ? new THREE.DepthTexture(1, 1) : undefined,
+      ...(full ? { depthTexture: new THREE.DepthTexture(1, 1) } : {}),
     });
     if (full) {
       this.mid = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });

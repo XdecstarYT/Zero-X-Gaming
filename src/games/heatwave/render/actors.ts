@@ -268,6 +268,7 @@ export class Actors {
         if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
         if (mesh.geometry.boundingSphere!.radius < 0.3) v.fine.push(mesh);
       });
+      if (spec.police && spec.body !== "transport" && spec.body !== "ambulance") victoriaLivery(kit);
       if (c.kind === "taxi") {
         v.sign = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.9), new THREE.MeshStandardMaterial({ color: "#ffe066", emissive: "#ffcc33", emissiveIntensity: 0.8 }));
         v.sign.position.set(-0.3, 1.62, 0);
@@ -421,6 +422,39 @@ export class Actors {
     for (const v of this.cars.values()) this.scene.remove(v.group);
     this.scene.remove(this.skids);
     for (const sp of this.smoke) this.scene.remove(sp);
+  }
+}
+
+let checker: THREE.MeshStandardMaterial | null = null;
+
+/** Repaint a police car the Victoria way: white, with a blue-and-white chequered band down each side. */
+function victoriaLivery(kit: CarModel) {
+  const bodyMesh = kit.group.children[0] as THREE.Mesh;
+  (bodyMesh.material as THREE.MeshStandardMaterial).color.set("#f2f4f6");
+  if (!checker) {
+    const c = document.createElement("canvas");
+    c.width = 128;
+    c.height = 16;
+    const g = c.getContext("2d")!;
+    for (let i = 0; i < 16; i++)
+      for (let j = 0; j < 2; j++) {
+        g.fillStyle = (i + j) % 2 ? "#ffffff" : "#16358a";
+        g.fillRect(i * 8, j * 8, 8, 8);
+      }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = THREE.RepeatWrapping;
+    checker = new THREE.MeshStandardMaterial({ map: t, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  }
+  bodyMesh.geometry.computeBoundingBox();
+  const bb = bodyMesh.geometry.boundingBox!;
+  const len = (bb.max.x - bb.min.x) * 0.86;
+  const y = bb.min.y + (bb.max.y - bb.min.y) * 0.5;
+  for (const side of [-1, 1]) {
+    const band = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.2), checker);
+    band.position.set((bb.max.x + bb.min.x) / 2, y, side * (bb.max.z + 0.004));
+    if (side < 0) band.rotation.y = Math.PI;
+    kit.group.add(band);
   }
 }
 

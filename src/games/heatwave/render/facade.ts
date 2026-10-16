@@ -245,7 +245,7 @@ void fFacade(vec3 base) {
     if (blinds) {
       vec3 bc = mix(vec3(0.86, 0.82, 0.74), vec3(0.6, 0.62, 0.66), step(0.6, blind));
       bc *= 0.85 + 0.15 * step(0.5, fract(wv * 30.0));
-      alb = bc * 0.9;
+      alb = bc * 0.62;
       emit = bc * warm * L * 0.55 * uNight;
       rough = 0.7;
     } else {
@@ -268,6 +268,22 @@ void fFacade(vec3 base) {
   float glassFrac = type == 0 ? 0.8 : ww * win.y;
   vec3 avgAlb = mix(type == 0 ? acc : wallc, vec3(0.16, 0.19, 0.23), glassFrac * 0.85);
   vec3 avgEmit = vec3(1.0, 0.82, 0.58) * glassFrac * (type == 0 ? 0.5 : 0.42) * 0.3 * uNight + vec3(0.6, 0.66, 0.72) * glassFrac * 0.12 * uDay;
+  // Further still, keep the storeys: a band of glass and a band of wall per floor, which only
+  // melts away once a floor is a couple of pixels tall.
+  if (!ground && type != 0) {
+    float band = smoothstep(sill - 0.06, sill + 0.06, c.y) * (1.0 - smoothstep(sill + win.y - 0.06, sill + win.y + 0.06, c.y));
+    float lod2 = smoothstep(fhh * 0.12, fhh * 0.45, fw);
+    vec3 bandAlb = mix(wallc, vec3(0.13, 0.16, 0.2), band * min(1.0, ww * 1.5));
+    avgAlb = mix(bandAlb, avgAlb, lod2);
+    avgEmit *= mix(band * 1.6, 1.0, lod2);
+  } else if (!ground) {
+    // Glass towers: the darker spandrel line at each slab.
+    float slabL = 1.0 - smoothstep(0.0, 0.14, c.y);
+    float lod2 = smoothstep(fhh * 0.12, fhh * 0.45, fw);
+    float mull = 1.0 - smoothstep(0.0, 0.1, abs(c.x - 0.5) * 2.0 - 0.88);
+    vec3 farGlass = mix(vec3(0.08, 0.1, 0.13), acc * 1.15, max(slabL, mull * 0.5));
+    avgAlb = mix(farGlass, avgAlb, lod2);
+  }
   fAlb = mix(alb, avgAlb, lod);
   fEmit = mix(emit, avgEmit, lod);
   fRough = mix(rough, 0.5, lod);

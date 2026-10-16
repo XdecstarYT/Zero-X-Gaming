@@ -614,7 +614,7 @@ export class Game {
       return `${key}${drv && drv.state === "ok" ? "Jack" : c.own ? "Get in" : c.locked ? "Break into" : "Steal"} the ${spec.name}`;
     }
     const at = sim.atPoi(s, 3);
-    if (at?.kind === "store" && !s.story.run) return (s.story.robbed[at.id] ?? -1e9) > s.t - 600 ? "This Quik Stop was robbed recently" : "Aim a gun at the clerk to hold up the store";
+    if (at?.kind === "store" && !s.story.run) return (s.story.robbed[at.id] ?? -1e9) > s.t - 600 ? "This milk bar was robbed recently" : "Aim a gun at the clerk to hold up the store";
     return null;
   }
 

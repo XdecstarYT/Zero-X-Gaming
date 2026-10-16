@@ -646,8 +646,8 @@ function StoreArt({ a, b }: { a: string; b: string }) {
 }
 
 function HeatwaveArt({ id }: { id: string }) {
-  // Sunset over Port Solano: a striped sun on the sea, the skyline and palms in silhouette,
-  // a coupe on the beach road and five wanted stars.
+  // Sunset over St Kilda: a striped sun on the bay, Melbourne's skyline (a gold-crowned tower,
+  // the arts spire) and the foreshore palms in silhouette, a coupe on the beach road, five stars.
   const palm = (x: number, h: number, lean: number, k: string) => (
     <g key={k} fill="#1a0b26">
       <path d={`M${x} 160 Q${x + lean * 0.5} ${160 - h * 0.5} ${x + lean} ${160 - h} l2 0 Q${x + lean * 0.5 + 3} ${160 - h * 0.5} ${x + 4} 160z`} />
@@ -682,6 +682,9 @@ function HeatwaveArt({ id }: { id: string }) {
       {towers.map(([x, h], i) => (
         <rect key={i} x={x} y={140 - h} width="13" height={h} fill="#2b1140" />
       ))}
+      <rect x="142" y="34" width="11" height="106" fill="#2b1140" />
+      <rect x="142" y="34" width="11" height="14" fill="#ffc94a" opacity=".85" />
+      <path d="M226 140 L232 64 L238 140 M228.5 110 h7 M230 90 h4" stroke="#2b1140" strokeWidth="2" fill="none" />
       <rect y="140" width="320" height="60" fill={`url(#${id}-hwsea)`} />
       {[0, 1, 2, 3].map((i) => (
         <rect key={i} x={130 - i * 6} y={146 + i * 7} width={60 + i * 12} height="2" rx="1" fill="#ffb36a" opacity={0.7 - i * 0.14} />

@@ -202,7 +202,7 @@ export interface Outfit {
 }
 
 export const OUTFITS: Outfit[] = [
-  { id: "nina-start", name: "Strand Casual", shirt: "#f3c1d2", pants: "#2b3a55", top: "tank", bottom: "trousers", hat: "none", price: 0, only: "nina" },
+  { id: "nina-start", name: "Acland St Casual", shirt: "#f3c1d2", pants: "#2b3a55", top: "tank", bottom: "trousers", hat: "none", price: 0, only: "nina" },
   { id: "dex-start", name: "Dockworker", shirt: "#c9853a", pants: "#3a3f47", top: "long", bottom: "trousers", hat: "cap", price: 0, only: "dex" },
   { id: "beach", name: "Beach Day", shirt: "#3fa7a0", pants: "#e8dcc0", top: "tee", bottom: "shorts", hat: "none", price: 180 },
   { id: "sunset", name: "Sunset Shirt", shirt: "#f08a5d", pants: "#e9e2d0", top: "tee", bottom: "trousers", hat: "none", price: 240 },

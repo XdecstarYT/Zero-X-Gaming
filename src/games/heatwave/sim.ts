@@ -59,7 +59,7 @@ export interface Input {
 
 export const NO_INPUT: Input = { mx: 0, my: 0, yaw: 0, pitch: 0, sprint: false, jump: false, aim: false, fire: false, enter: false, reload: false, next: false, prev: false, throttle: 0, steer: 0, handbrake: false, horn: false, autoAim: false };
 
-/** Start a new game: Nina outside her apartment on the Strand, a sunny morning. */
+/** Start a new game: Nina outside her flat in St Kilda, a sunny morning. */
 export function newGame(seed = 7, opts: { empty?: boolean } = {}) {
   const s = createState(seed, opts);
   spawnLead(s);
