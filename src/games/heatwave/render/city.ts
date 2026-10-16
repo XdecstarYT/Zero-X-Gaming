@@ -7,7 +7,7 @@ import { at, tracksFor, type Track } from "../trams";
 import { BOUNDS, districtAt, groundClass, groundY, insideSolid, laneOffsets, nearestRoad, nearRoad, noise, rayEnter, segAt, solidsNear, TRAMS, WATER_Y, type Building, type City, type District, type Node, type Prop, type Seg, type Solid } from "../world";
 import { FACADE_UNIFORMS, facadeMaterial, LOD_UNIFORMS } from "./facade";
 import { buildLandmark, type LandmarkModel } from "./landmarks";
-import { box, cyl, merge, paint, propTemplate } from "./models";
+import { box, cyl, merge, paint, propSurface, propTemplate } from "./models";
 import { FacadeSheet, Sheet } from "./sheet";
 import { asphaltTone, billboard, corrugated, frondTexture, glow, graffiti, groundDetail, lace, neonSign, planks, poolTiles, rippleNormal, shopSign, tramStopSign } from "./textures";
 
@@ -115,7 +115,7 @@ export class CityView {
       iron: new THREE.MeshStandardMaterial({ map: corrugated(), roughness: 0.5, metalness: 0.35, vertexColors: true, side: THREE.DoubleSide }),
       lace: new THREE.MeshStandardMaterial({ map: lace(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.6, vertexColors: true }),
       trim: new THREE.MeshStandardMaterial({ roughness: 0.7, vertexColors: true, side: THREE.DoubleSide }),
-      prop: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.65, metalness: 0.05 }),
+      prop: propSurface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.65, metalness: 0.05 })),
       frond: new THREE.MeshStandardMaterial({ map: frondTexture(), alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.8 }),
       leaf: new THREE.MeshStandardMaterial({ map: leaf, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, vertexColors: true }),
       pool2: new THREE.MeshBasicMaterial({ map: glowTex(), color: "#ffc27a", transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),

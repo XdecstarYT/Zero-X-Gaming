@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries as mergeRaw } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Prop } from "../world";
 
@@ -9,7 +10,11 @@ import type { Prop } from "../world";
  */
 
 export function merge(list: THREE.BufferGeometry[]) {
-  const g = mergeRaw(list.map((x) => (x.index ? x.toNonIndexed() : x)));
+  const flat = list.map((x) => (x.index ? x.toNonIndexed() : x));
+  // Parts tagged with their own metal and roughness (`surface`) merge with untagged ones, which
+  // keep the material's own.
+  if (flat.some((g) => g.attributes.aMR)) for (const g of flat) if (!g.attributes.aMR) g.setAttribute("aMR", new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3), 3));
+  const g = mergeRaw(flat);
   if (!g) throw new Error("Heatwave: couldn't merge geometry");
   return g;
 }
@@ -28,6 +33,53 @@ export function paint(g: THREE.BufferGeometry, color: string | THREE.Color, jitt
   g.setAttribute("color", new THREE.BufferAttribute(a, 3));
   if (!g.attributes.uv) g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(n * 2), 2));
   return g;
+}
+
+/** Tag a geometry's metalness and roughness (read by the prop material; see `propSurface`). */
+export function surface<T extends THREE.BufferGeometry>(g: T, metal: number, rough: number) {
+  const n = g.attributes.position.count;
+  const a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) a.set([metal, rough, 1], i * 3);
+  g.setAttribute("aMR", new THREE.BufferAttribute(a, 3));
+  return g;
+}
+
+/** Let a vertex-coloured material read per-vertex metal and roughness where they're tagged. */
+export function propSurface<M extends THREE.MeshStandardMaterial>(m: M) {
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute vec3 aMR;\nvarying vec3 vMR;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvMR = aMR;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vMR;")
+      .replace("float roughnessFactor = roughness;", "float roughnessFactor = vMR.z > 0.5 ? vMR.y : roughness;")
+      .replace("float metalnessFactor = metalness;", "float metalnessFactor = vMR.z > 0.5 ? vMR.x : metalness;");
+  };
+  m.customProgramCacheKey = () => "hwprop";
+  return m;
+}
+
+/* Surfaces for the street furniture. */
+const STEEL = (g: THREE.BufferGeometry, c = "#3d4248") => surface(paint(g, c), 0.75, 0.38);
+const TIMBER = (g: THREE.BufferGeometry, c = "#8a6444") => surface(paint(g, c, 0.12), 0, 0.72);
+const GLASS = (g: THREE.BufferGeometry) => surface(paint(g, "#2c383f"), 0.55, 0.05);
+const CONC = (g: THREE.BufferGeometry, c = "#bdb7ab") => surface(paint(g, c, 0.06), 0, 0.92);
+const PAINTED = (g: THREE.BufferGeometry, c: string) => surface(paint(g, c), 0.25, 0.45);
+
+/** A tube along points (a pole's arm, a rail, a frame). */
+function tube(pts: [number, number, number][], r: number, seg = 6, tubular = 12) {
+  const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p)));
+  return new THREE.TubeGeometry(curve, tubular, r, seg, false);
+}
+
+/** A turned shape (a pole, a bin, a bollard) from (radius, height) pairs. */
+function turned(prof: [number, number][], seg = 12) {
+  return new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), seg);
+}
+
+/** A rounded slab (bench slats, lids, panels). */
+function slab(w: number, h: number, d: number, x: number, y: number, z: number, r = 0.015) {
+  return new RoundedBoxGeometry(w, h, d, 1, Math.min(r, h / 2 - 0.001, d / 2 - 0.001, w / 2 - 0.001)).translate(x, y + h / 2, z);
 }
 
 export function box(w: number, h: number, d: number, color: string, x = 0, y = 0, z = 0, ry = 0) {
@@ -190,9 +242,18 @@ export function propTemplate(kind: Prop["kind"], s = 1, color = "#ffffff"): Prop
       }
       break;
     }
-    case "bin":
-      t.solid.push(cyl(0.3, 0.32, 1, "#2f4a3a", 0, 0, 0, 10), cyl(0.34, 0.34, 0.08, "#c8102e", 0, 1, 0, 10));
+    case "bin": {
+      // A city litter bin: a ribbed steel drum, a domed lid with the slot, a plinth.
+      const ribs = turned([[0.001, 0], [0.31, 0], [0.31, 0.06], [0.29, 0.08], [0.3, 0.95], [0.32, 0.97], [0.001, 0.97]], 18);
+      t.solid.push(STEEL(ribs, "#2d4a3b"));
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        t.solid.push(STEEL(slab(0.045, 0.78, 0.03, 0, 0.12, 0, 0.01).rotateY(-a + Math.PI / 2).translate(Math.cos(a) * 0.3, 0, Math.sin(a) * 0.3), "#25402f"));
+      }
+      t.solid.push(STEEL(turned([[0.001, 0.97], [0.34, 0.97], [0.33, 1.03], [0.24, 1.1], [0.001, 1.12]], 18), "#1f2a25"));
+      t.solid.push(paint(new THREE.TorusGeometry(0.2, 0.025, 6, 16).rotateX(Math.PI / 2).translate(0, 1.075, 0), "#0b0c0d"));
       break;
+    }
     case "beachbox": {
       // A Middle Park bathing box: weatherboard walls, a pitched corrugated roof, painted doors.
       t.solid.push(box(2.4, 2.2, 2.4, "#efe9dc"), box(1.6, 1.8, 0.06, color, 0, 0.1, 1.22), box(0.12, 2.2, 2.46, color, -1.18, 0), box(0.12, 2.2, 2.46, color, 1.18, 0));
@@ -215,18 +276,42 @@ export function propTemplate(kind: Prop["kind"], s = 1, color = "#ffffff"): Prop
     case "graffiti":
       break;
     case "lamp": {
-      t.solid.push(cyl(0.12, 0.08, 7.6, "#3a3f47"));
-      t.solid.push(box(2.4, 0.12, 0.12, "#3a3f47", 1.1, 7.45));
-      t.solid.push(box(0.7, 0.18, 0.34, "#2b2f36", 2.2, 7.35));
-      t.glows.push([2.2, 7.2, 0]);
+      // A street light: a tapered galvanised pole on a flanged base, a sweeping outreach arm and
+      // a slim LED head angled down over the road.
+      t.solid.push(STEEL(turned([[0.001, 0], [0.2, 0], [0.2, 0.05], [0.13, 0.08], [0.12, 0.6], [0.105, 0.64], [0.085, 7.4], [0.07, 7.6], [0.001, 7.62]], 12), "#8b9096"));
+      t.solid.push(STEEL(slab(0.12, 0.32, 0.05, 0, 0.7, 0.1, 0.01), "#6f747a"));
+      t.solid.push(STEEL(tube([[0, 7.2, 0], [0.25, 7.62, 0], [0.9, 7.82, 0], [1.9, 7.86, 0]], 0.05, 6, 10), "#8b9096"));
+      t.solid.push(STEEL(slab(0.78, 0.09, 0.32, 2.1, 7.76, 0, 0.04).rotateZ(-0.04), "#5d6268"));
+      t.solid.push(surface(paint(slab(0.62, 0.02, 0.24, 2.12, 7.74, 0, 0.008), "#f1efe6"), 0, 0.2));
+      t.glows.push([2.12, 7.66, 0]);
       break;
     }
-    case "bench":
-      t.solid.push(box(1.8, 0.08, 0.5, "#8a6a48", 0, 0.45), box(1.8, 0.5, 0.06, "#8a6a48", 0, 0.5, -0.24), box(0.06, 0.45, 0.45, "#3a3f47", -0.8), box(0.06, 0.45, 0.45, "#3a3f47", 0.8));
+    case "bench": {
+      // A city bench: hardwood slats on cast frames, with armrests.
+      for (let k = 0; k < 4; k++) t.solid.push(TIMBER(slab(1.8, 0.035, 0.085, 0, 0.44, 0.16 - k * 0.105)));
+      for (let k = 0; k < 3; k++) t.solid.push(TIMBER(slab(1.8, 0.085, 0.032, 0, 0.56 + k * 0.12, -0.24 - k * 0.02, 0.012).rotateX(0)));
+      for (const sx of [-0.78, 0.78]) {
+        t.solid.push(STEEL(tube([[sx, 0, 0.22], [sx, 0.42, 0.18], [sx, 0.44, -0.2], [sx, 0.9, -0.3]], 0.025, 6, 10), "#2a2d31"));
+        t.solid.push(STEEL(tube([[sx, 0, -0.2], [sx, 0.42, -0.18]], 0.025, 6, 2), "#2a2d31"));
+        t.solid.push(STEEL(tube([[sx, 0.44, 0.2], [sx, 0.66, 0.18], [sx, 0.66, -0.14]], 0.02, 6, 8), "#2a2d31"));
+      }
       break;
-    case "busstop":
-      t.solid.push(box(4, 0.1, 1.6, "#2b2f36", 0, 2.6), box(4, 2.2, 0.06, "#9fc7d6", 0, 0.3, -0.75), box(0.1, 2.6, 0.1, "#2b2f36", -1.9, 0, -0.75), box(0.1, 2.6, 0.1, "#2b2f36", 1.9, 0, -0.75), box(2.6, 0.08, 0.45, "#8a6a48", 0, 0.45, -0.45), box(1.2, 1.8, 0.1, "#f2b134", 2.3, 0.4, -0.2));
+    }
+    case "busstop": {
+      // A glass shelter: a slim frame, a glass back and end, a curved roof, a perch seat and a
+      // lit poster case at one end.
+      for (const x of [-1.95, 0, 1.95]) t.solid.push(STEEL(slab(0.07, 2.55, 0.07, x, 0, -0.75, 0.02), "#4a4f55"));
+      t.solid.push(STEEL(slab(0.07, 2.55, 0.07, -1.95, 0, 0.55, 0.02), "#4a4f55"));
+      const roof = new THREE.CylinderGeometry(4.2, 4.2, 4.1, 24, 1, true, -0.2, 0.4).rotateZ(Math.PI / 2).translate(0, -1.6, -0.1);
+      t.solid.push(STEEL(roof, "#3a3f45"));
+      t.solid.push(GLASS(slab(3.8, 2.1, 0.02, 0, 0.35, -0.75, 0.005)));
+      t.solid.push(GLASS(slab(0.02, 2.1, 1.2, -1.95, 0.35, -0.1, 0.005)));
+      t.solid.push(STEEL(slab(3.9, 0.06, 0.06, 0, 2.48, -0.75, 0.02), "#4a4f55"));
+      t.solid.push(STEEL(slab(2.4, 0.06, 0.32, 0.2, 0.62, -0.55, 0.02), "#6f747a"));
+      t.solid.push(PAINTED(slab(1.25, 1.85, 0.16, 2.6, 0.3, -0.6, 0.03), "#2f3338"));
+      t.solid.push(surface(paint(slab(1.08, 1.6, 0.02, 2.6, 0.42, -0.51, 0.005), "#f4e7c6"), 0, 0.15));
       break;
+    }
     case "umbrella": {
       t.solid.push(cyl(0.03, 0.03, 2.3, "#e8e8e6"));
       const cone = paint(new THREE.ConeGeometry(1.4, 0.5, 10, 1, true).toNonIndexed().translate(0, 2.35, 0), color);
@@ -257,7 +342,14 @@ export function propTemplate(kind: Prop["kind"], s = 1, color = "#ffffff"): Prop
       break;
     }
     case "pump":
-      t.solid.push(box(1, 1.6, 0.6, "#e8e8e6"), box(1.04, 0.35, 0.64, "#e14b6a", 0, 1.25), box(0.5, 0.4, 0.05, "#1c1f24", 0, 0.9, 0.31));
+      // A fuel dispenser: a white cabinet, a coloured crown, a screen, hoses on their hooks, a kerb island.
+      t.solid.push(CONC(slab(1.6, 0.18, 1.0, 0, 0, 0, 0.05), "#c9c3b6"));
+      t.solid.push(PAINTED(slab(1.0, 1.7, 0.55, 0, 0.18, 0, 0.06), "#eceae4"), PAINTED(slab(1.04, 0.34, 0.6, 0, 1.6, 0, 0.06), "#e14b6a"));
+      t.solid.push(surface(paint(slab(0.42, 0.3, 0.02, 0, 1.15, 0.28, 0.01), "#10161c"), 0.2, 0.08));
+      for (const sx of [-0.36, 0.36]) {
+        t.solid.push(PAINTED(slab(0.12, 0.22, 0.08, sx, 0.9, 0.3, 0.02), "#2b2f36"));
+        t.solid.push(paint(tube([[sx, 1.1, 0.31], [sx * 1.4, 0.7, 0.42], [sx * 1.25, 0.5, 0.36]], 0.018, 5, 8), "#141414"));
+      }
       break;
     case "canopy":
       t.solid.push(box(16, 0.8, 10, "#e8e8e6", 0, 5.2), box(16.1, 0.3, 10.1, "#e14b6a", 0, 5.2));
@@ -296,14 +388,25 @@ export function propTemplate(kind: Prop["kind"], s = 1, color = "#ffffff"): Prop
         t.water.push(paint(g, "#ffffff"));
       }
       break;
-    case "dumpster":
-      t.solid.push(box(1.8, 1.2, 1, "#2f5a3a"), box(1.9, 0.1, 1.1, "#244a2e", 0, 1.2));
+    case "dumpster": {
+      // A steel skip: tapered sides with ribs, a split plastic lid, castors.
+      const g = new THREE.CylinderGeometry(0.72, 0.62, 1.05, 4, 1).rotateY(Math.PI / 4).scale(1.75, 1, 1).translate(0, 0.62, 0);
+      t.solid.push(STEEL(g, "#2f5a3a"));
+      for (const x of [-0.6, 0, 0.6]) t.solid.push(STEEL(slab(0.06, 0.95, 1.12, x, 0.12, 0, 0.02), "#284e32"));
+      t.solid.push(surface(paint(slab(0.9, 0.06, 1.12, -0.46, 1.14, 0, 0.02).rotateZ(0.04), "#1d2a22"), 0, 0.6), surface(paint(slab(0.9, 0.06, 1.12, 0.46, 1.14, 0, 0.02).rotateZ(-0.04), "#1d2a22"), 0, 0.6));
+      for (const [x, z] of [[-0.7, -0.38], [0.7, -0.38], [-0.7, 0.38], [0.7, 0.38]]) t.solid.push(paint(new THREE.CylinderGeometry(0.07, 0.07, 0.05, 10).rotateX(Math.PI / 2).translate(x, 0.07, z), "#141414"));
       break;
+    }
     case "planter":
-      t.solid.push(box(1.2, 0.6, 1.2, "#cfc6b5"), paint(new THREE.IcosahedronGeometry(0.6, 0).toNonIndexed().translate(0, 1, 0), "#3e6a2a"));
+      // A precast concrete planter with a clipped shrub.
+      t.solid.push(CONC(turned([[0.001, 0], [0.5, 0], [0.62, 0.55], [0.66, 0.6], [0.6, 0.62], [0.001, 0.62]], 8)));
+      t.solid.push(clump(0.55, 0, 0.95, 0, "#3e6a2a", 2.1));
       break;
     case "fence":
-      t.solid.push(box(4, 1.2, 0.06, "#9aa3b1"));
+      // A pool-style fence: square posts, top and bottom rails and pickets.
+      for (const x of [-2, 2]) t.solid.push(STEEL(slab(0.06, 1.25, 0.06, x, 0, 0, 0.01), "#2b2f36"));
+      for (const y of [0.1, 1.12]) t.solid.push(STEEL(slab(4, 0.04, 0.04, 0, y, 0, 0.01), "#2b2f36"));
+      for (let k = 0; k < 36; k++) t.solid.push(STEEL(new THREE.BoxGeometry(0.018, 1.0, 0.018).translate(-1.94 + k * 0.111, 0.62, 0), "#2b2f36"));
       break;
   }
   cache.set(key, t);

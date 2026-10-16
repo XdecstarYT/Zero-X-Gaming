@@ -238,16 +238,18 @@ void fFacade(vec3 base) {
     float wv = (c.y - wy0) / (wy1 - wy0);
     bool blinds = wv > blindH && !ground;
     vec3 warm = mix(vec3(1.0, 0.82, 0.58), vec3(0.85, 0.92, 1.0), step(0.75, fh2(cell + 2.0)));
-    float dayIn = 0.16 * uDay;
+    float dayIn = 0.1 * uDay;
     float nightIn = lit * 1.35;
-    if (ground && shop) { dayIn = 0.42 * uDay; nightIn = 1.6; warm = vec3(1.0, 0.92, 0.8); }
+    if (ground && shop) { dayIn = 0.26 * uDay; nightIn = 1.6; warm = vec3(1.0, 0.92, 0.8); }
     float L = mix(dayIn, nightIn, uNight) * lk;
     if (blinds) {
       vec3 bc = mix(vec3(0.86, 0.82, 0.74), vec3(0.6, 0.62, 0.66), step(0.6, blind));
       bc *= 0.85 + 0.15 * step(0.5, fract(wv * 30.0));
-      alb = bc * 0.62;
+      // Seen through the glass, in the room's shade.
+      alb = bc * 0.3;
       emit = bc * warm * L * 0.55 * uNight;
-      rough = 0.7;
+      rough = 0.22;
+      fMetal = 0.2;
     } else {
       alb = vec3(0.02, 0.025, 0.03);
       emit = room * warm * L * (1.0 - fres * 0.85);
