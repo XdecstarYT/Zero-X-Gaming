@@ -96,8 +96,9 @@ screen (`mapdata.ts`). `world.ts` turns it into the game's city:
 
 ## Graphics
 
-Mobile first: there are three quality tiers. Phones with eight or more cores get medium (the full atmosphere), older phones get low, and desktops get medium or high. Adaptive resolution steps down when frames run slow.
+Mobile first: there are three quality tiers. Phones with eight or more cores get medium (the full atmosphere), older phones get low, and desktops get medium or high. Adaptive resolution steps down when frames run slow. The city streams in 160 m chunks round the camera (560 m on high, 400 m on medium, 300 m on low), with a far skyline of every taller real building beyond. Cars are one draw call each, with every car's wheels in a few shared instanced batches.
 - **Buildings** (`render/facade.ts`): one physically lit material draws every wall from a few numbers per vertex. The wall types are glass curtain walls, concrete grids, Victorian sandstone with arched windows, red brick, painted render, weatherboard, corrugated iron and bluestone. There are shopfronts at street level and a room behind every window (interior mapping, off on low), with blinds and lights at night. Fine patterns melt to their average with distance, so they never shimmer. Corrugated-iron hipped, gabled and sawtooth roofs, cast-iron lace verandahs (two storeys on the bigger terraces), shop awnings and signs.
+- **Cars** (`render/cars.ts`): real car bodies, not boxes. Each body is lofted from a side profile with wheel arches, a rounded plan with flared guards and a cross-section with tumblehome. A separate glasshouse adds the raked windscreen, roof, rear window or hatch, pillars and seals. Lamps, grille, plates and mirrors are built in. There are ten bodies: hatch and sedan, the patrol sedan, SUV, highway patrol SUV, ute with tonneau, vans, the Critical Response van, the ambulance, a sports car and a coupe. Paint has a clear coat and the glass is tinted. Victoria Police cars are white with the blue-and-white chequer, POLICE lettering and an LED bar; the ambulance has a red chequer. Each body is one draw call: one shader picks paint, glass, rubber, chrome, lamps or livery per triangle, and the paint colour, head, brake, reverse and indicator lamps and the siren come from per-car uniforms. Wheels (tyre, alloy or steel rim, brake disc) are instanced across all cars, and far cars swap to a lighter body.
 - **Streets**: Australian markings (white centre lines, broken-line crossings, stop lines), kerbside lights on the left with a second low head, bluestone kerbs and channels, darker bluestone paving in the city, tram rails, overhead wires on poles, tram stops with shelters, and street trees (London planes, elms and gums).
 - **Sky** (`render/sky.ts`): blue deepening overhead and away from the sun, a hazy horizon that burns orange round the sun at dawn and dusk, a Mie glow, lit cumulus with silver edges, cirrus, and a moon and stars at night.
 - **Post** (`render/post.ts`): the scene renders HDR into a multisampled target with depth, then:
@@ -106,7 +107,7 @@ Mobile first: there are three quality tiers. Phones with eight or more cores get
   3. Heat shimmer off the road on hot, clear afternoons.
   4. Depth-based ambient occlusion (on high).
   5. Bloom (medium and high).
-  6. A filmic pass: ACES, cool shadows and warm highlights, an S-curve, vignette, lens fringing, grain and dithering.
+  6. A filmic pass: ACES with a natural grade (a light split tone and S-curve), a soft vignette, a touch of lens fringing, fine grain and dithering.
 
   Low runs the film pass only.
 - **Score**: money earned ÷ 10, plus 5,000 a story mission, 1,200 a race win, 600 an export, 300 a token and 200 a hold-up. Progress is reported as you play; the final score goes in when you finish the story or leave the game (going back to the title only saves). The server caps it at 500,000 (`20261112100000_heatwave.sql`). Members only.

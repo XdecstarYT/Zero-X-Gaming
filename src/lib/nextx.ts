@@ -36,8 +36,8 @@ export const NEXTX_TITLES: NextXTitle[] = [
       { v: "17", k: "Districts" },
     ],
     features: [
-      "Melbourne: the Hoddle Grid, the Yarra, Docklands, St Kilda and the bay, the MCG and 20 more landmarks",
-      "Drive on the left past eight tram routes; steal any car, bike or boat; Victoria-style police chases up to five stars",
+      "The real Melbourne from real map data: every street and building, the Yarra, Docklands, St Kilda and the bay",
+      "Drive on the left, ride or drive the trams, steal any car, bike or boat; Victoria Police chases up to five stars",
       "Nina and Dex: switch between two leads through twelve story missions",
       "Phone first: touch controls, a turning minimap with GPS, four radio stations",
     ],
