@@ -57,7 +57,9 @@ void main(){
   col += uSunColor * pow(max(dot(n, h), 0.0), 40.0) * 0.35 * (1.0 - uNight);
   // Surf where it shoals onto the sand.
   // (Only on the bay's beaches, not along the river and the lakes.)
-  float edge = smoothstep(0.82, 0.97, shallow) * smoothstep(560.0, 660.0, p.y) * step(p.x, -330.0);
+  // Surf only on the bay side of the Port Melbourne to St Kilda shore (not the river or the lake).
+  float bay = -dot(p - vec2(-2280.0, 2940.0), vec2(0.5746, -0.8183));
+  float edge = smoothstep(0.82, 0.97, shallow) * smoothstep(-120.0, -40.0, bay);
   float wave = 0.5 + 0.5 * sin(dot(p, vec2(0.13, 0.21)) - uTime * 1.6 + n1.x * 3.0);
   float foam = edge * smoothstep(0.35, 0.9, wave + n2.y * 0.6);
   col = mix(col, vec3(0.95, 0.97, 0.98) * (1.0 - uNight * 0.7), foam * 0.75);
@@ -74,6 +76,10 @@ export interface Markers {
 }
 
 const MOON = new THREE.Color("#c4d2f2");
+const RED = new THREE.Color("#ff2a1a");
+const AMBER = new THREE.Color("#ffb21a");
+const GREEN = new THREE.Color("#2aff7a");
+const OFF = new THREE.Color("#181818");
 const FILL = new THREE.Color();
 
 export class HeatwaveView {
@@ -93,7 +99,7 @@ export class HeatwaveView {
   private post: Post;
   private fogColor = new THREE.Color();
   private bulbs: THREE.InstancedMesh;
-  private bulbList: { x: number; y: number; z: number; ry: number; node: import("../world").Node; axis: "ns" | "ew" }[] = [];
+  private bulbList: { x: number; y: number; z: number; ry: number; node: import("../world").Node; ph: number }[] = [];
   private bulbT = 0;
   private skyL: SkyLight = skyFor(1);
   private sunDir = new THREE.Vector3();
@@ -334,17 +340,13 @@ export class HeatwaveView {
       this.bulbs.count = n * 3;
       this.bulbs.instanceMatrix.needsUpdate = true;
     }
-    const red = new THREE.Color("#ff2a1a");
-    const amber = new THREE.Color("#ffb21a");
-    const green = new THREE.Color("#2aff7a");
-    const off = new THREE.Color("#181818");
     const n = this.bulbs.count / 3;
     for (let i = 0; i < n; i++) {
       const h = this.bulbList[i];
-      const st = light(s, h.node, h.axis);
-      this.bulbs.setColorAt(i * 3, st === "red" ? red : off);
-      this.bulbs.setColorAt(i * 3 + 1, st === "amber" ? amber : off);
-      this.bulbs.setColorAt(i * 3 + 2, st === "green" ? green : off);
+      const st = light(s, h.node, h.ph);
+      this.bulbs.setColorAt(i * 3, st === "red" ? RED : OFF);
+      this.bulbs.setColorAt(i * 3 + 1, st === "amber" ? AMBER : OFF);
+      this.bulbs.setColorAt(i * 3 + 2, st === "green" ? GREEN : OFF);
     }
     if (this.bulbs.instanceColor) this.bulbs.instanceColor.needsUpdate = true;
   }

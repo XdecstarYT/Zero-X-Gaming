@@ -3,7 +3,7 @@ import { aimAt, fire, losClear, startReload, tickWeapon } from "./combat";
 import { isCop, stepCop } from "./police";
 import { carById, clamp, makePed, pedById, player, playerPos, type Ped, type State } from "./state";
 import { randomLook } from "./traffic";
-import { districtAt, groundY, onDeck, pushOut, ROAD, sandSpot, WATER_Y, type Solid } from "./world";
+import { districtAt, groundY, nearestRoad, onDeck, pushOut, sandSpot, segsAt, WATER_Y, type Solid } from "./world";
 
 /**
  * People: the player on foot (walk, run, sprint, jump, swim), and everyone else: walking the
@@ -122,36 +122,26 @@ function walkLine(s: State, segId: number, side: number) {
   const seg = s.city.roads.segs[segId];
   const A = s.city.roads.nodes[seg.a];
   const B = s.city.roads.nodes[seg.b];
-  const off = side * (ROAD[seg.cls].half + (seg.bridge ? 0.8 : ROAD[seg.cls].walk / 2));
-  if (seg.axis === "ns") return { ax: A.x + off, az: A.z, bx: B.x + off, bz: B.z, A, B };
-  return { ax: A.x, az: A.z + off, bx: B.x, bz: B.z + off, A, B };
+  // The footpath's middle, on the left (side +1) or right of a→b.
+  const off = side * (seg.half + (seg.bridge ? 0.8 : Math.max(0.5, seg.walk / 2)));
+  const lx = seg.dz * off;
+  const lz = -seg.dx * off;
+  return { ax: A.x + lx, az: A.z + lz, bx: B.x + lx, bz: B.z + lz, A, B };
 }
 
 function wander(s: State, p: Ped, dt: number) {
   if (p.ai.seg < 0) {
-    // Find the nearest sidewalk.
-    let best = -1;
-    let bd = Infinity;
-    for (const seg of s.city.roads.segs) {
-      const A = s.city.roads.nodes[seg.a];
-      const B = s.city.roads.nodes[seg.b];
-      const cx = clamp(p.x, Math.min(A.x, B.x), Math.max(A.x, B.x));
-      const cz = clamp(p.z, Math.min(A.z, B.z), Math.max(A.z, B.z));
-      const d = Math.hypot(cx - p.x, cz - p.z);
-      if (d < bd) {
-        bd = d;
-        best = seg.id;
-      }
-    }
-    if (best < 0 || bd > 60) {
+    // Find the nearest footpath.
+    const r = nearestRoad(s.city, p.x, p.z);
+    if (!r || r.d > 60) {
       p.vx *= 0.8;
       p.vz *= 0.8;
       return;
     }
-    p.ai.seg = best;
-    const seg = s.city.roads.segs[best];
+    const seg = r.seg;
+    p.ai.seg = seg.id;
     const A = s.city.roads.nodes[seg.a];
-    p.ai.side = seg.axis === "ns" ? (p.x >= A.x ? 1 : -1) : p.z >= A.z ? 1 : -1;
+    p.ai.side = (p.x - A.x) * seg.dz - (p.z - A.z) * seg.dx >= 0 ? 1 : -1;
     p.ai.fwd = s.rng.next() < 0.5;
   }
   const L = walkLine(s, p.ai.seg, p.ai.side);
@@ -166,7 +156,7 @@ function wander(s: State, p: Ped, dt: number) {
   if (rem < 3) {
     // The corner: pick a way, keep to the nearer sidewalk.
     const node = p.ai.fwd ? L.B : L.A;
-    const opts = node.dir.filter((d) => d >= 0 && d !== p.ai.seg);
+    const opts = node.segs.filter((d) => d !== p.ai.seg && s.city.roads.segs[d].cls !== "lane");
     const dead = opts.length === 0;
     const next = dead ? p.ai.seg : opts[s.rng.int(0, opts.length - 1)];
     const seg = s.city.roads.segs[next];
@@ -393,7 +383,12 @@ export function spawnPed(s: State) {
   }
   const segs = s.city.roads.segs;
   for (let tries = 0; tries < 12; tries++) {
-    const seg = segs[s.rng.int(0, segs.length - 1)];
+    const a = s.rng.range(0, Math.PI * 2);
+    const rr = s.rng.range(40, 130);
+    const near = segsAt(s.city.roads, pos.x + Math.cos(a) * rr, pos.z + Math.sin(a) * rr);
+    if (!near.length) continue;
+    const seg = segs[near[s.rng.int(0, near.length - 1)]];
+    if (seg.cls === "lane" || seg.len < 8) continue;
     const side = s.rng.next() < 0.5 ? 1 : -1;
     const L = walkLine(s, seg.id, side);
     const t = s.rng.range(0.1, 0.9);

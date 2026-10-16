@@ -149,7 +149,8 @@ export function step(s: State, inp: Input, dt: number) {
       continue;
     }
     if (c.tram) {
-      stepTram(s, c, dt);
+      // The player in the cab drives it along the rails; otherwise it runs its timetable.
+      stepTram(s, c, dt, pc === c && c.seats[0] === s.player && !s.down ? inp.throttle : null);
       continue;
     }
     let d: Drive = NO_DRIVE;
@@ -238,7 +239,8 @@ function controlPlayer(s: State, p: Ped, inp: Input, dt: number) {
       return;
     }
     const c = carToEnter(s, p);
-    if (c) startEnter(s, p, c);
+    if (c?.tram) boardTram(s, p, c);
+    else if (c) startEnter(s, p, c);
   }
   if (inp.next) cycleWeapon(s, p, 1);
   if (inp.prev) cycleWeapon(s, p, -1);
@@ -271,6 +273,20 @@ function controlPlayer(s: State, p: Ped, inp: Input, dt: number) {
     p.aimP = a.p;
     if (inp.fire) fire(s, p, a.h, a.p);
   }
+}
+
+/** Step aboard a tram: at the front, into the cab to drive it; anywhere else, as a passenger. */
+function boardTram(s: State, p: Ped, c: Car) {
+  const spec = VEHICLES[c.kind];
+  const along = (p.x - c.x) * Math.cos(c.h) + (p.z - c.z) * Math.sin(c.h);
+  const cab = along > spec.len / 2 - 6 && c.seats[0] < 0;
+  const i = cab ? 0 : c.seats.indexOf(-1, 1);
+  if (i < 0) return;
+  seat(s, p, c, i);
+  p.ai.mode = "idle";
+  const free = districtAt(c.x, c.z) === "cbd";
+  if (!cab && !free) s.money = Math.max(0, s.money - 5);
+  emit(s, { kind: "toast", text: cab ? "In the cab: W to go, S to brake. The rails do the steering." : free ? "Free Tram Zone: ride on. F to get off." : "Fare paid: $5. F to get off." });
 }
 
 function startEnter(s: State, p: Ped, c: Car) {

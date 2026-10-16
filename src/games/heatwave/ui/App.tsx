@@ -76,17 +76,24 @@ function Title({ game }: { game: Game }) {
         </div>
         <div className="hw-title-actions">
           {game.hasSave && (
-            <button className="hw-btn primary" onClick={() => game.continueGame()} data-testid="hw-continue">
+            <button className="hw-btn primary" onClick={() => game.continueGame()} disabled={!game.mapReady} data-testid="hw-continue">
               Continue
             </button>
           )}
-          <button className={`hw-btn ${game.hasSave ? "" : "primary"}`} onClick={() => game.newGame()} data-testid="hw-new">
-            New game
+          <button className={`hw-btn ${game.hasSave ? "" : "primary"}`} onClick={() => game.newGame()} disabled={!game.mapReady} data-testid="hw-new">
+            {game.mapReady ? "New game" : game.mapError ? "Couldn't load the map" : "Loading Melbourne…"}
           </button>
           <button className="hw-btn ghost" onClick={() => setHelp((h) => !h)} aria-expanded={help} data-testid="hw-how">
             How to play
           </button>
         </div>
+        <p className="hw-credit" data-testid="hw-credit">
+          Map data ©{" "}
+          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+            OpenStreetMap contributors
+          </a>{" "}
+          and Overture Maps, ODbL
+        </p>
         <div className="hw-quality" role="radiogroup" aria-label="Graphics">
           <span>Graphics</span>
           {(["auto", "low", "medium", "high"] as const).map((q) => (

@@ -2,7 +2,7 @@ import { DOCK_TRAFFIC, LEADS, PAINT, RICH_TRAFFIC, TRAFFIC, VEHICLES, type Vehic
 import { policeDrive } from "./police";
 import { carById, clamp, fwdSpeed, makeCar, makePed, pedById, player, playerPos, speedOf, type Car, type Look, type State } from "./state";
 import { NO_DRIVE, seat, type Drive } from "./vehicles";
-import { districtAt, groundY, nearestRoad, onDeck, ROAD, WATER_Y, type Node, type Seg } from "./world";
+import { canLeave, districtAt, groundY, laneOffsets, nearestRoad, onDeck, phaseAt, segsAt, WATER_Y, type Node, type Seg } from "./world";
 
 /**
  * Traffic: drivers keep to their lane on the left (this is Melbourne), stop at red lights, keep their distance,
@@ -11,27 +11,22 @@ import { districtAt, groundY, nearestRoad, onDeck, ROAD, WATER_Y, type Node, typ
  * cars sit in driveways and outside the shops.
  */
 
-/** Light phase at a junction for traffic on an axis: green, amber or red. */
-export function light(s: State, n: Node, axis: "ns" | "ew"): "green" | "amber" | "red" {
+/** Light at a junction for traffic on a phase (0: the main road's line, 1: across it). */
+export function light(s: State, n: Node, phase: number): "green" | "amber" | "red" {
   if (!n.light) return "green";
-  const cyc = (s.t + n.id * 5.3) % 26;
-  const nsGreen = cyc < 11;
-  const nsAmber = cyc >= 11 && cyc < 13;
-  const ewGreen = cyc >= 13 && cyc < 24;
-  const ewAmber = cyc >= 24;
-  if (axis === "ns") return nsGreen ? "green" : nsAmber ? "amber" : "red";
-  return ewGreen ? "green" : ewAmber ? "amber" : "red";
+  // Neighbouring junctions (a dual carriageway's two halves) share a cycle.
+  const cyc = (s.t + (Math.round(n.x / 40) * 7.1 + Math.round(n.z / 40) * 3.7)) % 26;
+  const g0 = cyc < 11;
+  const a0 = cyc >= 11 && cyc < 13;
+  const g1 = cyc >= 13 && cyc < 24;
+  const a1 = cyc >= 24;
+  if (phase === 0) return g0 ? "green" : a0 ? "amber" : "red";
+  return g1 ? "green" : a1 ? "amber" : "red";
 }
 
-/** Half the size of the junction box at a node, measured along a road on `axis`. */
-export function junctionHalf(s: State, n: Node, axis: "ns" | "ew") {
-  let h = 0;
-  for (const id of n.dir) {
-    if (id < 0) continue;
-    const seg = s.city.roads.segs[id];
-    if (seg.axis !== axis) h = Math.max(h, ROAD[seg.cls].half);
-  }
-  return h;
+/** The junction box's radius at a node (0 at a plain bend). */
+export function junctionHalf(_s: State, n: Node) {
+  return n.r;
 }
 
 /** The lane line: start and end points (inside the junction boxes), its heading and length. */
@@ -39,16 +34,22 @@ export function laneLine(s: State, segId: number, fwd: boolean, lane: number) {
   const seg = s.city.roads.segs[segId];
   const A = s.city.roads.nodes[fwd ? seg.a : seg.b];
   const B = s.city.roads.nodes[fwd ? seg.b : seg.a];
-  const h = Math.atan2(B.z - A.z, B.x - A.x);
-  const fx = Math.cos(h);
-  const fz = Math.sin(h);
-  const off = ROAD[seg.cls].lanes[Math.min(lane, ROAD[seg.cls].lanes.length - 1)];
+  const h = fwd ? seg.h : seg.h + Math.PI;
+  const fx = fwd ? seg.dx : -seg.dx;
+  const fz = fwd ? seg.dz : -seg.dz;
+  const offs = laneOffsets(seg);
+  const off = offs[Math.min(lane, offs.length - 1)];
   // Australia: keep left.
   const rx = fz * off;
   const rz = -fx * off;
-  const ha = junctionHalf(s, A, seg.axis);
-  const hb = junctionHalf(s, B, seg.axis);
-  return { ax: A.x + rx + fx * ha, az: A.z + rz + fz * ha, bx: B.x + rx - fx * hb, bz: B.z + rz - fz * hb, h, len: seg.len - ha - hb, A, B, seg, hb, ox: A.x + rx, oz: A.z + rz };
+  let ha = A.r;
+  let hb = B.r;
+  if (ha + hb > seg.len - 0.4) {
+    const k = Math.max(0, seg.len - 0.4) / Math.max(0.01, ha + hb);
+    ha *= k;
+    hb *= k;
+  }
+  return { ax: A.x + rx + fx * ha, az: A.z + rz + fz * ha, bx: B.x + rx - fx * hb, bz: B.z + rz - fz * hb, h, len: Math.max(0.2, seg.len - ha - hb), A, B, seg, hb, ox: A.x + rx, oz: A.z + rz };
 }
 
 /** Steer toward a point (pure pursuit), at a speed. */
@@ -104,17 +105,20 @@ function chooseNext(s: State, c: Car, seg: Seg, fwd: boolean) {
   const B = nodes[fwd ? seg.b : seg.a];
   const opts: { id: number; fwd: boolean; w: number }[] = [];
   const inH = Math.atan2(B.z - nodes[fwd ? seg.a : seg.b].z, B.x - nodes[fwd ? seg.a : seg.b].x);
-  for (const id of B.dir) {
-    if (id < 0 || id === seg.id) continue;
+  for (const id of B.segs) {
+    if (id === seg.id) continue;
     const n = s.city.roads.segs[id];
+    if (!canLeave(n, B.id)) continue;
     const nf = n.a === B.id;
     const far = nodes[nf ? n.b : n.a];
     const outH = Math.atan2(far.z - B.z, far.x - B.x);
     const turn = Math.atan2(Math.sin(outH - inH), Math.cos(outH - inH));
-    const w = Math.abs(turn) < 0.3 ? 2 : 1;
+    if (Math.abs(turn) > 2.6) continue;
+    // Straight on is likelier; the bigger roads draw traffic; laneways hardly any.
+    const w = (Math.abs(turn) < 0.35 ? 2.2 : 1) * (n.cls === "lane" ? 0.08 : n.cls === "street" ? 0.7 : 1.2);
     opts.push({ id, fwd: nf, w });
   }
-  if (!opts.length) return { id: seg.id, fwd: !fwd };
+  if (!opts.length) return canLeave(seg, B.id) ? { id: seg.id, fwd: !fwd } : null;
   let t = s.rng.next() * opts.reduce((a, o) => a + o.w, 0);
   for (const o of opts) {
     t -= o.w;
@@ -134,20 +138,25 @@ export function trafficDrive(s: State, c: Car, dt: number, flee = false): Drive 
   const along = (c.x - L.ax) * fx + (c.z - L.az) * fz;
   const sp = speedOf(c);
   const cls = L.seg.cls;
-  let want = c.ai.cruise * (cls === "avenue" ? 1 : 0.78);
+  let want = c.ai.cruise * (cls === "boulevard" ? 1.08 : cls === "avenue" ? 1 : cls === "street" ? 0.78 : 0.45);
   if (flee) want = Math.max(want, 26);
   // Choose the way ahead early.
   if (c.ai.next < 0) {
     const n = chooseNext(s, c, L.seg, c.ai.fwd);
+    if (!n) {
+      // A one-way dead end: give up on this car (it'll be cleared away).
+      c.ai.mode = "parked";
+      return NO_DRIVE;
+    }
     c.ai.next = n.id;
     c.ai.nextFwd = n.fwd;
     // Keeping left: turning left from the kerb lane, right from the inside one.
     const nn = laneLine(s, n.id, n.fwd, 0);
     const turn = Math.atan2(Math.sin(nn.h - L.h), Math.cos(nn.h - L.h));
-    const lanes = ROAD[segs[n.id].cls].lanes.length;
+    const lanes = laneOffsets(segs[n.id]).length;
     c.ai.lane = turn < -0.3 ? lanes - 1 : turn > 0.3 ? 0 : Math.min(c.ai.lane, lanes - 1);
   }
-  const N = laneLine(s, c.ai.next, c.ai.nextFwd, Math.min(c.ai.lane, ROAD[segs[c.ai.next].cls].lanes.length - 1));
+  const N = laneLine(s, c.ai.next, c.ai.nextFwd, Math.min(c.ai.lane, laneOffsets(segs[c.ai.next]).length - 1));
   const turning = Math.abs(Math.atan2(Math.sin(N.h - L.h), Math.cos(N.h - L.h))) > 0.3;
   // The path: down the lane to the stop line (P0), across the box to the next lane (P1), then along it.
   const p0x = L.bx;
@@ -164,7 +173,7 @@ export function trafficDrive(s: State, c: Car, dt: number, flee = false): Drive 
     // Onto the next lane.
     c.ai.seg = c.ai.next;
     c.ai.fwd = c.ai.nextFwd;
-    c.ai.lane = Math.min(c.ai.lane, ROAD[segs[c.ai.seg].cls].lanes.length - 1);
+    c.ai.lane = Math.min(c.ai.lane, laneOffsets(segs[c.ai.seg]).length - 1);
     c.ai.next = -1;
     return trafficDrive(s, c, dt, flee);
   }
@@ -180,18 +189,17 @@ export function trafficDrive(s: State, c: Car, dt: number, flee = false): Drive 
   // Before the box: lights, and a box that's already busy with crossing traffic.
   if (!inBox && !flee) {
     const toStop = L.len - along;
-    const lt = light(s, L.B, L.seg.axis);
+    const lt = light(s, L.B, phaseAt(L.B, L.seg.id));
     let hold = lt === "red" || (lt === "amber" && toStop > sp * 0.9);
-    if (!hold && toStop < 10) {
-      const hx = junctionHalf(s, L.B, "ew") + 1;
-      const hz = junctionHalf(s, L.B, "ns") + 1;
+    if (!hold && toStop < 10 && L.B.segs.length >= 3) {
+      const rr = L.B.r + 1;
       for (const o of s.cars) {
-        if (o === c || Math.abs(o.x - L.B.x) > hx || Math.abs(o.z - L.B.z) > hz) continue;
+        if (o === c || Math.abs(o.x - L.B.x) > rr || Math.abs(o.z - L.B.z) > rr) continue;
         const dh = Math.abs(Math.atan2(Math.sin(o.h - c.h), Math.cos(o.h - c.h)));
         if (dh > 0.5 && dh < 2.7 && speedOf(o) > 0.3) hold = true;
         if (dh >= 2.7 && turning) hold = hold || speedOf(o) > 0.3;
       }
-      if (!L.B.light && L.B.dir.filter((d) => d >= 0).length >= 3) want = Math.min(want, 9);
+      if (!L.B.light) want = Math.min(want, 9);
     }
     if (hold) {
       want = Math.min(want, Math.max(0, toStop - 1.2) * 0.9);
@@ -241,11 +249,8 @@ export function attach(s: State, c: Car) {
   const r = nearestRoad(s.city, c.x, c.z);
   if (r.d > 30) return;
   const seg = r.seg;
-  const A = s.city.roads.nodes[seg.a];
-  const B = s.city.roads.nodes[seg.b];
-  const h = Math.atan2(B.z - A.z, B.x - A.x);
   c.ai.seg = seg.id;
-  c.ai.fwd = Math.cos(c.h - h) >= 0;
+  c.ai.fwd = seg.oneway ? seg.oneway === 1 : Math.cos(c.h - seg.h) >= 0;
   c.ai.lane = 0;
   c.ai.next = -1;
 }
@@ -304,14 +309,17 @@ export function randomLook(s: State, beach = false): Look {
 /** A point on a lane between rMin and rMax from (x, z), heading along the lane. */
 export function roadSpawn(s: State, x: number, z: number, rMin: number, rMax: number) {
   const segs = s.city.roads.segs;
-  const nodes = s.city.roads.nodes;
   for (let tries = 0; tries < 24; tries++) {
-    const seg = segs[s.rng.int(0, segs.length - 1)];
-    const A = nodes[seg.a];
-    const B = nodes[seg.b];
+    // Somewhere in the ring round the player, then a road there.
+    const a = s.rng.range(0, Math.PI * 2);
+    const r = s.rng.range(rMin, rMax);
+    const near = segsAt(s.city.roads, x + Math.cos(a) * r, z + Math.sin(a) * r);
+    if (!near.length) continue;
+    const seg = segs[near[s.rng.int(0, near.length - 1)]];
+    if (seg.cls === "lane" && s.rng.next() < 0.85) continue;
     const t = s.rng.range(0.2, 0.8);
-    const fwd = s.rng.next() < 0.5;
-    const lanes = ROAD[seg.cls].lanes;
+    const fwd = seg.oneway ? seg.oneway === 1 : s.rng.next() < 0.5;
+    const lanes = laneOffsets(seg);
     const lane = s.rng.int(0, lanes.length - 1);
     const L = laneLine(s, seg.id, fwd, lane);
     const px = L.ax + (L.bx - L.ax) * t;
@@ -320,8 +328,6 @@ export function roadSpawn(s: State, x: number, z: number, rMin: number, rMax: nu
     if (d < rMin || d > rMax) continue;
     if (groundY(px, pz) < WATER_Y + 0.3 && !onDeck(px, pz)) continue;
     if (s.cars.some((c) => Math.abs(c.x - px) < 12 && Math.abs(c.z - pz) < 12)) continue;
-    void A;
-    void B;
     return { x: px, z: pz, h: L.h, seg: seg.id, fwd, lane };
   }
   return null;
@@ -394,9 +400,28 @@ export function populate(s: State, dt: number, spawnPed: () => void) {
 
 /** Parked cars: on drives, outside shops, and the leads' own rides at home. */
 const parkedAt = new Map<number, number>();
+const parkGrid = new WeakMap<object, Map<number, number[]>>();
+function parkingNear(s: State, x: number, z: number) {
+  let g = parkGrid.get(s.city.parking);
+  if (!g) {
+    g = new Map();
+    s.city.parking.forEach((p, i) => {
+      const k = Math.floor(p.x / 100) * 10000 + Math.floor(p.z / 100);
+      const l = g!.get(k);
+      if (l) l.push(i);
+      else g!.set(k, [i]);
+    });
+    parkGrid.set(s.city.parking, g);
+  }
+  const out: number[] = [];
+  const cx = Math.floor(x / 100);
+  const cz = Math.floor(z / 100);
+  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) out.push(...(g.get((cx + i) * 10000 + cz + j) ?? []));
+  return out;
+}
 function parked(s: State, x: number, z: number) {
   const spots = s.city.parking;
-  for (let i = 0; i < spots.length; i++) {
+  for (const i of parkingNear(s, x, z)) {
     const p = spots[i];
     const d = Math.hypot(p.x - x, p.z - z);
     if (d > 150 || d < 60) continue;
@@ -420,8 +445,10 @@ function parked(s: State, x: number, z: number) {
     // At the curb on the near side of the street, a little along from the door.
     const r = nearestRoad(s.city, home.x + home.fz * 7, home.z - home.fx * 7);
     const k = Math.hypot(home.x - r.x, home.z - r.z) || 1;
-    const off = ROAD[r.seg.cls].half - 1.4;
-    const h = r.seg.axis === "ns" ? (home.x > r.x ? Math.PI / 2 : -Math.PI / 2) : home.z > r.z ? Math.PI : 0;
+    const off = r.seg.half - 1.4;
+    // Kerbside, facing the way the traffic on that side goes (keep left).
+    const side = (home.x - r.x) * r.seg.dz - (home.z - r.z) * r.seg.dx;
+    const h = side > 0 ? r.seg.h : r.seg.h + Math.PI;
     const c = makeCar(s, L.ride, r.x + ((home.x - r.x) / k) * off, r.z + ((home.z - r.z) / k) * off, h, L.rideColor, { own: true, tag: `ride-${ch.id}` });
     c.ai.mode = "parked";
   }

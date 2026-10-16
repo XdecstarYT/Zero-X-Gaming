@@ -3,7 +3,7 @@ import { buildCar, type CarModel } from "../../code-3/models";
 import { BONES, buildPed, posePed, type PedModel, type Pose } from "../../code-3/people3d";
 import { VEHICLES, WEAPONS, type WeaponId } from "../data";
 import { fwdSpeed, speedOf, type Car, type Ped, type State } from "../state";
-import { ROAD, segAt, WATER_Y } from "../world";
+import { segAt, WATER_Y } from "../world";
 import { buildBike, buildBoat, buildHeli, weaponModel, type CustomVehicle } from "./models";
 import type { Quality } from "./city";
 import { buildTram, poseTram, type TramModel } from "./tram";
@@ -468,6 +468,6 @@ function onWalk(s: State, x: number, z: number) {
   const seg = segAt(s.city, x, z, 4.5);
   if (!seg) return false;
   const A = s.city.roads.nodes[seg.a];
-  const off = seg.axis === "ns" ? Math.abs(x - A.x) : Math.abs(z - A.z);
-  return off > ROAD[seg.cls].half;
+  const off = Math.abs((x - A.x) * seg.dz - (z - A.z) * seg.dx);
+  return off > seg.half;
 }

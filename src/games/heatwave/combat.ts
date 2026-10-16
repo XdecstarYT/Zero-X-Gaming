@@ -2,7 +2,7 @@ import { VEHICLES, WEAPONS, type WeaponId } from "./data";
 import { crime, isCop } from "./police";
 import { carById, clamp, emit, pedById, type Car, type Ped, type State } from "./state";
 import { blowUp, setHooks } from "./vehicles";
-import { groundY, solidsNear, WATER_Y, type Solid } from "./world";
+import { groundY, insideSolid, rayEnter, solidsNear, WATER_Y, type Solid } from "./world";
 
 /**
  * Combat: guns are hitscan rays (with spread, against people, vehicles, the helicopter and the
@@ -90,22 +90,13 @@ export function cast(s: State, ox: number, oy: number, oz: number, dx: number, d
   const L = Math.sqrt(hh + dy * dy);
   const mx = ox + (dx / L) * range * 0.5;
   const mz = oz + (dz / L) * range * 0.5;
+  const T = range / L;
   for (const w of solidsNear(s.city, mx, mz, range * 0.5 + 4, scratch)) {
     if (w.round) continue;
-    let t0 = 0;
-    let t1 = 1e9;
-    const slab = (p: number, v: number, lo: number, hi: number) => {
-      if (Math.abs(v) < 1e-9) return p >= lo && p <= hi;
-      let a = (lo - p) / v;
-      let b = (hi - p) / v;
-      if (a > b) [a, b] = [b, a];
-      t0 = Math.max(t0, a);
-      t1 = Math.min(t1, b);
-      return t0 <= t1;
-    };
-    if (!slab(ox, dx, w.x - w.hw, w.x + w.hw) || !slab(oz, dz, w.z - w.hd, w.z + w.hd)) continue;
-    const y = oy + dy * t0;
-    if (y > w.h) continue;
+    const te = rayEnter(w, ox, oz, dx * T, dz * T);
+    if (te < 0) continue;
+    const t0 = te * T;
+    if (oy + dy * t0 > w.h) continue;
     consider({ t: t0 * L, wall: true });
   }
   // The ground.
@@ -467,7 +458,7 @@ export function stepGrenades(s: State, dt: number) {
     // Off a wall.
     for (const w of solidsNear(s.city, g.x, g.z, 2, scratch)) {
       if (w.round || g.y > w.h) continue;
-      if (Math.abs(g.x - w.x) < w.hw && Math.abs(g.z - w.z) < w.hd) {
+      if (insideSolid(w, g.x, g.z)) {
         g.vx *= -0.4;
         g.vz *= -0.4;
         g.x += g.vx * dt * 2;

@@ -59,13 +59,19 @@ function talk(lines: [string, string][], gap = 3.2): Step {
   };
 }
 
-function goTo(x: number, z: number, text: string, o: { r?: number; car?: boolean; foot?: boolean; tag?: string; stop?: boolean } = {}): Step {
+/** A place: fixed (local metres on the real map) or a POI's door, looked up in the city. */
+type Spot = { x: number; z: number } | string;
+const at = (s: State, p: Spot) => (typeof p === "string" ? poi(s.city, p) : p);
+
+function goTo(to: Spot, text: string, o: { r?: number; car?: boolean; foot?: boolean; tag?: string; stop?: boolean } = {}): Step {
   return {
     enter: (s, r) => {
+      const { x, z } = at(s, to);
       r.text = text;
       r.goal = { x, z, r: o.r ?? 5 };
     },
     tick: (s, r) => {
+      const { x, z } = at(s, to);
       const pos = playerPos(s);
       const c = playerCar(s);
       if (o.tag) {
@@ -295,6 +301,69 @@ function roadPath(s: State, pts: { x: number; z: number }[]) {
   return out;
 }
 
+/* ------------------------------------------------------------------ the places */
+
+/**
+ * Mission places on the real map (local metres from Flinders and Swanston Sts, x east, z south),
+ * each checked against the map data: on the road, at the kerb, on the footpath, on a pier deck or
+ * in open water as it needs to be.
+ */
+const P = {
+  dockGate: { x: -3350.5, z: -995.5 },
+  yard: { x: -3300, z: -605 },
+  lockup: { x: -3469.5, z: -2633.5 },
+  debtors: [
+    { x: 2650.5, z: 877.5 },
+    { x: 990, z: -2120 },
+    { x: -193, z: 300 },
+  ],
+  vince: { x: -10.5, z: -2072.5 },
+  stkBoat: { x: -560, z: 4790 },
+  stkEnd: { x: -425, z: 4835 },
+  stkMid: { x: -356, z: 5012 },
+  /** Along St Kilda Pier past the middle, out towards the kiosk. */
+  pierOut: [
+    { x: -372, z: 4950 },
+    { x: -380, z: 4930 },
+    { x: -392, z: 4904 },
+    { x: -400, z: 4885 },
+    { x: -410, z: 4865 },
+    { x: -418, z: 4850 },
+    { x: -425, z: 4835 },
+  ],
+  /** Across the bay from St Kilda to Station Pier and past it. */
+  courier: [
+    { x: -1000, z: 4600 },
+    { x: -1600, z: 4200 },
+    { x: -2200, z: 3800 },
+    { x: -2800, z: 3500 },
+    { x: -3150, z: 3350 },
+    { x: -3350, z: 2950 },
+  ],
+  courierAt: { x: -700, z: 4850 },
+  stationEnd: { x: -3255, z: 3300 },
+  trek: { x: 2660.5, z: 667.5, h: -2.99 },
+  armStart: { x: -478, z: 1975, h: -1.92 },
+  bankRoad: { x: -681.5, z: -22 },
+  bankBack: { x: -677, z: 89 },
+  bankSide: { x: -705, z: 34.5 },
+  getaway: { x: -680.5, z: -19, h: 2.79 },
+  salStart: { x: -2573.5, z: 2360, h: -1.06 },
+  salRun: [
+    { x: 341, z: 1913 },
+    { x: 2496, z: 2412 },
+    { x: 3381, z: 2547 },
+  ],
+  yacht: { x: -2190, z: 110 },
+  yarraMouth: { x: -4250, z: 160 },
+};
+
+/** The bank's front door, and the way along its street. */
+function bankDoor(s: State) {
+  const b = poi(s.city, "bank");
+  return { x: b.x, z: b.z, fx: b.fx, fz: b.fz, tx: -b.fz, tz: b.fx };
+}
+
 /* ------------------------------------------------------------------ the story */
 
 const SAL = "#c9853a";
@@ -307,7 +376,7 @@ export const STORY: MissionDef[] = [
     from: "Nina",
     x: 0,
     z: 0,
-    blurb: "Dex has walked off his last shift at Swanson Dock. Pick him up before he does something stupid.",
+    blurb: "Dex has walked off his last shift at Appleton Dock. Pick him up before he does something stupid.",
     pay: 500,
     steps: [
       talk([
@@ -323,14 +392,14 @@ export const STORY: MissionDef[] = [
         },
         tick: (s) => (playerCar(s) ? "next" : undefined),
       },
-      goTo(-1290, -440, "Drive to the Swanson Dock gate on Footscray Rd.", { car: true, r: 12 }),
+      goTo(P.dockGate, "Drive to the Appleton Dock gate off Footscray Rd.", { car: true, r: 14 }),
       partnerJoin("fists"),
       talk([
         ["Dex", "Twelve years. You know what I've got to show for it? A crook back and a loan off Vince Kostas."],
         ["Nina", "Vince Kostas? From Footscray? Dex..."],
         ["Dex", "Just take me home. I need to think."],
       ]),
-      goTo(-889, 652, "Take Dex home to his cottage in Port Melbourne.", { car: true, r: 12, stop: true }),
+      goTo("safe-dex", "Take Dex home to his cottage in Port Melbourne.", { car: true, r: 14, stop: true }),
       talk([
         ["Nina", "Get some sleep. Ring me tomorrow."],
         ["Dex", "I've got an idea, Nina. You're not gonna like it."],
@@ -358,10 +427,10 @@ export const STORY: MissionDef[] = [
           emit(s, { kind: "pickup", text: "Pistol" });
         }
       }),
-      goTo(-554, 590, "Get to the milk bar on Park St, South Melbourne.", { r: 14 }),
+      goTo("store-3", "Get to the milk bar on Park St, South Melbourne.", { r: 14 }),
       holdUp("store-3", [1200, 1800]),
       lose("The alarm's gone off. Lose the cops."),
-      goTo(-889, 652, "Lie low back at the cottage.", { r: 12 }),
+      goTo("safe-dex", "Lie low back at the cottage.", { r: 12 }),
     ],
   },
   {
@@ -457,12 +526,7 @@ export const STORY: MissionDef[] = [
       ]),
       act((s, r) => {
         r.n = 0;
-        const spots = [
-          [1000, 13],
-          [612, -720],
-          [-150, 184],
-        ];
-        spots.forEach(([x, z], i) => spawnPed(s, r, `debtor${i}`, x, z, { weapon: i === 1 ? "bat" : "fists", mode: "idle", hp: 70 }));
+        P.debtors.forEach(({ x, z }, i) => spawnPed(s, r, `debtor${i}`, x, z, { weapon: i === 1 ? "bat" : "fists", mode: "idle", hp: 70 }));
       }),
       ...[0, 1, 2].flatMap((i): Step[] => [
         {
@@ -493,7 +557,7 @@ export const STORY: MissionDef[] = [
           },
         },
       ]),
-      goTo(230, -620, "Bring the money to Vince at Caffè Milano on Lygon St.", { r: 4, foot: true }),
+      goTo(P.vince, "Bring the money to Vince at Caffè Milano on Lygon St.", { r: 4, foot: true }),
       talk([["Vince", "See? Everybody's happy. Keep a little for yourself. I'll be in touch."]]),
     ],
   },
@@ -512,9 +576,9 @@ export const STORY: MissionDef[] = [
         ["Ricky", "There's a speedboat tied up at the end of St Kilda Pier. Keys are in it. Don't ask."],
       ]),
       act((s, r) => {
-        spawnCar(s, r, "boat", "speedboat", -728, 1196, Math.PI, "#e8e8e6");
+        spawnCar(s, r, "boat", "speedboat", P.stkBoat.x, P.stkBoat.z, 2.4, "#e8e8e6");
       }),
-      goTo(-705, 1181, "Run out to the end of St Kilda Pier.", { r: 9, foot: true }),
+      goTo(P.stkEnd, "Run out to the end of St Kilda Pier.", { r: 9, foot: true }),
       {
         enter: (s, r) => {
           r.text = "Get in the speedboat.";
@@ -527,10 +591,10 @@ export const STORY: MissionDef[] = [
         },
       },
       act((s, r) => {
-        const c = spawnCar(s, r, "courier", "speedboat", -820, 1260, Math.PI, "#1f66d6");
+        const c = spawnCar(s, r, "courier", "speedboat", P.courierAt.x, P.courierAt.z, 2.4, "#1f66d6");
         const d = spawnPed(s, r, "courierman", c.x, c.z, { weapon: "smg", hostile: true });
         seat(s, d, c, 0);
-        setCarGoto(c, s, [{ x: -900, z: 1320 }, { x: -1040, z: 1360 }, { x: -1180, z: 1240 }, { x: -1250, z: 1080 }, { x: -1340, z: 920 }, { x: -1460, z: 800 }, { x: -1620, z: 700 }], 22);
+        setCarGoto(c, s, P.courier, 22);
       }),
       stopCar("courier", "Catch the courier's boat and stop it (shoot it up).", { stopAt: 0.45, far: 320 }),
       act((s, r) => {
@@ -554,7 +618,7 @@ export const STORY: MissionDef[] = [
           }
         },
       },
-      goTo(-940, 1160, "Bring it to the end of Station Pier.", { r: 16 }),
+      goTo(P.stationEnd, "Bring it to the end of Station Pier.", { r: 20 }),
       lose(),
     ],
   },
@@ -565,7 +629,7 @@ export const STORY: MissionDef[] = [
     from: "Dex",
     x: 0,
     z: 0,
-    blurb: "The Dock Rats keep a van of knocked-off electronics in a Swanson Dock yard. Dex knows the yard.",
+    blurb: "The Dock Rats keep a van of knocked-off electronics in an Appleton Dock yard. Dex knows the yard.",
     pay: 5000,
     steps: [
       talk([
@@ -573,11 +637,11 @@ export const STORY: MissionDef[] = [
         ["Dex", "Take the van, bring it to the lock-up in Kensington. Ricky's got a buyer."],
       ]),
       act((s, r) => {
-        spawnCar(s, r, "van", "cargo", -1300, -205, 0, "#e8e8e6");
-        const spots = [[-1310, -215], [-1288, -193], [-1320, -190], [-1280, -220], [-1304, -175]];
+        spawnCar(s, r, "van", "cargo", P.yard.x, P.yard.z, 0, "#e8e8e6");
+        const spots = [[-10, -10], [12, 12], [-20, 15], [20, -15], [-4, 30]].map(([dx, dz]) => [P.yard.x + dx, P.yard.z + dz]);
         spots.forEach(([x, z], i) => spawnPed(s, r, "rat", x, z, { weapon: i % 2 ? "smg" : "pistol", shirt: "#f28a1a", pants: "#2b3a55", hostile: false, mode: "guard", role: "gang" }));
       }),
-      goTo(-1300, -230, "Go to yard nine at Swanson Dock.", { r: 25 }),
+      goTo(P.yard, "Go to yard nine at Appleton Dock.", { r: 25 }),
       {
         enter: (s, r) => {
           r.text = "Take the van (the Dock Rats will shoot).";
@@ -593,7 +657,7 @@ export const STORY: MissionDef[] = [
         },
       },
       wantedStep(2),
-      goTo(-1370, -780, "Drive the van to the lock-up on Kensington Rd. Lose the cops on the way.", { tag: "van", r: 14, stop: true }),
+      goTo(P.lockup, "Drive the van to the lock-up on Epsom Rd, Kensington. Lose the cops on the way.", { tag: "van", r: 14, stop: true }),
       lose(),
     ],
   },
@@ -612,9 +676,9 @@ export const STORY: MissionDef[] = [
         ["Dex", "I don't like piers. One way on, one way off."],
         ["Nina", "That's why you're here."],
       ]),
-      goTo(-560, 1181, "Walk out along St Kilda Pier to meet the buyer.", { r: 8 }),
+      goTo(P.stkMid, "Walk out along St Kilda Pier to meet the buyer.", { r: 8 }),
       act((s, r) => {
-        for (let i = 0; i < 7; i++) spawnPed(s, r, "crew", -640 - (i % 4) * 14, 1181 + (i % 2 ? 3 : -3), { weapon: i % 3 === 0 ? "shotgun" : "smg", shirt: "#d81e2b", pants: "#e8dcc0", hostile: true, mode: "fight", role: "gang" }).ai.target = s.player;
+        for (let i = 0; i < 7; i++) spawnPed(s, r, "crew", P.pierOut[i].x + (i % 2 ? 1.5 : -1.5), P.pierOut[i].z, { weapon: i % 3 === 0 ? "shotgun" : "smg", shirt: "#d81e2b", pants: "#e8dcc0", hostile: true, mode: "fight", role: "gang" }).ai.target = s.player;
       }),
       talk([
         ["Dex", "That's no buyer. That's the Esplanade boys!"],
@@ -640,12 +704,14 @@ export const STORY: MissionDef[] = [
         ["Nina", "The Reserve Bank on Collins St? You're off your head."],
         ["Dex", "Just look at it. Front doors, the laneway out the back, the side on William St. Take photos."],
       ]),
-      ...[
-        [-160, -99, "the front doors on Collins St"],
-        [-160, -51.5, "the back, on Flinders Lane"],
-        [-209, -80, "the side, on William St"],
-      ].flatMap(([x, z, what]): Step[] => [
-        goTo(x as number, z as number, `Photograph ${what} (stand on the marker, on foot).`, { r: 3, foot: true }),
+      ...(
+        [
+          ["bank", "the front doors on Collins St"],
+          [P.bankBack, "the back, on Flinders Lane"],
+          [P.bankSide, "the side, on William St"],
+        ] as [Spot, string][]
+      ).flatMap(([where, what]): Step[] => [
+        goTo(where, `Photograph ${what} (stand on the marker, on foot).`, { r: 3, foot: true }),
         wait(1.5, "Click..."),
         act((s) => emit(s, { kind: "toast", text: "Photo taken" })),
       ]),
@@ -663,7 +729,7 @@ export const STORY: MissionDef[] = [
     pay: 2000,
     steps: [
       act((s, r) => {
-        spawnCar(s, r, "trek", "trek", 1110, -326, 0, "#1c1f24");
+        spawnCar(s, r, "trek", "trek", P.trek.x, P.trek.z, P.trek.h, "#1c1f24");
       }),
       goToPoi("gun-rich", "Go to Bullseye Arms in Richmond.", 6, true),
       act((s) => {
@@ -723,12 +789,12 @@ export const STORY: MissionDef[] = [
         ["Nina", "We stop it, we grab the cases, we're gone before the cops finish their dim sims."],
       ]),
       act((s, r) => {
-        const c = spawnCar(s, r, "armored", "armored", -640, 452, Math.PI, "#3d4a3f");
+        const c = spawnCar(s, r, "armored", "armored", P.armStart.x, P.armStart.z, P.armStart.h, "#3d4a3f");
         const d = spawnPed(s, r, "guard", c.x, c.z, { weapon: "pistol", shirt: "#3d4a3f", pants: "#2b2f36", hp: 140 });
         seat(s, d, c, 0);
         const g = spawnPed(s, r, "guard", c.x, c.z, { weapon: "smg", shirt: "#3d4a3f", pants: "#2b2f36", hp: 140 });
         seat(s, g, c, 1);
-        setCarGoto(c, s, roadPath(s, [{ x: -640, z: 450 }, { x: -440, z: 380 }, { x: -440, z: -110 }, { x: -160, z: -110 }]), 13);
+        setCarGoto(c, s, roadPath(s, [P.armStart, P.bankRoad]), 13);
       }),
       stopCar("armored", "Stop the armoured van (ram it, shoot it) before it reaches the bank.", { stopAt: 0.35, far: 300 }),
       act((s, r) => {
@@ -776,10 +842,10 @@ export const STORY: MissionDef[] = [
       }),
       killAll("goon", "Fight off Vince's blokes."),
       act((s, r) => {
-        const c = spawnCar(s, r, "sal", "vanta", -900, 560, -Math.PI / 2, "#e8e8e6");
+        const c = spawnCar(s, r, "sal", "vanta", P.salStart.x, P.salStart.z, P.salStart.h, "#e8e8e6");
         const d = spawnPed(s, r, "salman", c.x, c.z, { weapon: "pistol", shirt: SAL, pants: "#e8dcc0", hp: 160 });
         seat(s, d, c, 0);
-        setCarGoto(c, s, roadPath(s, [{ x: -900, z: 560 }, { x: -440, z: 560 }, { x: 110, z: 700 }, { x: 900, z: 700 }, { x: 1340, z: 700 }]), 28);
+        setCarGoto(c, s, roadPath(s, [P.salStart, ...P.salRun]), 28);
       }),
       talk([["Dex", "That's Vince's car! He's doing a runner!"]], 1.5),
       stopCar("sal", "Chase down Vince's white Vanta GT and stop him.", { stopAt: 0.25, far: 360 }),
@@ -812,38 +878,42 @@ export const STORY: MissionDef[] = [
         ["Dex", "Last time, Nina. Then it's a boat down the Yarra, out through the Heads, and a long way north."],
         ["Nina", "Masks on."],
       ]),
-      goTo(-160, -99, "Go into the Reserve Bank (front doors on Collins St, on foot).", { r: 3, foot: true }),
+      goTo("bank", "Go into the Reserve Bank (front doors on Collins St, on foot).", { r: 3, foot: true }),
       act((s, r) => {
-        raise(s, 3, -160, -99);
+        const b = bankDoor(s);
+        raise(s, 3, b.x, b.z);
         r.timer = 0;
-        for (let i = 0; i < 4; i++) spawnPed(s, r, "secur", -184 + i * 12, -97, { weapon: "pistol", shirt: "#3d4a3f", pants: "#2b2f36", hostile: true, mode: "fight", hp: 120 }).ai.target = s.player;
+        for (let i = 0; i < 4; i++) spawnPed(s, r, "secur", b.x + b.fx * 3 + b.tx * (i - 1.5) * 9, b.z + b.fz * 3 + b.tz * (i - 1.5) * 9, { weapon: "pistol", shirt: "#3d4a3f", pants: "#2b2f36", hostile: true, mode: "fight", hp: 120 }).ai.target = s.player;
       }),
       {
         enter: (s, r) => {
           r.text = "Hold the vault while Dex drills it.";
-          r.goal = { x: -160, z: -99, r: 12 };
+          const b = bankDoor(s);
+          r.goal = { x: b.x, z: b.z, r: 12 };
           r.timer = 45;
         },
         tick: (s, r, dt) => {
           const pos = playerPos(s);
-          if (Math.hypot(pos.x + 160, pos.z + 99) > 40) {
+          const b = bankDoor(s);
+          if (Math.hypot(pos.x - b.x, pos.z - b.z) > 40) {
             r.text = "Get back to the bank!";
             return;
           }
           r.timer -= dt;
           r.text = `Hold the bank while Dex drills the vault: ${Math.ceil(r.timer)} s`;
-          if (r.timer < 22) raise(s, 4, -160, -99);
+          if (r.timer < 22) raise(s, 4, b.x, b.z);
           if (r.timer <= 0) return "next";
         },
       },
       act((s, r) => {
-        for (let i = 0; i < 4; i++) s.pickups.push({ id: s.nextId++, kind: "cash", x: -164 + i * 1.6, z: -100, n: 2500, respawn: 0, takenAt: -1 });
-        spawnCar(s, r, "getaway", "furia", -130, -106, Math.PI, "#141518");
-        spawnCar(s, r, "yacht", "speedboat", -945, 110, Math.PI / 2, "#e8e8e6");
+        const b = bankDoor(s);
+        for (let i = 0; i < 4; i++) s.pickups.push({ id: s.nextId++, kind: "cash", x: b.x + b.fx * 1.5 + b.tx * (i - 1.5) * 1.6, z: b.z + b.fz * 1.5 + b.tz * (i - 1.5) * 1.6, n: 2500, respawn: 0, takenAt: -1 });
+        spawnCar(s, r, "getaway", "furia", P.getaway.x, P.getaway.z, P.getaway.h, "#141518");
+        spawnCar(s, r, "yacht", "speedboat", P.yacht.x, P.yacht.z, Math.PI / 2, "#e8e8e6");
       }),
       talk([["Dex", "We're in! Grab the bags, the car's out the front!"]], 2),
       wantedStep(5),
-      goTo(-924, 60, "Get to the Harbour Jetty in Docklands.", { r: 14 }),
+      goTo("marina", "Get to the jetty at Docklands Marina.", { r: 16 }),
       {
         enter: (s, r) => {
           r.text = "Get in the speedboat.";
@@ -855,7 +925,7 @@ export const STORY: MissionDef[] = [
           if (playerCar(s) === b) return "next";
         },
       },
-      goTo(-1760, 640, "Run down the Yarra, under the West Gate, and out into the bay.", { tag: "yacht", r: 70 }),
+      goTo(P.yarraMouth, "Run down the Yarra past the docks, for the West Gate and the bay.", { tag: "yacht", r: 70 }),
       act((s) => {
         const w = s.wanted;
         w.level = 0;
@@ -876,11 +946,11 @@ const STARTS: Record<string, { x: number; z: number } | string> = {
   sunburn: "safe-nina",
   change: "safe-dex",
   wheels: "chop",
-  collect: { x: 230, z: -640 },
+  collect: { x: P.vince.x, z: P.vince.z - 8 },
   lowtide: "chop",
   boxjob: "safe-dex",
   pier: "safe-nina",
-  casing: { x: -135, z: -99 },
+  casing: "bank",
   gearup: "safe-dex",
   armored: "safe-nina",
   double: "safe-dex",
@@ -1016,18 +1086,21 @@ export interface Race {
   pts: { x: number; z: number }[];
 }
 
+const pts = (...xz: number[]) => Array.from({ length: xz.length / 2 }, (_, i) => ({ x: xz[i * 2], z: xz[i * 2 + 1] }));
+
+/** The races, checkpoint by checkpoint on the real roads. */
 export const RACES: Race[] = [
-  { id: "race-hoddle", name: "Hoddle Grid Hustle", car: "vanta", prize: 1500, pts: [{ x: -440, z: -400 }, { x: -440, z: -110 }, { x: 330, z: -110 }, { x: 330, z: -440 }, { x: -220, z: -440 }, { x: -220, z: 0 }, { x: 440, z: 0 }] },
-  { id: "race-beachrd", name: "Beach Road Run", car: "stallion", prize: 2000, pts: [{ x: 110, z: 300 }, { x: 110, z: 1130 }, { x: -330, z: 1130 }, { x: -330, z: 1560 }, { x: 0, z: 1560 }, { x: 0, z: 1130 }] },
-  { id: "race-docks", name: "Dockyard Dash", car: "ranger", prize: 2500, pts: [{ x: -440, z: -560 }, { x: -1380, z: -560 }, { x: -1380, z: -440 }, { x: -1200, z: -440 }, { x: -1200, z: 40 }, { x: -1200, z: -330 }, { x: -660, z: -330 }, { x: -660, z: -10 }] },
-  { id: "race-lake", name: "Albert Park Grand Prix", car: "furia", prize: 4000, pts: [{ x: -440, z: 820 }, { x: -440, z: 1040 }, { x: 0, z: 1040 }, { x: 0, z: 800 }, { x: -440, z: 800 }, { x: -440, z: 1040 }, { x: 0, z: 1040 }, { x: 0, z: 820 }] },
+  { id: "race-hoddle", name: "Hoddle Grid Hustle", car: "vanta", prize: 1500, pts: pts(678.5, -271.5, -205, 37, -1077.5, 357, -1378, -517.5, -945, -669, 510, -714.5, 588, -499) },
+  { id: "race-beachrd", name: "Beach Road Run", car: "stallion", prize: 2000, pts: pts(-2547.5, 2816, -1392.5, 3489, -360.5, 4111, 562.5, 4909, 738, 5663, 837.5, 6240.5) },
+  { id: "race-docks", name: "Dockyard Dash", car: "ranger", prize: 2500, pts: pts(-1729, 353.5, -1923, -239, -2142, -560.5, -2941, -921, -3351.5, -999, -2644.5, -887.5, -1798.5, 119.5) },
+  { id: "race-lake", name: "Albert Park Grand Prix", car: "furia", prize: 4000, pts: pts(-327.5, 2369.5, -358.5, 2879, -3.5, 3423.5, 585, 3826.5, 1012, 4080, 906.5, 3597, 539.5, 3362.5, 299.5, 3000, 400.5, 2638.5, 232, 2310.5, -327.5, 2369.5) },
 ];
 
 /** Hidden sun tokens: 20 of them, $250 each, a bonus for the set. */
-export const TOKENS: { x: number; z: number }[] = [
-  { x: -705, z: 1181 }, { x: 165, z: -30 }, { x: -1250, z: -380 }, { x: 680, z: 210 }, { x: 370, z: 480 }, { x: 760, z: 330 }, { x: -220, z: 1010 }, { x: -400, z: 1450 }, { x: 385, z: -615 }, { x: 680, z: -830 },
-  { x: -60, z: -470 }, { x: -980, z: -150 }, { x: 1340, z: 1050 }, { x: 900, z: -800 }, { x: -1060, z: 760 }, { x: 55, z: -55 }, { x: -980, z: 1140 }, { x: 520, z: -12 }, { x: -270, z: 1340 }, { x: 1180, z: 420 },
-];
+export const TOKENS: { x: number; z: number }[] = pts(
+  -470, 4800, 158, 11, 597.5, 78, 1080.5, -478, 773, -389, 290, -1367.5, 1124.5, 1356.5, 465.5, 1245.5, -367, 2854.5, 641, 5415,
+  -893.5, -1219, -1115.5, -811.5, -498.5, -2272, 1651.5, -89, 2601, 852.5, -2672.5, 2793, -920, 1667, -2345.5, -255.5, -3706.5, 1246.5, 2497.5, 2440.5,
+);
 
 export const SIDE: MissionDef[] = RACES.map((race) => ({
   id: race.id,

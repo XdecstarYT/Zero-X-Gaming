@@ -6,22 +6,27 @@ a summer heatwave. Two leads, any car, and the police on your tail. It plays in 
 
 ## The city
 
-A playable Melbourne, about 3.3 km by 2.7 km (`world.ts`):
-- **The Hoddle Grid**: Flinders, Collins, Bourke, Lonsdale and La Trobe Sts crossed by Spencer through Spring, with the little streets and laneways between (some covered in graffiti), towers, sandstone banks and red-brick shops with awnings.
-- **Around it**: Southbank and the casino on the Yarra, Docklands and Victoria Harbour, Swanson Dock's cranes and containers, West Melbourne, Carlton and Fitzroy's terraces with iron lace verandahs, East Melbourne, Richmond, South Melbourne, Port Melbourne, the Domain, South Yarra, Toorak's mansions, Albert Park and its lake, and St Kilda with its beach, pier and Acland St.
-- **The water**: the Yarra with bridges at Queensbridge, St Kilda Rd, Kings Way, Clarendon St, Punt Rd and Church St; the bay from the West Gate round to Elwood, with the beach and bathing boxes.
-- **Landmarks**, all modelled (`render/landmarks.ts`): Flinders Street Station with its dome and clocks, Federation Square, St Paul's Cathedral, a gold-crowned tower with a red stripe and a black-and-gold one, the Arts Centre spire, the casino and its gas towers, the MCG with its light towers, Docklands Stadium, an observation wheel, the Bolte and West Gate bridges, the Shrine, the Royal Exhibition Building, Parliament House, Queen Victoria Market, a fun park with a grinning gate and a scenic railway, the Palace Theatre, the pier kiosk, a ferry at Station Pier, Southern Cross Station's wavy roof and the Yarra boathouses.
-- **Trams** (`trams.ts`): eight routes (16, 48, 96, the City Circle 35, 58, 78, 70 and 109) run along their tracks with stops, red lights and a bell. Modern three-section E-class trams and the City Circle's heritage W-class are drawn under the overhead wires.
+Real Melbourne, about 7.9 km by 9.1 km, from Kensington and Fishermans Bend to Richmond and from
+Carlton down to St Kilda. It is built from [Overture Maps](https://overturemaps.org/) data
+(© OpenStreetMap contributors and others, ODbL); `scripts/heatwave-map/README.md` explains how.
+The map is a 1.8 MB file, `public/heatwave/melbourne.bin`, that streams in behind the title
+screen (`mapdata.ts`). `world.ts` turns it into the game's city:
+- **Roads**: every real road, by its real name, class, width and one-way rules, with signals at the junctions that have them. Each road is split into straight pieces between its junctions and bends, so traffic, people and A* routes run on the real network.
+- **Buildings**: every real footprint (courtyards too), at its real height, with its use, roof shape and colour. Footprints are trimmed back from the carriageways. They're drawn by the facade shader as glass, concrete, sandstone, brick, render or weatherboard, with flat, hipped, gabled, sawtooth or domed roofs, parapets, verandahs and awnings on the street side.
+- **The ground**: a 4 m raster of grass, sand, sports grounds, paving, railway ballast, pier decks and water with its depth: the Yarra, Victoria Harbour, the lakes and the bay.
+- **Rails and freeways**: the real tram and train lines (with sleepers, overhead wires and poles), and the elevated freeways, drawn as decks on piers.
+- **Landmarks** (`render/landmarks.ts`) add what footprints can't show: Flinders Street Station's copper dome and clocks, the Arts Centre spire, St Paul's three spires, the observation wheel, the Bolte Bridge pylons, the MCG light towers, the fun park's grinning gate and the St Kilda Pier kiosk.
+- **Trams** (`trams.ts`): eight routes (16, 96, 86, the City Circle 35, 58, 78, 70 and 12) are routed through the real streets, offset to the left, with stops, red lights and a bell. Modern E-class trams and the City Circle's heritage W-class run under the overhead wires.
 
 ## Playing
 
 - **The leads**: switch between them with `C` or the Leads tab of the phone. The camera swoops up and over the city when you switch.
   - **Nina Cruz**: a getaway driver who grew up above a cake shop on Acland St. Perk *Wheelwoman*: 12% more grip, and the search ends faster when she's in a car.
-  - **Dex Holloway**: a laid-off wharfie from Swanson Dock. Perk *Bruiser*: he takes 25% less damage.
+  - **Dex Holloway**: a laid-off wharfie from Appleton Dock. Perk *Bruiser*: he takes 25% less damage.
 
   Each lead has their own safehouse (Nina's flat in St Kilda, Dex's cottage in Port Melbourne), outfit, weapons, health and car (Nina's red Castell Stallion and Dex's green Murray Ute, parked outside home). If a lead's car is wrecked, it's back at the curb the next time you're home.
 - **On foot**: walk, run, sprint and jump; swim in the bay, the Yarra and the lakes.
-- **Vehicles**: get into any car, bike or boat (not the trams). If someone's driving, you drag them out, and a locked parked car means breaking the glass. There are 17 to drive:
+- **Vehicles**: get into any car, bike or boat. Step onto a tram when it is stopped: at the front you take the cab and drive it (W to go, S to brake; the rails steer), anywhere else you ride as a passenger. It's free in the CBD (the Free Tram Zone) and $5 outside it. If someone's driving, you drag them out, and a locked parked car means breaking the glass. There are 17 to drive:
   - Cars and vans: the Wattle Hatch, Norden Aria, Melbourne Cab, Halvor Trek, Murray Ute, Orrin Cargo, Vanta GT, Castell Stallion and Furia RS.
   - Police and service vehicles: the Police Commodore, Highway Patrol and Critical Response van (white, with a blue-and-white chequered band), the ambulance and the Securitas armoured van.
   - The Rapido 600 bike, the Squall speedboat and the Yarra Runabout.
@@ -70,7 +75,7 @@ A playable Melbourne, about 3.3 km by 2.7 km (`world.ts`):
   11. Double Cross
   12. The Big One
 
-  Each starts at a yellow marker beside a door. They run from Acland St to Swanson Dock, Toorak, St Kilda Pier and a vault on Collins St, and cover talking, driving, chases, losing the police, killing all, holding up a milk bar, stopping a car and taking your partner along. A failed mission ends there, and its marker waits for you to try again.
+  Each starts at a yellow marker beside a door. They run from Acland St to Appleton Dock, Toorak, St Kilda Pier and a vault on Collins St, and cover talking, driving, chases, losing the police, killing all, holding up a milk bar, stopping a car and taking your partner along. A failed mission ends there, and its marker waits for you to try again.
 - **Side jobs** (the Jobs tab):
   - Four street races, each in its own car: Hoddle Grid Hustle, Beach Road Run, Dockyard Dash and the Albert Park Grand Prix.
   - Exports for Dockside Motors, the chop shop on the docks.
@@ -122,7 +127,8 @@ Mobile first: there are three quality tiers. Phones with eight or more cores get
 
 | File | What it does |
 | --- | --- |
-| `world.ts` | Melbourne: the bay's shore, the Yarra, the lakes, Victoria Harbour, piers and bridges. It also builds the road graph (named boulevards, avenues, streets and laneways, junctions with lights), the tram routes, the landmarks, buildings by district (with their wall types, roofs and verandahs), props, POIs and parks. Spatial lookups: solids grid, road index, A* routes. Pure, seeded and cached per seed. |
+| `mapdata.ts` | Reads the real map file (`HWM2`): roads, buildings, rails, freeways, piers, street furniture and the ground raster. |
+| `world.ts` | Melbourne from the map: the ground and water, the road graph (real names, classes, one-way rules, lit junctions), buildings from the real footprints (wall types, roofs, verandahs), the tram routes, landmark extras, props, POIs and parks. Spatial lookups: solids grid (footprint polygons), road index, A* routes. Pure, seeded and cached per seed. |
 | `data.ts` | Vehicles, weapons, leads, outfits, prices, the wanted table and the radio stations. |
 | `state.ts` | The simulation state and its helpers. Plain data, so a save is a JSON copy. |
 | `vehicles.ts` | Car physics, collisions, crash damage, explosions, doors and seats. |

@@ -79,8 +79,8 @@ export const VEHICLES: Record<VehicleKind, VehicleSpec> = {
   speedboat: { name: "Squall Speedboat", body: "boat", scale: 1, len: 7, wid: 2.4, top: 30, accel: 6, brake: 4, grip: 2.2, mass: 1.8, lock: 0.5, base: 4, hp: 1400, seats: 4, water: true, value: 0, colors: ["#e8e8e6", "#1f66d6", "#d81e2b"] },
   airboat: { name: "Yarra Runabout", body: "airboat", scale: 1, len: 4.6, wid: 2.2, top: 24, accel: 6, brake: 3, grip: 1.6, mass: 0.9, lock: 0.6, base: 2.6, hp: 900, seats: 2, water: true, value: 0, colors: ["#4d5a3a"] },
   heli: { name: "Police Air Wing", body: "heli", scale: 1, len: 11, wid: 2.4, top: 40, accel: 8, brake: 8, grip: 4, mass: 2.5, lock: 0, base: 0, hp: 1800, seats: 2, air: true, police: true, value: 0 },
-  tram: { name: "E-Class Tram", body: "tram", scale: 1, len: 33, wid: 2.65, top: 16, accel: 1.3, brake: 2.4, grip: 20, mass: 40, lock: 0, base: 10, hp: 99999, seats: 1, value: 0 },
-  wtram: { name: "W-Class Tram", body: "tram", scale: 1, len: 14.5, wid: 2.7, top: 11, accel: 1.1, brake: 2.2, grip: 20, mass: 20, lock: 0, base: 8, hp: 99999, seats: 1, value: 0, colors: ["#2f5a3a"] },
+  tram: { name: "E-Class Tram", body: "tram", scale: 1, len: 33, wid: 2.65, top: 16, accel: 1.3, brake: 2.4, grip: 20, mass: 40, lock: 0, base: 10, hp: 99999, seats: 8, value: 0 },
+  wtram: { name: "W-Class Tram", body: "tram", scale: 1, len: 14.5, wid: 2.7, top: 11, accel: 1.1, brake: 2.2, grip: 20, mass: 20, lock: 0, base: 8, hp: 99999, seats: 6, value: 0, colors: ["#2f5a3a"] },
 };
 
 /** Ordinary traffic, by district feel (weighted lists). */

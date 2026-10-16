@@ -1,4 +1,5 @@
 import { HeatAudio } from "./audio";
+import { loadMap, mapLoaded } from "./mapdata";
 import { LEADS, PREFS_KEY, SAVE_KEY, STATIONS, VEHICLES, WEAPONS, type StationId } from "./data";
 import { missionDef, missionStart, nextStory, STORY } from "./missions";
 import * as sim from "./sim";
@@ -102,7 +103,22 @@ export class Game {
   onScore: (n: number) => void = () => {};
   onFinal: (n: number) => void = () => {};
 
+  /** The real map (about 1.8 MB) streams in behind the title screen. */
+  mapReady = mapLoaded();
+  mapError = false;
+
   constructor(sound: boolean, volume: number) {
+    if (!this.mapReady && typeof window !== "undefined")
+      loadMap().then(
+        () => {
+          this.mapReady = true;
+          this.bump();
+        },
+        () => {
+          this.mapError = true;
+          this.bump();
+        },
+      );
     this.coarse = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
     try {
       const p = localStorage.getItem(PREFS_KEY);
@@ -177,12 +193,14 @@ export class Game {
   }
 
   newGame() {
+    if (!this.mapReady) return;
     this.s = sim.newGame(7);
     this.startPlay();
     this.say("Melbourne. Find the yellow marker to start the story.", "info");
   }
 
   continueGame() {
+    if (!this.mapReady) return;
     let s: State | null = null;
     try {
       const json = localStorage.getItem(SAVE_KEY);
@@ -300,7 +318,8 @@ export class Game {
     if (car) {
       throttle = ky + (t.gas ? 1 : 0) - (t.brake ? 1 : 0);
       if (!t.gas && !t.brake && Math.abs(t.my) > 0.2 && !this.coarse) throttle += t.my;
-      steer = -kx - t.mx;
+      // Right (D, →, or the stick to the right) turns right: in this world a rising heading turns clockwise.
+      steer = kx + t.mx;
     }
     return {
       mx,

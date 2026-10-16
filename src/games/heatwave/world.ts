@@ -1,22 +1,17 @@
 import { createRng, type Rng } from "../engine/rng";
+import { F_ALLEY, F_BACK, F_BRIDGE, F_FWD, G, getMap, PT, type MapData } from "./mapdata";
 
 /**
- * Melbourne, the Heatwave map. Pure, seeded data that the simulation, the renderer and the maps
- * all read. It's the real city's shape, squeezed to fit (roughly half size in the middle,
- * tighter further out), with the real street names:
+ * Melbourne, the Heatwave map, built from real map data (see `mapdata.ts`): every street with its
+ * real name and shape, one-way where it is in life, lit junctions where the real traffic lights
+ * are; every building's real footprint and height; the bay, the Yarra and the lakes; parks,
+ * beaches, piers, railway yards; benches, bins, lamps and stops where they really stand. On top
+ * of that the game adds what the data doesn't have: what each building is to the game (a shop, a
+ * pub, a terrace with a lace verandah, a glass tower), street trees and lamps, parked cars, the
+ * fixed places of the story, and a few landmark extras (a dome, a spire, the wheel's rim).
  *
- *  - The CBD: the Hoddle Grid from Spencer St to Spring St, Flinders St to La Trobe St, with
- *    the little streets and laneways in between; Flinders Street Station, Federation Square and
- *    the cathedral on the corner of Swanston St.
- *  - The Yarra running west past Southbank's towers and the casino, under the bridges, into
- *    Victoria Harbour at Docklands and out past Swanson Dock and the West Gate to the bay.
- *  - Carlton and Fitzroy to the north, East Melbourne, the MCG in Yarra Park and Richmond to the
- *    east; Kings Domain, the Shrine and the Botanic Gardens across the river; South Yarra,
- *    Chapel St and Toorak's mansions; South Melbourne, Port Melbourne and Station Pier; Albert
- *    Park Lake; and St Kilda: Fitzroy St, Acland St, the beach, the pier and the fun park.
- *
- * Coordinates are metres on the ground: x east, z south, y up. Land is flat at y = 0; Port Phillip
- * Bay, the river, the harbour and the lakes sit at WATER_Y. Traffic drives on the LEFT.
+ * Coordinates are metres on the ground round the corner of Flinders and Swanston Sts: x east,
+ * z south, y up. Land is flat at y = 0; the water sits at WATER_Y. Traffic drives on the LEFT.
  */
 
 export const WATER_Y = -0.7;
@@ -45,7 +40,7 @@ export const DISTRICTS: Record<District, { name: string; color: string }> = {
   cbd: { name: "Melbourne CBD", color: "#8a93a6" },
   southbank: { name: "Southbank", color: "#7f8ea8" },
   docklands: { name: "Docklands", color: "#7fa3b8" },
-  docks: { name: "Swanson Dock", color: "#8aa0b4" },
+  docks: { name: "Fishermans Bend", color: "#8aa0b4" },
   westmelb: { name: "West Melbourne", color: "#9a9a8e" },
   carlton: { name: "Carlton", color: "#c9a27e" },
   fitzroy: { name: "Fitzroy", color: "#b98a7a" },
@@ -55,7 +50,7 @@ export const DISTRICTS: Record<District, { name: string; color: string }> = {
   port: { name: "Port Melbourne", color: "#9fb4b8" },
   domain: { name: "Kings Domain", color: "#7fae6a" },
   southyarra: { name: "South Yarra", color: "#c4a8b8" },
-  toorak: { name: "Toorak", color: "#a8c49a" },
+  toorak: { name: "Prahran", color: "#a8c49a" },
   albertpark: { name: "Albert Park", color: "#8fbf7a" },
   stkilda: { name: "St Kilda", color: "#e7a4b8" },
   beach: { name: "The beach", color: "#ecd9a6" },
@@ -63,178 +58,27 @@ export const DISTRICTS: Record<District, { name: string; color: string }> = {
 
 /** Road dimensions by class: half the carriageway, the footpath, and lane centres from the middle. */
 export const ROAD: Record<RoadClass, { half: number; walk: number; lanes: number[] }> = {
-  boulevard: { half: 11, walk: 5, lanes: [2.25, 5.75, 9.25] },
-  avenue: { half: 7.5, walk: 4.5, lanes: [2.25, 5.75] },
-  street: { half: 4.5, walk: 3, lanes: [2.25] },
-  lane: { half: 3, walk: 1.5, lanes: [1.5] },
+  boulevard: { half: 10.5, walk: 4.5, lanes: [2.25, 5.75, 9.0] },
+  avenue: { half: 7.0, walk: 4, lanes: [2.25, 5.25] },
+  street: { half: 4.5, walk: 2.6, lanes: [2.25] },
+  lane: { half: 2.4, walk: 0.6, lanes: [0] },
 };
+const CLASSES: RoadClass[] = ["boulevard", "avenue", "street", "lane"];
 
-/** The map's edges. */
-export const BOUNDS = { x0: -1750, z0: -1000, x1: 1550, z1: 1700 };
+/** The map's edges (as the build script crops it). */
+export const BOUNDS = { x0: -4322, z0: -2869, x1: 3584, z1: 6249 };
 
-/** A road line: x = at for "ns" roads (running along z), z = at for "ew" roads. */
-interface Line {
-  at: number;
-  cls: RoadClass;
-  name: string;
-  from: number;
-  to: number;
-  /** Stretches (along the line) with no road. */
-  skip?: [number, number][];
+/** The build script's origin (Flinders St and Swanston St), for placing things by latitude and longitude. */
+const LAT0 = -37.8178;
+const LON0 = 144.9672;
+const KX = Math.cos((LAT0 * Math.PI) / 180) * ((6371008.8 * Math.PI) / 180);
+const KZ = (6371008.8 * Math.PI) / 180;
+/** Degrees to map metres. */
+export function geo(lat: number, lon: number) {
+  return { x: (lon - LON0) * KX, z: -(lat - LAT0) * KZ };
 }
 
-const NS: Line[] = [
-  // The docks, West Melbourne, Docklands and Port Melbourne.
-  { at: -1380, cls: "street", name: "Kensington Rd", from: -900, to: -440 },
-  { at: -1380, cls: "street", name: "Swanson Dock Rd", from: -440, to: 100 },
-  { at: -1200, cls: "street", name: "Appleton Dock Rd", from: -440, to: 60 },
-  { at: -1080, cls: "street", name: "Macaulay Rd", from: -900, to: -440 },
-  { at: -1080, cls: "street", name: "Graham St", from: 450, to: 800 },
-  { at: -900, cls: "avenue", name: "Bay St", from: 380, to: 800 },
-  { at: -820, cls: "street", name: "Dryburgh St", from: -900, to: -440 },
-  { at: -820, cls: "street", name: "Waterfront Way", from: -440, to: 0 },
-  { at: -660, cls: "avenue", name: "Harbour Esplanade", from: -440, to: 0 },
-  { at: -660, cls: "street", name: "Montague St", from: 380, to: 800 },
-  { at: -560, cls: "street", name: "Ferrars St", from: 380, to: 800 },
-  // The Hoddle Grid, and on over the river.
-  { at: -440, cls: "avenue", name: "Spencer St", from: -900, to: 0 },
-  { at: -440, cls: "avenue", name: "Clarendon St", from: 0, to: 800 },
-  { at: -440, cls: "street", name: "Aughtie Dr", from: 800, to: 1040 },
-  { at: -330, cls: "avenue", name: "King St", from: -560, to: 0 },
-  { at: -330, cls: "avenue", name: "Kings Way", from: 0, to: 800 },
-  { at: -330, cls: "avenue", name: "The Esplanade", from: 1040, to: 1600 },
-  { at: -220, cls: "avenue", name: "William St", from: -560, to: 0 },
-  { at: -110, cls: "avenue", name: "Queen St", from: -560, to: 0 },
-  { at: -110, cls: "street", name: "Queensbridge St", from: 0, to: 380 },
-  { at: -110, cls: "street", name: "Acland St", from: 1130, to: 1400 },
-  { at: 0, cls: "avenue", name: "Elizabeth St", from: -900, to: 0 },
-  { at: 0, cls: "street", name: "Sturt St", from: 300, to: 800 },
-  { at: 0, cls: "street", name: "Lakeside Dr", from: 800, to: 1040 },
-  { at: 0, cls: "street", name: "Barkly St", from: 1130, to: 1600 },
-  { at: 110, cls: "avenue", name: "Swanston St", from: -900, to: 0 },
-  { at: 110, cls: "boulevard", name: "St Kilda Rd", from: 0, to: 1130 },
-  { at: 110, cls: "avenue", name: "Brighton Rd", from: 1130, to: 1600 },
-  { at: 220, cls: "avenue", name: "Lygon St", from: -900, to: -560 },
-  { at: 220, cls: "avenue", name: "Russell St", from: -560, to: 0 },
-  { at: 330, cls: "street", name: "Rathdowne St", from: -900, to: -560 },
-  { at: 330, cls: "avenue", name: "Exhibition St", from: -560, to: 0 },
-  { at: 440, cls: "avenue", name: "Nicholson St", from: -900, to: -560 },
-  { at: 440, cls: "avenue", name: "Spring St", from: -560, to: 0 },
-  // Fitzroy, East Melbourne, Richmond; South Yarra and Toorak.
-  { at: 600, cls: "avenue", name: "Brunswick St", from: -900, to: -560 },
-  { at: 600, cls: "street", name: "Lansdowne St", from: -560, to: 0 },
-  { at: 600, cls: "street", name: "Anderson St", from: 560, to: 1130 },
-  { at: 760, cls: "avenue", name: "Smith St", from: -900, to: -560 },
-  { at: 760, cls: "street", name: "Powlett St", from: -560, to: 0 },
-  { at: 760, cls: "street", name: "Darling St", from: 560, to: 1130 },
-  { at: 900, cls: "avenue", name: "Hoddle St", from: -900, to: 0 },
-  { at: 900, cls: "avenue", name: "Punt Rd", from: 0, to: 1130 },
-  { at: 1040, cls: "street", name: "Lennox St", from: -560, to: 0 },
-  { at: 1040, cls: "street", name: "Surrey Rd", from: 300, to: 1130 },
-  { at: 1180, cls: "avenue", name: "Church St", from: -900, to: 300 },
-  { at: 1180, cls: "avenue", name: "Chapel St", from: 300, to: 1130 },
-  { at: 1340, cls: "street", name: "Burnley St", from: -900, to: 0 },
-  { at: 1340, cls: "avenue", name: "Williams Rd", from: 300, to: 1130 },
-];
-
-const EW: Line[] = [
-  { at: -900, cls: "avenue", name: "Racecourse Rd", from: -1380, to: -440 },
-  { at: -900, cls: "street", name: "Princes St", from: -440, to: 1340 },
-  { at: -760, cls: "street", name: "Grattan St", from: -440, to: 440 },
-  { at: -760, cls: "avenue", name: "Johnston St", from: 440, to: 1340 },
-  { at: -660, cls: "street", name: "Arden St", from: -1380, to: -440 },
-  { at: -660, cls: "street", name: "Pelham St", from: -440, to: 330 },
-  { at: -660, cls: "street", name: "Gertrude St", from: 440, to: 1340 },
-  { at: -560, cls: "avenue", name: "Victoria St", from: -1380, to: 1340 },
-  { at: -440, cls: "avenue", name: "Footscray Rd", from: -1380, to: -660 },
-  { at: -440, cls: "avenue", name: "La Trobe St", from: -660, to: 440 },
-  { at: -440, cls: "street", name: "Victoria Pde", from: 440, to: 1340 },
-  { at: -385, cls: "lane", name: "Little Lonsdale St", from: -440, to: 440 },
-  { at: -330, cls: "street", name: "Docklands Dr", from: -1380, to: -660 },
-  { at: -330, cls: "avenue", name: "Lonsdale St", from: -440, to: 440 },
-  { at: -330, cls: "street", name: "Gipps St", from: 440, to: 1340 },
-  { at: -275, cls: "lane", name: "Little Bourke St", from: -440, to: 440 },
-  { at: -220, cls: "avenue", name: "Bourke St", from: -660, to: 440 },
-  { at: -165, cls: "lane", name: "Little Collins St", from: -440, to: 440 },
-  { at: -165, cls: "street", name: "Albert St", from: 600, to: 900 },
-  { at: -165, cls: "avenue", name: "Bridge Rd", from: 900, to: 1340 },
-  { at: -110, cls: "avenue", name: "Collins St", from: -820, to: 440 },
-  { at: -55, cls: "lane", name: "Flinders Lane", from: -440, to: 440 },
-  { at: 0, cls: "avenue", name: "Flinders St", from: -820, to: 440 },
-  { at: 0, cls: "avenue", name: "Wellington Pde", from: 440, to: 900 },
-  { at: 0, cls: "avenue", name: "Swan St", from: 900, to: 1340 },
-  // South of the river.
-  { at: 300, cls: "street", name: "Southbank Blvd", from: -330, to: 110 },
-  { at: 300, cls: "avenue", name: "Alexandra Ave", from: 110, to: 1340 },
-  { at: 380, cls: "avenue", name: "City Rd", from: -900, to: 110 },
-  { at: 450, cls: "avenue", name: "Williamstown Rd", from: -1200, to: -660 },
-  { at: 560, cls: "street", name: "Park St", from: -1080, to: 110 },
-  { at: 560, cls: "avenue", name: "Domain Rd", from: 110, to: 1340 },
-  { at: 700, cls: "street", name: "Dorcas St", from: -1080, to: 110 },
-  { at: 700, cls: "avenue", name: "Toorak Rd", from: 110, to: 1340 },
-  { at: 800, cls: "street", name: "Beach St", from: -1080, to: -440 },
-  { at: 800, cls: "street", name: "Albert Rd", from: -440, to: 110 },
-  { at: 900, cls: "avenue", name: "Commercial Rd", from: 110, to: 1340 },
-  { at: 1040, cls: "street", name: "Canterbury Rd", from: -440, to: 0 },
-  { at: 1130, cls: "avenue", name: "Fitzroy St", from: -330, to: 110 },
-  { at: 1130, cls: "avenue", name: "Dandenong Rd", from: 110, to: 1340 },
-  { at: 1250, cls: "street", name: "Carlisle St", from: -330, to: 110 },
-  { at: 1400, cls: "street", name: "Ormond Rd", from: -330, to: 110 },
-];
-
-/* -------------------------------------------------------------------------------- the shape */
-
-/** Port Phillip Bay's shore, from the river mouth round to Elwood (land is north and east of it). */
-const SHORE: [number, number][] = [
-  [-1760, 590],
-  [-1500, 612],
-  [-1300, 690],
-  [-1150, 800],
-  [-1000, 878],
-  [-800, 925],
-  [-600, 975],
-  [-520, 1040],
-  [-470, 1120],
-  [-445, 1250],
-  [-420, 1400],
-  [-385, 1550],
-  [-350, 1720],
-];
-/** The bay as a polygon: the shore, then round the far side. */
-const BAY: [number, number][] = [...SHORE, [-2700, 1720], [-2700, 590]];
-
-/** The Yarra's centre line and half-width, west to east (the mouth opens into the bay). */
-const RIVER: [number, number, number][] = [
-  [-1800, 520, 120],
-  [-1550, 420, 100],
-  [-1300, 290, 85],
-  [-1080, 150, 70],
-  [-1000, 122, 60],
-  [-700, 115, 45],
-  [-440, 120, 42],
-  [0, 130, 42],
-  [300, 150, 40],
-  [600, 205, 40],
-  [900, 238, 38],
-  [1180, 244, 38],
-  [1600, 250, 38],
-];
-/** Victoria Harbour at Docklands. */
-export const HARBOUR = { x0: -1000, z0: 40, x1: -690, z1: 200 };
-/** Albert Park Lake and the Botanic Gardens' ornamental lake. */
-const LAKES = [
-  { x: -220, z: 920, rx: 198, rz: 92 },
-  { x: 750, z: 430, rx: 62, rz: 36 },
-];
-
-/** Piers and jetties out over the water: walkable and drivable decks. */
-export const PIERS: { x0: number; x1: number; z0: number; z1: number; name: string }[] = [
-  { x0: -720, x1: -438, z0: 1176, z1: 1186, name: "St Kilda Pier" },
-  { x0: -995, x1: -965, z0: 862, z1: 1150, name: "Station Pier" },
-  { x0: -930, x1: -918, z0: 40, z1: 130, name: "Harbour Jetty" },
-  { x0: -820, x1: -808, z0: 40, z1: 120, name: "Marina Jetty" },
-  { x0: -60, x1: -18, z0: 160, z1: 176, name: "Southbank Landing" },
-];
+/* -------------------------------------------------------------------------------- noise */
 
 function hash2(x: number, z: number) {
   const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
@@ -255,123 +99,174 @@ export function noise(x: number, z: number) {
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 
-function segDist(px: number, pz: number, ax: number, az: number, bx: number, bz: number) {
-  const dx = bx - ax;
-  const dz = bz - az;
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz)));
-  return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
-}
+/* -------------------------------------------------------------------------------- the ground */
 
-function insidePoly(poly: [number, number][], x: number, z: number) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, zi] = poly[i];
-    const [xj, zj] = poly[j];
-    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+let gData: MapData["ground"] | null = null;
+let gHeight: Float32Array | null = null;
+let gX0 = 0;
+let gZ0 = 0;
+
+function setupGround(m: MapData) {
+  const g = m.ground;
+  gData = g;
+  gX0 = m.x0;
+  gZ0 = m.z0;
+  const h = new Float32Array(g.nx * g.nz);
+  for (let i = 0; i < h.length; i++) {
+    const c = g.data[i];
+    if (c >= G.water) h[i] = Math.max(-7.5, -1.0 - (c - G.water) * 0.45);
+    else h[i] = 0;
   }
-  return inside;
+  // Sand shelves down to the water's edge.
+  for (let j = 1; j < g.nz - 1; j++)
+    for (let i = 1; i < g.nx - 1; i++) {
+      const k = j * g.nx + i;
+      if (g.data[k] !== G.sand) continue;
+      const wet = g.data[k - 1] >= G.water || g.data[k + 1] >= G.water || g.data[k - g.nx] >= G.water || g.data[k + g.nx] >= G.water;
+      if (wet) h[k] = -0.55;
+    }
+  gHeight = h;
 }
 
-/** Signed distance (m) to the bay's shore: positive on land, negative out in the bay. */
-export function shoreDistance(x: number, z: number) {
-  if (z < 520) return 999;
-  let d = Infinity;
-  for (let i = 0; i < SHORE.length - 1; i++) d = Math.min(d, segDist(x, z, SHORE[i][0], SHORE[i][1], SHORE[i + 1][0], SHORE[i + 1][1]));
-  return insidePoly(BAY, x, z) ? -d : d;
+/** The ground's class under a point (see `G`). */
+export function groundClass(x: number, z: number) {
+  const g = gData;
+  if (!g) return G.land;
+  const i = Math.floor((x - gX0) / g.cell);
+  const j = Math.floor((z - gZ0) / g.cell);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return G.water + 15;
+  return g.data[j * g.nx + i];
 }
 
-/** The river's centre z and half-width at x (or null off its ends). */
-export function riverAt(x: number) {
-  if (x < RIVER[0][0] || x > RIVER[RIVER.length - 1][0]) return null;
-  let i = 0;
-  while (i < RIVER.length - 2 && RIVER[i + 1][0] < x) i++;
-  const [x0, z0, h0] = RIVER[i];
-  const [x1, z1, h1] = RIVER[i + 1];
-  const t = (x - x0) / (x1 - x0);
-  return { z: z0 + (z1 - z0) * t, half: h0 + (h1 - h0) * t };
-}
-
-function inLake(x: number, z: number) {
-  for (const l of LAKES) {
-    const dx = (x - l.x) / l.rx;
-    const dz = (z - l.z) / l.rz;
-    if (dx * dx + dz * dz < 1) return true;
-  }
-  return false;
-}
-
-/** Inland water: the river, the harbour, the lakes (quay walls and banks, not beaches). */
-function inlandWater(x: number, z: number) {
-  const r = riverAt(x);
-  if (r && Math.abs(z - r.z) < r.half) return true;
-  if (x > HARBOUR.x0 && x < HARBOUR.x1 && z > HARBOUR.z0 && z < HARBOUR.z1) return true;
-  return inLake(x, z);
-}
-
-/** Sand along the bay from Port Melbourne round to St Kilda and Elwood. */
-function sandy(x: number, z: number, shore: number) {
-  if (x < -1100 || shore > 140) return false;
-  // How far inland the beach runs: wide at Port Melbourne and St Kilda, a strip elsewhere.
-  const wide = x < -700 ? 70 : z > 1100 ? 95 : 55;
-  return shore < wide;
+function rawHeight(x: number, z: number) {
+  const g = gData;
+  const h = gHeight;
+  if (!g || !h) return 0;
+  const fx = (x - gX0) / g.cell - 0.5;
+  const fz = (z - gZ0) / g.cell - 0.5;
+  const i = Math.floor(fx);
+  const j = Math.floor(fz);
+  const tx = fx - i;
+  const tz = fz - j;
+  const at = (a: number, b: number) => {
+    if (a < 0 || b < 0 || a >= g.nx || b >= g.nz) return -7.5;
+    return h[b * g.nx + a];
+  };
+  const a0 = at(i, j) + (at(i + 1, j) - at(i, j)) * tx;
+  const a1 = at(i, j + 1) + (at(i + 1, j + 1) - at(i, j + 1)) * tx;
+  return a0 + (a1 - a0) * tz;
 }
 
 /** Ground height: land at 0, beaches shelving into the bay, quays dropping into the river. */
 export function groundY(x: number, z: number) {
-  if (onDeck(x, z)) return 0;
-  const d = shoreDistance(x, z);
-  if (d < 0) return Math.max(-8, -1.2 + d * 0.12);
-  if (inlandWater(x, z)) return -2.6;
-  if (d < 14 && sandy(x, z, d)) return -1.2 + (d / 14) * 1.2;
-  return 0;
+  const y = rawHeight(x, z);
+  if (y < -0.05 && onDeck(x, z)) return 0;
+  return y;
 }
 
 export function isWater(x: number, z: number) {
   return groundY(x, z) < WATER_Y + 0.2;
 }
 
+/** On a pier, a jetty or a bridge's deck. */
 export function onDeck(x: number, z: number) {
-  for (const p of PIERS) if (x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1) return true;
-  return onBridge(x, z);
+  const c = groundClass(x, z);
+  if (c === G.deck) return true;
+  if (c < G.water && rawHeight(x, z) > -0.3) return false;
+  return bridgeAt(x, z);
+}
+
+let bridgeRoads: Roads | null = null;
+function bridgeAt(x: number, z: number) {
+  const r = bridgeRoads;
+  if (!r) return false;
+  for (const id of segsAt(r, x, z)) {
+    const s = r.segs[id];
+    if (!s.bridge) continue;
+    const d = segDistance(r, s, x, z);
+    if (d.d <= s.half + s.walk + 0.3 && d.t > -0.02 && d.t < 1.02) return true;
+  }
+  return false;
 }
 
 /** Is this the beach (sand on the bay)? */
 export function onBeach(x: number, z: number) {
-  const d = shoreDistance(x, z);
-  return d >= 0 && sandy(x, z, d) && !nearRoad(x, z, 4);
+  return groundClass(x, z) === G.sand && !nearRoad(x, z, 3);
+}
+
+/** A park or a sports ground. */
+export function isPark(x: number, z: number) {
+  const c = groundClass(x, z);
+  return c === G.grass || c === G.sport;
+}
+
+/* -------------------------------------------------------------------------------- districts */
+
+const SUBURBS: [District, number, number][] = [
+  ["southbank", -37.8255, 144.9625],
+  ["docklands", -37.8165, 144.942],
+  ["docks", -37.8255, 144.925],
+  ["westmelb", -37.806, 144.946],
+  ["carlton", -37.7995, 144.967],
+  ["fitzroy", -37.8005, 144.979],
+  ["eastmelb", -37.8125, 144.986],
+  ["richmond", -37.8205, 145.001],
+  ["southmelb", -37.8345, 144.957],
+  ["port", -37.8395, 144.9375],
+  ["domain", -37.8305, 144.976],
+  ["southyarra", -37.8395, 144.993],
+  ["toorak", -37.853, 144.995],
+  ["albertpark", -37.8455, 144.958],
+  ["stkilda", -37.864, 144.979],
+];
+let suburbXY: { d: District; x: number; z: number }[] = [];
+// The Hoddle Grid (its four corners): Flinders/Spencer, Flinders/Spring, Spring/La Trobe, La Trobe/Spencer.
+let cbdQuad: { x: number; z: number }[] = [];
+
+function setupDistricts() {
+  suburbXY = SUBURBS.map(([d, lat, lon]) => ({ d, ...geo(lat, lon) }));
+  cbdQuad = [geo(-37.8212, 144.9545), geo(-37.8155, 144.9738), geo(-37.8094, 144.9714), geo(-37.8149, 144.9520)];
+}
+
+/** Where to write each district's name on the map. */
+export function districtLabels() {
+  if (!suburbXY.length) setupDistricts();
+  return [{ name: DISTRICTS.cbd.name, ...geo(-37.8148, 144.9632) }, ...suburbXY.map((q) => ({ name: DISTRICTS[q.d].name, x: q.x, z: q.z }))];
+}
+
+function inPoly(poly: { x: number; z: number }[], x: number, z: number) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i];
+    const b = poly[j];
+    if (a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
+  }
+  return inside;
 }
 
 export function districtAt(x: number, z: number): District {
-  if (z > 520 && onBeach(x, z)) return "beach";
-  const r = riverAt(x);
-  const south = r ? z > r.z : z > 200;
-  if (!south) {
-    if (x < -1000) return z < -440 ? "westmelb" : "docks";
-    if (x < -452) return z < -440 ? "westmelb" : "docklands";
-    if (x <= 452) return z < -452 ? "carlton" : "cbd";
-    if (z < -560) return "fitzroy";
-    return x < 900 ? "eastmelb" : "richmond";
+  if (!suburbXY.length) setupDistricts();
+  if (groundClass(x, z) === G.sand) return "beach";
+  if (inPoly(cbdQuad, x, z)) return "cbd";
+  let best: District = "cbd";
+  let bd = Infinity;
+  for (const s of suburbXY) {
+    const d = (s.x - x) * (s.x - x) + (s.z - z) * (s.z - z);
+    if (d < bd) {
+      bd = d;
+      best = s.d;
+    }
   }
-  if (x < -1000) return z < 470 ? "docks" : "port";
-  if (x < -660) return "port";
-  if (z < 380 && x >= -452 && x < 452) return "southbank";
-  if (x < 110) {
-    if (z < 800) return "southmelb";
-    if (z < 1040 && x >= -452) return "albertpark";
-    return "stkilda";
-  }
-  if (z > 1040) return "stkilda";
-  if (z < 560 && x < 900) return "domain";
-  return x < 1180 ? "southyarra" : "toorak";
+  return best;
 }
 
 /** The name of where you are, for the HUD: the beaches have their own. */
 export function placeName(x: number, z: number) {
   const d = districtAt(x, z);
-  if (d === "beach") return x < -700 ? "Port Melbourne Beach" : z < 1100 ? "Middle Park Beach" : z > 1450 ? "Elwood Beach" : "St Kilda Beach";
-  if (d === "eastmelb" && Math.hypot(x - 680, z - 105) < 160) return "Yarra Park";
-  if (d === "domain" && x > 600) return "Royal Botanic Gardens";
-  if (d === "albertpark" && Math.hypot((x + 220) / 230, (z - 920) / 125) < 1) return "Albert Park Lake";
+  if (d === "beach") {
+    const p = geo(-37.858, 144.965);
+    return z > p.z ? "St Kilda Beach" : x < geo(-37.84, 144.945).x ? "Port Melbourne Beach" : "Middle Park Beach";
+  }
   return DISTRICTS[d].name;
 }
 
@@ -381,136 +276,405 @@ export interface Node {
   id: number;
   x: number;
   z: number;
-  /** Segment ids, by direction: 0 east, 1 south, 2 west, 3 north (−1 if none). */
-  dir: [number, number, number, number];
+  /** The segments that meet here. */
+  segs: number[];
+  /** Light phase (0 or 1) of each of `segs` (lit junctions). */
+  ph: number[];
   light: boolean;
+  /** Radius of the junction box (0 for a bend in the road). */
+  r: number;
 }
 
 export interface Seg {
   id: number;
-  /** From node a (west or north end) to node b. */
   a: number;
   b: number;
-  axis: "ns" | "ew";
   cls: RoadClass;
   name: string;
-  /** Crosses water (the river). */
+  /** Over water. */
   bridge: boolean;
-  /** Where the deck is over water, along the segment (0–1). */
-  wet: [number, number][];
+  /** 1: a→b only; −1: b→a only; 0 both ways. */
+  oneway: 0 | 1 | -1;
+  alley: boolean;
+  half: number;
+  walk: number;
   len: number;
+  /** Heading a→b and its unit vector. */
+  h: number;
+  dx: number;
+  dz: number;
 }
-
-const covers = (l: Line, v: number) => v >= l.from - 0.01 && v <= l.to + 0.01;
-const skipped = (l: Line, v0: number, v1: number) => !!l.skip?.some(([s0, s1]) => v0 >= s0 - 0.01 && v1 <= s1 + 0.01);
 
 export interface Roads {
   nodes: Node[];
   segs: Seg[];
 }
 
-let bridgeSegs: Seg[] = [];
-let nodesRef: Node[] = [];
+export const roadHalf = (s: Seg) => s.half;
+export const streetHalf = (s: Seg) => s.half + s.walk;
 
-function buildRoads(): Roads {
+/** Lane centres from the middle (positive to the left of travel); the last is the kerb lane. */
+export function laneOffsets(s: Seg): number[] {
+  const L = ROAD[s.cls].lanes;
+  if (s.oneway) {
+    const n = Math.max(1, Math.min(L.length * 2, Math.floor((s.half * 2) / 3.3)));
+    const out: number[] = [];
+    for (let i = 0; i < n; i++) out.push((i - (n - 1) / 2) * 3.3);
+    return out;
+  }
+  const out = L.filter((o) => o < s.half - 0.9);
+  return out.length ? out : [s.half * 0.5];
+}
+
+/** The light phase a segment has where it meets a node. */
+export function phaseAt(n: Node, segId: number) {
+  const i = n.segs.indexOf(segId);
+  return i >= 0 ? n.ph[i] : 0;
+}
+
+/** Can traffic leave node `from` along this segment? */
+export function canLeave(s: Seg, from: number) {
+  if (s.oneway === 0) return true;
+  return s.oneway === 1 ? s.a === from : s.b === from;
+}
+
+function buildRoads(m: MapData): Roads {
   const nodes: Node[] = [];
+  const nN = m.nodeXY.length / 2;
+  for (let i = 0; i < nN; i++) nodes.push({ id: i, x: m.nodeXY[i * 2], z: m.nodeXY[i * 2 + 1], segs: [], ph: [], light: false, r: 0 });
   const segs: Seg[] = [];
-  const key = (x: number, z: number) => `${Math.round(x)},${Math.round(z)}`;
-  const at = new Map<string, number>();
-  const node = (x: number, z: number) => {
-    const k = key(x, z);
-    let id = at.get(k);
-    if (id === undefined) {
-      id = nodes.length;
-      nodes.push({ id, x, z, dir: [-1, -1, -1, -1], light: false });
-      at.set(k, id);
-    }
-    return id;
-  };
-  const along = (l: Line, other: Line[]) => {
-    const stops = new Set<number>([l.from, l.to]);
-    for (const o of other) if (covers(o, l.at) && o.at > l.from && o.at < l.to) stops.add(o.at);
-    return [...stops].sort((a, b) => a - b);
-  };
-  const add = (l: Line, axis: "ns" | "ew", v0: number, v1: number) => {
-    if (skipped(l, v0, v1)) return;
-    const a = axis === "ns" ? node(l.at, v0) : node(v0, l.at);
-    const b = axis === "ns" ? node(l.at, v1) : node(v1, l.at);
+  const nE = m.edgeCls.length;
+  for (let i = 0; i < nE; i++) {
+    const a = m.edgeAB[i * 2];
+    const b = m.edgeAB[i * 2 + 1];
+    const A = nodes[a];
+    const B = nodes[b];
+    const len = Math.hypot(B.x - A.x, B.z - A.z);
+    if (len < 0.05) continue;
+    const cls = CLASSES[Math.min(3, m.edgeCls[i])];
+    const fl = m.edgeFlags[i];
+    const w = m.edgeWidth[i] / 4;
+    const base = ROAD[cls].half;
+    const half = w > 2 ? Math.max(base * 0.75, Math.min(base * 1.15, w / 2)) : base;
+    const h = Math.atan2(B.z - A.z, B.x - A.x);
     const id = segs.length;
-    const na = nodes[a];
-    const nb = nodes[b];
-    // Where it runs over water.
-    const wet: [number, number][] = [];
-    let start = -1;
-    const N = Math.max(2, Math.ceil((v1 - v0) / 4));
-    for (let i = 0; i <= N; i++) {
-      const t = i / N;
-      const x = na.x + (nb.x - na.x) * t;
-      const z = na.z + (nb.z - na.z) * t;
-      const w = rawWater(x, z);
-      if (w && start < 0) start = t;
-      if (!w && start >= 0) {
-        wet.push([Math.max(0, start - 0.02), Math.min(1, t + 0.02)]);
-        start = -1;
+    segs.push({ id, a, b, cls, name: m.names[m.edgeName[i]] || "", bridge: !!(fl & F_BRIDGE), oneway: fl & F_FWD ? 1 : fl & F_BACK ? -1 : 0, alley: !!(fl & F_ALLEY), half, walk: ROAD[cls].walk, len, h, dx: Math.cos(h), dz: Math.sin(h) });
+    A.segs.push(id);
+    B.segs.push(id);
+  }
+  for (const n of nodes) {
+    const deg = n.segs.length;
+    if (deg >= 3) {
+      let r = 0;
+      for (const id of n.segs) r = Math.max(r, segs[id].half);
+      n.r = Math.min(14, r + 1.2);
+      n.light = m.lights[n.id] === 1 && n.segs.some((id) => segs[id].cls !== "lane");
+    } else if (deg === 2) {
+      const s0 = segs[n.segs[0]];
+      const s1 = segs[n.segs[1]];
+      const h0 = s0.a === n.id ? s0.h : s0.h + Math.PI;
+      const h1 = s1.a === n.id ? s1.h : s1.h + Math.PI;
+      const bend = Math.PI - Math.abs(Math.atan2(Math.sin(h1 - h0), Math.cos(h1 - h0)));
+      n.r = bend > 0.45 ? Math.min(s0.half, s1.half) * 0.5 : 0;
+    }
+    // Phases: the roads in line with the widest one go together.
+    let ref = 0;
+    let wid = -1;
+    for (const id of n.segs) {
+      const s = segs[id];
+      if (s.half > wid) {
+        wid = s.half;
+        ref = s.a === n.id ? s.h : s.h + Math.PI;
       }
     }
-    if (start >= 0) wet.push([Math.max(0, start - 0.02), 1]);
-    segs.push({ id, a, b, axis, cls: l.cls, name: l.name, bridge: wet.length > 0, wet, len: Math.hypot(nb.x - na.x, nb.z - na.z) });
-    if (axis === "ns") {
-      na.dir[1] = id;
-      nb.dir[3] = id;
-    } else {
-      na.dir[0] = id;
-      nb.dir[2] = id;
+    n.ph = n.segs.map((id) => {
+      const s = segs[id];
+      const h = s.a === n.id ? s.h : s.h + Math.PI;
+      const d = Math.abs(Math.atan2(Math.sin(2 * (h - ref)), Math.cos(2 * (h - ref)))) / 2;
+      return d < Math.PI / 4 ? 0 : 1;
+    });
+  }
+  // Short segments must still leave room between their junction boxes.
+  for (const s of segs) {
+    const A = nodes[s.a];
+    const B = nodes[s.b];
+    if (A.r + B.r > s.len - 0.5) {
+      const k = Math.max(0, s.len - 0.5) / (A.r + B.r);
+      if (A.segs.length < 3) A.r *= k;
+      if (B.segs.length < 3) B.r *= k;
     }
-  };
-  for (const l of NS) {
-    const stops = along(l, EW);
-    for (let i = 0; i < stops.length - 1; i++) add(l, "ns", stops[i], stops[i + 1]);
-  }
-  for (const l of EW) {
-    const stops = along(l, NS);
-    for (let i = 0; i < stops.length - 1; i++) add(l, "ew", stops[i], stops[i + 1]);
-  }
-  // Lights where three or more proper roads meet and one of them is a main road; the laneways
-  // just give way.
-  for (const n of nodes) {
-    const ways = n.dir.filter((d) => d >= 0 && segs[d].cls !== "lane");
-    const main = ways.some((d) => segs[d].cls === "avenue" || segs[d].cls === "boulevard");
-    n.light = ways.length >= 3 && main;
   }
   return { nodes, segs };
 }
 
-/** Water before bridges are known (for finding where the bridges go). */
-function rawWater(x: number, z: number) {
-  return shoreDistance(x, z) < 0 || inlandWater(x, z);
+/* ---- the segment index (50 m cells) */
+
+const CELL = 50;
+const cellKey = (cx: number, cz: number) => (cx + 1000) * 4000 + (cz + 1000);
+const segCells = new WeakMap<Roads, Map<number, number[]>>();
+
+function segIndex(r: Roads) {
+  let idx = segCells.get(r);
+  if (idx) return idx;
+  idx = new Map();
+  for (const s of r.segs) {
+    const A = r.nodes[s.a];
+    const B = r.nodes[s.b];
+    const pad = s.half + s.walk + 4;
+    const x0 = Math.floor((Math.min(A.x, B.x) - pad) / CELL);
+    const x1 = Math.floor((Math.max(A.x, B.x) + pad) / CELL);
+    const z0 = Math.floor((Math.min(A.z, B.z) - pad) / CELL);
+    const z1 = Math.floor((Math.max(A.z, B.z) + pad) / CELL);
+    for (let cx = x0; cx <= x1; cx++)
+      for (let cz = z0; cz <= z1; cz++) {
+        // Only the cells the segment's band actually crosses.
+        const mx = (cx + 0.5) * CELL;
+        const mz = (cz + 0.5) * CELL;
+        const t = Math.max(0, Math.min(s.len, (mx - A.x) * s.dx + (mz - A.z) * s.dz));
+        const d = Math.hypot(A.x + s.dx * t - mx, A.z + s.dz * t - mz);
+        if (d > CELL * 0.72 + pad) continue;
+        const k = cellKey(cx, cz);
+        const list = idx.get(k);
+        if (list) list.push(s.id);
+        else idx.set(k, [s.id]);
+      }
+  }
+  segCells.set(r, idx);
+  return idx;
 }
 
-export const roadHalf = (s: Seg) => ROAD[s.cls].half;
-export const streetHalf = (s: Seg) => ROAD[s.cls].half + (s.bridge ? 1.6 : ROAD[s.cls].walk);
+const NONE: number[] = [];
+/** Segments whose street could touch (x, z). */
+export function segsAt(r: Roads, x: number, z: number) {
+  return segIndex(r).get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) ?? NONE;
+}
 
-function onBridge(x: number, z: number) {
-  for (const s of bridgeSegs) {
-    const a = nodesRef[s.a];
-    const b = nodesRef[s.b];
-    const h = streetHalf(s);
-    if (s.axis === "ns") {
-      if (Math.abs(x - a.x) > h || z < a.z || z > b.z) continue;
-      const t = (z - a.z) / (b.z - a.z);
-      if (s.wet.some(([t0, t1]) => t >= t0 && t <= t1)) return true;
-    } else {
-      if (Math.abs(z - a.z) > h || x < a.x || x > b.x) continue;
-      const t = (x - a.x) / (b.x - a.x);
-      if (s.wet.some(([t0, t1]) => t >= t0 && t <= t1)) return true;
-    }
+/** Distance from a point to a segment's centre line: the distance, how far along (0–1), the side (+ left of a→b). */
+function segDistance(r: Roads, s: Seg, x: number, z: number) {
+  const A = r.nodes[s.a];
+  const px = x - A.x;
+  const pz = z - A.z;
+  const along = px * s.dx + pz * s.dz;
+  const t = along / s.len;
+  const tc = Math.max(0, Math.min(1, t));
+  const cx = A.x + s.dx * s.len * tc;
+  const cz = A.z + s.dz * s.len * tc;
+  // Left of travel a→b is (dz, −dx).
+  const side = px * s.dz - pz * s.dx;
+  return { d: Math.hypot(x - cx, z - cz), t, x: cx, z: cz, side };
+}
+
+let roadsRef: Roads | null = null;
+
+/** Is (x, z) within `pad` metres of a road's carriageway? */
+export function nearRoad(x: number, z: number, pad = 0) {
+  const r = roadsRef;
+  if (!r) return false;
+  for (const id of segsAt(r, x, z)) {
+    const s = r.segs[id];
+    if (segDistance(r, s, x, z).d <= s.half + pad) return true;
   }
   return false;
 }
 
+/** The road segment a point is on (within the carriageway, plus pad), if any. */
+export function segAt(city: City, x: number, z: number, pad = 0): Seg | null {
+  const r = city.roads;
+  let best: Seg | null = null;
+  let bd = Infinity;
+  for (const id of segsAt(r, x, z)) {
+    const s = r.segs[id];
+    const d = segDistance(r, s, x, z);
+    if (d.d <= s.half + pad && d.d < bd) {
+      bd = d.d;
+      best = s;
+    }
+  }
+  return best;
+}
+
+/** The nearest point on any road's centreline, with its segment. */
+export function nearestRoad(city: City, x: number, z: number) {
+  const r = city.roads;
+  let best: { seg: Seg; x: number; z: number; t: number; d: number } | null = null;
+  const scan = (ids: readonly number[]) => {
+    for (const id of ids) {
+      const s = r.segs[id];
+      const d = segDistance(r, s, x, z);
+      if (!best || d.d < best.d) best = { seg: s, x: d.x, z: d.z, t: Math.max(0, Math.min(1, d.t)), d: d.d };
+    }
+  };
+  scan(segsAt(r, x, z));
+  if (!best || (best as { d: number }).d > 30) {
+    // Look further out, ring by ring.
+    const cx = Math.floor(x / CELL);
+    const cz = Math.floor(z / CELL);
+    const idx = segIndex(r);
+    for (let ring = 1; ring < 40 && (!best || (best as { d: number }).d > ring * CELL - CELL); ring++)
+      for (let i = -ring; i <= ring; i++)
+        for (let j = -ring; j <= ring; j++) {
+          if (Math.max(Math.abs(i), Math.abs(j)) !== ring) continue;
+          const list = idx.get(cellKey(cx + i, cz + j));
+          if (list) scan(list);
+        }
+  }
+  return best!;
+}
+
+/** What's underfoot (for footsteps, tyre grip, the ground's colour). */
+export type Surface = "road" | "walk" | "sand" | "grass" | "lot" | "water" | "deck";
+export function surfaceAt(city: City, x: number, z: number): Surface {
+  if (onDeck(x, z)) return "deck";
+  const y = groundY(x, z);
+  if (y < WATER_Y + 0.2) return "water";
+  if (segAt(city, x, z)) return "road";
+  const c = groundClass(x, z);
+  if (c === G.sand) return "sand";
+  if (segAt(city, x, z, 5)) return "walk";
+  if (c === G.grass || c === G.sport) return "grass";
+  return "lot";
+}
+
+/** A small binary heap of [priority, id]. */
+class Heap {
+  private p: number[] = [];
+  private v: number[] = [];
+  get size() {
+    return this.v.length;
+  }
+  push(pri: number, id: number) {
+    const p = this.p;
+    const v = this.v;
+    p.push(pri);
+    v.push(id);
+    let i = p.length - 1;
+    while (i > 0) {
+      const u = (i - 1) >> 1;
+      if (p[u] <= p[i]) break;
+      [p[u], p[i]] = [p[i], p[u]];
+      [v[u], v[i]] = [v[i], v[u]];
+      i = u;
+    }
+  }
+  pop() {
+    const p = this.p;
+    const v = this.v;
+    const top = v[0];
+    const lp = p.pop()!;
+    const lv = v.pop()!;
+    if (v.length) {
+      p[0] = lp;
+      v[0] = lv;
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < p.length && p[l] < p[m]) m = l;
+        if (r < p.length && p[r] < p[m]) m = r;
+        if (m === i) break;
+        [p[m], p[i]] = [p[i], p[m]];
+        [v[m], v[i]] = [v[i], v[m]];
+        i = m;
+      }
+    }
+    return top;
+  }
+}
+
+/** Node ids of the shortest way along the roads between two nodes (A*). */
+export function routeNodes(city: City, from: number[], goal: Set<number>, tx: number, tz: number, opts: { lanes?: boolean; oneway?: boolean; start?: number[] } = {}) {
+  const { nodes, segs } = city.roads;
+  const g = new Map<number, number>();
+  const prev = new Map<number, number>();
+  const open = new Heap();
+  from.forEach((id, i) => {
+    const d = opts.start?.[i] ?? 0;
+    g.set(id, d);
+    open.push(d + Math.hypot(nodes[id].x - tx, nodes[id].z - tz), id);
+  });
+  const closed = new Set<number>();
+  let end = -1;
+  let guard = 0;
+  while (open.size && guard++ < 200000) {
+    const cur = open.pop();
+    if (closed.has(cur)) continue;
+    closed.add(cur);
+    if (goal.has(cur)) {
+      end = cur;
+      break;
+    }
+    const gc = g.get(cur) ?? 0;
+    for (const sid of nodes[cur].segs) {
+      const s = segs[sid];
+      if (opts.lanes === false && s.cls === "lane") continue;
+      const nb = s.a === cur ? s.b : s.a;
+      if (closed.has(nb)) continue;
+      // Laneways cost more, so routes keep to the proper roads; wrong way down a one-way more still.
+      let cost = s.len * (s.cls === "lane" ? 1.8 : s.cls === "street" ? 1.1 : 1);
+      if (!canLeave(s, cur)) {
+        if (opts.oneway) continue;
+        cost *= 3;
+      }
+      const ng = gc + cost;
+      if (ng < (g.get(nb) ?? Infinity)) {
+        g.set(nb, ng);
+        prev.set(nb, cur);
+        open.push(ng + Math.hypot(nodes[nb].x - tx, nodes[nb].z - tz), nb);
+      }
+    }
+  }
+  if (end < 0) return [];
+  const chain: number[] = [];
+  for (let c: number | undefined = end; c !== undefined; c = prev.get(c)) chain.unshift(c);
+  return chain;
+}
+
+/** Shortest route along the roads between two points; returns the points to follow. */
+export function route(city: City, fx: number, fz: number, tx: number, tz: number): { x: number; z: number }[] {
+  const { nodes } = city.roads;
+  const s0 = nearestRoad(city, fx, fz);
+  const s1 = nearestRoad(city, tx, tz);
+  const A0 = nodes[s0.seg.a];
+  const B0 = nodes[s0.seg.b];
+  const chain = routeNodes(city, [s0.seg.a, s0.seg.b], new Set([s1.seg.a, s1.seg.b]), tx, tz, { start: [Math.hypot(A0.x - s0.x, A0.z - s0.z), Math.hypot(B0.x - s0.x, B0.z - s0.z)] });
+  const pts: { x: number; z: number }[] = [{ x: s0.x, z: s0.z }];
+  for (const id of chain) pts.push({ x: nodes[id].x, z: nodes[id].z });
+  pts.push({ x: s1.x, z: s1.z }, { x: tx, z: tz });
+  // Thin out the bends: keep a point every few metres, and every corner.
+  const out: { x: number; z: number }[] = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = out[out.length - 1];
+    const b = pts[i];
+    const c = pts[i + 1];
+    const h0 = Math.atan2(b.z - a.z, b.x - a.x);
+    const h1 = Math.atan2(c.z - b.z, c.x - b.x);
+    const turn = Math.abs(Math.atan2(Math.sin(h1 - h0), Math.cos(h1 - h0)));
+    if (turn > 0.25 || Math.hypot(b.x - a.x, b.z - a.z) > 24) out.push(b);
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+/** The street names round a point (for the HUD's location line). */
+export function streetName(city: City, x: number, z: number) {
+  const r = nearestRoad(city, x, z);
+  return r && r.d < 30 && r.seg.name ? r.seg.name : placeName(x, z);
+}
+
+/** A spot on the sand within r of (x, z), or null if there's no beach near. */
+export function sandSpot(x: number, z: number, r: number, rnd: () => number) {
+  for (let i = 0; i < 14; i++) {
+    const px = x + (rnd() * 2 - 1) * r;
+    const pz = z + (rnd() * 2 - 1) * r;
+    if (onBeach(px, pz) && groundY(px, pz) > -0.3) return { x: px, z: pz };
+  }
+  return null;
+}
+
 /* -------------------------------------------------------------------------------- trams */
 
-/** A tram route along the roads' centre lines (corners on junctions); trams run on the inside lane. */
+/** A tram route: real tram streets, by way of these points (the track follows the roads between). */
 export interface TramRoute {
   id: string;
   num: string;
@@ -518,74 +682,67 @@ export interface TramRoute {
   /** E-class (modern, three sections) or the heritage W-class of the City Circle. */
   type: "E" | "W";
   loop: boolean;
-  pts: [number, number][];
+  /** Way points, latitude and longitude. */
+  via: [number, number][];
 }
 
 export const TRAMS: TramRoute[] = [
-  { id: "t16", num: "16", name: "Melbourne Uni – St Kilda Beach", type: "E", loop: false, pts: [[110, -900], [110, 1130], [-110, 1130], [-110, 1400]] },
-  { id: "t48", num: "48", name: "Docklands – Collins St", type: "E", loop: false, pts: [[-820, -110], [440, -110]] },
-  { id: "t96", num: "96", name: "Docklands – Nicholson St", type: "E", loop: false, pts: [[-660, -220], [440, -220], [440, -900]] },
-  { id: "t35", num: "35", name: "City Circle", type: "W", loop: true, pts: [[-440, 0], [440, 0], [440, -440], [-440, -440]] },
-  { id: "t58", num: "58", name: "Toorak Rd", type: "E", loop: false, pts: [[110, 700], [1340, 700]] },
-  { id: "t78", num: "78", name: "Church St – Chapel St", type: "E", loop: false, pts: [[1180, -560], [1180, 1130]] },
-  { id: "t70", num: "70", name: "Wellington Pde – Swan St", type: "E", loop: false, pts: [[440, 0], [1340, 0]] },
-  { id: "t109", num: "109", name: "Collins St – Port Melbourne", type: "E", loop: false, pts: [[440, -110], [-440, -110], [-440, 380], [-900, 380], [-900, 800]] },
+  { id: "t16", num: "16", name: "Melbourne Uni – St Kilda Beach", type: "E", loop: false, via: [[-37.7985, 144.9637], [-37.8095, 144.9658], [-37.8178, 144.9676], [-37.8300, 144.9712], [-37.8556, 144.9800], [-37.8590, 144.9780], [-37.8640, 144.9740]] },
+  { id: "t96", num: "96", name: "Spencer St – Nicholson St", type: "E", loop: false, via: [[-37.8158, 144.9535], [-37.8135, 144.9640], [-37.8105, 144.9725], [-37.8050, 144.9740], [-37.7960, 144.9775]] },
+  { id: "t86", num: "86", name: "Docklands – Smith St", type: "E", loop: false, via: [[-37.8145, 144.9420], [-37.8160, 144.9530], [-37.8120, 144.9690], [-37.8100, 144.9748], [-37.8060, 144.9850], [-37.7960, 144.9840]] },
+  { id: "t35", num: "35", name: "City Circle", type: "W", loop: true, via: [[-37.8205, 144.9548], [-37.8160, 144.9710], [-37.8105, 144.9710], [-37.8135, 144.9530]] },
+  { id: "t58", num: "58", name: "Toorak Rd", type: "E", loop: false, via: [[-37.8300, 144.9712], [-37.8390, 144.9785], [-37.8395, 144.9910], [-37.8415, 145.0060]] },
+  { id: "t78", num: "78", name: "Chapel St", type: "E", loop: false, via: [[-37.8235, 145.0003], [-37.8400, 144.9955], [-37.8520, 144.9930], [-37.8680, 144.9915]] },
+  { id: "t70", num: "70", name: "Flinders St – Swan St", type: "E", loop: false, via: [[-37.8182, 144.9620], [-37.8150, 144.9748], [-37.8245, 144.9905], [-37.8255, 145.0060]] },
+  { id: "t12", num: "12", name: "Collins St – St Kilda", type: "E", loop: false, via: [[-37.8120, 144.9720], [-37.8175, 144.9545], [-37.8255, 144.9535], [-37.8360, 144.9600], [-37.8510, 144.9720], [-37.8590, 144.9780]] },
 ];
 
-/* -------------------------------------------------------------------------------- the city */
+/* -------------------------------------------------------------------------------- buildings */
 
-export type BuildingKind =
-  | "tower"
-  | "office"
-  | "apartment"
-  | "heritage"
-  | "shop"
-  | "pub"
-  | "terrace"
-  | "cottage"
-  | "mansion"
-  | "warehouse"
-  | "shed"
-  | "hotel"
-  | "hospital"
-  | "station"
-  | "bank"
-  | "garage";
+export type BuildingKind = "tower" | "office" | "apartment" | "heritage" | "shop" | "pub" | "terrace" | "cottage" | "mansion" | "warehouse" | "shed" | "hotel" | "hospital" | "station" | "bank" | "garage";
 
-/** Facade materials (the renderer draws each its own way). */
+/** Facade types (the facade shader's materials). */
 export const FAC = { glass: 0, grid: 1, sandstone: 2, brick: 3, render: 4, weatherboard: 5, metal: 6, bluestone: 7 } as const;
 export type Facade = (typeof FAC)[keyof typeof FAC];
 
 export interface Building {
   id: number;
+  /** Centre of its bounding box, and half the box's size. */
   x: number;
   z: number;
   hw: number;
   hd: number;
   h: number;
+  /** Where the walls start (a podium's tower, an overhang): above the ground. */
+  minH: number;
   kind: BuildingKind;
   style: number;
   /** Wall colour (glass tint, stone, brick, paint). */
   color: string;
   /** Trim colour (frames, mullions, lace). */
   accent: string;
-  /** Which side faces the street: 0 east, 1 south, 2 west, 3 north. */
+  /** Legacy compass face (0 east, 1 south, 2 west, 3 north) nearest the street side. */
   face: number;
+  /** The street front: its edge and outward normal. */
+  front: { ax: number; az: number; bx: number; bz: number; nx: number; nz: number; len: number } | null;
   fac: Facade;
-  /** Storey height. */
   floor: number;
-  /** Ground floor height (taller for shops and lobbies). */
   gf: number;
-  /** Shopfront glass at street level. */
   shop: boolean;
-  roof: "flat" | "hip" | "gable" | "sawtooth";
-  /** A cast-iron lace verandah over the footpath (terraces and pubs). */
+  roof: "flat" | "hip" | "gable" | "sawtooth" | "dome" | "pyramid";
   verandah?: boolean;
-  /** A street awning over the footpath (shops). */
   awning?: boolean;
   sign?: string;
-  /** A setback crown on a tower: from this height up it's this much narrower. */
   crown?: { from: number; inset: number; gold?: boolean };
+  /** The footprint (x/z pairs, positive area) and its courtyards (negative). */
+  ring: Float32Array;
+  holes: Float32Array[];
+  /** A minimum box round the footprint (for pitched roofs): centre, axis, half sizes. */
+  obb: { x: number; z: number; ux: number; uz: number; hw: number; hd: number; fill: number };
+  /** The real building's name, where it has one. */
+  name?: string;
+  /** Walls you can walk into (not a floating part). */
+  solid: boolean;
 }
 
 export type PropKind =
@@ -615,7 +772,8 @@ export type PropKind =
   | "beachbox"
   | "tennis"
   | "flame"
-  | "graffiti";
+  | "graffiti"
+  | "pole";
 
 export interface Prop {
   kind: PropKind;
@@ -649,30 +807,8 @@ export interface ParkSpot {
   h: number;
 }
 
-/** The big one-off buildings and structures, each drawn by its own model. */
-export type LandmarkKind =
-  | "flinders"
-  | "fedsquare"
-  | "cathedral"
-  | "aurum"
-  | "tower108"
-  | "arts"
-  | "casino"
-  | "mcg"
-  | "stadium"
-  | "wheel"
-  | "bolte"
-  | "westgate"
-  | "shrine"
-  | "exhibition"
-  | "parliament"
-  | "market"
-  | "funpark"
-  | "theatre"
-  | "kiosk"
-  | "cruiseship"
-  | "southerncross"
-  | "boatshed";
+/** Landmark extras on top of the real buildings, each drawn by its own model. */
+export type LandmarkKind = "dome" | "spire" | "wheel" | "bolte" | "mcglights" | "cathedral" | "lunagate" | "kiosk";
 
 export interface Landmark {
   kind: LandmarkKind;
@@ -684,7 +820,11 @@ export interface Landmark {
   h: number;
   /** Which way it faces (0 east, 1 south, 2 west, 3 north). */
   face: number;
-  /** Solid footprint pieces (where it's not one box). */
+  /** Its turn about y (radians), to sit square on the real streets. */
+  rot: number;
+  /** The roof it stands on (the tallest real building under its centre), or 0. */
+  base: number;
+  /** Solid footprint pieces. */
   parts?: { x: number; z: number; hw: number; hd: number; h: number; round?: boolean }[];
 }
 
@@ -701,7 +841,7 @@ export interface City {
   solids: Solid[];
 }
 
-/** Something you can't walk or drive through: a box (buildings, containers) or a post. */
+/** Something you can't walk or drive through: a box, a post, or a building's footprint. */
 export interface Solid {
   x: number;
   z: number;
@@ -709,16 +849,15 @@ export interface Solid {
   hd: number;
   /** A round post (radius hw) rather than a box. */
   round?: boolean;
+  /** A polygon (x/z pairs); x, z, hw, hd are then its bounding box. */
+  poly?: Float32Array;
   h: number;
   b?: number;
 }
 
-const CELL = 50;
-const cellKey = (cx: number, cz: number) => (cx + 1000) * 4000 + (cz + 1000);
-
 /* ---- palettes */
 
-const GLASS = ["#5f7d96", "#4f6f7f", "#6d8798", "#7b8a8e", "#3e5466", "#5d7a6f", "#8a7d64", "#93a2ad"];
+const GLASS = ["#5f7d96", "#4f6f7f", "#6d8798", "#7b8a8e", "#3e5466", "#5d7a6f", "#8a7d64", "#93a2ad", "#2e3a48", "#46525e"];
 const CONCRETE = ["#c9c4b8", "#b9b5ab", "#d6d0c2", "#a9a7a0", "#c2b8a6", "#d9d4ca"];
 const SANDSTONE = ["#d7c29a", "#cdb38a", "#e0cfa8", "#c8a978", "#d9c7a4"];
 const BRICK = ["#9a4a32", "#a85a3a", "#7e3d2b", "#b5683f", "#8c5236", "#c9b08a", "#6e3a2a"];
@@ -727,772 +866,665 @@ const BOARDS = ["#efe9dc", "#d9e3e7", "#e9dccb", "#cbd8c8", "#f2e6c6", "#e3d0d0"
 const METAL = ["#a9b1b6", "#8b9aa4", "#c0b6a4", "#9fa79a", "#b7b9bb"];
 const TRIM = ["#f4f1ea", "#1f2a24", "#2a3b4a", "#5a2a24", "#e9e2d0", "#2e4a3a", "#3a3f47"];
 
-const CBD_SHOPS = ["Flinders Lane Espresso", "Degraves Café", "Laneway Records", "Hardware Lane Grill", "Golden Dragon", "Pho 87", "Little Bourke Dumplings", "The Long Black", "Collins Books", "Block Arcade Tea", "Centre Place Bagels", "Chinatown Noodle", "Royal Arcade Toys", "Bourke St Optics", "Tramline Bar", "Hosier Lane Cans", "Elizabeth St Pawn", "Swanston Newsagency"];
-const LYGON = ["Trattoria Roma", "Pasticceria Lygon", "Gelato Bello", "Caffè Milano", "La Nonna", "Pizzeria Napoli", "Enoteca 21", "Osteria Carlton", "Il Gattopardo", "Bar Sport"];
-const FITZROY = ["Vinyl Vault", "Rose St Tattoo", "The Black Cat Café", "Vintage Threads", "Bar Bodega", "Fitzroy Bike Co", "Smith St Pho", "Gertrude Gallery", "Polyester Books", "Night Cat Records", "Brunswick St Bagels"];
-const STKILDA = ["Acland Cake Co", "Europa Cakes", "Palm Court", "Fitzroy St Diner", "Pier Bar", "Sunset Fish & Chips", "Kiosk Gelato", "Backpackers by the Bay", "Acland Books", "Deco Lounge", "Little Blue Café"];
-const CHAPEL = ["Chapel St Boutique", "Prahran Denim", "Sneaker Lab", "Toorak Wines", "Lume Gallery", "The Jam Factory", "Windsor Coffee", "Neon Burger"];
-const RICHMOND = ["Swan St Hotel", "Bridge Rd Outlet", "Saigon Kitchen", "Victoria St Pho", "Richmond Hardware", "Church St Bikes", "Corner Grocer", "Bottle-O"];
+const SHOPS: Partial<Record<District, string[]>> = {
+  cbd: ["Flinders Lane Espresso", "Degraves Café", "Laneway Records", "Hardware Lane Grill", "Golden Dragon", "Pho 87", "Little Bourke Dumplings", "The Long Black", "Collins Books", "Block Arcade Tea", "Centre Place Bagels", "Chinatown Noodle", "Royal Arcade Toys", "Bourke St Optics", "Tramline Bar", "Hosier Lane Cans", "Elizabeth St Pawn", "Swanston Newsagency"],
+  carlton: ["Trattoria Roma", "Pasticceria Lygon", "Gelato Bello", "Caffè Milano", "La Nonna", "Pizzeria Napoli", "Enoteca 21", "Osteria Carlton", "Il Gattopardo", "Bar Sport"],
+  fitzroy: ["Vinyl Vault", "Rose St Tattoo", "The Black Cat Café", "Vintage Threads", "Bar Bodega", "Fitzroy Bike Co", "Smith St Pho", "Gertrude Gallery", "Polyester Books", "Night Cat Records", "Brunswick St Bagels"],
+  stkilda: ["Acland Cake Co", "Europa Cakes", "Palm Court", "Fitzroy St Diner", "Pier Bar", "Sunset Fish & Chips", "Kiosk Gelato", "Backpackers by the Bay", "Acland Books", "Deco Lounge", "Little Blue Café"],
+  toorak: ["Chapel St Boutique", "Prahran Denim", "Sneaker Lab", "Toorak Wines", "Lume Gallery", "The Jam Factory", "Windsor Coffee", "Neon Burger"],
+  southyarra: ["Chapel St Boutique", "Toorak Rd Wines", "Sneaker Lab", "Como Florist", "South Yarra Sushi"],
+  richmond: ["Swan St Hotel", "Bridge Rd Outlet", "Saigon Kitchen", "Victoria St Pho", "Richmond Hardware", "Church St Bikes", "Corner Grocer", "Bottle-O"],
+  southmelb: ["Clarendon St Café", "South Melbourne Dim Sum", "Market Lane Coffee", "Emerald Hill Books", "Dorcas St Deli"],
+  port: ["Bay St Bakery", "Port Fish & Chips", "Graham St Grocer", "The Albert Hotel Bistro"],
+  albertpark: ["Victoria Ave Café", "Dundas Place Deli", "Bridport St Books"],
+};
 const PUBS = ["The Royal Oak", "The Union Hotel", "The Railway Hotel", "The Prince Alfred", "Builders Arms", "The Cricketers Arms", "The Duke of Wellington", "The Lord Newry", "The Esplanade Arms", "The Standard", "The Napier", "The Tote"];
 const HOTELS = ["The Grand Esplanade", "Seaview Hotel", "The Victoria Palms", "Hotel Majestic", "The Belvedere", "Bayside Inn"];
 
-export interface Blk {
-  i: number;
-  j: number;
-  x0: number;
-  z0: number;
-  x1: number;
-  z1: number;
-  district: District;
-  /** The road class along each edge (0 east, 1 south, 2 west, 3 north), or null. */
-  edge: (RoadClass | null)[];
+/** Footprint maths. */
+function ringArea(r: Float32Array) {
+  let a = 0;
+  const n = r.length / 2;
+  for (let i = 0, j = n - 1; i < n; j = i++) a += r[j * 2] * r[i * 2 + 1] - r[i * 2] * r[j * 2 + 1];
+  return a / 2;
 }
 
-/** The road a line has at v (with its class), or null if there's none there. */
-function lineAt(l: Line, v: number) {
-  if (!covers(l, v)) return null;
-  if (l.skip?.some(([a, b]) => v > a && v < b)) return null;
-  return l;
-}
-
-function blocks(): Blk[] {
-  const out: Blk[] = [];
-  const main = (lines: Line[]) => lines.map((l) => l.at).filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => a - b);
-  const bx = [BOUNDS.x0 + 40, ...main(NS), BOUNDS.x1 - 40];
-  const bz = [BOUNDS.z0 + 40, ...main(EW), BOUNDS.z1 - 40];
-  const road = (lines: Line[], at: number, mid: number) => lines.find((q) => q.at === at && lineAt(q, mid)) ?? null;
-  const inset = (l: Line | null) => (l ? ROAD[l.cls].half + ROAD[l.cls].walk + 0.6 : 2);
-  for (let i = 0; i < bx.length - 1; i++)
-    for (let j = 0; j < bz.length - 1; j++) {
-      const mx = (bx[i] + bx[i + 1]) / 2;
-      const mz = (bz[j] + bz[j + 1]) / 2;
-      const w = road(NS, bx[i], mz);
-      const e = road(NS, bx[i + 1], mz);
-      const n = road(EW, bz[j], mx);
-      const s = road(EW, bz[j + 1], mx);
-      const x0 = bx[i] + inset(w);
-      const x1 = bx[i + 1] - inset(e);
-      const z0 = bz[j] + inset(n);
-      const z1 = bz[j + 1] - inset(s);
-      if (x1 - x0 < 8 || z1 - z0 < 8) continue;
-      out.push({ i, j, x0, z0, x1, z1, district: districtAt(mx, mz), edge: [e?.cls ?? null, s?.cls ?? null, w?.cls ?? null, n?.cls ?? null] });
+/** The smallest box round a footprint (rotating calipers over the hull's edges). */
+function minBox(r: Float32Array) {
+  const n = r.length / 2;
+  let best = { x: 0, z: 0, ux: 1, uz: 0, hw: 1, hd: 1, area: Infinity };
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    let ux = r[j * 2] - r[i * 2];
+    let uz = r[j * 2 + 1] - r[i * 2 + 1];
+    const l = Math.hypot(ux, uz);
+    if (l < 0.5) continue;
+    ux /= l;
+    uz /= l;
+    let a0 = Infinity;
+    let a1 = -Infinity;
+    let b0 = Infinity;
+    let b1 = -Infinity;
+    for (let k = 0; k < n; k++) {
+      const x = r[k * 2];
+      const z = r[k * 2 + 1];
+      const a = x * ux + z * uz;
+      const b = -x * uz + z * ux;
+      if (a < a0) a0 = a;
+      if (a > a1) a1 = a;
+      if (b < b0) b0 = b;
+      if (b > b1) b1 = b;
     }
-  return out;
+    const area = (a1 - a0) * (b1 - b0);
+    if (area < best.area) {
+      const ca = (a0 + a1) / 2;
+      const cb = (b0 + b1) / 2;
+      best = { x: ca * ux - cb * uz, z: ca * uz + cb * ux, ux, uz, hw: (a1 - a0) / 2, hd: (b1 - b0) / 2, area };
+    }
+  }
+  return best;
 }
 
-/** Fixed places: the safehouses, shops and services, set on given blocks and sides. */
+/** Point inside a polygon ring (x/z pairs). */
+export function inRing(r: Float32Array, x: number, z: number) {
+  let inside = false;
+  const n = r.length / 2;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = r[i * 2];
+    const zi = r[i * 2 + 1];
+    const xj = r[j * 2];
+    const zj = r[j * 2 + 1];
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/* -------------------------------------------------------------------------------- what each building is */
+
+function lookFor(rng: Rng, b: Building, dist: District, cat: number, area: number, fillR: number) {
+  const h = b.h;
+  const pick = rng.pick;
+  const r = rng.next();
+  const cbdish = dist === "cbd" || dist === "southbank" || dist === "docklands";
+  let kind: BuildingKind;
+  switch (cat) {
+    case 0:
+      kind = area > 380 && (dist === "southyarra" || dist === "toorak" || dist === "eastmelb") ? "mansion" : "cottage";
+      break;
+    case 1:
+      kind = "terrace";
+      break;
+    case 2:
+      kind = h > 40 ? "tower" : "apartment";
+      break;
+    case 3:
+      kind = h < 16 ? (r < 0.07 ? "pub" : "shop") : h > 45 ? "tower" : "office";
+      break;
+    case 4:
+      kind = h > 45 ? "tower" : cbdish && h < 32 && r < 0.4 ? "heritage" : "office";
+      break;
+    case 5:
+      kind = h < 6 ? "shed" : "warehouse";
+      break;
+    case 6:
+      kind = "heritage";
+      break;
+    case 7:
+      kind = area > 120 ? "garage" : "shed";
+      break;
+    case 8:
+      kind = "station";
+      break;
+    case 10:
+      kind = "hotel";
+      break;
+    default:
+      if (h >= 45) kind = "tower";
+      else if (h >= 18) kind = cbdish ? (r < 0.3 ? "heritage" : "office") : "apartment";
+      else if (cbdish) kind = r < 0.45 ? "heritage" : r < 0.85 ? "shop" : "office";
+      else if (dist === "docks") kind = area < 60 ? "shed" : "warehouse";
+      else if (area < 40) kind = "shed";
+      else if (area < 170 && fillR > 0.7 && b.obb.hw > 1 && Math.min(b.obb.hw, b.obb.hd) < 3.8) kind = "terrace";
+      else if (area < 260) kind = h > 9 ? "shop" : "cottage";
+      else kind = h > 10 ? "apartment" : r < 0.5 ? "shop" : "warehouse";
+  }
+  b.kind = kind;
+  // Looks per kind.
+  switch (kind) {
+    case "tower": {
+      const glass = r < 0.72;
+      Object.assign(b, { color: glass ? pick(GLASS) : pick(CONCRETE), accent: pick(["#2a2f36", "#c9ced4", "#8a8f96", "#e9e2d0"]), fac: glass ? FAC.glass : FAC.grid, floor: 3.7, gf: 6, shop: true });
+      break;
+    }
+    case "office":
+      Object.assign(b, { color: r < 0.45 ? pick(GLASS) : pick(CONCRETE), accent: pick(["#2a2f36", "#d9d4ca", "#6a6f76"]), fac: r < 0.45 ? FAC.glass : FAC.grid, floor: 3.6, gf: 5, shop: true, awning: rng.next() < 0.35 });
+      break;
+    case "apartment":
+      Object.assign(b, { color: r < 0.5 ? pick(RENDER) : r < 0.75 ? pick(CONCRETE) : pick(BRICK), accent: pick(TRIM), fac: r < 0.5 ? FAC.render : r < 0.75 ? FAC.grid : FAC.brick, floor: 3.1, gf: 3.6, shop: rng.next() < 0.25 });
+      break;
+    case "heritage": {
+      const stone = rng.next() < 0.55;
+      Object.assign(b, { color: stone ? pick(SANDSTONE) : pick(BRICK), accent: pick(["#e9e2d0", "#2e4a3a", "#3a3f47", "#f4f1ea"]), fac: stone ? (rng.next() < 0.15 ? FAC.bluestone : FAC.sandstone) : FAC.brick, floor: 4.3, gf: 4.6, shop: cat !== 6, awning: cat !== 6 && rng.next() < 0.6 });
+      break;
+    }
+    case "shop":
+    case "pub":
+      Object.assign(b, { color: r < 0.5 ? pick(BRICK) : pick(RENDER), accent: pick(TRIM), fac: r < 0.5 ? FAC.brick : FAC.render, floor: 3.7, gf: 4.1, shop: true, awning: kind === "shop", verandah: kind === "pub" });
+      break;
+    case "terrace":
+      Object.assign(b, { color: r < 0.55 ? pick(RENDER) : pick(BRICK), accent: pick(TRIM), fac: r < 0.55 ? FAC.render : FAC.brick, floor: 3.5, gf: 0, shop: false, roof: "hip", verandah: true });
+      break;
+    case "cottage":
+      Object.assign(b, { color: r < 0.4 ? pick(BOARDS) : r < 0.75 ? pick(BRICK) : pick(RENDER), accent: pick(TRIM), fac: r < 0.4 ? FAC.weatherboard : r < 0.75 ? FAC.brick : FAC.render, floor: 3, gf: 0, shop: false, roof: rng.next() < 0.75 ? "hip" : "gable", verandah: rng.next() < 0.55 });
+      break;
+    case "mansion":
+      Object.assign(b, { color: pick(["#f5f1e6", "#efe6d6", "#e6eef0", "#f3e3e0", "#d7c29a"]), accent: pick(["#2e4a3a", "#1f2a24", "#f4f1ea"]), fac: rng.next() < 0.7 ? FAC.render : FAC.brick, floor: 4, gf: 0, shop: false, roof: "hip" });
+      break;
+    case "warehouse":
+      Object.assign(b, { color: r < 0.6 ? pick(BRICK) : pick(METAL), accent: "#2a2a2a", fac: r < 0.6 ? (rng.next() < 0.15 ? FAC.bluestone : FAC.brick) : FAC.metal, floor: 4.5, gf: 0, shop: false, roof: fillR > 0.85 && area > 400 && rng.next() < 0.45 ? "sawtooth" : "flat" });
+      break;
+    case "shed":
+    case "garage":
+      Object.assign(b, { color: rng.next() < 0.6 ? pick(METAL) : pick(BOARDS), accent: pick(["#d64a2a", "#2a6f9e", "#e2b33a", "#2a2a2a"]), fac: FAC.metal, floor: 4, gf: 0, shop: false, roof: fillR > 0.8 && area < 200 ? "gable" : "flat" });
+      break;
+    case "hotel":
+      Object.assign(b, { color: pick(RENDER), accent: pick(TRIM), fac: FAC.render, floor: 3.3, gf: 4.4, shop: true, sign: pick(HOTELS) });
+      break;
+    case "station":
+      Object.assign(b, { color: pick(SANDSTONE), accent: "#a8452e", fac: FAC.sandstone, floor: 4.8, gf: 5, shop: false });
+      break;
+    default:
+      break;
+  }
+  // Pitched roofs only where the footprint is near enough a rectangle (and not too tall).
+  if ((b.roof === "hip" || b.roof === "gable") && (fillR < 0.72 || h > 14 || Math.max(b.obb.hw, b.obb.hd) > 30)) b.roof = "flat";
+  if (b.roof === "sawtooth" && fillR < 0.85) b.roof = "flat";
+  // Signs on the street fronts.
+  if (b.front && b.front.len > 4) {
+    if (kind === "pub") b.sign = pick(PUBS);
+    else if (kind === "shop" && rng.next() < 0.55) b.sign = pick(SHOPS[dist] ?? SHOPS.cbd!);
+  }
+  if (!b.front || b.front.len < 3) {
+    b.awning = false;
+    b.verandah = false;
+  }
+}
+
+/** Named real buildings that get a particular look. */
+const NAMED: [RegExp, Partial<Building>][] = [
+  [/flinders street station/i, { kind: "station", color: "#d9a04a", accent: "#a8452e", fac: FAC.sandstone, floor: 4.6, gf: 5 }],
+  [/federation square|ian potter/i, { kind: "heritage", color: "#c9ac7a", accent: "#8d9599", fac: FAC.grid, floor: 3.6, gf: 4 }],
+  [/st paul'?s cathedral|cathedral/i, { kind: "heritage", color: "#b19a7a", accent: "#6f5f4a", fac: FAC.sandstone, floor: 9, gf: 0, shop: false }],
+  [/parliament house/i, { kind: "heritage", color: "#c9b58e", accent: "#7a6a50", fac: FAC.sandstone, floor: 6, gf: 6, shop: false }],
+  [/royal exhibition/i, { kind: "heritage", color: "#d9c19a", accent: "#8e3b2b", fac: FAC.render, floor: 8, gf: 0, shop: false, roof: "dome" }],
+  [/shrine of remembrance/i, { kind: "heritage", color: "#aaa59a", accent: "#7a756a", fac: FAC.sandstone, floor: 60, gf: 0, shop: false, roof: "pyramid" }],
+  [/eureka/i, { kind: "tower", color: "#c9a24a", accent: "#2a3850", fac: FAC.glass, crown: { from: 250, inset: 0, gold: true } }],
+  [/southern cross station/i, { kind: "station", color: "#e9ecee", accent: "#3a4550", fac: FAC.glass, floor: 4, gf: 0 }],
+  [/melbourne cricket ground|\bmcg\b/i, { kind: "warehouse", color: "#dfe2e4", accent: "#1f3a6e", fac: FAC.grid, floor: 7, gf: 0 }],
+  [/arts centre|hamer hall|state theatre/i, { kind: "heritage", color: "#6f6a63", accent: "#3a3a3a", fac: FAC.bluestone, floor: 60, gf: 0, shop: false }],
+  [/crown|casino/i, { kind: "office", color: "#2e3440", accent: "#384150", fac: FAC.glass, floor: 4.2, gf: 6 }],
+  [/state library/i, { kind: "heritage", color: "#d7c29a", accent: "#5a4a3a", fac: FAC.sandstone, floor: 6, gf: 6, shop: false, roof: "dome" }],
+  [/town hall|gpo|post office/i, { kind: "heritage", color: "#d0bd94", accent: "#5a4a3a", fac: FAC.sandstone, floor: 5.5, gf: 5.5 }],
+];
+
+/* -------------------------------------------------------------------------------- the fixed places */
+
 interface PoiSpec {
   id: string;
   kind: PoiKind;
   name: string;
-  /** Near this point: the nearest block, and the side of it toward the point. */
-  x: number;
-  z: number;
-  bkind?: BuildingKind;
-  h?: number;
-  w?: number;
-  d?: number;
+  lat: number;
+  lon: number;
+  /** Building kinds that will do, and the size range of footprint (m²). */
+  want?: BuildingKind[];
+  area?: [number, number];
+  /** Make the building this kind (the shop it becomes). */
+  as?: BuildingKind;
 }
 
 const POI_SPECS: PoiSpec[] = [
-  { id: "safe-nina", kind: "safehouse", name: "Nina's flat", x: -122, z: 1170, bkind: "apartment", h: 14, w: 26, d: 22 },
-  { id: "safe-dex", kind: "safehouse", name: "Dex's cottage", x: -888, z: 640, bkind: "cottage", h: 5.5, w: 10, d: 14 },
-  { id: "hospital", kind: "hospital", name: "Yarra General Hospital", x: 520, z: -452, bkind: "hospital", h: 34, w: 60, d: 44 },
-  { id: "police-hq", kind: "police", name: "Metro Police Centre", x: -452, z: -12, bkind: "station", h: 40, w: 50, d: 36 },
-  { id: "police-stk", kind: "police", name: "St Kilda Police Station", x: 98, z: 1240, bkind: "station", h: 12, w: 30, d: 24 },
-  { id: "police-rich", kind: "police", name: "Richmond Police Station", x: 1168, z: -120, bkind: "station", h: 12, w: 30, d: 24 },
-  { id: "bank", kind: "bank", name: "Southern Cross Reserve Bank", x: -160, z: -98, bkind: "bank", h: 64, w: 44, d: 36 },
-  { id: "gun-rich", kind: "gunshop", name: "Bullseye Arms", x: 1028, z: -240, bkind: "shop", h: 8, w: 18, d: 18 },
-  { id: "gun-smelb", kind: "gunshop", name: "Bullseye Arms", x: -648, z: 460, bkind: "shop", h: 8, w: 18, d: 18 },
-  { id: "clothes-chapel", kind: "clothes", name: "Threadline", x: 1168, z: 760, bkind: "shop", h: 10, w: 20, d: 18 },
-  { id: "clothes-cbd", kind: "clothes", name: "Threadline", x: 55, z: -208, bkind: "shop", h: 14, w: 22, d: 30 },
-  { id: "respray-rich", kind: "respray", name: "Spray Bay", x: 912, z: -300, bkind: "garage", h: 7, w: 22, d: 20 },
-  { id: "respray-port", kind: "respray", name: "Spray Bay", x: -1068, z: 600, bkind: "garage", h: 7, w: 22, d: 20 },
-  { id: "store-1", kind: "store", name: "Rosa's Milk Bar", x: 232, z: -700, bkind: "shop", h: 7, w: 14, d: 14 },
-  { id: "store-2", kind: "store", name: "Corner Milk Bar", x: 612, z: -700, bkind: "shop", h: 7, w: 14, d: 14 },
-  { id: "store-3", kind: "store", name: "Park St Milk Bar", x: -548, z: 572, bkind: "shop", h: 7, w: 14, d: 14 },
-  { id: "store-4", kind: "store", name: "Prahran Milk Bar", x: 1052, z: 912, bkind: "shop", h: 7, w: 14, d: 14 },
-  { id: "store-5", kind: "store", name: "Barkly St Milk Bar", x: 12, z: 1320, bkind: "shop", h: 7, w: 14, d: 14 },
-  { id: "store-6", kind: "store", name: "Victoria St Milk Bar", x: 1052, z: -548, bkind: "shop", h: 7, w: 14, d: 14 },
-  { id: "gas-1", kind: "gas", name: "Sunline Fuel", x: 912, z: 640, bkind: "shop", h: 5, w: 14, d: 12 },
-  { id: "gas-2", kind: "gas", name: "Sunline Fuel", x: -648, z: 620, bkind: "shop", h: 5, w: 14, d: 12 },
-  { id: "gas-3", kind: "gas", name: "Sunline Fuel", x: 1192, z: -480, bkind: "shop", h: 5, w: 14, d: 12 },
-  { id: "chop", kind: "chopshop", name: "Dockside Motors", x: -1192, z: -120, bkind: "warehouse", h: 10, w: 40, d: 30 },
-  { id: "marina", kind: "marina", name: "Docklands Marina", x: -808, z: -12, bkind: "shop", h: 8, w: 26, d: 18 },
-  { id: "mansion", kind: "mansion", name: "Coonara House", x: 1352, z: 980, bkind: "mansion", h: 12, w: 36, d: 30 },
-  { id: "airboat", kind: "airboat", name: "Yarra Boat Hire", x: -40, z: 186 },
-  { id: "pier", kind: "pier", name: "St Kilda Pier", x: -432, z: 1181 },
+  { id: "safe-nina", kind: "safehouse", name: "Nina's flat", lat: -37.8678, lon: 144.9787, want: ["apartment", "shop", "terrace"], area: [120, 1500] },
+  { id: "safe-dex", kind: "safehouse", name: "Dex's cottage", lat: -37.8392, lon: 144.9378, want: ["cottage", "terrace"], area: [60, 400] },
+  { id: "hospital", kind: "hospital", name: "Yarra General Hospital", lat: -37.8456, lon: 144.9822, area: [1500, 1e6], as: "hospital" },
+  { id: "police-hq", kind: "police", name: "Metro Police Centre", lat: -37.8205, lon: 144.9535, area: [500, 1e6], as: "station" },
+  { id: "police-stk", kind: "police", name: "St Kilda Police Station", lat: -37.8608, lon: 144.9795, area: [150, 4000], as: "station" },
+  { id: "police-rich", kind: "police", name: "Richmond Police Station", lat: -37.8190, lon: 144.9985, area: [150, 4000], as: "station" },
+  { id: "bank", kind: "bank", name: "Southern Cross Reserve Bank", lat: -37.81816, lon: 144.9598, area: [600, 1e6], as: "bank" },
+  { id: "gun-rich", kind: "gunshop", name: "Bullseye Arms", lat: -37.8256, lon: 144.9930, area: [80, 1200], as: "shop" },
+  { id: "gun-smelb", kind: "gunshop", name: "Bullseye Arms", lat: -37.8332, lon: 144.9582, area: [80, 1200], as: "shop" },
+  { id: "clothes-chapel", kind: "clothes", name: "Threadline", lat: -37.8462, lon: 144.9932, area: [80, 2000], as: "shop" },
+  { id: "clothes-cbd", kind: "clothes", name: "Threadline", lat: -37.8137, lon: 144.9642, area: [80, 3000], as: "shop" },
+  { id: "respray-rich", kind: "respray", name: "Spray Bay", lat: -37.8215, lon: 144.9962, area: [120, 3000], as: "garage" },
+  { id: "respray-port", kind: "respray", name: "Spray Bay", lat: -37.8300, lon: 144.9395, area: [120, 5000], as: "garage" },
+  { id: "store-1", kind: "store", name: "Rosa's Milk Bar", lat: -37.8000, lon: 144.9690, area: [50, 800], as: "shop" },
+  { id: "store-2", kind: "store", name: "Corner Milk Bar", lat: -37.8002, lon: 144.9802, area: [50, 800], as: "shop" },
+  { id: "store-3", kind: "store", name: "Park St Milk Bar", lat: -37.8382, lon: 144.9552, area: [50, 800], as: "shop" },
+  { id: "store-4", kind: "store", name: "Prahran Milk Bar", lat: -37.8502, lon: 144.9922, area: [50, 800], as: "shop" },
+  { id: "store-5", kind: "store", name: "Barkly St Milk Bar", lat: -37.8652, lon: 144.9832, area: [50, 800], as: "shop" },
+  { id: "store-6", kind: "store", name: "Victoria St Milk Bar", lat: -37.8112, lon: 144.9952, area: [50, 800], as: "shop" },
+  { id: "gas-1", kind: "gas", name: "Sunline Fuel", lat: -37.8332, lon: 144.9852, area: [40, 1500], as: "shop" },
+  { id: "gas-2", kind: "gas", name: "Sunline Fuel", lat: -37.8372, lon: 144.9422, area: [40, 1500], as: "shop" },
+  { id: "gas-3", kind: "gas", name: "Sunline Fuel", lat: -37.7992, lon: 144.9622, area: [40, 1500], as: "shop" },
+  { id: "chop", kind: "chopshop", name: "Dockside Motors", lat: -37.8290, lon: 144.9300, area: [400, 1e5], as: "warehouse" },
+  { id: "marina", kind: "marina", name: "Docklands Marina", lat: -37.8188, lon: 144.9425, area: [60, 6000], as: "shop" },
+  { id: "mansion", kind: "mansion", name: "Coonara House", lat: -37.8418, lon: 144.9975, want: ["mansion", "cottage", "apartment"], area: [200, 3000], as: "mansion" },
+  { id: "airboat", kind: "airboat", name: "Yarra Boat Hire", lat: -37.8196, lon: 144.96583 },
+  { id: "pier", kind: "pier", name: "St Kilda Pier", lat: -37.86471, lon: 144.96857 },
 ];
 
-/** The landmarks: footprints are clear of the roads round them. */
-const LANDMARKS: Landmark[] = [
-  { kind: "flinders", name: "Flinders Street Station", x: 55, z: 47, hw: 43, hd: 34, h: 22, face: 3 },
-  { kind: "fedsquare", name: "Federation Square", x: 166, z: 46, hw: 42, hd: 33, h: 20, face: 3 },
-  { kind: "cathedral", name: "St Paul's Cathedral", x: 160, z: -31, hw: 37, hd: 18, h: 30, face: 2 },
-  { kind: "aurum", name: "Aurum Tower", x: -75, z: 222, hw: 20, hd: 20, h: 297, face: 3 },
-  { kind: "tower108", name: "Southbank One", x: -250, z: 333, hw: 21, hd: 21, h: 316, face: 1 },
-  { kind: "arts", name: "The Arts Centre", x: 168, z: 340, hw: 40, hd: 26, h: 28, face: 2 },
-  { kind: "casino", name: "Riverside Casino", x: -222, z: 238, hw: 92, hd: 46, h: 38, face: 3 },
-  { kind: "mcg", name: "The MCG", x: 680, z: 105, hw: 92, hd: 92, h: 42, face: 3 },
-  { kind: "stadium", name: "Docklands Stadium", x: -550, z: -330, hw: 96, hd: 96, h: 52, face: 0 },
-  { kind: "wheel", name: "The Harbour Star", x: -920, z: -150, hw: 14, hd: 8, h: 120, face: 1 },
-  { kind: "bolte", name: "Bolte Bridge", x: -1080, z: 120, hw: 14, hd: 6, h: 140, face: 1 },
-  { kind: "westgate", name: "West Gate Bridge", x: -1600, z: 420, hw: 10, hd: 10, h: 102, face: 1 },
-  { kind: "shrine", name: "The Shrine", x: 370, z: 440, hw: 34, hd: 34, h: 30, face: 3 },
-  { kind: "exhibition", name: "Royal Exhibition Building", x: 385, z: -690, hw: 38, hd: 24, h: 56, face: 1 },
-  { kind: "parliament", name: "Parliament House", x: 520, z: -280, hw: 62, hd: 36, h: 26, face: 2 },
-  { kind: "market", name: "Queen Victoria Market", x: -55, z: -500, hw: 42, hd: 46, h: 9, face: 1 },
-  { kind: "funpark", name: "Big Mouth Fun Park", x: -250, z: 1190, hw: 66, hd: 46, h: 34, face: 2 },
-  { kind: "theatre", name: "The Palace Theatre", x: -270, z: 1290, hw: 46, hd: 28, h: 24, face: 2 },
-  { kind: "kiosk", name: "The Pier Kiosk", x: -706, z: 1181, hw: 12, hd: 9, h: 8, face: 2 },
-  { kind: "cruiseship", name: "Spirit of the Bay", x: -935, z: 1010, hw: 16, hd: 120, h: 52, face: 1 },
-  { kind: "southerncross", name: "Southern Cross Station", x: -550, z: -165, hw: 96, hd: 43, h: 22, face: 0 },
-  { kind: "boatshed", name: "Yarra Boathouses", x: 520, z: 250, hw: 40, hd: 10, h: 9, face: 3 },
-];
+/* -------------------------------------------------------------------------------- the build */
 
-/** Parks and gardens (no buildings; trees, lawns, paths). */
-const PARKS: { x0: number; z0: number; x1: number; z1: number; name: string; trees: "gum" | "elm" | "mixed" | "palm" }[] = [
-  { x0: -318, z0: -548, x1: -232, z1: -452, name: "Flagstaff Gardens", trees: "elm" },
-  { x0: 342, z0: -748, x1: 428, z1: -572, name: "Carlton Gardens", trees: "elm" },
-  { x0: 452, z0: -228, x1: 588, z1: -12, name: "Treasury Gardens", trees: "elm" },
-  { x0: 612, z0: -322, x1: 748, z1: -12, name: "Fitzroy Gardens", trees: "elm" },
-  { x0: 452, z0: 12, x1: 888, z1: 190, name: "Yarra Park", trees: "gum" },
-  { x0: 222, z0: 12, x1: 428, z1: 104, name: "Birrarung Marr", trees: "gum" },
-  { x0: 126, z0: 312, x1: 588, z1: 548, name: "Kings Domain", trees: "mixed" },
-  { x0: 612, z0: 312, x1: 888, z1: 548, name: "Royal Botanic Gardens", trees: "mixed" },
-  { x0: -428, z0: 812, x1: -12, z1: 1028, name: "Albert Park", trees: "gum" },
-  { x0: 612, z0: -888, x1: 748, z1: -772, name: "Edinburgh Gardens", trees: "elm" },
-  { x0: 612, z0: 572, x1: 748, z1: 688, name: "Fawkner Park", trees: "elm" },
-  { x0: -318, z0: 1262, x1: -122, z1: 1388, name: "Catani Gardens", trees: "palm" },
-];
-
-/** Build the whole map from a seed (the layout is fixed; the seed varies details). */
 export function generate(seed = 7): City {
+  const m = getMap();
+  setupGround(m);
+  setupDistricts();
   const rng = createRng(seed);
-  const roads = buildRoads();
+  const roads = buildRoads(m);
   roadsRef = roads;
-  segCells = null;
-  nodesRef = roads.nodes;
-  bridgeSegs = roads.segs.filter((s) => s.bridge);
-  const buildings: Building[] = [];
-  const props: Prop[] = [];
-  const pois: Poi[] = [];
-  const parks: City["parks"] = [];
-  const parking: ParkSpot[] = [];
-  const landmarks: Landmark[] = [];
-  const blks = blocks();
-  const taken: { x0: number; z0: number; x1: number; z1: number }[] = [];
-  const free = (x0: number, z0: number, x1: number, z1: number) => !taken.some((t) => x0 < t.x1 && x1 > t.x0 && z0 < t.z1 && z1 > t.z0);
-  const dry = (x0: number, z0: number, x1: number, z1: number) => {
-    for (const [x, z] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1], [(x0 + x1) / 2, (z0 + z1) / 2]]) if (groundY(x, z) < -0.05 || onBeach(x, z)) return false;
-    return true;
-  };
-  const addB: AddB = (b) => {
-    const x0 = b.x - b.hw;
-    const x1 = b.x + b.hw;
-    const z0 = b.z - b.hd;
-    const z1 = b.z + b.hd;
-    if (!free(x0, z0, x1, z1) || !dry(x0, z0, x1, z1) || onRoadRect(roads, x0, z0, x1, z1)) return -1;
-    taken.push({ x0, z0, x1, z1 });
-    buildings.push({ ...b, id: buildings.length });
-    return buildings.length - 1;
-  };
-
-  // The landmarks claim their ground first.
-  for (const l of LANDMARKS) {
-    landmarks.push({ ...l, parts: landmarkParts(l) });
-    if (l.kind === "westgate" || l.kind === "bolte" || l.kind === "cruiseship") continue;
-    taken.push({ x0: l.x - l.hw - 2, z0: l.z - l.hd - 2, x1: l.x + l.hw + 2, z1: l.z + l.hd + 2 });
-  }
-  // The casino's gas towers along the promenade, lit at night.
-  for (let x = -306; x <= -136; x += 24) props.push({ kind: "flame", x, z: 184, ry: 0, s: 1 });
-
-  // Fixed places next, on the side of their block nearest the point given.
-  for (const sp of POI_SPECS) {
-    if (sp.kind === "pier" || sp.kind === "airboat") {
-      pois.push({ id: sp.id, kind: sp.kind, name: sp.name, x: sp.x, z: sp.z, fx: sp.kind === "pier" ? -1 : 0, fz: sp.kind === "pier" ? 0 : -1, district: districtAt(sp.x, sp.z) });
-      continue;
-    }
-    let best: Blk | null = null;
-    let bd = Infinity;
-    for (const b of blks) {
-      const cx = Math.max(b.x0, Math.min(b.x1, sp.x));
-      const cz = Math.max(b.z0, Math.min(b.z1, sp.z));
-      const d = Math.hypot(cx - sp.x, cz - sp.z);
-      if (d < bd) {
-        bd = d;
-        best = b;
-      }
-    }
-    if (!best) continue;
-    const b = best;
-    // The side: the edge nearest the point.
-    const ds = [Math.abs(sp.x - b.x1), Math.abs(sp.z - b.z1), Math.abs(sp.x - b.x0), Math.abs(sp.z - b.z0)];
-    const face = ds.indexOf(Math.min(...ds));
-    const w = Math.min(sp.w ?? 16, (face % 2 === 0 ? b.z1 - b.z0 : b.x1 - b.x0) - 2);
-    const d = Math.min(sp.d ?? 14, (face % 2 === 0 ? b.x1 - b.x0 : b.z1 - b.z0) - 2);
-    const along = face % 2 === 0 ? Math.max(b.z0 + w / 2 + 1, Math.min(b.z1 - w / 2 - 1, sp.z)) : Math.max(b.x0 + w / 2 + 1, Math.min(b.x1 - w / 2 - 1, sp.x));
-    const setback = sp.bkind === "mansion" ? 12 : sp.kind === "gas" ? 14 : sp.bkind === "cottage" ? 4 : 0.5;
-    let x: number, z: number, hw: number, hd: number, fx = 0, fz = 0;
-    if (face === 0) [x, z, hw, hd, fx] = [b.x1 - setback - d / 2, along, d / 2, w / 2, 1];
-    else if (face === 2) [x, z, hw, hd, fx] = [b.x0 + setback + d / 2, along, d / 2, w / 2, -1];
-    else if (face === 1) [x, z, hw, hd, fz] = [along, b.z1 - setback - d / 2, w / 2, d / 2, 1];
-    else [x, z, hw, hd, fz] = [along, b.z0 + setback + d / 2, w / 2, d / 2, -1];
-    const kind = sp.bkind ?? "shop";
-    const look = poiLook(rng, kind);
-    const id = addB({ x, z, hw, hd, h: sp.h ?? 8, kind, style: rng.int(0, 3), face, sign: sp.kind === "safehouse" ? undefined : sp.name, crown: kind === "bank" ? { from: 44, inset: 6 } : undefined, ...look });
-    // The marker: just off the door, on the footpath.
-    const out = sp.kind === "gas" ? 16 : sp.bkind === "mansion" ? 14 : sp.bkind === "cottage" ? 6 : 2.5;
-    const px = x + fx * (hw + out);
-    const pz = z + fz * (hd + out);
-    pois.push({ id: sp.id, kind: sp.kind, name: sp.name, x: px, z: pz, fx, fz, district: districtAt(px, pz), building: id >= 0 ? id : undefined });
-    if (sp.kind === "gas") {
-      // The forecourt: a canopy over two pumps.
-      const cx = x + fx * (hw + 8);
-      const cz = z + fz * (hd + 8);
-      props.push({ kind: "canopy", x: cx, z: cz, ry: face % 2 === 0 ? Math.PI / 2 : 0, s: 1 });
-      for (const k of [-1, 1]) props.push({ kind: "pump", x: cx + (face % 2 === 0 ? 0 : k * 4), z: cz + (face % 2 === 0 ? k * 4 : 0), ry: face % 2 === 0 ? Math.PI / 2 : 0, s: 1 });
-      taken.push({ x0: cx - 8, z0: cz - 8, x1: cx + 8, z1: cz + 8 });
-    }
-  }
-
-  for (const p of PARKS) {
-    parks.push({ x0: p.x0, z0: p.z0, x1: p.x1, z1: p.z1, name: p.name });
-    taken.push({ x0: p.x0, z0: p.z0, x1: p.x1, z1: p.z1 });
-  }
-
-  for (const b of blks) fillBlock(rng, b, addB, props, parking);
-
-  // Parks: trees, paths' benches, a fountain in the formal gardens.
-  for (const p of PARKS) {
-    const cx = (p.x0 + p.x1) / 2;
-    const cz = (p.z0 + p.z1) / 2;
-    const formal = p.trees === "elm";
-    if (formal && p.x1 - p.x0 < 200) props.push({ kind: "fountain", x: cx, z: cz, ry: 0, s: p.x1 - p.x0 > 120 ? 2 : 1 });
-    const n = Math.round(((p.x1 - p.x0) * (p.z1 - p.z0)) / (p.trees === "palm" ? 260 : 300));
-    for (let i = 0; i < n; i++) {
-      const x = rng.range(p.x0 + 4, p.x1 - 4);
-      const z = rng.range(p.z0 + 4, p.z1 - 4);
-      if (formal && Math.hypot(x - cx, z - cz) < 16) continue;
-      if (groundY(x, z) < -0.05 || insideLandmark(landmarks, x, z, 6)) continue;
-      const kind: PropKind = p.trees === "palm" ? (rng.next() < 0.75 ? "palm" : "plane") : p.trees === "gum" ? (rng.next() < 0.8 ? "gum" : "elm") : p.trees === "elm" ? (rng.next() < 0.7 ? "elm" : "plane") : rng.pick(["elm", "gum", "plane", "palm"] as const);
-      props.push({ kind, x, z, ry: rng.range(0, 6.28), s: rng.range(0.85, 1.3) });
-    }
-    if (formal) for (let i = 0; i < 6; i++) props.push({ kind: "bench", x: cx + Math.cos(i) * 20, z: cz + Math.sin(i) * 20, ry: -i + Math.PI / 2, s: 1 });
-  }
-
-  streetscape(rng, roads, props, parking);
-  beaches(rng, props);
-  docks(rng, props, taken);
-  marinas(rng, props);
-
-  const city: City = { roads, buildings, landmarks, props, pois, parks, parking, grid: new Map(), solids: [] };
+  bridgeRoads = roads;
+  const city: City = { roads, buildings: [], landmarks: [], props: [], pois: [], parks: [], parking: [], grid: new Map(), solids: [] };
+  buildBuildings(city, m, rng);
+  placeLandmarks(city);
+  placePois(city);
+  indexBuildings(city);
+  streetscape(city, rng);
+  furniture(city, m);
+  parkTrees(city, rng);
+  beaches(city, rng);
   index(city);
   return city;
 }
 
-function insideLandmark(list: Landmark[], x: number, z: number, pad: number) {
-  return list.some((l) => Math.abs(x - l.x) < l.hw + pad && Math.abs(z - l.z) < l.hd + pad);
-}
-
-/** Collision pieces of a landmark: most are one box; the stadiums are rings with gates. */
-function landmarkParts(l: Landmark): Landmark["parts"] {
-  switch (l.kind) {
-    case "mcg":
-    case "stadium":
-      return [{ x: l.x, z: l.z, hw: l.hw, hd: l.hd, h: l.h, round: true }];
-    case "wheel":
-      return [{ x: l.x, z: l.z, hw: 6, hd: 8, h: 12 }];
-    case "bolte":
-    case "westgate":
-    case "cruiseship":
-      return [];
-    case "kiosk":
-      return [{ x: l.x, z: l.z, hw: l.hw, hd: l.hd, h: l.h }];
-    case "funpark":
-      // The fun park is open: rides and the big mouth gate are solid, the paths aren't.
-      return [
-        { x: l.x - l.hw + 6, z: l.z, hw: 5, hd: 12, h: 18 },
-        { x: l.x + 20, z: l.z - 20, hw: 14, hd: 14, h: 30 },
-        { x: l.x + 30, z: l.z + 24, hw: 10, hd: 10, h: 16 },
-      ];
-    default:
-      return [{ x: l.x, z: l.z, hw: l.hw, hd: l.hd, h: l.h }];
+function buildBuildings(city: City, m: MapData, rng: Rng) {
+  const nB = m.bH.length;
+  for (let i = 0; i < nB; i++) {
+    const nr = m.bRings[i];
+    if (!nr) continue;
+    const r0 = m.bRing0[i];
+    const rings: Float32Array[] = [];
+    for (let k = 0; k < nr; k++) {
+      const st = m.ringStart[r0 + k];
+      const n = m.ringLen[r0 + k];
+      rings.push(m.coords.slice(st * 2, (st + n) * 2));
+    }
+    let ring = rings[0];
+    if (ring.length < 6) continue;
+    // Positive area (shoelace in x, z), so outward normals are (dz, −dx) of each edge.
+    if (ringArea(ring) < 0) ring = reverseRing(ring);
+    const area = Math.abs(ringArea(ring));
+    if (area < 10) continue;
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (let k = 0; k < ring.length; k += 2) {
+      x0 = Math.min(x0, ring[k]);
+      x1 = Math.max(x1, ring[k]);
+      z0 = Math.min(z0, ring[k + 1]);
+      z1 = Math.max(z1, ring[k + 1]);
+    }
+    const box = minBox(ring);
+    const fillR = area / Math.max(1, box.area);
+    const catRaw = m.bCat[i];
+    const solid = (catRaw & 128) === 0 && m.bMin[i] < 2.5;
+    const cat = catRaw & 127;
+    const roofCode = m.bRoof[i] & 15;
+    const b: Building = {
+      id: city.buildings.length,
+      x: (x0 + x1) / 2,
+      z: (z0 + z1) / 2,
+      hw: (x1 - x0) / 2,
+      hd: (z1 - z0) / 2,
+      h: Math.max(2.6, m.bH[i]),
+      minH: m.bMin[i],
+      kind: "shop",
+      style: rng.int(0, 3),
+      color: "#cccccc",
+      accent: "#333333",
+      face: 0,
+      front: null,
+      fac: FAC.render,
+      floor: 3.4,
+      gf: 0,
+      shop: false,
+      roof: roofCode === 2 ? "gable" : roofCode === 3 || roofCode === 4 ? "hip" : roofCode === 5 ? "dome" : "flat",
+      ring,
+      holes: rings.slice(1).map((h) => (ringArea(h) > 0 ? reverseRing(h) : h)),
+      obb: { x: box.x, z: box.z, ux: box.ux, uz: box.uz, hw: box.hw, hd: box.hd, fill: fillR },
+      name: m.names[m.bName[i]] || undefined,
+      solid,
+    };
+    if (b.minH > 0.5) {
+      // A floating part (a tower over its podium, a skybridge): plain walls in its parent's style.
+      b.front = null;
+    } else b.front = streetFront(city, ring);
+    if (b.front) {
+      const f = b.front;
+      b.face = Math.abs(f.nx) > Math.abs(f.nz) ? (f.nx > 0 ? 0 : 2) : f.nz > 0 ? 1 : 3;
+    }
+    const dist = districtAt(b.x, b.z);
+    lookFor(rng, b, dist, cat, area, fillR);
+    // The data's own colour and materials win.
+    const col = m.bColor[i];
+    if (col) b.color = `#${(((col >> 11) & 31) * 8).toString(16).padStart(2, "0")}${(((col >> 5) & 63) * 4).toString(16).padStart(2, "0")}${((col & 31) * 8).toString(16).padStart(2, "0")}`;
+    const mat = m.bRoof[i] >> 4;
+    if (mat === 1) b.fac = FAC.brick;
+    else if (mat === 2) b.fac = FAC.glass;
+    else if (mat === 3) b.fac = FAC.grid;
+    else if (mat === 4) b.fac = FAC.weatherboard;
+    else if (mat === 5) b.fac = FAC.metal;
+    else if (mat === 6) b.fac = FAC.sandstone;
+    if (b.name) for (const [re, look] of NAMED) if (re.test(b.name)) Object.assign(b, look);
+    if (b.minH > 0.5) {
+      b.awning = false;
+      b.verandah = false;
+      b.sign = undefined;
+      if (b.roof === "hip" || b.roof === "gable") b.roof = "flat";
+    }
+    city.buildings.push(b);
   }
 }
 
-type AddB = (b: Omit<Building, "id">) => number;
-
-/** A plain look for the fixed places' buildings. */
-function poiLook(rng: Rng, kind: BuildingKind): Pick<Building, "color" | "accent" | "fac" | "floor" | "gf" | "shop" | "roof" | "awning" | "verandah"> {
-  switch (kind) {
-    case "hospital":
-      return { color: "#e9ecef", accent: "#2a6f9e", fac: FAC.grid, floor: 3.8, gf: 5, shop: false, roof: "flat" };
-    case "station":
-      return { color: "#c9c4b8", accent: "#1f3a6e", fac: FAC.grid, floor: 3.6, gf: 5, shop: false, roof: "flat" };
-    case "bank":
-      return { color: rng.pick(SANDSTONE), accent: "#2b2b2b", fac: FAC.sandstone, floor: 4.6, gf: 7, shop: false, roof: "flat" };
-    case "apartment":
-      return { color: rng.pick(RENDER), accent: "#f4f1ea", fac: FAC.render, floor: 3.1, gf: 3.6, shop: false, roof: "flat" };
-    case "cottage":
-      return { color: rng.pick(BOARDS), accent: "#f4f1ea", fac: FAC.weatherboard, floor: 3, gf: 0, shop: false, roof: "gable", verandah: true };
-    case "mansion":
-      return { color: "#f2ede2", accent: "#2e4a3a", fac: FAC.render, floor: 4, gf: 0, shop: false, roof: "hip" };
-    case "warehouse":
-      return { color: rng.pick(BRICK), accent: "#2a2a2a", fac: FAC.brick, floor: 4.5, gf: 0, shop: false, roof: "sawtooth" };
-    case "garage":
-      return { color: rng.pick(METAL), accent: "#d64a2a", fac: FAC.metal, floor: 4, gf: 0, shop: false, roof: "flat" };
-    default:
-      return { color: rng.pick(RENDER), accent: rng.pick(TRIM), fac: FAC.render, floor: 3.4, gf: 4, shop: true, roof: "flat", awning: true };
+function reverseRing(r: Float32Array) {
+  const n = r.length / 2;
+  const out = new Float32Array(r.length);
+  for (let i = 0; i < n; i++) {
+    out[i * 2] = r[(n - 1 - i) * 2];
+    out[i * 2 + 1] = r[(n - 1 - i) * 2 + 1];
   }
+  return out;
 }
 
-/** Does a rectangle touch a street (carriageway or footpath)? */
-function onRoadRect(roads: Roads, x0: number, z0: number, x1: number, z1: number) {
-  for (const s of roads.segs) {
-    const A = roads.nodes[s.a];
-    const B = roads.nodes[s.b];
-    const h = streetHalf(s) - 0.5;
-    const ax0 = Math.min(A.x, B.x) - (s.axis === "ns" ? h : 0);
-    const ax1 = Math.max(A.x, B.x) + (s.axis === "ns" ? h : 0);
-    const az0 = Math.min(A.z, B.z) - (s.axis === "ew" ? h : 0);
-    const az1 = Math.max(A.z, B.z) + (s.axis === "ew" ? h : 0);
-    if (x1 > ax0 && x0 < ax1 && z1 > az0 && z0 < az1) return true;
-  }
-  return false;
-}
-
-type Make = (x: number, z: number, hw: number, hd: number, face: number) => void;
-
-/** Fill a block with buildings in its district's style, fronting the roads round it. */
-function fillBlock(rng: Rng, b: Blk, addB: AddB, props: Prop[], parking: ParkSpot[]) {
-  const W = b.x1 - b.x0;
-  const D = b.z1 - b.z0;
-  const d = b.district;
-  if (d === "beach" || d === "domain") return;
-  // Rows of lots along the north and south frontages, then the ends.
-  const lots = (front: 1 | 3, wMin: number, wMax: number, depth: number, gap: number, setback: number, make: Make, lanes = 0) => {
-    let x = b.x0 + rng.range(0, gap);
-    while (x < b.x1 - wMin) {
-      const w = Math.min(rng.range(wMin, wMax), b.x1 - x);
-      if (w < wMin) break;
-      const hd = Math.min(depth, D - setback - 1) / 2;
-      const z = front === 3 ? b.z0 + setback + hd : b.z1 - setback - hd;
-      make(x + w / 2, z, w / 2 - 0.25, hd, front);
-      x += w + rng.range(0, gap);
-      // Now and then a laneway through the row (graffiti on its walls).
-      if (lanes && rng.next() < lanes && x < b.x1 - wMin - 6) {
-        props.push({ kind: "graffiti", x: x + 2.5, z: front === 3 ? b.z0 + setback + hd : b.z1 - setback - hd, ry: 0, s: hd * 2 });
-        x += 5;
-      }
-    }
-  };
-  const ends = (wMin: number, wMax: number, depth: number, gap: number, setback: number, make: Make) => {
-    for (const face of [0, 2] as const) {
-      let z = b.z0 + Math.min(depth, D / 2) + 1;
-      while (z < b.z1 - Math.min(depth, D / 2) - wMin) {
-        const w = Math.min(rng.range(wMin, wMax), b.z1 - Math.min(depth, D / 2) - 1 - z);
-        if (w < wMin) break;
-        const hw = Math.min(depth, W / 2 - 1) / 2;
-        const x = face === 0 ? b.x1 - setback - hw : b.x0 + setback + hw;
-        make(x, z + w / 2, hw, w / 2 - 0.25, face);
-        z += w + rng.range(0, gap);
-      }
-    }
-  };
-  const main = (c: RoadClass | null) => c === "avenue" || c === "boulevard";
-  const north = b.edge[3];
-  const south = b.edge[1];
-  /** The frontage rows: both sides, or one deep row onto the better road when the block's shallow. */
-  const rows = (depth: number, make: Make, wMin: number, wMax: number, gap: number, setback: number, lanes = 0) => {
-    if (D < depth * 2 + 4) {
-      const front: 1 | 3 = main(south) && !main(north) ? 1 : main(north) && !main(south) ? 3 : south && !north ? 1 : 3;
-      lots(front, wMin, wMax, D - setback * 2, gap, setback, make, lanes);
-    } else {
-      lots(3, wMin, wMax, depth, gap, setback, make, lanes);
-      lots(1, wMin, wMax, depth, gap, setback, make, lanes);
-      ends(wMin, wMax, depth, gap, setback, make);
-    }
-  };
-  const fz = (face: number) => (face === 1 ? 1 : face === 3 ? -1 : 0);
-  const fx = (face: number) => (face === 0 ? 1 : face === 2 ? -1 : 0);
-  /** Kerbside parking in front of a building on a quieter road. */
-  const curbPark = (x: number, z: number, hw: number, hd: number, face: number) => {
-    const road = b.edge[face];
-    if (road !== "street" || rng.next() < 0.45) return;
-    const out = ROAD.street.walk + 1.4;
-    const px = x + fx(face) * (hw + out);
-    const pz = z + fz(face) * (hd + out);
-    parking.push({ x: px, z: pz, h: face % 2 === 0 ? (rng.next() < 0.5 ? Math.PI / 2 : -Math.PI / 2) : rng.next() < 0.5 ? 0 : Math.PI });
-  };
-
-  switch (d) {
-    case "cbd": {
-      const towerish = (x: number, z: number) => {
-        // Taller to the west and along Collins and William; the old city's heritage round the edges.
-        let k = 0.18 + (x < 0 ? 0.12 : 0) + (Math.abs(z + 110) < 70 ? 0.1 : 0) + (Math.abs(x + 220) < 70 ? 0.08 : 0);
-        if (Math.abs(x - 110) < 60) k -= 0.1;
-        return k;
-      };
-      const make: Make = (x, z, hw, hd, face) => {
-        const r = rng.next();
-        const tk = towerish(x, z);
-        if (r < tk && hw > 13) {
-          const h = Math.round(rng.range(90, 250));
-          const glass = rng.next() < 0.75;
-          addB({ x, z, hw, hd, h, kind: "tower", style: rng.int(0, 3), color: glass ? rng.pick(GLASS) : rng.pick(CONCRETE), accent: rng.pick(["#2a2f36", "#c9ced4", "#8a8f96"]), face, fac: glass ? FAC.glass : FAC.grid, floor: 3.8, gf: 7, shop: true, roof: "flat", crown: rng.next() < 0.55 ? { from: Math.round(h * rng.range(0.72, 0.88)), inset: Math.min(hw, hd) * 0.22 } : undefined });
-        } else if (r < tk + 0.32) {
-          const h = Math.round(rng.range(28, 84));
-          const glass = rng.next() < 0.35;
-          addB({ x, z, hw, hd, h, kind: "office", style: rng.int(0, 3), color: glass ? rng.pick(GLASS) : rng.pick(CONCRETE), accent: rng.pick(["#2a2f36", "#d9d4ca", "#6a6f76"]), face, fac: glass ? FAC.glass : FAC.grid, floor: 3.6, gf: 5.5, shop: true, roof: "flat", awning: rng.next() < 0.5 });
-        } else {
-          const h = Math.round(rng.range(11, 30));
-          const stone = rng.next() < 0.55;
-          addB({ x, z, hw, hd, h, kind: "heritage", style: rng.int(0, 3), color: stone ? rng.pick(SANDSTONE) : rng.pick(BRICK), accent: rng.pick(["#e9e2d0", "#2e4a3a", "#3a3f47", "#f4f1ea"]), face, fac: stone ? FAC.sandstone : FAC.brick, floor: 4.2, gf: 4.6, shop: true, roof: "flat", awning: rng.next() < 0.7, sign: rng.next() < 0.45 ? rng.pick(CBD_SHOPS) : undefined });
-        }
-      };
-      rows(36, make, 12, 34, 0.5, 0.2, 0.12);
-      break;
-    }
-    case "southbank":
-    case "docklands": {
-      const sb = d === "southbank";
-      const make: Make = (x, z, hw, hd, face) => {
-        const r = rng.next();
-        if (r < (sb ? 0.55 : 0.4) && hw > 12) {
-          const h = Math.round(rng.range(sb ? 90 : 50, sb ? 230 : 140));
-          addB({ x, z, hw, hd, h, kind: "tower", style: rng.int(0, 3), color: rng.pick(GLASS), accent: rng.pick(["#2a2f36", "#c9ced4", "#e9e2d0"]), face, fac: rng.next() < 0.7 ? FAC.glass : FAC.grid, floor: 3.2, gf: 6, shop: rng.next() < 0.6, roof: "flat", crown: rng.next() < 0.4 ? { from: Math.round(h * 0.85), inset: Math.min(hw, hd) * 0.2 } : undefined });
-        } else {
-          const h = Math.round(rng.range(18, 60));
-          addB({ x, z, hw, hd, h, kind: r < 0.75 ? "apartment" : "office", style: rng.int(0, 3), color: rng.next() < 0.5 ? rng.pick(GLASS) : rng.pick(CONCRETE), accent: rng.pick(["#2a2f36", "#d9d4ca"]), face, fac: rng.next() < 0.5 ? FAC.glass : FAC.grid, floor: 3.2, gf: 5, shop: rng.next() < 0.5, roof: "flat" });
-        }
-      };
-      rows(34, make, 22, 44, 8, 1);
-      break;
-    }
-    case "docks": {
-      const make: Make = (x, z, hw, hd, face) => {
-        if (rng.next() < 0.25) return;
-        addB({ x, z, hw, hd, h: Math.round(rng.range(9, 16)), kind: "shed", style: rng.int(0, 1), color: rng.pick(METAL), accent: rng.pick(["#d64a2a", "#2a6f9e", "#e2b33a"]), face, fac: FAC.metal, floor: 5, gf: 0, shop: false, roof: rng.next() < 0.6 ? "gable" : "flat" });
-      };
-      rows(44, make, 34, 60, 14, 4);
-      break;
-    }
-    case "westmelb":
-    case "southmelb":
-    case "carlton":
-    case "fitzroy":
-    case "eastmelb":
-    case "richmond":
-    case "albertpark":
-    case "port": {
-      // The inner suburbs: Victorian terraces with lace verandahs, workers' cottages in
-      // weatherboard, warehouses in brick and bluestone, shops and corner pubs on the main roads.
-      const shopsOn = (face: number) => main(b.edge[face]);
-      const names = d === "carlton" ? LYGON : d === "fitzroy" ? FITZROY : d === "richmond" ? RICHMOND : CBD_SHOPS;
-      const industrial = (d === "westmelb" && b.x0 < -800) || (d === "port" && b.x0 < -1000) || (d === "southmelb" && b.z0 < 560 && b.x0 < -500);
-      const make: Make = (x, z, hw, hd, face) => {
-        const r = rng.next();
-        if (industrial && r < 0.7) {
-          const blue = rng.next() < 0.3;
-          addB({ x, z, hw, hd, h: Math.round(rng.range(8, 15)), kind: "warehouse", style: rng.int(0, 3), color: blue ? "#4f5357" : rng.pick(BRICK), accent: "#2a2a2a", face, fac: blue ? FAC.bluestone : FAC.brick, floor: 4.5, gf: 0, shop: false, roof: rng.next() < 0.5 ? "sawtooth" : "flat" });
-          return;
-        }
-        if (shopsOn(face)) {
-          // Shops, and a pub on the corner now and then.
-          const pub = r < 0.16;
-          addB({ x, z, hw, hd, h: Math.round(rng.range(7.5, pub ? 11 : 12)), kind: pub ? "pub" : "shop", style: rng.int(0, 3), color: rng.next() < 0.5 ? rng.pick(BRICK) : rng.pick(RENDER), accent: rng.pick(TRIM), face, fac: rng.next() < 0.5 ? FAC.brick : FAC.render, floor: 3.6, gf: 4, shop: true, roof: "flat", verandah: pub || rng.next() < 0.35, awning: !pub, sign: pub ? rng.pick(PUBS) : rng.next() < 0.6 ? rng.pick(names) : undefined });
-          return;
-        }
-        if (r < 0.12 && (d === "fitzroy" || d === "richmond" || d === "southmelb" || d === "westmelb")) {
-          addB({ x, z, hw, hd, h: Math.round(rng.range(9, 16)), kind: "warehouse", style: rng.int(0, 3), color: rng.pick(BRICK), accent: "#2a2a2a", face, fac: FAC.brick, floor: 4.2, gf: 0, shop: false, roof: rng.next() < 0.4 ? "sawtooth" : "flat" });
-          return;
-        }
-        if (r < 0.2 && d !== "port") {
-          const h = Math.round(rng.range(12, d === "eastmelb" ? 34 : 24));
-          addB({ x, z, hw, hd, h, kind: "apartment", style: rng.int(0, 3), color: rng.next() < 0.5 ? rng.pick(RENDER) : rng.pick(CONCRETE), accent: rng.pick(TRIM), face, fac: rng.next() < 0.6 ? FAC.render : FAC.grid, floor: 3.1, gf: 3.4, shop: false, roof: "flat" });
-          return;
-        }
-        const cottage = d === "port" || d === "richmond" ? r < 0.7 : r < 0.25;
-        if (cottage) {
-          // Single-fronted weatherboards with a gable roof and a front verandah, set back a little.
-          const id = addB({ x, z, hw, hd, h: rng.range(5, 6), kind: "cottage", style: rng.int(0, 3), color: rng.pick(BOARDS), accent: rng.pick(TRIM), face, fac: FAC.weatherboard, floor: 3, gf: 0, shop: false, roof: "gable", verandah: true });
-          if (id >= 0) curbPark(x, z, hw, hd, face);
-          return;
-        }
-        const id = addB({ x, z, hw, hd, h: rng.next() < 0.75 ? 8 : 11, kind: "terrace", style: rng.int(0, 3), color: rng.next() < 0.55 ? rng.pick(RENDER) : rng.pick(BRICK), accent: rng.pick(TRIM), face, fac: rng.next() < 0.55 ? FAC.render : FAC.brick, floor: 3.6, gf: 0, shop: false, roof: "hip", verandah: true });
-        if (id >= 0) curbPark(x, z, hw, hd, face);
-      };
-      const terraces = d !== "port" && d !== "richmond";
-      rows(terraces ? 18 : 16, make, terraces ? 6.5 : 8, terraces ? 9 : 12, terraces ? 0.6 : 2.5, terraces ? 0.8 : 3);
-      break;
-    }
-    case "southyarra":
-    case "toorak": {
-      const rich = d === "toorak";
-      const forrest = !rich && b.x0 > 880 && b.z1 < 560;
-      const make: Make = (x, z, hw, hd, face) => {
-        if (forrest) {
-          const h = Math.round(rng.range(40, 120));
-          addB({ x, z, hw, hd, h, kind: "tower", style: rng.int(0, 3), color: rng.pick(GLASS), accent: "#2a2f36", face, fac: FAC.glass, floor: 3.2, gf: 5, shop: false, roof: "flat" });
-          return;
-        }
-        if (!rich && main(b.edge[face])) {
-          addB({ x, z, hw, hd, h: Math.round(rng.range(8, 13)), kind: "shop", style: rng.int(0, 3), color: rng.next() < 0.5 ? rng.pick(RENDER) : rng.pick(BRICK), accent: rng.pick(TRIM), face, fac: rng.next() < 0.5 ? FAC.render : FAC.brick, floor: 3.8, gf: 4.2, shop: true, roof: "flat", awning: true, sign: rng.next() < 0.65 ? rng.pick(CHAPEL) : undefined });
-          return;
-        }
-        if (rich) {
-          const id = addB({ x, z, hw, hd, h: rng.range(9, 12), kind: "mansion", style: rng.int(0, 3), color: rng.pick(["#f5f1e6", "#efe6d6", "#e6eef0", "#f3e3e0", "#d7c29a"]), accent: rng.pick(["#2e4a3a", "#1f2a24", "#f4f1ea"]), face, fac: rng.next() < 0.7 ? FAC.render : FAC.brick, floor: 4, gf: 0, shop: false, roof: "hip" });
-          if (id < 0) return;
-          const back = face === 3 ? 1 : face === 1 ? -1 : 0;
-          if (back && rng.next() < 0.8) props.push({ kind: "pool", x: x - hw * 0.3, z: z + back * (hd + 7), ry: 0, s: 1.3 });
-          if (back && rng.next() < 0.45) props.push({ kind: "tennis", x: x + hw * 0.3, z: z + back * (hd + 18), ry: 0, s: 1 });
-          if (rng.next() < 0.8) props.push({ kind: "gum", x: x + fx(face) * (hw + 6) + (fz(face) ? rng.range(-hw, hw) : 0), z: z + fz(face) * (hd + 6) + (fx(face) ? rng.range(-hd, hd) : 0), ry: rng.range(0, 6.28), s: rng.range(1, 1.4) });
-          parking.push({ x: x + fx(face) * (hw + 5) + (fz(face) ? hw * 0.6 : 0), z: z + fz(face) * (hd + 5) + (fx(face) ? hd * 0.6 : 0), h: face % 2 === 0 ? 0 : Math.PI / 2 });
-          return;
-        }
-        if (rng.next() < 0.18) {
-          addB({ x, z, hw, hd, h: Math.round(rng.range(12, 30)), kind: "apartment", style: rng.int(0, 3), color: rng.pick(RENDER), accent: rng.pick(TRIM), face, fac: FAC.render, floor: 3.1, gf: 3.4, shop: false, roof: "flat" });
-          return;
-        }
-        const id = addB({ x, z, hw, hd, h: rng.next() < 0.7 ? 8 : 11, kind: "terrace", style: rng.int(0, 3), color: rng.next() < 0.6 ? rng.pick(RENDER) : rng.pick(BRICK), accent: rng.pick(TRIM), face, fac: rng.next() < 0.6 ? FAC.render : FAC.brick, floor: 3.6, gf: 0, shop: false, roof: "hip", verandah: true });
-        if (id >= 0) curbPark(x, z, hw, hd, face);
-      };
-      if (rich) rows(26, make, 34, 46, 10, 12);
-      else if (forrest) rows(30, make, 26, 40, 10, 2);
-      else rows(18, make, 7, 10, 0.6, 0.8);
-      break;
-    }
-    case "stkilda": {
-      // Art deco flats in pastel render, cake shops on Acland St, bars on Fitzroy St.
-      const make: Make = (x, z, hw, hd, face) => {
-        const road = b.edge[face];
-        if (main(road) || road === "street") {
-          if (rng.next() < 0.6 || main(road)) {
-            const hotel = rng.next() < 0.15 && main(road);
-            addB({ x, z, hw, hd, h: Math.round(rng.range(hotel ? 14 : 8, hotel ? 24 : 12)), kind: hotel ? "hotel" : "shop", style: rng.int(0, 3), color: rng.pick(RENDER), accent: rng.pick(TRIM), face, fac: FAC.render, floor: 3.4, gf: 4, shop: true, roof: "flat", awning: !hotel, verandah: hotel, sign: hotel ? rng.pick(HOTELS) : rng.next() < 0.7 ? rng.pick(STKILDA) : undefined });
-            return;
-          }
-        }
-        const h = Math.round(rng.range(9, 19));
-        addB({ x, z, hw, hd, h, kind: "apartment", style: rng.int(0, 3), color: rng.pick(RENDER), accent: rng.pick(["#f4f1ea", "#2a3b4a", "#e9e2d0"]), face, fac: FAC.render, floor: 3, gf: 3.2, shop: false, roof: "flat" });
-      };
-      rows(22, make, 12, 24, 2, 1);
-      break;
-    }
-  }
-}
-
-/** Lamps, street trees, benches and bins along the roads. */
-function streetscape(rng: Rng, roads: Roads, props: Prop[], parking: ParkSpot[]) {
-  for (const s of roads.segs) {
-    const a = roads.nodes[s.a];
-    const b = roads.nodes[s.b];
-    const h = ROAD[s.cls].half + 0.7;
-    const dist = districtAt((a.x + b.x) / 2, (a.z + b.z) / 2);
-    const lane = s.cls === "lane";
-    const step = lane ? 30 : 22;
-    const n = Math.floor(s.len / step);
-    // Which trees line this road.
-    const tree: PropKind | null = lane
-      ? null
-      : s.name === "St Kilda Rd" || s.name === "Royal Pde"
-        ? "elm"
-        : s.name === "Fitzroy St" || s.name === "The Esplanade" || s.name === "Alexandra Ave"
-          ? "palm"
-          : dist === "cbd"
-            ? s.name === "Collins St" || s.name === "Swanston St" || s.cls === "avenue"
-              ? "plane"
-              : null
-            : dist === "docks"
-              ? null
-              : dist === "toorak" || dist === "port" || dist === "albertpark"
-                ? rng.next() < 0.5
-                  ? "gum"
-                  : "plane"
-                : dist === "docklands" || dist === "southbank"
-                  ? "gum"
-                  : "plane";
-    for (let i = 1; i < n; i++) {
-      const t = i / n;
-      const x = a.x + (b.x - a.x) * t;
-      const z = a.z + (b.z - a.z) * t;
-      if (s.wet.some(([t0, t1]) => t > t0 - 0.05 && t < t1 + 0.05)) continue;
-      for (const side of [-1, 1]) {
-        const ox = s.axis === "ns" ? side * h : 0;
-        const oz = s.axis === "ew" ? side * h : 0;
-        const px = x + ox;
-        const pz = z + oz;
-        if (groundY(px, pz) < -0.05) continue;
-        // Lamps reach their arm (local +x) out over the road.
-        const ry = s.axis === "ns" ? (side > 0 ? Math.PI : 0) : side > 0 ? Math.PI / 2 : -Math.PI / 2;
-        if (i % 2 === 0 || lane) props.push({ kind: "lamp", x: px, z: pz, ry, s: lane ? 0.7 : 1 });
-        else if (tree) props.push({ kind: tree, x: px + (s.axis === "ns" ? side * 1.4 : 0), z: pz + (s.axis === "ew" ? side * 1.4 : 0), ry: rng.range(0, 6.28), s: rng.range(0.85, 1.2) });
-        else if (dist === "cbd" && i % 4 === 1) props.push({ kind: "bin", x: px, z: pz, ry, s: 1 });
-      }
-      if (i === Math.floor(n / 2) && (s.cls === "avenue" || s.cls === "boulevard") && dist === "cbd") props.push({ kind: "bench", x: x + (s.axis === "ns" ? h + 1.6 : 0), z: z + (s.axis === "ew" ? h + 1.6 : 0), ry: s.axis === "ns" ? Math.PI / 2 : 0, s: 1 });
-    }
-    // Kerbside parking down the quieter streets.
-    if (s.cls === "street" && !s.bridge && dist !== "docks") {
-      for (let i = 1; i < Math.floor(s.len / 16) - 1; i++) {
-        if (rng.next() < 0.6) continue;
-        const t = (i * 16) / s.len;
-        const x = a.x + (b.x - a.x) * t;
-        const z = a.z + (b.z - a.z) * t;
-        // On the left: parked facing the way the near-side traffic goes.
-        const side = rng.next() < 0.5 ? 1 : -1;
-        const off = ROAD.street.half - 1.1;
-        if (s.axis === "ns") parking.push({ x: x + side * off, z, h: side > 0 ? Math.PI / 2 : -Math.PI / 2 });
-        else parking.push({ x, z: z + side * off, h: side > 0 ? Math.PI : 0 });
-      }
-    }
-  }
-}
-
-/** The beaches: palms along the Esplanade, lifeguard towers, umbrellas, volleyball, beach boxes. */
-function beaches(rng: Rng, props: Prop[]) {
-  // St Kilda: palms in a line along the Esplanade's beach side.
-  for (let z = 1050; z < 1590; z += 11) {
-    const x = -330 - ROAD.avenue.half - ROAD.avenue.walk - 3;
-    if (Math.abs(z - 1181) < 10) continue;
-    props.push({ kind: "palm", x: x + rng.range(-1, 1), z: z + rng.range(-2, 2), ry: rng.range(0, 6.28), s: rng.range(1, 1.35) });
-  }
-  // Lifeguard towers and umbrellas along every stretch of sand.
-  const sand = (x: number, z: number) => onBeach(x, z) && groundY(x, z) > -0.25;
-  for (let i = 0; i < 900; i++) {
-    const x = rng.range(-1100, -330);
-    const z = rng.range(800, 1650);
-    if (!sand(x, z)) continue;
-    if (PIERS.some((p) => x > p.x0 - 6 && x < p.x1 + 6 && z > p.z0 - 6 && z < p.z1 + 6)) continue;
-    const r = rng.next();
-    if (r < 0.62) props.push({ kind: "umbrella", x, z, ry: rng.range(0, 6.28), s: 1, color: rng.pick(["#e14b6a", "#f2b134", "#3fa7a0", "#4b8fd6", "#f6f1e7", "#7a5cc4", "#e9724c"]) });
-  }
-  for (const [x, z] of [[-1050, 880], [-760, 960], [-560, 1030], [-410, 1150], [-400, 1330], [-380, 1500]] as [number, number][]) {
-    const s = shoreDistance(x, z);
-    if (s < 0 || s > 80) continue;
-    props.push({ kind: "lifeguard", x, z, ry: Math.PI / 2, s: 1, color: rng.pick(["#f2b134", "#e14b6a"]) });
-  }
-  for (const z of [1290, 1420]) props.push({ kind: "volley", x: -390, z, ry: 0, s: 1 });
-  // Middle Park's bathing boxes in their colours, in a row along the back of the sand.
-  for (let x = -760; x < -560; x += 6) {
-    let z = 960;
-    while (shoreDistance(x, z) > 30 && z < 1100) z += 2;
-    if (!sand(x, z)) continue;
-    props.push({ kind: "beachbox", x, z, ry: Math.PI, s: 1, color: rng.pick(["#e14b6a", "#3fa7a0", "#f2b134", "#4b8fd6", "#f6f1e7", "#2f5a3a", "#d81e2b", "#7a5cc4"]) });
-  }
-  for (const [x, z] of [[-360, 1080], [-345, 1460]] as [number, number][]) props.push({ kind: "billboard", x, z, ry: Math.PI / 2, s: 1 });
-}
-
-/** Swanson Dock: container stacks in the yards, cranes on the quay. */
-function docks(rng: Rng, props: Prop[], taken: { x0: number; z0: number; x1: number; z1: number }[]) {
-  const colors = ["#c0392b", "#2c6fa8", "#e67e22", "#27ae60", "#8e44ad", "#7f8c8d", "#d4ac0d", "#16a085", "#e8e6e1"];
-  const yards = [
-    { x0: -1660, x1: -1400, z0: -420, z1: 200 },
-    { x0: -1360, x1: -1220, z0: -420, z1: 80 },
-    { x0: -1180, x1: -1100, z0: -420, z1: 40 },
-  ];
-  for (const y of yards) {
-    for (let x = y.x0 + 4; x < y.x1 - 6; x += 7)
-      for (let z = y.z0 + 4; z < y.z1 - 14; z += 16) {
-        if (taken.some((t) => x > t.x0 - 4 && x < t.x1 + 4 && z > t.z0 - 8 && z < t.z1 + 8)) continue;
-        if (nearRoad(x, z, 6) || groundY(x, z + 6) < -0.05) continue;
-        if (rng.next() < 0.2) continue;
-        props.push({ kind: "container", x, z: z + 6, ry: Math.PI / 2, s: rng.int(1, 4), color: rng.pick(colors) });
-      }
-  }
-  // Ship-to-shore cranes along the north bank.
-  for (const x of [-1700, -1620, -1540, -1460, -1300, -1220]) {
-    const r = riverAt(x);
+/** The footprint edge that faces the nearest street: long enough, close to the road, looking at it. */
+function streetFront(city: City, ring: Float32Array): Building["front"] {
+  const n = ring.length / 2;
+  let best: Building["front"] = null;
+  let score = Infinity;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const ax = ring[i * 2];
+    const az = ring[i * 2 + 1];
+    const bx = ring[j * 2];
+    const bz = ring[j * 2 + 1];
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len < 2.5) continue;
+    // The ring has positive area (x east, z south), so the outward normal of a→b is (dz, −dx).
+    const nx = (bz - az) / len;
+    const nz = -(bx - ax) / len;
+    const mx = (ax + bx) / 2;
+    const mz = (az + bz) / 2;
+    const r = nearestRoad(city, mx + nx * 2, mz + nz * 2);
     if (!r) continue;
-    props.push({ kind: "crane", x, z: r.z - r.half - 14, ry: 0, s: 1 });
+    const toRoad = (r.x - mx) * nx + (r.z - mz) * nz;
+    if (toRoad < 1) continue;
+    const gap = toRoad - r.seg.half;
+    if (gap > 28) continue;
+    // Prefer close, long fronts square on to the road.
+    const square = Math.abs(nx * -r.seg.dz + nz * r.seg.dx);
+    const sc = gap + (1 - square) * 12 - Math.min(len, 20) * 0.4 + (r.seg.cls === "lane" ? 8 : 0);
+    if (sc < score) {
+      score = sc;
+      best = { ax, az, bx, bz, nx, nz, len };
+    }
+  }
+  return best;
+}
+
+/* ---- landmarks: extras on the real buildings */
+
+function placeLandmarks(city: City) {
+  const L = (kind: LandmarkKind, name: string, lat: number, lon: number, hw: number, hd: number, h: number, rotDeg: number, parts?: Landmark["parts"]) => {
+    const p = geo(lat, lon);
+    let base = 0;
+    for (const b of city.buildings) if (b.h > base && Math.abs(b.x - p.x) < 150 && Math.abs(b.z - p.z) < 150 && inRing(b.ring, p.x, p.z)) base = b.h;
+    city.landmarks.push({ kind, name, x: p.x, z: p.z, hw, hd, h, face: 1, base, rot: (rotDeg * Math.PI) / 180, parts: parts?.map((q) => ({ ...q, x: q.x + p.x, z: q.z + p.z })) });
+  };
+  // The Hoddle Grid sits about 20° off north; Flinders St runs along it.
+  const grid = 20.5;
+  L("dome", "Flinders Street Station", -37.81818, 144.96705, 12, 12, 36, grid);
+  L("spire", "The Arts Centre", -37.82085, 144.96855, 12, 12, 162, 0);
+  L("cathedral", "St Paul's Cathedral", -37.81695, 144.96770, 16, 30, 96, grid);
+  L("wheel", "The Harbour Star", -37.81135, 144.93735, 14, 8, 120, -20, [{ x: 0, z: 0, hw: 6, hd: 8, h: 12 }]);
+  L("bolte", "Bolte Bridge", -37.8178, 144.92855, 18, 6, 140, 0);
+  L("mcglights", "The MCG", -37.81995, 144.98345, 95, 95, 75, 0);
+  L("lunagate", "Big Mouth Fun Park", -37.86775, 144.97605, 14, 6, 26, -55, [{ x: 0, z: 0, hw: 10, hd: 4, h: 18 }]);
+  L("kiosk", "The Pier Kiosk", -37.86079, 144.96151, 9, 7, 8, 54, [{ x: 0, z: 0, hw: 7, hd: 9, h: 6 }]);
+  // Real buildings under an extra's footprint give way where the extra is the building.
+  for (const l of city.landmarks) {
+    if (l.kind !== "kiosk" && l.kind !== "lunagate") continue;
+    city.buildings = city.buildings.filter((b) => Math.hypot(b.x - l.x, b.z - l.z) > Math.max(l.hw, l.hd) + 4 || b.h > 30);
+  }
+  city.buildings.forEach((b, i) => (b.id = i));
+}
+
+function placePois(city: City) {
+  const cand = (sp: PoiSpec, p: { x: number; z: number }, radius: number) => {
+    let best: Building | null = null;
+    let bd = Infinity;
+    for (const b of city.buildings) {
+      if (!b.front || !b.solid) continue;
+      const d = Math.hypot(b.x - p.x, b.z - p.z);
+      if (d > radius || d > bd) continue;
+      const a = Math.abs(ringArea(b.ring));
+      if (sp.area && (a < sp.area[0] || a > sp.area[1])) continue;
+      if (sp.want && !sp.want.includes(b.kind)) continue;
+      if (city.pois.some((q) => q.building === b.id)) continue;
+      bd = d;
+      best = b;
+    }
+    return best;
+  };
+  for (const sp of POI_SPECS) {
+    const p = geo(sp.lat, sp.lon);
+    if (sp.kind === "pier" || sp.kind === "airboat") {
+      const fx = sp.kind === "pier" ? -1 : 0;
+      const fz = sp.kind === "pier" ? 0 : -1;
+      city.pois.push({ id: sp.id, kind: sp.kind, name: sp.name, x: p.x, z: p.z, fx, fz, district: districtAt(p.x, p.z) });
+      continue;
+    }
+    const b = cand(sp, p, 180) ?? cand({ ...sp, want: undefined }, p, 260) ?? cand({ ...sp, want: undefined, area: undefined }, p, 600);
+    if (!b || !b.front) continue;
+    if (sp.as) {
+      const keep = { ring: b.ring, front: b.front, h: b.h };
+      b.kind = sp.as;
+      if (sp.as === "shop") Object.assign(b, { fac: b.fac === FAC.glass ? FAC.grid : b.fac, shop: true, awning: true, gf: Math.max(b.gf, 4) });
+      if (sp.as === "garage") Object.assign(b, { fac: FAC.metal, color: "#b7b9bb", accent: "#d64a2a", shop: false, gf: 0 });
+      if (sp.as === "station") Object.assign(b, { fac: FAC.grid, color: "#c9c4b8", accent: "#1f3a6e", shop: false, gf: 5 });
+      if (sp.as === "hospital") Object.assign(b, { fac: FAC.grid, color: "#e9ecef", accent: "#2a6f9e", shop: false, gf: 5 });
+      if (sp.as === "bank") Object.assign(b, { fac: FAC.sandstone, color: "#d7c29a", accent: "#2b2b2b", shop: false, gf: 7, floor: 4.6 });
+      Object.assign(b, keep);
+    }
+    if (sp.kind !== "safehouse") b.sign = sp.name;
+    const f = b.front;
+    const out = sp.kind === "gas" ? 4 : 2.4;
+    const x = (f.ax + f.bx) / 2 + f.nx * out;
+    const z = (f.az + f.bz) / 2 + f.nz * out;
+    city.pois.push({ id: sp.id, kind: sp.kind, name: sp.name, x, z, fx: f.nx, fz: f.nz, district: districtAt(x, z), building: b.id });
   }
 }
 
-/** Yachts in Victoria Harbour and off St Kilda. */
-function marinas(rng: Rng, props: Prop[]) {
-  for (let i = 0; i < 16; i++) props.push({ kind: "yacht", x: -960 + (i % 8) * 34 + rng.range(-3, 3), z: 70 + Math.floor(i / 8) * 70 + rng.range(-4, 4), ry: Math.PI / 2, s: rng.range(0.8, 1.4) });
-  for (let i = 0; i < 10; i++) props.push({ kind: "yacht", x: -620 - (i % 5) * 26 + rng.range(-3, 3), z: 1140 + Math.floor(i / 5) * 22, ry: Math.PI / 2, s: rng.range(0.7, 1.1) });
+/* ---- the street: trees, lamps, parking, bins, laneway art */
+
+function streetscape(city: City, rng: Rng) {
+  const { segs, nodes } = city.roads;
+  const solidNear = (x: number, z: number, pad: number) => {
+    for (const b of buildingsNear(city, x, z)) {
+      if (!b.solid) continue;
+      if (x < b.x - b.hw - pad || x > b.x + b.hw + pad || z < b.z - b.hd - pad || z > b.z + b.hd + pad) continue;
+      if (inRing(b.ring, x, z) || ringDist(b.ring, x, z) < pad) return true;
+    }
+    return false;
+  };
+  for (const s of segs) {
+    if (s.cls === "lane") {
+      // Laneway art on the walls of the city's lanes.
+      const d = districtAt((nodes[s.a].x + nodes[s.b].x) / 2, (nodes[s.a].z + nodes[s.b].z) / 2);
+      if ((d === "cbd" || d === "fitzroy" || d === "richmond") && s.len > 12 && rng.next() < 0.55) {
+        const A = nodes[s.a];
+        city.props.push({ kind: "graffiti", x: A.x + s.dx * s.len * 0.5, z: A.z + s.dz * s.len * 0.5, ry: s.h, s: Math.min(30, s.len * 0.8), color: String(s.half) });
+      }
+      continue;
+    }
+    if (s.bridge) continue;
+    const A = nodes[s.a];
+    const B = nodes[s.b];
+    const mid = { x: (A.x + B.x) / 2, z: (A.z + B.z) / 2 };
+    const dist = districtAt(mid.x, mid.z);
+    const cbd = dist === "cbd" || dist === "southbank" || dist === "docklands";
+    const tree: PropKind = dist === "stkilda" && rng.next() < 0.45 ? "palm" : cbd || s.cls !== "street" ? "plane" : dist === "carlton" || dist === "fitzroy" || dist === "eastmelb" || dist === "albertpark" ? "elm" : dist === "port" || dist === "docks" || dist === "southmelb" ? (rng.next() < 0.6 ? "gum" : "plane") : rng.pick(["elm", "plane", "gum"] as const);
+    const spacing = cbd ? 15 : 17;
+    const u0 = A.r + 7;
+    const u1 = s.len - B.r - 7;
+    const lx = s.dz;
+    const lz = -s.dx;
+    for (let u = u0 + rng.range(0, spacing); u < u1; u += spacing) {
+      for (const side of [-1, 1]) {
+        const off = s.half + s.walk * 0.62;
+        const x = A.x + s.dx * u + lx * off * side;
+        const z = A.z + s.dz * u + lz * off * side;
+        if (groundY(x, z) < -0.05) continue;
+        const r = rng.next();
+        if (r < (cbd ? 0.5 : 0.62) && !solidNear(x, z, 1.4) && !nearRoad(x, z, 0.4)) city.props.push({ kind: tree, x, z, ry: rng.range(0, 6.28), s: rng.range(0.8, 1.15) });
+        // A street lamp now and then, between the trees.
+        else if (r > 0.86 && !solidNear(x, z, 0.6) && !nearRoad(x, z, 0.3)) city.props.push({ kind: "lamp", x, z, ry: Math.atan2(-side * s.dx, -side * s.dz), s: 1 });
+      }
+    }
+    // Parked cars along the kerb of the quieter streets.
+    if (s.cls === "street" && !s.oneway && s.len > 30 && dist !== "cbd") {
+      for (let u = u0 + 2; u < u1 - 2; u += 6.5) {
+        if (rng.next() > 0.3) continue;
+        const side = rng.next() < 0.5 ? 1 : -1;
+        const off = s.half - 1.0;
+        city.parking.push({ x: A.x + s.dx * u + lx * off * side, z: A.z + s.dz * u + lz * off * side, h: side > 0 ? s.h : s.h + Math.PI });
+      }
+    }
+  }
 }
 
-/* -------------------------------------------------------------------------------- lookups */
+/** The real street furniture. */
+function furniture(city: City, m: MapData) {
+  const n = m.ptType.length;
+  // Lamps reach their arm (local +x) out over the road; everything else faces it (local +z).
+  const ry = (x: number, z: number, lamp: boolean) => {
+    const r = nearestRoad(city, x, z);
+    if (!r || r.d < 0.01) return 0;
+    const vx = (r.x - x) / r.d;
+    const vz = (r.z - z) / r.d;
+    return lamp ? Math.atan2(-vz, vx) : Math.atan2(vx, vz);
+  };
+  for (let i = 0; i < n; i++) {
+    const t = m.ptType[i];
+    const x = m.ptXY[i * 2];
+    const z = m.ptXY[i * 2 + 1];
+    if (nearRoad(x, z, -0.3)) continue;
+    let kind: PropKind | null = null;
+    if (t === PT.bench) kind = "bench";
+    else if (t === PT.bin) kind = "bin";
+    else if (t === PT.lamp) kind = "lamp";
+    else if (t === PT.busStop) kind = "busstop";
+    else if (t === PT.pole || t === PT.mast) kind = "pole";
+    else if (t === PT.fountain) kind = "fountain";
+    if (!kind) continue;
+    city.props.push({ kind, x, z, ry: ry(x, z, kind === "lamp"), s: kind === "fountain" ? 0.6 : t === PT.mast ? 2 : 1 });
+  }
+}
 
-let roadsRef: Roads | null = null;
-/** Road segments by 50 m cell (with a 16 m margin), for quick lookups. */
-let segCells: Map<number, number[]> | null = null;
+function parkTrees(city: City, rng: Rng) {
+  const g = gData!;
+  // Sample the grass on a jittered 20 m lattice.
+  const step = 5;
+  for (let j = 0; j < g.nz; j += step)
+    for (let i = 0; i < g.nx; i += step) {
+      const ci = Math.min(g.nx - 1, i + rng.int(0, step - 1));
+      const cj = Math.min(g.nz - 1, j + rng.int(0, step - 1));
+      const c = g.data[cj * g.nx + ci];
+      if (c !== G.grass) continue;
+      if (rng.next() > 0.42) continue;
+      const x = gX0 + (ci + 0.5) * g.cell + rng.range(-1.5, 1.5);
+      const z = gZ0 + (cj + 0.5) * g.cell + rng.range(-1.5, 1.5);
+      if (nearRoad(x, z, 3)) continue;
+      const d = districtAt(x, z);
+      const kind: PropKind = d === "stkilda" || d === "beach" ? (rng.next() < 0.6 ? "palm" : "gum") : d === "domain" || d === "albertpark" ? rng.pick(["gum", "elm", "plane", "gum"] as const) : rng.pick(["elm", "plane", "gum"] as const);
+      city.props.push({ kind, x, z, ry: rng.range(0, 6.28), s: rng.range(0.85, 1.35) });
+    }
+}
 
-function segIndex(r: Roads) {
-  if (segCells) return segCells;
-  segCells = new Map();
-  for (const s of r.segs) {
-    const A = r.nodes[s.a];
-    const B = r.nodes[s.b];
-    const m = 18;
-    const x0 = Math.floor((Math.min(A.x, B.x) - m) / CELL);
-    const x1 = Math.floor((Math.max(A.x, B.x) + m) / CELL);
-    const z0 = Math.floor((Math.min(A.z, B.z) - m) / CELL);
-    const z1 = Math.floor((Math.max(A.z, B.z) + m) / CELL);
+function beaches(city: City, rng: Rng) {
+  const g = gData!;
+  for (let j = 0; j < g.nz; j += 3)
+    for (let i = 0; i < g.nx; i += 3) {
+      if (g.data[j * g.nx + i] !== G.sand) continue;
+      if (rng.next() > 0.08) continue;
+      const x = gX0 + (i + 0.5) * g.cell;
+      const z = gZ0 + (j + 0.5) * g.cell;
+      if (nearRoad(x, z, 2)) continue;
+      const r = rng.next();
+      if (r < 0.75) city.props.push({ kind: "umbrella", x, z, ry: rng.range(0, 6.28), s: 1, color: rng.pick(["#e14b6a", "#3fa7a0", "#f2b134", "#4b8fd6", "#f6f1e7"]) });
+      else if (r < 0.8) city.props.push({ kind: "lifeguard", x, z, ry: 0, s: 1, color: "#e8b730" });
+      else if (r < 0.84) city.props.push({ kind: "volley", x, z, ry: 0, s: 1 });
+    }
+}
+
+/* -------------------------------------------------------------------------------- collisions */
+
+function buildingsNear(_city: City, x: number, z: number) {
+  return bGridNear(x, z);
+}
+
+/** A grid of buildings, made before the solids index exists (for placing street trees). */
+let bGrid: Map<number, Building[]> | null = null;
+function bGridNear(x: number, z: number) {
+  return bGrid?.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) ?? [];
+}
+function indexBuildings(city: City) {
+  bGrid = new Map();
+  for (const b of city.buildings) {
+    const x0 = Math.floor((b.x - b.hw - 2) / CELL);
+    const x1 = Math.floor((b.x + b.hw + 2) / CELL);
+    const z0 = Math.floor((b.z - b.hd - 2) / CELL);
+    const z1 = Math.floor((b.z + b.hd + 2) / CELL);
     for (let cx = x0; cx <= x1; cx++)
       for (let cz = z0; cz <= z1; cz++) {
         const k = cellKey(cx, cz);
-        const list = segCells.get(k);
-        if (list) list.push(s.id);
-        else segCells.set(k, [s.id]);
+        const l = bGrid.get(k);
+        if (l) l.push(b);
+        else bGrid.set(k, [b]);
       }
   }
-  return segCells;
 }
 
-const NONE: number[] = [];
-/** Segments whose street could touch (x, z) (within 18 m). */
-export function segsAt(r: Roads, x: number, z: number) {
-  return segIndex(r).get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) ?? NONE;
-}
-
-/** Is (x, z) within `pad` metres of a road's carriageway? */
-export function nearRoad(x: number, z: number, pad = 0) {
-  const r = roadsRef ?? (roadsRef = buildRoads());
-  if (pad <= 6) {
-    for (const id of segsAt(r, x, z)) {
-      const s = r.segs[id];
-      const a = r.nodes[s.a];
-      const b = r.nodes[s.b];
-      const h = ROAD[s.cls].half + pad;
-      if (s.axis === "ns") {
-        if (Math.abs(x - a.x) <= h && z >= a.z - h && z <= b.z + h) return true;
-      } else if (Math.abs(z - a.z) <= h && x >= a.x - h && x <= b.x + h) return true;
-    }
-    return false;
+/** Distance from a point to a ring's edges. */
+export function ringDist(r: Float32Array, x: number, z: number) {
+  const n = r.length / 2;
+  let best = Infinity;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const ax = r[j * 2];
+    const az = r[j * 2 + 1];
+    const bx = r[i * 2];
+    const bz = r[i * 2 + 1];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const l2 = dx * dx + dz * dz || 1;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+    const d = Math.hypot(ax + dx * t - x, az + dz * t - z);
+    if (d < best) best = d;
   }
-  for (const s of r.segs) {
-    const a = r.nodes[s.a];
-    const b = r.nodes[s.b];
-    const h = ROAD[s.cls].half + pad;
-    if (s.axis === "ns") {
-      if (Math.abs(x - a.x) <= h && z >= a.z - h && z <= b.z + h) return true;
-    } else if (Math.abs(z - a.z) <= h && x >= a.x - h && x <= b.x + h) return true;
-  }
-  return false;
+  return best;
 }
 
 /** Collision shapes for buildings, landmarks and solid props, hashed into 50 m cells. */
 function index(city: City) {
   const solids: Solid[] = [];
-  for (const b of city.buildings) solids.push({ x: b.x, z: b.z, hw: b.hw, hd: b.hd, h: b.h, b: b.id });
+  for (const b of city.buildings) if (b.solid) solids.push({ x: b.x, z: b.z, hw: b.hw, hd: b.hd, h: b.h, b: b.id, poly: b.ring });
   for (const l of city.landmarks) for (const p of l.parts ?? []) solids.push({ x: p.x, z: p.z, hw: p.hw, hd: p.round ? 0 : p.hd, round: p.round, h: p.h });
   for (const p of city.props) {
-    if (p.kind === "palm" || p.kind === "tree" || p.kind === "plane" || p.kind === "elm" || p.kind === "gum" || p.kind === "lamp") solids.push({ x: p.x, z: p.z, hw: p.kind === "lamp" ? 0.18 : 0.35 * p.s, hd: 0, round: true, h: 6 });
-    else if (p.kind === "container") {
-      const along = Math.abs(Math.sin(p.ry)) > 0.5;
-      solids.push({ x: p.x, z: p.z, hw: along ? 6.1 : 1.25, hd: along ? 1.25 : 6.1, h: 2.6 * p.s });
-    } else if (p.kind === "pump") solids.push({ x: p.x, z: p.z, hw: 0.6, hd: 0.6, h: 1.8 });
+    if (p.kind === "palm" || p.kind === "tree" || p.kind === "plane" || p.kind === "elm" || p.kind === "gum" || p.kind === "lamp" || p.kind === "pole") solids.push({ x: p.x, z: p.z, hw: p.kind === "lamp" || p.kind === "pole" ? 0.18 : 0.35 * p.s, hd: 0, round: true, h: 6 });
     else if (p.kind === "fountain") solids.push({ x: p.x, z: p.z, hw: 5 * p.s, hd: 0, round: true, h: 1 });
     else if (p.kind === "lifeguard") solids.push({ x: p.x, z: p.z, hw: 2, hd: 2, h: 4 });
-    else if (p.kind === "beachbox") solids.push({ x: p.x, z: p.z, hw: 1.3, hd: 1.3, h: 3 });
-    else if (p.kind === "flame") solids.push({ x: p.x, z: p.z, hw: 0.9, hd: 0, round: true, h: 12 });
-    else if (p.kind === "crane") for (const dx of [-7, 7]) for (const dz of [-7, 7]) solids.push({ x: p.x + dx, z: p.z + dz, hw: 0.9, hd: 0.9, h: 60 });
-    else if (p.kind === "canopy") for (const dx of [-5, 5]) solids.push({ x: p.x + (Math.abs(Math.sin(p.ry)) > 0.5 ? 0 : dx), z: p.z + (Math.abs(Math.sin(p.ry)) > 0.5 ? dx : 0), hw: 0.3, hd: 0, round: true, h: 5 });
+    else if (p.kind === "busstop") solids.push({ x: p.x, z: p.z, hw: 0.4, hd: 0, round: true, h: 2.6 });
   }
   city.solids = solids;
+  city.grid = new Map();
   solids.forEach((s, i) => {
     const r = s.round ? s.hw : 0;
     const x0 = Math.floor((s.x - (s.round ? r : s.hw)) / CELL);
@@ -1516,18 +1548,77 @@ export function solidsNear(city: City, x: number, z: number, r: number, out: Sol
   const x1 = Math.floor((x + r) / CELL);
   const z0 = Math.floor((z - r) / CELL);
   const z1 = Math.floor((z + r) / CELL);
-  const seen = new Set<number>();
+  const single = x0 === x1 && z0 === z1;
+  const seen = single ? null : new Set<number>();
   for (let cx = x0; cx <= x1; cx++)
     for (let cz = z0; cz <= z1; cz++) {
       const list = city.grid.get(cellKey(cx, cz));
       if (!list) continue;
       for (const i of list) {
-        if (seen.has(i)) continue;
-        seen.add(i);
+        if (seen) {
+          if (seen.has(i)) continue;
+          seen.add(i);
+        }
         out.push(city.solids[i]);
       }
     }
   return out;
+}
+
+/** Is a point inside a solid (in plan)? */
+export function insideSolid(s: Solid, x: number, z: number) {
+  if (s.round) return Math.hypot(x - s.x, z - s.z) < s.hw;
+  if (Math.abs(x - s.x) > s.hw || Math.abs(z - s.z) > s.hd) return false;
+  return s.poly ? inRing(s.poly, x, z) : true;
+}
+
+/**
+ * Where a ray (from o along d, t from 0 to 1 over d) first enters a solid in plan, or −1.
+ * Boxes by slabs, posts by their circle, buildings by their footprint's edges.
+ */
+export function rayEnter(s: Solid, ox: number, oz: number, dx: number, dz: number) {
+  if (s.round) {
+    const fx = ox - s.x;
+    const fz = oz - s.z;
+    const a = dx * dx + dz * dz;
+    const b = 2 * (fx * dx + fz * dz);
+    const c = fx * fx + fz * fz - s.hw * s.hw;
+    if (c < 0) return 0;
+    const disc = b * b - 4 * a * c;
+    if (disc < 0 || a < 1e-12) return -1;
+    const t = (-b - Math.sqrt(disc)) / (2 * a);
+    return t >= 0 && t <= 1 ? t : -1;
+  }
+  // The box first (cheap), then the footprint.
+  let t0 = 0;
+  let t1 = 1;
+  const slab = (p: number, v: number, lo: number, hi: number) => {
+    if (Math.abs(v) < 1e-9) return p >= lo && p <= hi;
+    let ta = (lo - p) / v;
+    let tb = (hi - p) / v;
+    if (ta > tb) [ta, tb] = [tb, ta];
+    t0 = Math.max(t0, ta);
+    t1 = Math.min(t1, tb);
+    return t0 <= t1;
+  };
+  if (!slab(ox, dx, s.x - s.hw, s.x + s.hw) || !slab(oz, dz, s.z - s.hd, s.z + s.hd)) return -1;
+  if (!s.poly) return t0;
+  if (inRing(s.poly, ox, oz)) return 0;
+  const r = s.poly;
+  const n = r.length / 2;
+  let best = Infinity;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const ax = r[j * 2];
+    const az = r[j * 2 + 1];
+    const ex = r[i * 2] - ax;
+    const ez = r[i * 2 + 1] - az;
+    const den = dx * ez - dz * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const t = ((ax - ox) * ez - (az - oz) * ex) / den;
+    const u = ((ax - ox) * dz - (az - oz) * dx) / den;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1 && t < best) best = t;
+  }
+  return best === Infinity ? -1 : best;
 }
 
 /** Push a circle (x, z, radius r) out of the solids near it; returns the push and the normal of the last hit. */
@@ -1535,7 +1626,7 @@ export function pushOut(city: City, p: { x: number; z: number }, r: number, scra
   let hit = false;
   let nx = 0;
   let nz = 0;
-  for (const s of solidsNear(city, p.x, p.z, r + 8, scratch)) {
+  for (const s of solidsNear(city, p.x, p.z, r + 4, scratch)) {
     if (s.h > maxH) continue;
     if (s.round) {
       const dx = p.x - s.x;
@@ -1549,6 +1640,49 @@ export function pushOut(city: City, p: { x: number; z: number }, r: number, scra
         nz = dz / d;
         hit = true;
       }
+      continue;
+    }
+    if (p.x < s.x - s.hw - r || p.x > s.x + s.hw + r || p.z < s.z - s.hd - r || p.z > s.z + s.hd + r) continue;
+    if (s.poly) {
+      // Nearest point on the footprint's edges; push out along it (or out of the inside).
+      const ring = s.poly;
+      const n = ring.length / 2;
+      let bd = Infinity;
+      let cx = 0;
+      let cz = 0;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        const ax = ring[j * 2];
+        const az = ring[j * 2 + 1];
+        const ex = ring[i * 2] - ax;
+        const ez = ring[i * 2 + 1] - az;
+        const l2 = ex * ex + ez * ez || 1;
+        const t = Math.max(0, Math.min(1, ((p.x - ax) * ex + (p.z - az) * ez) / l2));
+        const qx = ax + ex * t;
+        const qz = az + ez * t;
+        const d = (p.x - qx) * (p.x - qx) + (p.z - qz) * (p.z - qz);
+        if (d < bd) {
+          bd = d;
+          cx = qx;
+          cz = qz;
+        }
+      }
+      const inside = inRing(ring, p.x, p.z);
+      const d = Math.sqrt(bd);
+      if (!inside && d >= r) continue;
+      hit = true;
+      let ux = p.x - cx;
+      let uz = p.z - cz;
+      const ul = Math.hypot(ux, uz) || 1;
+      ux /= ul;
+      uz /= ul;
+      if (inside) {
+        ux = -ux;
+        uz = -uz;
+      }
+      p.x = cx + ux * r;
+      p.z = cz + uz * r;
+      nx = ux;
+      nz = uz;
       continue;
     }
     const cx = Math.max(s.x - s.hw, Math.min(s.x + s.hw, p.x));
@@ -1565,7 +1699,6 @@ export function pushOut(city: City, p: { x: number; z: number }, r: number, scra
       nx = dx / d;
       nz = dz / d;
     } else {
-      // Centre inside the box: out the nearest face.
       const ex = [s.x + s.hw - p.x, p.x - (s.x - s.hw), s.z + s.hd - p.z, p.z - (s.z - s.hd)];
       const k = ex.indexOf(Math.min(...ex));
       if (k === 0) [p.x, nx, nz] = [s.x + s.hw + r, 1, 0];
@@ -1580,155 +1713,11 @@ export function pushOut(city: City, p: { x: number; z: number }, r: number, scra
 /** Does a straight line at eye height clear the buildings? (Line of sight.) */
 export function clearLine(city: City, ax: number, az: number, bx: number, bz: number, y = 1.6, scratch: Solid[] = []) {
   const d = Math.hypot(bx - ax, bz - az);
-  const mx = (ax + bx) / 2;
-  const mz = (az + bz) / 2;
-  const list = solidsNear(city, mx, mz, d / 2 + 4, scratch);
+  const list = solidsNear(city, (ax + bx) / 2, (az + bz) / 2, d / 2 + 4, scratch);
   for (const s of list) {
     if (s.round || s.h < y) continue;
-    // Slab test against the box.
-    let t0 = 0;
-    let t1 = 1;
-    const dx = bx - ax;
-    const dz = bz - az;
-    const slab = (p: number, v: number, lo: number, hi: number) => {
-      if (Math.abs(v) < 1e-9) return p >= lo && p <= hi;
-      let ta = (lo - p) / v;
-      let tb = (hi - p) / v;
-      if (ta > tb) [ta, tb] = [tb, ta];
-      t0 = Math.max(t0, ta);
-      t1 = Math.min(t1, tb);
-      return t0 <= t1;
-    };
-    if (slab(ax, dx, s.x - s.hw, s.x + s.hw) && slab(az, dz, s.z - s.hd, s.z + s.hd)) return false;
+    if (rayEnter(s, ax, az, bx - ax, bz - az) >= 0) return false;
   }
   return true;
 }
 
-/** The road segment a point is on (within the carriageway, plus pad), if any. */
-export function segAt(city: City, x: number, z: number, pad = 0): Seg | null {
-  const { nodes, segs } = city.roads;
-  for (const id of segsAt(city.roads, x, z)) {
-    const s = segs[id];
-    const a = nodes[s.a];
-    const b = nodes[s.b];
-    const h = ROAD[s.cls].half + pad;
-    if (s.axis === "ns") {
-      if (Math.abs(x - a.x) <= h && z >= a.z && z <= b.z) return s;
-    } else if (Math.abs(z - a.z) <= h && x >= a.x && x <= b.x) return s;
-  }
-  return null;
-}
-
-/** The nearest point on any road's centreline, with its segment. */
-export function nearestRoad(city: City, x: number, z: number) {
-  const { nodes, segs } = city.roads;
-  let best: { seg: Seg; x: number; z: number; t: number; d: number } | null = null;
-  const near = segsAt(city.roads, x, z);
-  const list = near.length ? near.map((i) => segs[i]) : segs;
-  for (const s of list) {
-    const a = nodes[s.a];
-    const b = nodes[s.b];
-    let t = s.axis === "ns" ? (z - a.z) / (b.z - a.z) : (x - a.x) / (b.x - a.x);
-    t = Math.max(0, Math.min(1, t));
-    const px = a.x + (b.x - a.x) * t;
-    const pz = a.z + (b.z - a.z) * t;
-    const d = Math.hypot(px - x, pz - z);
-    if (!best || d < best.d) best = { seg: s, x: px, z: pz, t, d };
-  }
-  if (best && best.d > 18 && near.length) {
-    // The cell's roads were all far off: check the lot.
-    for (const s of segs) {
-      const a = nodes[s.a];
-      const b = nodes[s.b];
-      let t = s.axis === "ns" ? (z - a.z) / (b.z - a.z) : (x - a.x) / (b.x - a.x);
-      t = Math.max(0, Math.min(1, t));
-      const px = a.x + (b.x - a.x) * t;
-      const pz = a.z + (b.z - a.z) * t;
-      const d = Math.hypot(px - x, pz - z);
-      if (d < best.d) best = { seg: s, x: px, z: pz, t, d };
-    }
-  }
-  return best!;
-}
-
-/** What's underfoot (for footsteps, tyre grip, the ground's colour). */
-export type Surface = "road" | "walk" | "sand" | "grass" | "lot" | "water" | "deck";
-export function surfaceAt(city: City, x: number, z: number): Surface {
-  if (onDeck(x, z)) return "deck";
-  const y = groundY(x, z);
-  if (y < WATER_Y + 0.2) return "water";
-  if (segAt(city, x, z)) return "road";
-  if (segAt(city, x, z, 5)) return "walk";
-  const d = districtAt(x, z);
-  if (d === "beach" || y < -0.05) return "sand";
-  if (city.parks.some((p) => x > p.x0 && x < p.x1 && z > p.z0 && z < p.z1)) return "grass";
-  if (d === "toorak" || d === "domain") return "grass";
-  return "lot";
-}
-
-/** Shortest route along the roads between two points (A* over the junctions); returns the points to follow. */
-export function route(city: City, fx: number, fz: number, tx: number, tz: number): { x: number; z: number }[] {
-  const { nodes, segs } = city.roads;
-  const s0 = nearestRoad(city, fx, fz);
-  const s1 = nearestRoad(city, tx, tz);
-  const startIds = [s0.seg.a, s0.seg.b];
-  const goalIds = new Set([s1.seg.a, s1.seg.b]);
-  const g = new Map<number, number>();
-  const from = new Map<number, number>();
-  const open: { id: number; f: number }[] = [];
-  for (const id of startIds) {
-    const d = Math.hypot(nodes[id].x - s0.x, nodes[id].z - s0.z);
-    g.set(id, d);
-    open.push({ id, f: d + Math.hypot(nodes[id].x - tx, nodes[id].z - tz) });
-  }
-  let end = -1;
-  const closed = new Set<number>();
-  while (open.length) {
-    open.sort((a, b) => a.f - b.f);
-    const cur = open.shift()!;
-    if (closed.has(cur.id)) continue;
-    closed.add(cur.id);
-    if (goalIds.has(cur.id)) {
-      end = cur.id;
-      break;
-    }
-    for (const sid of nodes[cur.id].dir) {
-      if (sid < 0) continue;
-      const s = segs[sid];
-      const nb = s.a === cur.id ? s.b : s.a;
-      // Laneways cost more, so routes keep to the proper roads.
-      const ng = (g.get(cur.id) ?? 0) + s.len * (s.cls === "lane" ? 1.8 : 1);
-      if (ng < (g.get(nb) ?? Infinity)) {
-        g.set(nb, ng);
-        from.set(nb, cur.id);
-        open.push({ id: nb, f: ng + Math.hypot(nodes[nb].x - tx, nodes[nb].z - tz) });
-      }
-    }
-  }
-  const pts: { x: number; z: number }[] = [{ x: s0.x, z: s0.z }];
-  if (end >= 0) {
-    const chain: number[] = [];
-    for (let c: number | undefined = end; c !== undefined; c = from.get(c)) chain.unshift(c);
-    for (const id of chain) pts.push({ x: nodes[id].x, z: nodes[id].z });
-  }
-  pts.push({ x: s1.x, z: s1.z }, { x: tx, z: tz });
-  return pts;
-}
-
-/** The street names round a point (for the HUD's location line). */
-export function streetName(city: City, x: number, z: number) {
-  const r = nearestRoad(city, x, z);
-  return r.d < 30 ? r.seg.name : placeName(x, z);
-}
-
-/** A spot on the sand within r of (x, z), or null if there's no beach near. */
-export function sandSpot(x: number, z: number, r: number, rnd: () => number) {
-  for (let i = 0; i < 12; i++) {
-    const px = x + (rnd() * 2 - 1) * r;
-    const pz = z + (rnd() * 2 - 1) * r;
-    if (onBeach(px, pz) && groundY(px, pz) > -0.3) return { x: px, z: pz };
-  }
-  return null;
-}
-
-export const LINES = { NS, EW };

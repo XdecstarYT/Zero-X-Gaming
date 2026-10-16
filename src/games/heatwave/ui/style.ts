@@ -7,6 +7,9 @@ export const css = `
 .hw-btn{border:0;border-radius:999px;padding:10px 20px;font-weight:800;letter-spacing:.02em;background:rgba(255,255,255,.12);color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.22);transition:transform .12s,filter .12s}
 .hw-btn:hover{filter:brightness(1.12)}
 .hw-btn:active{transform:scale(.97)}
+.hw-btn:disabled{opacity:.6;filter:saturate(.5);cursor:progress}
+.hw-credit{margin:8px 0 0;font-size:11px;opacity:.7}
+.hw-credit a{color:inherit;text-decoration:underline}
 .hw-btn:focus-visible,.hw button:focus-visible{outline:2px solid #ffd23f;outline-offset:2px}
 .hw-btn.primary{background:linear-gradient(135deg,#ff4fa3,#ff8a3d);box-shadow:0 8px 24px -8px rgba(255,79,163,.7)}
 .hw-btn.ghost{background:transparent}

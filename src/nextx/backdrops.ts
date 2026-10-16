@@ -9,6 +9,7 @@
  * Load this module lazily: it pulls in three.js and both games' renderers.
  */
 import { newGame as newPort, NO_INPUT, step as stepPort } from "@/games/heatwave/sim";
+import { loadMap as loadHeatwaveMap } from "@/games/heatwave/mapdata";
 import { HeatwaveView } from "@/games/heatwave/render/view";
 import { newGame as newWarehouse, tick as tickWarehouse } from "@/games/wareforge/sim";
 import { Stage as WarehouseStage } from "@/games/wareforge/render/stage";
@@ -161,42 +162,54 @@ function portBackdrop(host: HTMLElement, quality: Quality, still: boolean): Back
   canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none";
   canvas.setAttribute("aria-hidden", "true");
   host.appendChild(canvas);
-  const s = newPort(7);
-  s.density = quality === "low" ? { cars: 14, peds: 16 } : { cars: 26, peds: 30 };
-  s.clock = 18.1 * 60;
-  const view = new HeatwaveView(canvas, s, quality === "low" ? "low" : "medium");
-  view.cinema = { x: 40, z: 60, dist: 300, height: 80, speed: still ? 0 : 0.02, a: 1.75 };
-  const size = () => view.resize(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight), window.devicePixelRatio || 1);
-  size();
-  const ro = new ResizeObserver(size);
-  ro.observe(host);
   let raf = 0;
-  let last = performance.now();
-  let first = true;
-  let done: () => void = () => {};
-  const ready = new Promise<void>((r) => (done = r));
-  const loop = () => {
-    raf = requestAnimationFrame(loop);
-    if (document.hidden) return;
-    const now = performance.now();
-    const dt = Math.min(0.1, (now - last) / 1000);
-    last = now;
-    if (!still) stepPort(s, NO_INPUT, dt);
-    s.clock = 18.1 * 60;
-    view.city.update(view.cinema!.x, view.cinema!.z);
-    view.frame(s, dt, { goals: [] }, now / 1000, false);
-    if (first) {
-      first = false;
-      done();
-    }
-  };
-  raf = requestAnimationFrame(loop);
+  let gone = false;
+  let stop = () => {};
+  // The real map streams in first; the scene builds once it's here.
+  const ready = loadHeatwaveMap().then(
+    () =>
+      new Promise<void>((done) => {
+        if (gone) return done();
+        const s = newPort(7);
+        s.density = quality === "low" ? { cars: 14, peds: 16 } : { cars: 26, peds: 30 };
+        s.clock = 18.1 * 60;
+        const view = new HeatwaveView(canvas, s, quality === "low" ? "low" : "medium");
+        // Over the Yarra by Princes Bridge, looking up Swanston St to the station and the towers.
+        view.cinema = { x: 30, z: 170, dist: 320, height: 90, speed: still ? 0 : 0.02, a: 1.9 };
+        const size = () => view.resize(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight), window.devicePixelRatio || 1);
+        size();
+        const ro = new ResizeObserver(size);
+        ro.observe(host);
+        let last = performance.now();
+        let first = true;
+        const loop = () => {
+          raf = requestAnimationFrame(loop);
+          if (document.hidden) return;
+          const now = performance.now();
+          const dt = Math.min(0.1, (now - last) / 1000);
+          last = now;
+          if (!still) stepPort(s, NO_INPUT, dt);
+          s.clock = 18.1 * 60;
+          view.city.update(view.cinema!.x, view.cinema!.z);
+          view.frame(s, dt, { goals: [] }, now / 1000, false);
+          if (first) {
+            first = false;
+            done();
+          }
+        };
+        raf = requestAnimationFrame(loop);
+        stop = () => {
+          ro.disconnect();
+          view.dispose();
+        };
+      }),
+  );
   return {
     ready,
     dispose() {
+      gone = true;
       cancelAnimationFrame(raf);
-      ro.disconnect();
-      view.dispose();
+      stop();
       canvas.remove();
     },
   };

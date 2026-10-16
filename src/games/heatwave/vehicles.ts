@@ -316,9 +316,18 @@ export function carToEnter(s: State, p: Ped, reach = 3.4) {
   let best: Car | undefined;
   let bd = Infinity;
   for (const c of s.cars) {
-    if (c.wrecked || VEHICLES[c.kind].air || c.tram) continue;
+    if (c.wrecked || VEHICLES[c.kind].air) continue;
     const spec = VEHICLES[c.kind];
-    const d = Math.hypot(c.x - p.x, c.z - p.z) - spec.len / 2 + 1;
+    let d = Math.hypot(c.x - p.x, c.z - p.z) - spec.len / 2 + 1;
+    if (c.tram) {
+      // A tram: anywhere along its side, once it's stopped or crawling (and there's a seat).
+      if (c.tram.v > 3 || !c.seats.includes(-1)) continue;
+      const fx = Math.cos(c.h);
+      const fz = Math.sin(c.h);
+      const along = (p.x - c.x) * fx + (p.z - c.z) * fz;
+      const lat = -(p.x - c.x) * fz + (p.z - c.z) * fx;
+      d = Math.max(0, Math.abs(along) - spec.len / 2) + Math.max(0, Math.abs(lat) - spec.wid / 2);
+    }
     if (d < reach && d < bd && c.sink < 1.5) {
       bd = d;
       best = c;

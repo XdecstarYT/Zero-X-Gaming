@@ -46,7 +46,7 @@ function EngineBackdrop({ slug, still }: { slug: NextXSlug; still: boolean }) {
           try {
             const b = mountBackdrop(SCENE[slug], el, undefined, still);
             dispose = () => b.dispose();
-            b.ready.then(() => !gone && setShown(slug));
+            b.ready.then(() => !gone && setShown(slug)).catch(() => {});
           } catch {
             /* no WebGL: the gradient stays */
           }

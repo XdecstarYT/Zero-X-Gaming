@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { VEHICLES } from "../data";
 import { fwdSpeed, player, playerCar, speedOf, type State } from "../state";
-import { solidsNear, WATER_Y, type Solid } from "../world";
+import { rayEnter, solidsNear, WATER_Y, type Solid } from "../world";
 
 /**
  * The third-person camera: behind and above you on foot (over the right shoulder when aiming),
@@ -129,19 +129,10 @@ export class CamRig {
     let best = d;
     for (const w of solidsNear(s.city, ox + dx * d * 0.5, oz + dz * d * 0.5, d * 0.5 + 4, scratch)) {
       if (w.round) continue;
-      let t0 = 0;
-      let t1 = d;
-      const slab = (p: number, v: number, lo: number, hi: number) => {
-        if (Math.abs(v) < 1e-9) return p >= lo && p <= hi;
-        let a = (lo - p) / v;
-        let b = (hi - p) / v;
-        if (a > b) [a, b] = [b, a];
-        t0 = Math.max(t0, a);
-        t1 = Math.min(t1, b);
-        return t0 <= t1;
-      };
-      if (!slab(ox, dx, w.x - w.hw - 0.2, w.x + w.hw + 0.2) || !slab(oz, dz, w.z - w.hd - 0.2, w.z + w.hd + 0.2) || !slab(oy, dy, -10, w.h + 0.3)) continue;
-      best = Math.min(best, Math.max(0.6, t0 - 0.25));
+      const te = rayEnter(w, ox, oz, dx * d, dz * d);
+      if (te < 0 || oy + dy * te * d > w.h + 0.3) continue;
+      const t0 = te * d;
+      best = Math.min(best, Math.max(0.6, t0 - 0.45));
     }
     return best;
   }

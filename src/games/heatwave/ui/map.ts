@@ -3,16 +3,18 @@ import { missionStart, nextStory, TOKENS } from "../missions";
 import { isCop } from "../police";
 import { player, playerCar, playerPos, type State } from "../state";
 import { tracksFor } from "../trams";
-import { BOUNDS, districtAt, groundY, PIERS, ROAD, WATER_Y, type City, type District, type Poi } from "../world";
+import { G } from "../mapdata";
+import { BOUNDS, districtAt, districtLabels, groundClass, type City, type Poi } from "../world";
 
 /**
- * The map of Melbourne, painted once onto a canvas (the bay, the Yarra and the lakes, the suburbs,
- * parks, beaches, roads and tram lines, buildings and landmarks, piers), then drawn as the turning minimap and the phone's full map,
+ * The map of Melbourne, painted once onto a canvas from the real map (water, parks, sand, piers,
+ * roads, building footprints and tram lines), then drawn as the turning minimap and the phone's full map,
  * with blips on top: you, the mission marker, shops, safehouses, the police, the GPS route.
  */
 
 export const MAP = BOUNDS;
-const PX = 2;
+/** Metres a pixel: the ground raster's own cell, so the canvas stays phone-sized. */
+const PX = 4;
 
 let base: HTMLCanvasElement | null = null;
 
@@ -25,88 +27,59 @@ export function baseMap(city: City) {
   c.height = H;
   const g = c.getContext("2d")!;
   const img = g.createImageData(W, H);
-  const LAND: Record<District, [number, number, number]> = {
-    cbd: [190, 190, 188],
-    southbank: [194, 194, 196],
-    docklands: [190, 196, 202],
-    docks: [182, 184, 186],
-    port: [196, 196, 190],
-    westmelb: [204, 200, 190],
-    carlton: [214, 206, 192],
-    fitzroy: [216, 204, 196],
-    eastmelb: [208, 210, 196],
-    richmond: [214, 206, 196],
-    southmelb: [212, 208, 196],
-    domain: [176, 206, 160],
-    southyarra: [206, 214, 196],
-    toorak: [200, 220, 190],
-    albertpark: [200, 216, 196],
-    stkilda: [228, 210, 206],
-    beach: [242, 226, 180],
+  const CLS: Record<number, [number, number, number]> = {
+    [G.land]: [214, 210, 200],
+    [G.grass]: [158, 204, 134],
+    [G.sand]: [238, 222, 176],
+    [G.sport]: [136, 196, 118],
+    [G.paved]: [204, 202, 198],
+    [G.ballast]: [186, 178, 168],
+    [G.deck]: [178, 143, 104],
   };
-  // Coarse: sample the ground every 4 m and fill 2×2 pixels.
-  for (let j = 0; j < H; j += 2)
-    for (let i = 0; i < W; i += 2) {
-      const x = MAP.x0 + i * PX;
-      const z = MAP.z0 + j * PX;
-      const y = groundY(x, z);
-      let col: [number, number, number];
-      if (y < WATER_Y + 0.15) {
-        const k = Math.max(0, Math.min(1, (WATER_Y - y) / 4));
-        col = [Math.round(70 - k * 46), Math.round(150 - k * 70), Math.round(170 - k * 50)];
-      } else if (y < -0.05) col = [236, 220, 172];
-      else {
-        col = LAND[districtAt(x, z)];
-        if (city.parks.some((p) => x > p.x0 && x < p.x1 && z > p.z0 && z < p.z1)) col = [150, 200, 130];
-      }
-      for (let b = 0; b < 2; b++)
-        for (let a = 0; a < 2; a++) {
-          const k = ((j + b) * W + (i + a)) * 4;
-          img.data[k] = col[0];
-          img.data[k + 1] = col[1];
-          img.data[k + 2] = col[2];
-          img.data[k + 3] = 255;
-        }
+  for (let j = 0; j < H; j++)
+    for (let i = 0; i < W; i++) {
+      const c0 = groundClass(MAP.x0 + (i + 0.5) * PX, MAP.z0 + (j + 0.5) * PX);
+      let col = CLS[c0] ?? CLS[G.land];
+      if (c0 >= G.water) {
+        const k = Math.min(1, (c0 - G.water) / 6);
+        col = [Math.round(84 - k * 50), Math.round(160 - k * 66), Math.round(180 - k * 46)];
+      } else if (c0 === G.land && districtAt(MAP.x0 + i * PX, MAP.z0 + j * PX) === "cbd") col = [200, 198, 196];
+      const o = (j * W + i) * 4;
+      img.data[o] = col[0];
+      img.data[o + 1] = col[1];
+      img.data[o + 2] = col[2];
+      img.data[o + 3] = 255;
     }
   g.putImageData(img, 0, 0);
   const X = (x: number) => (x - MAP.x0) / PX;
   const Z = (z: number) => (z - MAP.z0) / PX;
-  // Buildings.
-  g.fillStyle = "rgba(90,90,96,0.32)";
-  for (const b of city.buildings) g.fillRect(X(b.x - b.hw), Z(b.z - b.hd), (b.hw * 2) / PX, (b.hd * 2) / PX);
-  // Landmarks.
-  g.fillStyle = "rgba(70,70,80,0.55)";
-  for (const l of city.landmarks) {
-    if (l.kind === "westgate" || l.kind === "bolte" || l.kind === "cruiseship") continue;
-    for (const p of l.parts ?? []) {
-      if (p.round) {
-        g.beginPath();
-        g.ellipse(X(p.x), Z(p.z), p.hw / PX, p.hd / PX, 0, 0, Math.PI * 2);
-        g.fill();
-      } else g.fillRect(X(p.x - p.hw), Z(p.z - p.hd), (p.hw * 2) / PX, (p.hd * 2) / PX);
-    }
-  }
-  // Piers.
-  g.fillStyle = "#b28f68";
-  for (const p of PIERS) g.fillRect(X(p.x0), Z(p.z0), (p.x1 - p.x0) / PX, (p.z1 - p.z0) / PX);
   // Roads: a casing, then the road.
   const { nodes, segs } = city.roads;
+  g.lineCap = "round";
   for (const pass of [0, 1]) {
     for (const s of segs) {
       const A = nodes[s.a];
       const B = nodes[s.b];
-      const w = (ROAD[s.cls].half * 2 + (pass ? 0 : 3)) / PX;
-      g.strokeStyle = pass ? (s.cls === "boulevard" ? "#fff6dc" : s.cls === "avenue" ? "#ffffff" : s.cls === "lane" ? "#e4e2dc" : "#f4f4f2") : "rgba(60,60,70,0.45)";
-      g.lineWidth = w;
-      g.lineCap = "square";
+      g.strokeStyle = pass ? (s.cls === "boulevard" ? "#fff2c8" : s.cls === "avenue" ? "#ffffff" : s.cls === "lane" ? "#e8e6e0" : "#f6f6f4") : "rgba(60,60,70,0.4)";
+      g.lineWidth = Math.max(1, (s.half * 2 + (pass ? 0 : 2.5)) / PX);
       g.beginPath();
       g.moveTo(X(A.x), Z(A.z));
       g.lineTo(X(B.x), Z(B.z));
       g.stroke();
     }
   }
+  // Buildings: their real footprints, darker the taller.
+  for (const b of city.buildings) {
+    const t = Math.min(1, b.h / 120);
+    g.fillStyle = `rgba(${Math.round(150 - t * 70)},${Math.round(148 - t * 68)},${Math.round(150 - t * 60)},0.85)`;
+    g.beginPath();
+    const r = b.ring;
+    for (let k = 0; k < r.length; k += 2) (k ? g.lineTo : g.moveTo).call(g, X(r[k]), Z(r[k + 1]));
+    g.closePath();
+    g.fill();
+  }
   // Tram lines: thin green rails down the middle of their roads.
-  g.strokeStyle = "rgba(60,150,60,0.75)";
+  g.strokeStyle = "rgba(50,140,60,0.8)";
   g.lineWidth = 1;
   for (const t of tracksFor(city)) {
     if (t.dir) continue;
@@ -364,9 +337,9 @@ export function drawFullMap(g: CanvasRenderingContext2D, s: State, w: number, h:
     g.font = "800 12px Arial, sans-serif";
     g.textAlign = "center";
     g.fillStyle = "rgba(20,24,36,0.55)";
-    for (const [name, x, z] of [["DOWNTOWN", 60, -520], ["MIDTOWN", -440, -330], ["THE STRAND", 395, -420], ["SOLANO BEACH", 560, 60], ["CALLE SOL", 60, 80], ["PALM HEIGHTS", -440, 300], ["THE HARBOR", 60, 600], ["THE GLADES", -780, 200], ["MARINA KEYS", 930, 380]] as [string, number, number][]) {
-      const [x2, y2] = to(x, z);
-      g.fillText(name, x2, y2);
+    for (const d of districtLabels()) {
+      const [x2, y2] = to(d.x, d.z);
+      g.fillText(d.name.toUpperCase(), x2, y2);
     }
   }
 }
