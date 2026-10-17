@@ -988,6 +988,19 @@ Heatwave, WareForge, YourGov and Zero City are ZLink+ games that run inside the 
 (keeping the query string), and `gameHref()` in `src/lib/nextx.ts` points every link at the right place.
 The ZLink+ page has a NextX section and marks NextX titles.
 
+### Sovereign (free)
+
+A real-time grand strategy game on the real world map (`src/games/sovereign/`;
+`20261115100000_sovereign.sql`). Pick any of 181 nations; 1,242 real cities each own a stretch of
+land, built from Natural Earth by `scripts/sovereign/build-world.mjs` (terrain from the Mapzen tiles
+on AWS Open Data). Mine eleven resources, run factory chains and power, develop cities and trade on
+a world market; set taxes and laws, keep stability, change government; make pacts, trade deals and
+alliances; justify and declare wars, march armies (they ship themselves across the sea), fleets and
+air wings, besiege and take cities, make peace or demand surrender; form 28 historic nations;
+missiles and a nuclear programme. Every other nation runs on its own AI. The map is a 2D canvas
+(cached political layer zoomed out, vector territories zoomed in), phone first. See
+`src/games/sovereign/README.md`.
+
 ### Zenith (ZLink+ exclusive)
 
 A photoreal city builder (`src/games/zenith/`; `20261021090000_zenith.sql`). A 48×48 map of 12 m tiles: a winding

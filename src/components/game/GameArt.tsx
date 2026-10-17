@@ -75,6 +75,8 @@ export function GameArt({
         <HeatwaveArt id={id} />
       ) : game.slug === "lifeline" ? (
         <LifelineArt id={id} />
+      ) : game.slug === "sovereign" ? (
+        <SovereignArt id={id} />
       ) : game.category === "sports" ? (
         <Oval id={id} a={a} b={b} />
       ) : (
@@ -793,6 +795,60 @@ function YourGovArt() {
       <text x="16" y="192" fill="#fff" fontSize="14" fontWeight="900" fontFamily="system-ui, sans-serif">
         YourGov
       </text>
+    </g>
+  );
+}
+
+function SovereignArt({ id }: { id: string }) {
+  // The world in political colours on a night-blue sea: continents split into nations, a gold
+  // capital star, an army's march arrow and two counters facing off.
+  const land: [string, string][] = [
+    ["M28 52 L62 40 L96 44 L104 62 L92 74 L80 88 L66 96 L54 92 L44 74 L30 66Z", "#3b6fd8"],
+    ["M44 30 L80 22 L104 30 L96 44 L62 40 L28 52 L26 40Z", "#d84d4d"],
+    ["M78 104 L96 100 L106 116 L100 140 L90 160 L82 150 L80 128 L74 114Z", "#2fae5a"],
+    ["M150 44 L170 36 L184 42 L180 56 L166 62 L152 58Z", "#4f7df5"],
+    ["M168 66 L190 62 L204 74 L206 96 L196 122 L182 132 L172 116 L166 92 L160 76Z", "#e0a33c"],
+    ["M184 28 L230 20 L276 26 L294 40 L280 52 L250 54 L224 50 L196 46 L184 40Z", "#3f8f4f"],
+    ["M224 50 L250 54 L262 70 L250 84 L232 80 L222 66Z", "#d63a32"],
+    ["M206 60 L222 66 L232 80 L224 96 L212 90 L204 74Z", "#f29a38"],
+    ["M252 118 L278 112 L290 124 L284 140 L262 142 L250 130Z", "#e0a33c"],
+    ["M180 56 L196 46 L206 60 L204 74 L190 62Z", "#c4473f"],
+  ];
+  return (
+    <g>
+      <defs>
+        <radialGradient id={`${id}-sea`} cx="50%" cy="45%" r="70%">
+          <stop offset="0" stopColor="#1f4f86" />
+          <stop offset="1" stopColor="#0b1d36" />
+        </radialGradient>
+      </defs>
+      <rect width="320" height="200" fill={`url(#${id}-sea)`} />
+      {[40, 80, 120, 160].map((y) => (
+        <line key={y} x1="0" x2="320" y1={y} y2={y} stroke="#ffffff" strokeOpacity="0.05" />
+      ))}
+      {[64, 128, 192, 256].map((x) => (
+        <line key={x} y1="0" y2="200" x1={x} x2={x} stroke="#ffffff" strokeOpacity="0.05" />
+      ))}
+      {land.map(([d, c], i) => (
+        <path key={i} d={d} fill={c} fillOpacity="0.88" stroke="#0b1020" strokeWidth="1.4" strokeLinejoin="round" />
+      ))}
+      <path d="M150 50 Q168 34 196 50" fill="none" stroke="#ffe066" strokeWidth="2.4" strokeDasharray="5 4" />
+      <path d="M192 44 l6 6 l-8 2z" fill="#ffe066" />
+      <path d="M166 50 l3.2 6.4 7 1 -5.1 5 1.2 7 -6.3 -3.3 -6.3 3.3 1.2 -7 -5.1 -5 7 -1z" fill="#ffd166" stroke="#0b1020" strokeWidth="1" />
+      {[
+        [140, 64, "#4f7df5", "12"],
+        [210, 36, "#3f8f4f", "9"],
+      ].map(([x, y, c, n], i) => (
+        <g key={i} transform={`translate(${x} ${y})`}>
+          <rect x="-14" y="-8" width="28" height="16" rx="4" fill="#0b1020" />
+          <rect x="-13" y="-7" width="26" height="14" rx="3.5" fill={c as string} stroke="#fff" strokeWidth="1" />
+          <text x="4" y="4" fontSize="10" fontWeight="800" fill="#fff" textAnchor="middle" fontFamily="system-ui">
+            {n}
+          </text>
+          <rect x="-10" y="-3" width="7" height="6" rx="1.5" fill="#fff" fillOpacity="0.85" />
+        </g>
+      ))}
+      <circle cx="176" cy="40" r="10" fill="#ff5a28" fillOpacity="0.35" />
     </g>
   );
 }

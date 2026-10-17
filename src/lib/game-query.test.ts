@@ -28,7 +28,7 @@ describe("queryGames", () => {
   });
 
   it("sorts newest first", () => {
-    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("heatwave");
+    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("sovereign");
   });
 
   it("sorts by rating", () => {

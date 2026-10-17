@@ -24,6 +24,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   lifeline: () => import("./lifeline/index"),
   wareforge: () => import("./wareforge/index"),
   heatwave: () => import("./heatwave/index"),
+  sovereign: () => import("./sovereign/index"),
 };
 
 export function hasGame(slug: string) {
