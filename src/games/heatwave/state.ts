@@ -1,6 +1,6 @@
 import { createRng, type Rng } from "../engine/rng";
 import { LEADS, START_MONEY, VEHICLES, WEAPONS, type CharId, type StationId, type VehicleKind, type WeaponId } from "./data";
-import { generate, type City, type Poi } from "./world";
+import { generate, generateSteps, type City, type Poi } from "./world";
 
 /**
  * The simulation's state: plain objects stepped by the systems in vehicles.ts, peds.ts,
@@ -390,6 +390,24 @@ let cityCache: { seed: number; city: City } | null = null;
 export function cityFor(seed: number) {
   if (!cityCache || cityCache.seed !== seed) cityCache = { seed, city: generate(seed) };
   return cityCache.city;
+}
+
+/**
+ * Build the city for a seed a slice at a time, so the browser can paint a loading bar in between;
+ * afterwards `cityFor` is instant. Yields the share done and what's next.
+ */
+export function* prepareCity(seed: number): Generator<{ done: number; what: string }, void> {
+  if (!cityCache || cityCache.seed !== seed) {
+    const it = generateSteps(seed);
+    for (;;) {
+      const r = it.next();
+      if (r.done) {
+        cityCache = { seed, city: r.value };
+        break;
+      }
+      yield r.value;
+    }
+  }
 }
 
 export function createState(seed = 7, opts: { empty?: boolean } = {}): State {

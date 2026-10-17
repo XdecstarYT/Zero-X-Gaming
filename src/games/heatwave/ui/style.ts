@@ -9,6 +9,10 @@ export const css = `
 .hw-btn:active{transform:scale(.97)}
 .hw-btn:disabled{opacity:.6;filter:saturate(.5);cursor:progress}
 .hw-credit{margin:8px 0 0;font-size:11px;opacity:.7}
+.hw-loading{display:grid;gap:6px;margin:14px 0 6px}
+.hw-loading-bar{height:8px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
+.hw-loading-bar span{display:block;height:100%;background:linear-gradient(90deg,#ff4fa3,#ff8a3d);transition:width .2s}
+.hw-loading small{font-size:12px;opacity:.85}
 .hw-credit a{color:inherit;text-decoration:underline}
 .hw-btn:focus-visible,.hw button:focus-visible{outline:2px solid #ffd23f;outline-offset:2px}
 .hw-btn.primary{background:linear-gradient(135deg,#ff4fa3,#ff8a3d);box-shadow:0 8px 24px -8px rgba(255,79,163,.7)}

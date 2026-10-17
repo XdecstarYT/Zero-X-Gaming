@@ -10,6 +10,7 @@
  */
 import { newGame as newPort, NO_INPUT, step as stepPort } from "@/games/heatwave/sim";
 import { loadMap as loadHeatwaveMap } from "@/games/heatwave/mapdata";
+import { prepareMelbourne, sliced } from "@/games/heatwave/prepare";
 import { HeatwaveView } from "@/games/heatwave/render/view";
 import { newGame as newWarehouse, tick as tickWarehouse } from "@/games/wareforge/sim";
 import { Stage as WarehouseStage } from "@/games/wareforge/render/stage";
@@ -165,45 +166,53 @@ function portBackdrop(host: HTMLElement, quality: Quality, still: boolean): Back
   let raf = 0;
   let gone = false;
   let stop = () => {};
-  // The real map streams in first; the scene builds once it's here.
-  const ready = loadHeatwaveMap().then(
-    () =>
-      new Promise<void>((done) => {
-        if (gone) return done();
-        const s = newPort(7);
-        s.density = quality === "low" ? { cars: 14, peds: 16 } : { cars: 26, peds: 30 };
-        s.clock = 18.1 * 60;
-        const view = new HeatwaveView(canvas, s, quality === "low" ? "low" : "medium");
-        // Over the Yarra by Princes Bridge, looking up Swanston St to the station and the towers.
-        view.cinema = { x: 30, z: 170, dist: 320, height: 90, speed: still ? 0 : 0.02, a: 1.9 };
-        const size = () => view.resize(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight), window.devicePixelRatio || 1);
-        size();
-        const ro = new ResizeObserver(size);
-        ro.observe(host);
-        let last = performance.now();
-        let first = true;
-        const loop = () => {
-          raf = requestAnimationFrame(loop);
-          if (document.hidden) return;
-          const now = performance.now();
-          const dt = Math.min(0.1, (now - last) / 1000);
-          last = now;
-          if (!still) stepPort(s, NO_INPUT, dt);
-          s.clock = 18.1 * 60;
-          view.city.update(view.cinema!.x, view.cinema!.z);
-          view.frame(s, dt, { goals: [] }, now / 1000, false);
-          if (first) {
-            first = false;
-            done();
-          }
-        };
+  // The real map streams in first; then the city builds (and the streets round the camera load) a
+  // slice at a time, so the page stays live.
+  const build = async () => {
+    await loadHeatwaveMap();
+    if (gone) return;
+    await prepareMelbourne(7);
+    if (gone) return;
+    const s = newPort(7);
+    s.density = quality === "low" ? { cars: 14, peds: 16 } : { cars: 26, peds: 30 };
+    s.clock = 18.1 * 60;
+    const view = new HeatwaveView(canvas, s, quality === "low" ? "low" : "medium", { defer: true });
+    // High over Birrarung Marr (clear of the towers), looking up the Yarra to the station and the city.
+    const cinema = { x: 30, z: 170, dist: 360, height: 130, speed: still ? 0 : 0.02, a: -0.25 };
+    view.cinema = cinema;
+    stop = () => view.dispose();
+    await sliced(view.warm(cinema.x, cinema.z));
+    if (gone) return;
+    const size = () => view.resize(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight), window.devicePixelRatio || 1);
+    size();
+    const ro = new ResizeObserver(size);
+    ro.observe(host);
+    stop = () => {
+      ro.disconnect();
+      view.dispose();
+    };
+    await new Promise<void>((done) => {
+      let last = performance.now();
+      let first = true;
+      const loop = () => {
         raf = requestAnimationFrame(loop);
-        stop = () => {
-          ro.disconnect();
-          view.dispose();
-        };
-      }),
-  );
+        if (document.hidden) return;
+        const now = performance.now();
+        const dt = Math.min(0.1, (now - last) / 1000);
+        last = now;
+        if (!still) stepPort(s, NO_INPUT, dt);
+        s.clock = 18.1 * 60;
+        view.city.update(cinema.x, cinema.z);
+        view.frame(s, dt, { goals: [] }, now / 1000, false);
+        if (first) {
+          first = false;
+          done();
+        }
+      };
+      raf = requestAnimationFrame(loop);
+    });
+  };
+  const ready = build();
   return {
     ready,
     dispose() {

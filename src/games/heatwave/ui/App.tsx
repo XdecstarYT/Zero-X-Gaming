@@ -74,7 +74,15 @@ function Title({ game }: { game: Game }) {
             </div>
           ))}
         </div>
-        <div className="hw-title-actions">
+        {game.loading ? (
+          <div className="hw-loading" role="progressbar" aria-label="Building Melbourne" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(game.loading.done * 100)} data-testid="hw-loading">
+            <div className="hw-loading-bar">
+              <span style={{ width: `${Math.round(game.loading.done * 100)}%` }} />
+            </div>
+            <small>{game.loading.what}…</small>
+          </div>
+        ) : null}
+        <div className="hw-title-actions" hidden={!!game.loading}>
           {game.hasSave && (
             <button className="hw-btn primary" onClick={() => game.continueGame()} disabled={!game.mapReady} data-testid="hw-continue">
               Continue

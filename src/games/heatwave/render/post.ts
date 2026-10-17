@@ -234,6 +234,15 @@ export class Post {
     if (this.atmos) (this.atmos.material as THREE.ShaderMaterial).uniforms.uTexel.value.copy(t);
   }
 
+  /** Compile a scene's shaders for the target it's drawn into, in parallel where the GPU allows. */
+  async compile(scene: THREE.Scene, cam: THREE.Camera) {
+    const r = this.renderer;
+    r.setRenderTarget(this.scene);
+    const ready = r.compileAsync(scene, cam);
+    r.setRenderTarget(null);
+    await ready;
+  }
+
   render(scene: THREE.Scene, cam: THREE.PerspectiveCamera, p: AtmosParams) {
     const r = this.renderer;
     r.setRenderTarget(this.scene);

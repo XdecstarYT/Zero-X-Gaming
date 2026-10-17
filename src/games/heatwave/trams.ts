@@ -36,15 +36,22 @@ const cache = new Map<City, Track[]>();
 
 /** Every track (two per route), built once per city. */
 export function tracksFor(city: City): Track[] {
-  let t = cache.get(city);
+  const t = cache.get(city);
   if (t) return t;
-  t = [];
-  TRAMS.forEach((r, i) => {
-    t!.push(buildTrack(city, r, i, 0));
-    t!.push(buildTrack(city, r, i, 1));
-  });
+  const it = trackSteps(city);
+  while (!it.next().done);
+  return cache.get(city)!;
+}
+
+/** Build the tracks a route at a time (yielding the share done), then cache them. */
+export function* trackSteps(city: City): Generator<number, void> {
+  if (cache.has(city)) return;
+  const t: Track[] = [];
+  for (let i = 0; i < TRAMS.length; i++) {
+    t.push(buildTrack(city, TRAMS[i], i, 0), buildTrack(city, TRAMS[i], i, 1));
+    yield (i + 1) / TRAMS.length;
+  }
   cache.set(city, t);
-  return t;
 }
 
 function buildTrack(city: City, r: TramRoute, route: number, dir: 0 | 1): Track {

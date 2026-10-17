@@ -3,6 +3,7 @@ import { loadMap, mapLoaded } from "./mapdata";
 import { LEADS, PREFS_KEY, SAVE_KEY, STATIONS, VEHICLES, WEAPONS, type StationId } from "./data";
 import { missionDef, missionStart, nextStory, STORY } from "./missions";
 import * as sim from "./sim";
+import { nextFrame, prepareMelbourne, sliced } from "./prepare";
 import { player, playerCar, playerPos, type State } from "./state";
 import { HeatwaveView } from "./render/view";
 import type { Quality } from "./render/city";
@@ -151,6 +152,8 @@ export class Game {
     window.addEventListener("mousemove", this.onMouseMove);
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
     canvas.addEventListener("wheel", this.onWheel, { passive: true });
+    canvas.addEventListener("webglcontextlost", this.onContextLost);
+    canvas.addEventListener("webglcontextrestored", this.onContextRestored);
     document.addEventListener("pointerlockchange", this.onLock);
     this.raf = requestAnimationFrame(this.frame);
   }
@@ -165,10 +168,25 @@ export class Game {
     document.removeEventListener("pointerlockchange", this.onLock);
     this.canvas?.removeEventListener("mousedown", this.onMouseDown);
     this.canvas?.removeEventListener("wheel", this.onWheel);
+    this.canvas?.removeEventListener("webglcontextlost", this.onContextLost);
+    this.canvas?.removeEventListener("webglcontextrestored", this.onContextRestored);
     if (document.pointerLockElement === this.canvas) document.exitPointerLock();
   }
 
+  // Phones can drop the GPU context (memory pressure, a backgrounded tab): ask for it back and rebuild.
+  private onContextLost = (e: Event) => {
+    e.preventDefault();
+    this.say("Graphics reset: rebuilding the view", "info");
+  };
+
+  private onContextRestored = () => {
+    if (this.s && this.screen === "play") this.startPlay();
+  };
+
+  private disposed = false;
+
   dispose() {
+    this.disposed = true;
     this.submitFinal();
     this.persist();
     this.view?.dispose();
@@ -192,15 +210,71 @@ export class Game {
     return cores >= 8 ? "high" : "medium";
   }
 
-  newGame() {
-    if (!this.mapReady) return;
+  /** The city being built (a loading bar on the title), or null. */
+  loading: { done: number; what: string } | null = null;
+
+  /** Build the city a slice at a time, painting the loading bar between slices. */
+  private async prepare() {
+    let shown = 0;
+    await prepareMelbourne(7, (done, what) => {
+      this.loading = { done: done * 0.87, what };
+      // Redraw the bar now and then, not on every slice.
+      if (performance.now() - shown > 50) {
+        shown = performance.now();
+        this.bump();
+      }
+    });
+    this.loading = { done: 0.88, what: "Setting the scene" };
+    this.bump();
+    await nextFrame();
+  }
+
+  /** Build the view behind the loading bar (the streets round you a chunk at a time, then the shaders) and play. */
+  private async enterPlay() {
+    const view = new HeatwaveView(this.canvas!, this.s!, this.quality(), { defer: true });
+    let total = 0;
+    const pos = playerPos(this.s!);
+    await sliced(view.warm(pos.x, pos.z), (left) => {
+      total ||= left + 1;
+      this.loading = { done: 0.9 + 0.07 * (1 - left / total), what: "Streaming the streets" };
+      this.bump();
+    });
+    this.loading = { done: 0.98, what: "Warming up" };
+    this.bump();
+    await nextFrame();
+    this.placeCamera(view, this.s!);
+    await view.compile();
+    // One frame behind the title, so the people, traffic and effects (and the uploads) are ready too.
+    view.frame(this.s!, 0, { goals: this.markers(this.s!) }, performance.now() / 1000, false);
+    await nextFrame();
+    if (this.disposed) {
+      view.dispose();
+      return;
+    }
+    this.loading = null;
+    this.startPlay(view);
+  }
+
+  async newGame() {
+    if (!this.mapReady || this.loading) return;
+    // Sound can only start inside the tap, not once the city's built.
+    this.audio.unlock();
+    this.loading = { done: 0, what: "Building Melbourne" };
+    this.bump();
+    await nextFrame();
+    await this.prepare();
     this.s = sim.newGame(7);
-    this.startPlay();
+    await this.enterPlay();
     this.say("Melbourne. Find the yellow marker to start the story.", "info");
   }
 
-  continueGame() {
-    if (!this.mapReady) return;
+  async continueGame() {
+    if (!this.mapReady || this.loading) return;
+    this.audio.unlock();
+    this.loading = { done: 0, what: "Building Melbourne" };
+    this.bump();
+    await nextFrame();
+    await this.prepare();
     let s: State | null = null;
     try {
       const json = localStorage.getItem(SAVE_KEY);
@@ -209,24 +283,30 @@ export class Game {
       s = null;
     }
     if (!s) {
+      this.loading = null;
       this.say("That save couldn't be read", "bad");
       return;
     }
     this.s = s;
-    this.startPlay();
+    await this.enterPlay();
   }
 
-  private startPlay() {
+  private placeCamera(view: HeatwaveView, s: State) {
+    const r = this.canvas!.getBoundingClientRect();
+    view.resize(Math.max(1, r.width), Math.max(1, r.height), window.devicePixelRatio || 1);
+    const p = player(s);
+    // A three-quarter view of the lead, turned to wherever there's room for the camera.
+    view.rig.frame(s, p.x, p.y, p.z, [p.h + 2.5, p.h - 2.5, p.h + Math.PI / 2, p.h - Math.PI / 2, p.h, p.h + Math.PI]);
+  }
+
+  /** Play `s` in `view` (or a new one, built in one go). */
+  private startPlay(view?: HeatwaveView) {
     const s = this.s!;
     s.settings.aimAssist = this.prefs.aimAssist;
     s.density = this.quality() === "low" ? { cars: 18, peds: 22 } : this.quality() === "medium" ? { cars: 26, peds: 30 } : { cars: 32, peds: 38 };
     this.view?.dispose();
-    this.view = new HeatwaveView(this.canvas!, s, this.quality());
-    const r = this.canvas!.getBoundingClientRect();
-    this.view.resize(Math.max(1, r.width), Math.max(1, r.height), window.devicePixelRatio || 1);
-    const p = player(s);
-    // A three-quarter view of the lead, turned to wherever there's room for the camera.
-    this.view.rig.frame(s, p.x, p.y, p.z, [p.h + 2.5, p.h - 2.5, p.h + Math.PI / 2, p.h - Math.PI / 2, p.h, p.h + Math.PI]);
+    this.view = view ?? new HeatwaveView(this.canvas!, s, this.quality());
+    this.placeCamera(this.view, s);
     // Standing at a door when you arrive doesn't walk you in.
     this.lastPoi = sim.atPoi(s, 1.6);
     this.screen = "play";

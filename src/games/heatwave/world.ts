@@ -1115,29 +1115,48 @@ const POI_SPECS: PoiSpec[] = [
 /* -------------------------------------------------------------------------------- the build */
 
 export function generate(seed = 7): City {
+  const it = generateSteps(seed);
+  for (;;) {
+    const r = it.next();
+    if (r.done) return r.value;
+  }
+}
+
+/**
+ * The build, a step at a time: each `yield` is a moment the caller can hand back to the browser
+ * (to paint a loading bar) before the next step. The value is the share done and what's next.
+ */
+export function* generateSteps(seed = 7): Generator<{ done: number; what: string }, City> {
   const m = getMap();
   setupGround(m);
   setupDistricts();
   const rng = createRng(seed);
+  yield { done: 0.05, what: "Laying the roads" };
   const roads = buildRoads(m);
   roadsRef = roads;
   bridgeRoads = roads;
   const city: City = { roads, buildings: [], landmarks: [], props: [], pois: [], parks: [], parking: [], grid: new Map(), solids: [] };
-  buildBuildings(city, m, rng);
+  yield { done: 0.25, what: "Raising the buildings" };
+  yield* buildBuildings(city, m, rng);
+  yield { done: 0.6, what: "Finding the landmarks" };
   placeLandmarks(city);
   placePois(city);
   indexBuildings(city);
+  yield { done: 0.72, what: "Planting the streets" };
   streetscape(city, rng);
   furniture(city, m);
   parkTrees(city, rng);
   beaches(city, rng);
+  yield { done: 0.9, what: "Indexing the city" };
   index(city);
   return city;
 }
 
-function buildBuildings(city: City, m: MapData, rng: Rng) {
+function* buildBuildings(city: City, m: MapData, rng: Rng): Generator<{ done: number; what: string }, void> {
   const nB = m.bH.length;
   for (let i = 0; i < nB; i++) {
+    // A breath for the browser every so often (this is the longest part of the build).
+    if (i && i % 1500 === 0) yield { done: 0.25 + 0.35 * (i / nB), what: "Raising the buildings" };
     const nr = m.bRings[i];
     if (!nr) continue;
     const r0 = m.bRing0[i];

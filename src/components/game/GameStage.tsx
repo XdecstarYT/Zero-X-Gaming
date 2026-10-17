@@ -182,7 +182,8 @@ export function GameStage({ game, onImmersiveChange }: { game: Game; /** Told wh
       setPhase("playing");
       // Games with their own menus focus a control inside the frame; don't steal it.
       if (!frameRef.current?.contains(document.activeElement)) frameRef.current?.focus({ preventScroll: true });
-    } catch {
+    } catch (e) {
+      console.error(e);
       setPhase("error");
     }
   }, [game.slug, playable, locked, handleFinal, pause, enterImmersive]);

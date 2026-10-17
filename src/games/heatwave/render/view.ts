@@ -117,6 +117,7 @@ export class HeatwaveView {
     canvas: HTMLCanvasElement,
     s: State,
     readonly quality: Quality,
+    opts: { defer?: boolean } = {},
   ) {
     const high = quality === "high";
     // Antialiasing happens in the post chain's multisampled target.
@@ -194,9 +195,19 @@ export class HeatwaveView {
     this.bulbs.frustumCulled = false;
     this.scene.add(this.bulbs);
     this.post = new Post(this.renderer, quality);
-    // Load the city round the player before the first frame.
+    // Load the city round the player before the first frame (or leave it to `warm`).
     const pos = playerPos(s);
-    this.city.update(pos.x, pos.z, true);
+    if (!opts.defer) this.city.update(pos.x, pos.z, true);
+  }
+
+  /** Load the city round (x, z) a chunk a step, for a loading bar; yields how many are left. */
+  *warm(x: number, z: number): Generator<number, void> {
+    for (let need = this.city.update(x, z); need > 1; need = this.city.update(x, z)) yield need - 1;
+  }
+
+  /** Compile the scene's shaders before the first frame, off the main thread where the GPU allows. */
+  compile() {
+    return this.post.compile(this.scene, this.rig.camera);
   }
 
   resize(w: number, h: number, dpr: number) {
