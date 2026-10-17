@@ -107,7 +107,7 @@ interface Part {
 let SEGK = 1;
 const sg = (n: number) => Math.max(4, Math.round(n * SEGK));
 
-function lathe(profile: [number, number][], seg = 10) {
+function lathe(profile: [number, number][], seg = 14) {
   return new THREE.LatheGeometry(
     profile.map(([r, y]) => new THREE.Vector2(r, y)),
     sg(seg),
@@ -125,6 +125,57 @@ function band(a: BoneName, b: BoneName, lo: number, hi: number) {
     const t = (y - lo) / (hi - lo);
     return [B[a], B[b], t];
   };
+}
+
+/** Only the triangles whose centre passes `keep`. */
+function keepTris(g: THREE.BufferGeometry, keep: (x: number, y: number, z: number) => boolean) {
+  const src = g.index ? g.toNonIndexed() : g;
+  const p = src.attributes.position as THREE.BufferAttribute;
+  const n = src.attributes.normal as THREE.BufferAttribute;
+  const pos: number[] = [];
+  const nor: number[] = [];
+  for (let i = 0; i < p.count; i += 3) {
+    const cx = (p.getX(i) + p.getX(i + 1) + p.getX(i + 2)) / 3;
+    const cy = (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3;
+    const cz = (p.getZ(i) + p.getZ(i + 1) + p.getZ(i + 2)) / 3;
+    if (!keep(cx, cy, cz)) continue;
+    for (let k = 0; k < 3; k++) {
+      pos.push(p.getX(i + k), p.getY(i + k), p.getZ(i + k));
+      nor.push(n.getX(i + k), n.getY(i + k), n.getZ(i + k));
+    }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  return out;
+}
+
+/** A sculpted head, centred where the head sphere was (`k` scales it out a little, for a beard). */
+function headGeo(female: boolean, k = 1) {
+  const R = 0.1 * k;
+  const g = new THREE.SphereGeometry(R, sg(24), sg(18));
+  const p = g.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    const nx = p.getX(i) / R;
+    const ny = p.getY(i) / R;
+    const nz = p.getZ(i) / R;
+    let sx = 1.06;
+    const sy = 1.17;
+    let sz = female ? 0.86 : 0.89;
+    if (ny < 0) {
+      // The jaw: in at the sides, and in from the back to the chin.
+      const j = -ny;
+      sz *= 1 - 0.3 * j * j;
+      sx *= 1 - (nx < 0 ? 0.32 : 0.1) * j * j;
+    }
+    // Cheekbones and a flatter face; the skull fuller at the back.
+    if (nx > 0.55) sx *= 1 - (nx - 0.55) * 0.2;
+    if (nx < 0 && ny > -0.3) sx *= 1.05;
+    if (nx > 0.3 && ny > -0.35 && ny < 0.05) sz *= 1.03;
+    p.setXYZ(i, nx * R * sx, ny * R * sy, nz * R * sz);
+  }
+  g.computeVertexNormals();
+  return g.translate(-0.006, 1.745, 0);
 }
 
 function buildTemplate(o: Outfit, lod: "high" | "low") {
@@ -198,7 +249,7 @@ function buildTemplate(o: Outfit, lod: "high" | "low") {
         [0.048, 1.6],
         [0, 1.61],
       ];
-  const torso = lathe(torsoProfile, 14).scale(o.officer || o.top === "jacket" || o.top === "suit" ? 1.02 : 0.96, 1, 1.42);
+  const torso = lathe(torsoProfile, 20).scale(o.officer || o.top === "jacket" || o.top === "suit" ? 1.02 : 0.96, 1, 1.42);
   const waist = band("spine", "hips", 1.0, 1.1);
   const ribs = band("chest", "spine", 1.16, 1.28);
   const torsoBind = (y: number) => (y > 1.13 ? ribs(y) : waist(y));
@@ -216,11 +267,11 @@ function buildTemplate(o: Outfit, lod: "high" | "low") {
   const armProfile: [number, number][] = [
     [0, 0.93],
     [0.03, 0.935],
-    [0.035, 0.97],
-    [0.039, 1.05],
-    [0.044, 1.12],
-    [0.041, 1.19],
-    [0.045, 1.25],
+    [0.036, 0.97],
+    [0.041, 1.04],
+    [0.047, 1.11],
+    [0.043, 1.19],
+    [0.047, 1.25],
     [F ? 0.047 : 0.053, 1.33],
     [F ? 0.05 : 0.057, 1.41],
     [F ? 0.052 : 0.059, 1.47],
@@ -238,28 +289,39 @@ function buildTemplate(o: Outfit, lod: "high" | "low") {
     const fore = side < 0 ? "foreL" : "foreR";
     const hand = side < 0 ? "handL" : "handR";
     const z = side * (F ? 0.2 : 0.215);
-    add(lathe(armProfile, 9).translate(0, 0, z), band(arm, fore, 1.15, 1.27), sleeve);
+    add(lathe(armProfile, 14).translate(0, 0, z), band(arm, fore, 1.15, 1.27), sleeve);
     add(new RoundedBoxGeometry(0.075, 0.1, 0.034, 2, 0.015).translate(0.005, 0.875, z), rigid(hand), flat("skin"));
     if (fine) add(new THREE.CapsuleGeometry(0.014, 0.035, 2, 6).rotateX(side * 0.5).translate(0.035, 0.9, z - side * 0.018), rigid(hand), flat("skin"));
+    // Four fingers below the palm, slightly curled.
+    if (fine) for (let k = 0; k < 4; k++) add(new THREE.CapsuleGeometry(0.0085, 0.038 - Math.abs(k - 1.5) * 0.006, 2, 6).rotateZ(0.18).translate(-0.024 + k * 0.016, 0.808, z), rigid(hand), flat("skin"));
   }
 
   // Neck and head.
   add(new THREE.CylinderGeometry(0.046, 0.052, 0.13, 10).translate(0.005, 1.62, 0), rigid("neck"), flat("skin"));
-  add(new THREE.SphereGeometry(0.103, sg(16), sg(12)).scale(1.03, 1.16, 0.9).translate(-0.005, 1.748, 0), rigid("head"), flat("skin"));
-  add(new RoundedBoxGeometry(0.1, 0.075, F ? 0.1 : 0.115, 2, 0.03).translate(0.032, 1.678, 0), rigid("head"), flat("skin"));
-  add(new RoundedBoxGeometry(0.035, 0.045, 0.024, 1, 0.01).rotateZ(-0.25).translate(0.105, 1.733, 0), rigid("head"), flat("skin"));
+  // The head: a sculpted skull (rounder at the back, a flatter face, the jaw narrowing to the
+  // chin), then the features set into it.
+  add(headGeo(F), rigid("head"), flat("skin"));
+  // The nose: bridge to tip, tilted down.
+  add(new THREE.SphereGeometry(0.019, sg(10), sg(8)).scale(1.15, 1.55, 0.95).rotateZ(-0.38).translate(0.1, 1.741, 0), rigid("head"), flat("skin"));
   for (const side of [-1, 1]) {
+    // Ears, flat against the skull.
+    add(new THREE.SphereGeometry(0.026, 8, 6).scale(0.55, 1.1, 0.32).translate(-0.006, 1.74, side * 0.09), rigid("head"), flat("skin"));
     if (fine) {
-      add(new THREE.SphereGeometry(0.027, 8, 6).scale(0.6, 1, 0.35).translate(-0.008, 1.742, side * 0.096), rigid("head"), flat("skin"));
-      add(new THREE.SphereGeometry(0.016, 8, 6).scale(0.5, 0.8, 1).translate(0.088, 1.765, side * 0.036), rigid("head"), flat("white"));
-      add(new THREE.BoxGeometry(0.012, 0.009, 0.036).rotateX(side * 0.15).translate(0.097, 1.789, side * 0.037), rigid("head"), flat("hair"));
+      // Eyes in their sockets under the brow, and the brows.
+      add(new THREE.SphereGeometry(0.0125, 10, 8).scale(0.42, 0.62, 1).translate(0.085, 1.766, side * 0.034), rigid("head"), flat("white"));
+      add(new THREE.BoxGeometry(0.01, 0.006, 0.032).rotateX(side * 0.12).rotateZ(-0.1).translate(0.092, 1.786, side * 0.035), rigid("head"), flat("hair"));
     }
-    add(new THREE.SphereGeometry(0.0085, 6, 5).translate(0.095, 1.765, side * 0.036), rigid("head"), flat("eyes"));
+    add(new THREE.SphereGeometry(0.0062, 8, 6).scale(0.5, 1, 1).translate(0.0885, 1.766, side * 0.034), rigid("head"), flat("eyes"));
   }
-  if (fine) add(new THREE.BoxGeometry(0.012, 0.012, 0.04).translate(0.1, 1.694, 0), rigid("head"), flat("lips"));
-  if (o.beard) add(new RoundedBoxGeometry(0.105, 0.07, 0.122, 2, 0.03).translate(0.032, 1.672, 0), rigid("head"), flat("hair"));
+  if (fine) {
+    add(new THREE.CapsuleGeometry(0.0055, 0.03, 2, 6).rotateX(Math.PI / 2).scale(0.8, 1, 1).translate(0.094, 1.699, 0), rigid("head"), flat("lips"));
+    add(new THREE.CapsuleGeometry(0.0065, 0.026, 2, 6).rotateX(Math.PI / 2).scale(0.8, 1, 1).translate(0.092, 1.688, 0), rigid("head"), flat("lips"));
+  }
+  // A beard: the lower front of a slightly larger head shell (jaw, chin and upper lip).
+  if (o.beard) add(keepTris(headGeo(F, 1.07), (x, y) => y < 1.706 && x > -0.02 && !(y > 1.695 && Math.abs(x) < 0.2 && x > 0.085)), rigid("head"), flat("hair"));
   // Hair.
-  const cap = (r: number, cover: number) => new THREE.SphereGeometry(r, sg(16), sg(10), 0, Math.PI * 2, 0, Math.PI * cover).scale(1.04, 1.12, 0.95).rotateZ(0.2).translate(-0.012, 1.752, 0);
+  // A hairline at the forehead, down to the nape behind.
+  const cap = (r: number, cover: number) => new THREE.SphereGeometry(r, sg(18), sg(12), 0, Math.PI * 2, 0, Math.PI * cover).scale(1.04, 1.12, 0.95).rotateZ(0.48).translate(-0.012, 1.752, 0);
   if (o.hair === "short") add(cap(0.111, 0.52), rigid("head"), flat("hair"));
   if (o.hair === "buzz") add(cap(0.107, 0.44), rigid("head"), flat("hair"));
   if (o.hair === "long" || o.hair === "ponytail") add(cap(0.112, 0.55), rigid("head"), flat("hair"));
@@ -280,7 +342,9 @@ function buildTemplate(o: Outfit, lod: "high" | "low") {
   // Outfit layers.
   if (o.top === "jacket" || o.top === "suit") {
     // Open front showing the shirt beneath; a collar.
-    add(new THREE.BoxGeometry(0.02, 0.3, 0.09).translate(0.128, 1.36, 0), rigid("chest"), flat(o.top === "suit" ? "white" : "accent"));
+    // The open front: a V of shirt from the collar down to the top button.
+    const v = new THREE.Shape([new THREE.Vector2(-0.055, 0.17), new THREE.Vector2(0.055, 0.17), new THREE.Vector2(0, -0.13)]);
+    add(new THREE.ShapeGeometry(v).rotateY(Math.PI / 2).translate(o.officer ? 0.15 : 0.141, 1.37, 0), rigid("chest"), flat(o.top === "suit" ? "white" : "accent"));
     add(new THREE.TorusGeometry(0.06, 0.018, 6, 14, Math.PI * 1.4).rotateX(Math.PI / 2).rotateY(Math.PI * 0.3).translate(0.01, 1.575, 0), rigid("chest"), flat("top"));
     if (o.top === "suit") add(new THREE.BoxGeometry(0.012, 0.24, 0.035).translate(0.14, 1.37, 0), rigid("chest"), flat("accent"));
   }
@@ -327,8 +391,26 @@ function buildTemplate(o: Outfit, lod: "high" | "low") {
   }
   const geo = mergeRaw(geos);
   if (!geo) throw new Error("Code 3: couldn't merge person");
+  // Metalness and roughness by what each vertex is: soft skin, glossy hair and shoes, matte
+  // cloth, shiny badges.
+  const mr = new Float32Array(slots.length * 2);
+  for (let i = 0; i < slots.length; i++) mr.set(SURF[slots[i]] ?? [0, 0.82], i * 2);
+  geo.setAttribute("aMR", new THREE.BufferAttribute(mr, 2));
   return { geo, slots: Uint8Array.from(slots) };
 }
+
+const SURF: Record<number, [number, number]> = {
+  [SLOT.skin]: [0, 0.52],
+  [SLOT.hair]: [0, 0.42],
+  [SLOT.eyes]: [0, 0.08],
+  [SLOT.white]: [0, 0.2],
+  [SLOT.lips]: [0, 0.36],
+  [SLOT.shoes]: [0.05, 0.38],
+  [SLOT.sole]: [0, 0.8],
+  [SLOT.belt]: [0.1, 0.45],
+  [SLOT.metal]: [0.95, 0.25],
+  [SLOT.vest]: [0, 0.9],
+};
 
 const templates = new Map<string, { geo: THREE.BufferGeometry; slots: Uint8Array }>();
 function template(o: Outfit, lod: "high" | "low") {
@@ -343,7 +425,16 @@ function template(o: Outfit, lod: "high" | "low") {
 
 let sharedMat: THREE.MeshStandardMaterial | null = null;
 function material() {
-  sharedMat ??= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0 });
+  if (sharedMat) return sharedMat;
+  sharedMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0 });
+  sharedMat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute vec2 aMR;\nvarying vec2 vMR;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvMR = aMR;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying vec2 vMR;")
+      .replace("float roughnessFactor = roughness;", "float roughnessFactor = vMR.y > 0.0 ? vMR.y : roughness;")
+      .replace("float metalnessFactor = metalness;", "float metalnessFactor = vMR.y > 0.0 ? vMR.x : metalness;");
+  };
+  sharedMat.customProgramCacheKey = () => "c3-person-mr";
   return sharedMat;
 }
 
@@ -518,7 +609,7 @@ export function buildPed(look: PedLook): PedModel {
   const t = template(o, look.lod ?? "high");
   // Share positions / normals / skinning; each person gets its own colours.
   const geo = new THREE.BufferGeometry();
-  for (const k of ["position", "normal", "skinIndex", "skinWeight"]) geo.setAttribute(k, t.geo.getAttribute(k));
+  for (const k of ["position", "normal", "skinIndex", "skinWeight", "aMR"]) geo.setAttribute(k, t.geo.getAttribute(k));
   const pick = (a: string[], k: number) => a[Math.abs(Math.floor(seed * 7 + k * 13)) % a.length];
   const palette: Record<number, THREE.Color> = {
     [SLOT.skin]: new THREE.Color(look.skin),
