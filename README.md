@@ -983,23 +983,29 @@ See `src/games/heatwave/README.md`.
 
 ### NextX titles play in the NextX app
 
-Heatwave, WareForge, YourGov and Zero City are ZLink+ games that run inside the NextX app at `/nextx/play/<slug>`
+Sovereign, Heatwave, WareForge, YourGov and Zero City are ZLink+ games that run inside the NextX app at `/nextx/play/<slug>`
 (`src/components/nextx/NextXPlayer.tsx`). `next.config.ts` redirects their `/games/<slug>` pages there
 (keeping the query string), and `gameHref()` in `src/lib/nextx.ts` points every link at the right place.
 The ZLink+ page has a NextX section and marks NextX titles.
 
-### Sovereign (free)
+### Sovereign (ZLink+ exclusive, NextX)
 
 A real-time grand strategy game on the real world map (`src/games/sovereign/`;
-`20261115100000_sovereign.sql`). Pick any of 181 nations; 1,242 real cities each own a stretch of
+`20261115100000_sovereign.sql`), the fifth NextX title (`20261120100000_sovereign_nextx.sql` makes its
+scores members only). Pick any of 181 nations; 1,242 real cities each own a stretch of
 land, built from Natural Earth by `scripts/sovereign/build-world.mjs` (terrain from the Mapzen tiles
 on AWS Open Data). Mine eleven resources, run factory chains and power, develop cities and trade on
 a world market; set taxes and laws, keep stability, change government; make pacts, trade deals and
 alliances; justify and declare wars, march armies (they ship themselves across the sea), fleets and
 air wings, besiege and take cities, make peace or demand surrender; form 28 historic nations;
-missiles and a nuclear programme. Every other nation runs on its own AI. The map is a 2D canvas
-(cached political layer zoomed out, vector territories zoomed in), phone first. See
-`src/games/sovereign/README.md`.
+missiles and a nuclear programme. Every other nation runs on its own AI.
+
+The world is drawn in 3D (`relief.ts`): the Earth raised from real elevation (`height.png`), lit by
+the sun, with the nations laid over it in their colours, a sea that catches the light and drifting
+clouds that cast shadows; the camera tilts toward the horizon as you zoom in. Cities, armies and
+labels are drawn over it in screen space. A flat 2D map is one tap away in the World panel, and the
+fallback where WebGL2 is missing. The panels are NextX liquid glass, phone first. The NextX app's
+backdrop for it is the living world drifting east. See `src/games/sovereign/README.md`.
 
 ### Zenith (ZLink+ exclusive)
 

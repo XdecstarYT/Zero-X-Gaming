@@ -616,6 +616,14 @@ function WorldPanel({ game }: { game: Game }) {
     <>
       <h3 className="sv-h3">Map</h3>
       <div className="sv-seg">
+        <button type="button" className={`sv-btn small ${!game.flat ? "on" : ""}`} onClick={() => game.setFlat(false)} data-testid="sv-map-3d">
+          3D relief
+        </button>
+        <button type="button" className={`sv-btn small ${game.flat ? "on" : ""}`} onClick={() => game.setFlat(true)} data-testid="sv-map-flat">
+          Flat
+        </button>
+      </div>
+      <div className="sv-seg">
         {(["political", "alliances", "terrain"] as const).map((m) => (
           <button key={m} type="button" className={`sv-btn small ${v.mode === m ? "on" : ""}`} onClick={() => game.setMapMode(m)}>
             {m[0].toUpperCase() + m.slice(1)}

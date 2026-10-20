@@ -18,6 +18,7 @@
  *   terrain-s.webp the same at 2048 wide (phones on low)
  *   world.json    nations and cities
  *   edges.bin     the territory edges: u32 count, then per edge u16 a, u16 b, u16 n, n × (u16 x, u16 y) in 1/8 px
+ *   height.png    1024-wide land height for the 3D relief (grey: sqrt of the height; 0 = sea)
  *   grid.bin      1024-wide city grid (u16 per cell, 0 = water), run-length coded: u16 w, u16 h, then (u16 run, u16 value)…
  *
  * Usage: node scripts/sovereign/build-world.mjs <natural-earth-geojson-dir> <tile-cache-dir>
@@ -574,6 +575,32 @@ const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[
   await sharp(img, { raw: { width: W, height: H, channels: 3 } }).webp({ quality: 82 }).toFile(join(OUT, "terrain.webp"));
   await sharp(img, { raw: { width: W, height: H, channels: 3 } }).resize(W / 2, Math.round(H / 2)).webp({ quality: 82 }).toFile(join(OUT, "terrain-s.webp"));
   console.log("terrain painted");
+}
+
+// Height for the 3D relief: land only, 1024 wide, the square root of the height (so plains
+// still rise a little and the Himalaya don't dwarf everything), 0 = sea.
+{
+  const HW = W / 4;
+  const HH = Math.ceil(H / 4);
+  const hm = Buffer.alloc(HW * HH);
+  for (let y = 0; y < HH; y++)
+    for (let x = 0; x < HW; x++) {
+      let sum = 0;
+      let land = 0;
+      for (let dy = 0; dy < 4; dy++)
+        for (let dx = 0; dx < 4; dx++) {
+          const yy = y * 4 + dy;
+          if (yy >= H) continue;
+          const i = yy * W + x * 4 + dx;
+          if (!nat[i]) continue;
+          land++;
+          sum += Math.max(0, elev[i]);
+        }
+      if (land < 6) continue;
+      hm[y * HW + x] = Math.max(1, Math.round(255 * Math.sqrt(Math.min(8800, sum / land) / 8800)));
+    }
+  await sharp(hm, { raw: { width: HW, height: HH, channels: 1 } }).png({ compressionLevel: 9 }).toFile(join(OUT, "height.png"));
+  console.log("height written");
 }
 
 // ------------------------------------------------------------------ world.json

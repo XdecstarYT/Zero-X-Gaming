@@ -2,7 +2,7 @@
  * NextX: Zero X's next-generation game production label. Its own app (/nextx) shows the titles
  * made to the NextX standard: photoreal 3D worlds, deep simulations, phone-first interfaces.
  */
-export const NEXTX_SLUGS = ["heatwave", "wareforge", "yourgov", "zero-city"] as const;
+export const NEXTX_SLUGS = ["sovereign", "heatwave", "wareforge", "yourgov", "zero-city"] as const;
 export type NextXSlug = (typeof NEXTX_SLUGS)[number];
 
 export const isNextX = (slug: string) => (NEXTX_SLUGS as readonly string[]).includes(slug);
@@ -25,6 +25,23 @@ export interface NextXTitle {
 }
 
 export const NEXTX_TITLES: NextXTitle[] = [
+  {
+    slug: "sovereign",
+    pitch: "Lead any nation on Earth in real time: build it, rule it, make friends and enemies, and fight for the map.",
+    accent: "#ffc44d",
+    accent2: "#3b6fd8",
+    stats: [
+      { v: "181", k: "Nations" },
+      { v: "1,242", k: "Real cities" },
+      { v: "28", k: "Formable empires" },
+    ],
+    features: [
+      "The real world in 3D: real relief and coastlines, every nation's real cities, resources and alliances",
+      "Mines, factory chains, power and a world market; taxes, laws, elections and six kinds of government",
+      "Justify and declare wars, march armies across the sea, besiege cities and dictate the peace",
+      "180 AI nations with their own ambitions; form the Roman Empire, Gran Colombia or the Soviet Union",
+    ],
+  },
   {
     slug: "heatwave",
     pitch: "An open-world crime story in Melbourne in a heatwave: two leads, any car or tram line, the police on your tail.",
@@ -116,5 +133,6 @@ export const NEXTX_ENGINE = [
   { title: "Adaptive quality", from: "Both", body: "High detail on desktops, a lighter path on phones, chosen for you." },
   { title: "Phone-first layout", from: "All three", body: "Dock, sheets and tab bars that fit a thumb, upright or sideways." },
   { title: "Open-world streaming", from: "Heatwave", body: "A whole island city streamed in round you as you drive: traffic, people, police and the sea, with a skyline to the horizon." },
+  { title: "World relief", from: "Sovereign", body: "The whole Earth raised from real elevation and lit by the sun, nations laid over it, a sea that catches the light and clouds that cast shadows; the camera tilts to the horizon as you zoom in." },
   { title: "Logistics simulation", from: "WareForge", body: "Forklifts that find their own way round your racks, trucks that back onto the doors, machines that wear and break." },
 ];

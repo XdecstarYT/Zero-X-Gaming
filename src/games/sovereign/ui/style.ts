@@ -13,7 +13,11 @@ export const css = `
 .sv .bad{color:var(--bad)}
 .sv .warn{color:var(--warn)}
 .sv :focus-visible{outline:2px solid var(--gold);outline-offset:2px}
-.sv-glass{background:linear-gradient(160deg,rgba(40,48,66,.82),rgba(14,18,28,.86));border:1px solid rgba(255,255,255,.12);box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 18px 40px -18px rgba(0,0,0,.7);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border-radius:var(--r)}
+.sv-glass{position:relative;isolation:isolate;background:linear-gradient(160deg,rgba(40,48,66,.72),rgba(14,18,28,.8));border:1px solid rgba(255,255,255,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.16),inset 0 -1px 0 rgba(255,255,255,.05),0 18px 40px -18px rgba(0,0,0,.7);backdrop-filter:blur(14px) saturate(1.5);-webkit-backdrop-filter:blur(14px) saturate(1.5);border-radius:var(--r)}
+/* NextX Engine liquid glass: a highlight that follows the finger, and (Chromium) a lens at the rim. */
+.sv-glass::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;background:radial-gradient(80% 60% at var(--mx,20%) var(--my,0%),rgba(255,255,255,.14),rgba(255,255,255,0) 60%)}
+.sv-refract .sv-glass:not(.sv-dock):not(.sv-stats):not(.sv-clock){backdrop-filter:url(#sv-lg) blur(9px) saturate(1.5)}
+.sv-refract .sv-dock,.sv-refract .sv-stats,.sv-refract .sv-clock{backdrop-filter:url(#sv-lg-bar) blur(8px) saturate(1.5)}
 
 /* ---- buttons ---- */
 .sv-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 14px;border-radius:12px;font-weight:650;font-size:13.5px;white-space:nowrap;background:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.06));border:1px solid rgba(255,255,255,.14)!important;transition:transform .12s ease,background .12s}

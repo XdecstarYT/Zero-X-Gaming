@@ -8,6 +8,8 @@ test("NextX: the logo plays in, the library shows its titles, and the tabs work"
   await expect(page.getByTestId("nextx-title-heatwave")).toBeVisible();
   await expect(page.getByTestId("nextx-launch-yourgov")).toHaveAttribute("href", "/nextx/play/yourgov");
   await expect(page.getByTestId("nextx-launch-heatwave")).toHaveAttribute("href", "/nextx/play/heatwave");
+  await expect(page.getByTestId("nextx-title-sovereign")).toBeVisible();
+  await expect(page.getByTestId("nextx-launch-sovereign")).toHaveAttribute("href", "/nextx/play/sovereign");
   const tab = (id: string) => page.locator(`[data-testid="nextx-tab-${id}"]:visible, [data-testid="nextx-mtab-${id}"]:visible`).first();
   await tab("studio").click();
   await expect(page.getByTestId("nextx-studio")).toBeVisible();
@@ -28,6 +30,8 @@ test("NextX titles run in the NextX app: their old pages send you there, and ZLi
   await expect(page.getByTestId("nextx-app")).toBeVisible();
   await page.goto("/games/heatwave");
   await expect(page).toHaveURL(/\/nextx\/play\/heatwave$/);
+  await page.goto("/games/sovereign");
+  await expect(page).toHaveURL(/\/nextx\/play\/sovereign$/);
   await page.goto("/zlink");
   await expect(page.getByTestId("zlink-nextx")).toContainText("WareForge");
   await expect(page.getByTestId("zlink-nextx")).toContainText("Heatwave");

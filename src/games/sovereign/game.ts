@@ -6,6 +6,7 @@
 import { PREFS_KEY, SAVE_KEY, UNITS, type ItemId } from "./data";
 import * as act from "./actions";
 import { launch } from "./military";
+import { canRelief } from "./relief";
 import { MapView } from "./render";
 import { advance, answer, load, save, score, startGame } from "./sim";
 import { type State } from "./state";
@@ -43,6 +44,8 @@ export class Game {
   /** Country picker: the nation under consideration. */
   pick: number | null = null;
   difficulty: State["difficulty"] = "normal";
+  /** Draw the flat 2D map instead of the 3D relief. */
+  flat = false;
   version = 0;
   activeMs = 0;
   private listeners = new Set<() => void>();
@@ -89,8 +92,9 @@ export class Game {
     window.addEventListener("keydown", this.onKey);
     this.raf = requestAnimationFrame(this.frame);
     try {
-      const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as { difficulty?: State["difficulty"] };
+      const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as { difficulty?: State["difficulty"]; flat?: boolean };
       if (p.difficulty) this.difficulty = p.difficulty;
+      if (p.flat) this.flat = true;
     } catch {}
     loadWorld()
       .then((w) => {
@@ -98,6 +102,8 @@ export class Game {
         this.preview = startGame(w, "USA");
         const small = window.matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 700;
         this.view = new MapView(canvas, w, small);
+        // The NextX 3D relief wherever the device can draw it (the flat map otherwise, or if asked).
+        if (!this.flat && canRelief()) this.view.setRelief(true);
         this.resize();
         this.view.focus(w.w * 0.52, w.h * 0.42, this.view.minZoom * 1.15);
         this.screen = "title";
@@ -110,6 +116,7 @@ export class Game {
   }
 
   detach() {
+    this.view?.dispose();
     cancelAnimationFrame(this.raf);
     window.removeEventListener("keydown", this.onKey);
     const c = this.canvas;
@@ -192,7 +199,7 @@ export class Game {
     const cap = this.world!.cities[s.nations[s.player].capital];
     this.view!.focus(cap.x, cap.y, 1.3);
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ difficulty: this.difficulty }));
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ difficulty: this.difficulty, flat: this.flat }));
     } catch {}
     this.bump();
   }
@@ -291,9 +298,7 @@ export class Game {
       v.box = { x0: down.x, y0: down.y, x1: p.x, y1: p.y };
       return;
     }
-    v.cam.x -= (p.x - prev.x) / v.cam.zoom;
-    v.cam.y -= (p.y - prev.y) / v.cam.zoom;
-    v.clampCam();
+    v.pan(prev.x, prev.y, p.x, p.y);
   };
 
   private onUp = (e: PointerEvent) => {
@@ -449,6 +454,16 @@ export class Game {
   backToTitle() {
     this.screen = "title";
     if (this.view) this.view.highlight = -1;
+    this.bump();
+  }
+
+  /** The NextX 3D relief or the flat map. */
+  setFlat(flat: boolean) {
+    this.flat = flat;
+    this.view?.setRelief(!flat && canRelief());
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ difficulty: this.difficulty, flat }));
+    } catch {}
     this.bump();
   }
 

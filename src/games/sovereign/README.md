@@ -1,6 +1,6 @@
 # Sovereign
 
-A free real-time grand strategy game on the real world map: pick any nation and lead it. Every
+A real-time grand strategy game (a ZLink+ exclusive that plays in the NextX app) on the real world map: pick any nation and lead it. Every
 other nation is played by the AI.
 
 ## The map
@@ -21,6 +21,8 @@ and others):
 - `grid.bin`: a 1024-wide city grid for "whose land is this?" and for paths.
 - `terrain.webp` (and a 2048-wide `terrain-s.webp` for phones): relief painted from the
   elevation, coloured by height and a rough climate (the dry belts are desert), the sea by depth.
+- `height.png`: a 1024-wide greyscale height map (square root of the land's mean height, sea 0)
+  that the 3D world is raised from.
 
 ```
 node scripts/sovereign/build-world.mjs <natural-earth-geojson-dir> <tile-cache-dir>
@@ -47,3 +49,13 @@ node scripts/sovereign/build-world.mjs <natural-earth-geojson-dir> <tile-cache-d
 - `render.ts`: the canvas map; `game.ts`: the controller and input; `ui/`: the React interface.
 
 The score is your nation's worth: GDP a year ($B) × 10, plus 25 a city, plus 500 for a formable.
+
+## The 3D world
+
+`relief.ts` raises the map from `height.png` (a 640×351 grid on desktop, 360 on phones), paints the
+terrain over it lit by the slope, lays the political layer on top (nations, city borders and the
+selection, redrawn at most every 0.35 s), and adds a sea swell, cloud shadows and fog. The camera
+tilts from straight down (zoomed out) toward the horizon (zoomed in). `render.ts` draws everything
+else on a transparent canvas above it through `toScreen`, and picks through `toMap`, so the game
+code never knows which view is on. The World panel switches to the flat map (remembered); browsers
+without WebGL2 always get it.

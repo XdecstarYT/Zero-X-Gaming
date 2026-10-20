@@ -15,6 +15,10 @@ import { HeatwaveView } from "@/games/heatwave/render/view";
 import { newGame as newWarehouse, tick as tickWarehouse } from "@/games/wareforge/sim";
 import { Stage as WarehouseStage } from "@/games/wareforge/render/stage";
 import { Stage3D } from "@/games/yourgov/render/stage";
+import { canRelief } from "@/games/sovereign/relief";
+import { MapView } from "@/games/sovereign/render";
+import { advance as advanceWorld, startGame as startWorld } from "@/games/sovereign/sim";
+import { loadWorld } from "@/games/sovereign/world";
 import { country } from "@/games/yourgov/sim";
 import { demoCity } from "@/games/zero-city/demo";
 import { WorldViews } from "@/games/zero-city/game";
@@ -22,7 +26,7 @@ import { CameraRig } from "@/games/zero-city/render/camera";
 import { Engine } from "@/games/zero-city/render/engine";
 import { defaultSettings } from "@/games/zero-city/settings";
 
-export type BackdropKind = "country" | "city" | "warehouse" | "port";
+export type BackdropKind = "country" | "city" | "warehouse" | "port" | "world";
 export type Quality = "high" | "low";
 
 export interface Backdrop {
@@ -224,9 +228,75 @@ function portBackdrop(host: HTMLElement, quality: Quality, still: boolean): Back
   };
 }
 
+/** Sovereign's world in 3D: the real relief in the sun, the nations, and the AI playing on (wars and all), the camera drifting over it. */
+function worldBackdrop(host: HTMLElement, quality: Quality, still: boolean): Backdrop {
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none";
+  canvas.setAttribute("aria-hidden", "true");
+  host.appendChild(canvas);
+  let raf = 0;
+  let gone = false;
+  let stop = () => {};
+  const build = async () => {
+    const world = await loadWorld();
+    if (gone) return;
+    const s = startWorld(world, "USA", { seed: 7 });
+    const view = new MapView(canvas, world, quality === "low");
+    if (canRelief()) view.setRelief(true);
+    const size = () => view.resize(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight), window.devicePixelRatio || 1);
+    size();
+    const ro = new ResizeObserver(size);
+    ro.observe(host);
+    stop = () => {
+      ro.disconnect();
+      view.dispose();
+    };
+    // Over Europe, tilted toward the horizon, drifting east.
+    const cam = { x: 2200, y: 640, zoom: 1.25 };
+    view.focus(cam.x, cam.y, cam.zoom);
+    // Wait for the relief (or give up on it) before the first frame.
+    for (let i = 0; i < 100 && view.relief && !view.is3D; i++) await new Promise((r) => setTimeout(r, 50));
+    if (gone) return;
+    await new Promise<void>((done) => {
+      let last = performance.now();
+      let first = true;
+      const loop = () => {
+        raf = requestAnimationFrame(loop);
+        if (document.hidden) return;
+        const now = performance.now();
+        const dt = Math.min(0.1, (now - last) / 1000);
+        last = now;
+        if (!still) {
+          advanceWorld(s, world, dt * 3);
+          cam.x += dt * 6;
+          if (cam.x > 3600) cam.x = 1200;
+          view.focus(cam.x, cam.y + Math.sin(now / 9000) * 40, cam.zoom);
+        }
+        view.draw(s, dt);
+        if (first) {
+          first = false;
+          done();
+        }
+      };
+      raf = requestAnimationFrame(loop);
+    });
+  };
+  const ready = build();
+  return {
+    ready,
+    dispose() {
+      gone = true;
+      cancelAnimationFrame(raf);
+      stop();
+      canvas.remove();
+    },
+  };
+}
+
 /** Mount a backdrop in `host` (which should be positioned). Throws if WebGL isn't available. */
 export function mountBackdrop(kind: BackdropKind, host: HTMLElement, quality: Quality = pickQuality(), still = false): Backdrop {
   if (kind === "port") return portBackdrop(host, quality, still);
+  if (kind === "world") return worldBackdrop(host, quality, still);
   if (kind === "warehouse") return warehouseBackdrop(host, quality, still);
   return kind === "country" ? countryBackdrop(host, quality, still) : cityBackdrop(host, quality, still);
 }

@@ -29,10 +29,19 @@ test("Sovereign: pick a nation, build, train, move an army, justify a war and sa
   });
   page.on("pageerror", (e) => errors.push(e.message));
   if (!mobile) await page.setViewportSize({ width: 1400, height: 900 });
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("zx-season-s1"))
+      localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
+  });
+  // A NextX title: it plays in the NextX app, for ZLink+ members.
   await page.goto("/games/sovereign?sv");
+  await expect(page).toHaveURL(/\/nextx\/play\/sovereign/);
+  await expect(page.getByTestId("game-access")).toHaveText("ZLink+ exclusive");
+  await page.getByTestId("zlink-lock-join").click();
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await dismissRotate(page);
   await expect(page.getByTestId("sv-new")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("nextx-powered")).toBeVisible();
 
   // Choose Australia from the list.
   await page.getByTestId("sv-new").click();
@@ -41,6 +50,8 @@ test("Sovereign: pick a nation, build, train, move an army, justify a war and sa
   await page.getByTestId("sv-start").click();
   await expect(page.getByTestId("sv-money")).toBeVisible();
   expect(await sv(page, (g) => g.s.nations[g.s.player].iso)).toBe("AUS");
+  // The world is drawn in 3D by the NextX Engine, under liquid glass.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sv: { view: { is3D: boolean } } }).__sv.view.is3D), { timeout: 30_000 }).toBe(true);
   await page.getByTestId("sv-speed-0").click();
 
   // Open Sydney by tapping it, and build there.
@@ -82,6 +93,13 @@ test("Sovereign: pick a nation, build, train, move an army, justify a war and sa
   await page.waitForTimeout(2500);
   await page.getByTestId("sv-speed-0").click();
   expect(await sv(page, (g) => g.s.day)).toBeGreaterThan(day0 + 3);
+
+  // The flat map is a tap away, and back.
+  await page.getByTestId("sv-tab-world").click();
+  await page.getByTestId("sv-map-flat").click();
+  expect(await page.evaluate(() => (window as unknown as { __sv: { view: { is3D: boolean } } }).__sv.view.is3D)).toBe(false);
+  await page.getByTestId("sv-map-3d").click();
+  await page.getByTestId("sv-tab-world").click();
 
   // Every panel opens.
   for (const t of ["nation", "economy", "military", "diplomacy", "politics", "world"]) {

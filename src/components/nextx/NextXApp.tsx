@@ -27,7 +27,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 
 const INTRO_KEY = "zx-nextx-intro";
 const noSubscribe = () => () => {};
-const SCENE: Record<NextXSlug, "country" | "city" | "warehouse" | "port"> = { heatwave: "port", wareforge: "warehouse", yourgov: "country", "zero-city": "city" };
+const SCENE: Record<NextXSlug, "country" | "city" | "warehouse" | "port" | "world"> = { sovereign: "world", heatwave: "port", wareforge: "warehouse", yourgov: "country", "zero-city": "city" };
 
 /** The featured title's world, live, behind the glass. */
 function EngineBackdrop({ slug, still }: { slug: NextXSlug; still: boolean }) {

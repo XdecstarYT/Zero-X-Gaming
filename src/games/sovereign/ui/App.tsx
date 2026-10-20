@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { PoweredBy } from "@/nextx/PoweredBy";
+import { GlassDefs, canRefract, trackSheen } from "@/nextx/glass";
 import { IDEOLOGIES, UNITS } from "../data";
 import type { Game, PanelId } from "../game";
 import { score } from "../sim";
@@ -18,6 +20,8 @@ const TABS: { id: PanelId; icon: string; label: string }[] = [
   { id: "world", icon: "🌍", label: "World" },
 ];
 
+const noSubscribe = () => () => {};
+
 export function useGame(game: Game) {
   return useSyncExternalStore(game.subscribe, () => game.version, () => 0);
 }
@@ -25,6 +29,10 @@ export function useGame(game: Game) {
 export function App({ game }: { game: Game }) {
   useGame(game);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  // NextX Engine liquid glass: the panels bend the world behind them (where the browser can).
+  const refract = useSyncExternalStore(noSubscribe, canRefract, () => false);
+  useEffect(() => (root.current ? trackSheen(root.current, ".sv-glass, .sv-btn") : undefined), []);
   useEffect(() => {
     const c = canvas.current;
     if (!c) return;
@@ -38,7 +46,8 @@ export function App({ game }: { game: Game }) {
   }, [game]);
   const s = game.s;
   return (
-    <div className="sv" data-testid="sv-root">
+    <div ref={root} className={`sv${refract ? " sv-refract" : ""}`} data-testid="sv-root">
+      <GlassDefs prefix="sv" />
       <canvas ref={canvas} className="sv-canvas" aria-label="The world map. Drag to pan, pinch or scroll to zoom, tap a city or your armies." tabIndex={0} data-testid="sv-canvas" />
       <div className="sv-attrib">Map: Natural Earth · terrain: Mapzen/AWS</div>
       {game.screen === "loading" && (
@@ -96,6 +105,7 @@ function Title({ game }: { game: Game }) {
   return (
     <div className="sv-title">
       <div className="sv-title-card sv-glass">
+        <PoweredBy style={{ marginBottom: 14 }} />
         <h1 className="sv-logo">SOVEREIGN</h1>
         <p className="sv-sub">Lead any nation on Earth. Build it up, rule it your way, make friends and enemies, and fight for the map.</p>
         <div className="sv-title-actions">
