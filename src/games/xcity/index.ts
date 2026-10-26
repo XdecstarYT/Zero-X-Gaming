@@ -5,6 +5,7 @@ import type { GameFactory, GameInitOptions, GameModule, ScoreListener } from "..
 import { GAME_SLUG } from "./data";
 import { Game } from "./game";
 import { showcaseCity } from "./showcase";
+import { bestPlan, submit } from "./sim";
 import { App } from "./ui/App";
 import { css } from "./ui/style";
 
@@ -38,12 +39,23 @@ class XCity implements GameModule {
     this.root.render(createElement(App, { game: this.game }));
     if (new URLSearchParams(window.location.search).has("xc")) {
       // Test hooks: the controller, and a way to grow a city fast.
-      const w = window as unknown as { __xc?: Game; __xcGrow?: (years: number) => Promise<void> };
+      const w = window as unknown as { __xc?: Game; __xcGrow?: (years: number) => Promise<void>; __xcPitch?: () => number };
       w.__xc = this.game;
       const game = this.game;
       w.__xcGrow = async (years: number) => {
         game.s = await showcaseCity(async () => {}, years);
         game.bump();
+      };
+      // A developer pitches a mid-rise in place of a house, two storeys over the zoning.
+      w.__xcPitch = () => {
+        const s = game.s!;
+        const lot = s.lots.find((l) => l && l.bld >= 0 && s.buildings[l.bld]!.form === "house" && s.buildings[l.bld]!.done);
+        if (!lot) return -1;
+        const best = bestPlan(s, lot, 6);
+        if (!best) return -1;
+        const a = submit(s, best.plan, best.st, 2);
+        game.toast(`New application: ${a.plan.name}`, "tip", a.id);
+        return a.id;
       };
     }
   }

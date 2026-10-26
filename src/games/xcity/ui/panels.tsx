@@ -121,12 +121,16 @@ function HeightSlider({ bands, value, onChange, pop }: { bands: number[]; value:
     <div className="xc-height" style={{ position: "relative" }}>
       <div className="rail">
         {list.map((b) => (
-          <button key={b} type="button" className={`stop${value === b ? " on" : ""}`} disabled={pop < BANDS[b].unlock} onClick={() => onChange(b)} aria-label={`${BANDS[b].label}, ${BANDS[b].form}`} title={pop < BANDS[b].unlock ? `Unlocks at ${BANDS[b].unlock.toLocaleString()} people` : BANDS[b].label} data-testid={`xc-height-${b}`} />
+          <span key={b} style={{ position: "relative", display: "flex", alignItems: "center" }}>
+            <button type="button" className={`stop${value === b ? " on" : ""}`} disabled={pop < BANDS[b].unlock} onClick={() => onChange(b)} aria-label={`${BANDS[b].label}, ${BANDS[b].form}`} title={pop < BANDS[b].unlock ? `Unlocks at ${BANDS[b].unlock.toLocaleString()} people` : BANDS[b].label} data-testid={`xc-height-${b}`} />
+            {value === b && (
+              <span className="lbl" style={{ left: 30, whiteSpace: "nowrap", zIndex: 1 }}>
+                {BANDS[value].label} <span style={{ opacity: 0.7 }}>{BANDS[value].form}</span>
+              </span>
+            )}
+          </span>
         ))}
       </div>
-      <span className="lbl" style={{ top: 10 + (list.indexOf(value) / Math.max(1, list.length - 1)) * (150 - 44) }}>
-        {BANDS[value].label} <span style={{ opacity: 0.7 }}>{BANDS[value].form}</span>
-      </span>
       <Skyline band={value} />
     </div>
   );

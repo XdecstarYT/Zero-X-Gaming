@@ -983,10 +983,36 @@ See `src/games/heatwave/README.md`.
 
 ### NextX titles play in the NextX app
 
-Sovereign, Heatwave, WareForge, YourGov and Zero City are ZLink+ games that run inside the NextX app at `/nextx/play/<slug>`
+XCity, Sovereign, Heatwave, WareForge, YourGov and Zero City are ZLink+ games that run inside the NextX app at `/nextx/play/<slug>`
 (`src/components/nextx/NextXPlayer.tsx`). `next.config.ts` redirects their `/games/<slug>` pages there
 (keeping the query string), and `gameHref()` in `src/lib/nextx.ts` points every link at the right place.
 The ZLink+ page has a NextX section and marks NextX titles.
+
+### XCity (ZLink+ exclusive, NextX)
+
+A city builder that takes zoning seriously (`src/games/xcity/`; `20261122100000_xcity.sql`), the sixth
+NextX title. You start with a farming village at a crossroads by a river and plan it into a city:
+- **Roads** are a graph of polylines (`roads.ts`): new roads snap to junctions, split the roads they
+  cross and knock down what's in the way; lots line every frontage wherever they fit.
+- **Districts** (`world.ts`) are painted areas with a use (homes, main street, shops, offices,
+  workshops, farmland, parkland), a height band (1–2 storeys up to 20–40) and rules (parking
+  minimums, affordable homes, corner shops, joining plots). Drag one over open land and its streets
+  are laid out as a grid, curves, cul-de-sacs or superblocks (`patterns.ts`). Upzone an area to let
+  it build one band taller.
+- **Developers** (`sim.ts`) build what pays on zoned lots, knocking down the old; when rents run
+  high they pitch plans over the zoning, which go on the agenda to approve, deny or haggle over.
+- **Your own designs** (`design.ts`): storeys, use, width, style, roof (green, terrace, solar), bay
+  windows and colour, with the homes, cost, sale value and what it clears; taller than the zoning
+  costs clout.
+- Demand, rents, approval, transport (cars, bike lanes, trams on avenues), the budget and milestones
+  run month by month.
+
+The 3D city (`render/`) is drawn on the NextX look: a painted ground (patchwork fields, orchards,
+yards, paving), roads with junctions, markings, bike lanes, tram tracks and bridges, buildings in
+200 m chunks with Heatwave's facade shader (rebuilt only when what's in them changes), trees,
+cranes and scaffolding on the sites, and cars, bikes, people and trams in the streets. The score
+is the population plus twice the homes built (members only). The NextX app's backdrop for it is a
+grown city by the river. See `src/games/xcity/README.md`.
 
 ### Sovereign (ZLink+ exclusive, NextX)
 

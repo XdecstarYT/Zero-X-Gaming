@@ -410,7 +410,11 @@ export class View {
 
   /** Fly the camera to a building or a point. */
   focus(x: number, z: number, dist?: number) {
-    this.rig.fly({ target: new THREE.Vector3(x, 0, z), dist: dist ?? Math.min(this.rig.goal.dist, 380) });
+    const d = dist ?? Math.min(this.rig.goal.dist, 380);
+    // On a tall screen the panels cover the bottom: aim past the thing so it sits in the top half.
+    const lift = this.h > this.w * 1.2 ? d * 0.32 : 0;
+    const yaw = this.rig.goal.yaw;
+    this.rig.fly({ target: new THREE.Vector3(x + Math.sin(yaw) * lift, 0, z + Math.cos(yaw) * lift), dist: d });
   }
 
   heightOf(b: Building) {

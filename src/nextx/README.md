@@ -18,7 +18,8 @@ game starts where the last one finished. The NextX app (`/nextx`,
   island city (PBR buildings, roads, trees, image-based light, ACES grading) orbiting at golden
   hour; `mountBackdrop("warehouse", host)` is WareForge's yard at work (trucks backing onto the doors,
   forklifts on the aisles); `mountBackdrop("world", host)` is Sovereign's living world in 3D relief,
-  its nations playing on as the camera drifts east. Quality is picked for the device; a still camera for people who prefer
+  its nations playing on as the camera drifts east; `mountBackdrop("xcity", host)` is a grown XCity
+  by the river, the camera circling while it builds. Quality is picked for the device; a still camera for people who prefer
   less motion.
 - **The look** (`look.ts`): one light for every title. `makeSky()` is a sky dome with a sun disc,
   a halo, drifting clouds and stars at night; `skyFor(sunHeight)` gives the sky's colours and the
@@ -42,3 +43,7 @@ game starts where the last one finished. The NextX app (`/nextx`,
   can shimmer, a political layer from a canvas, cloud shadows, distance fog), a camera that tilts
   toward the horizon as you zoom, and `project`/`unproject` so a 2D overlay (labels, units, picks)
   sits on it. Built for Sovereign.
+- **Planner's city** (`games/xcity/render/`): a road graph drawn as asphalt, footpaths cut back at
+  junctions, markings, zebras, bike lanes, tram tracks and bridges; buildings in chunks that merge
+  their walls into one facade mesh and rebuild only when they change; instanced trees, traffic and
+  trams; a ground painted from the districts. Built for XCity.

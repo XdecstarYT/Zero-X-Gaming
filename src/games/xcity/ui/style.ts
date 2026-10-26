@@ -43,6 +43,7 @@ export const css = `
 /* top bar */
 .xc-top{position:absolute;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top));display:flex;align-items:flex-start;gap:6px;z-index:5;pointer-events:none}
 .xc-top>*{pointer-events:auto}
+@media (pointer: coarse){.xc-top{left:58px}}
 .xc-bar{display:flex;align-items:center;gap:2px;padding:4px;min-width:0}
 .xc-city{display:flex;flex-direction:column;padding:2px 10px 2px 8px;line-height:1.1;min-width:0}
 .xc-city b{font-size:14px;white-space:nowrap;letter-spacing:.02em}
@@ -110,7 +111,7 @@ export const css = `
 .xc-height .stop.on{background:#fff;box-shadow:0 0 0 3px var(--green2)}
 .xc-height .stop:disabled{opacity:.35}
 .xc-height svg{flex:1;display:block}
-.xc-height .lbl{position:absolute;left:44px;padding:4px 10px;border-radius:999px;background:#242a27;color:#fff;font-size:12px;font-weight:650}
+.xc-height .lbl{position:absolute;top:50%;transform:translateY(-50%);padding:4px 10px;border-radius:999px;background:#242a27;color:#fff;font-size:12px;font-weight:650}
 
 /* pattern cards */
 .xc-pats{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
