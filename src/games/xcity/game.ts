@@ -17,14 +17,14 @@ import { newCity } from "./world";
 import * as pol from "./politics";
 import { newWorld } from "./showcase";
 import type { Ask, CampaignKind } from "./politics";
-import type { Axis, BillKind, GroupId, PolSettings, PromiseKind, SeatPref, WorldSettings } from "./poltypes";
+import type { Axis, BillKind, GroupId, PolSettings, Portfolio, PromiseKind, SeatPref, WorldSettings } from "./poltypes";
 import { View, pickQuality, type Quality } from "./render/view";
 import { heightOf } from "./render/chunks";
 
 export type Screen = "title" | "setup" | "play";
 export type TitlePanel = null | "changelog" | "settings";
 export type SetupStep = "politics" | "world" | "party";
-export type PolTab = "campaign" | "promises" | "groups" | "opposition" | "parliament" | "polls";
+export type PolTab = "campaign" | "promises" | "groups" | "opposition" | "party" | "parliament" | "polls";
 export type Tool = "inspect" | "road" | "zone" | "upzone" | "design" | "transit" | "civic" | "bulldoze";
 export type Panel = null | "city" | "agenda" | "district" | "building" | "design" | "help" | "politics";
 export type TransitTool = "bike" | "tram" | "avenue" | "street";
@@ -167,6 +167,9 @@ export class Game {
     party: { ...pol.PARTY_PRESETS[0], pos: { ...pol.PARTY_PRESETS[0].pos } } as pol.PartyDraft,
     /** Where you'd like to stand (the seats themselves are drawn when the world is). */
     seat: "town" as SeatPref,
+    /** Your own name, and whether you start as the party's leader or a candidate under its leader. */
+    me: "",
+    asLeader: false,
     /** The preset the party was started from (it won't also stand against you). */
     basedOn: 0,
   };
@@ -191,19 +194,21 @@ export class Game {
     this.bump();
   }
 
-  editSetup(patch: { pol?: Partial<PolSettings>; world?: Partial<WorldSettings>; party?: Partial<pol.PartyDraft>; seat?: SeatPref }) {
+  editSetup(patch: { pol?: Partial<PolSettings>; world?: Partial<WorldSettings>; party?: Partial<pol.PartyDraft>; seat?: SeatPref; me?: string; asLeader?: boolean }) {
     const d = this.draft;
     if (patch.pol) d.pol = { ...d.pol, ...patch.pol };
     if (patch.world) d.world = { ...d.world, ...patch.world };
     if (patch.party) d.party = { ...d.party, ...patch.party, pos: { ...d.party.pos, ...(patch.party.pos ?? {}) } };
     if (patch.seat !== undefined) d.seat = patch.seat;
+    if (patch.me !== undefined) d.me = patch.me;
+    if (patch.asLeader !== undefined) d.asLeader = patch.asLeader;
     this.bump();
   }
 
   /** Start the party from one of the presets. */
   usePreset(i: number) {
     const x = pol.PARTY_PRESETS[i];
-    this.draft.party = { name: x.name, short: x.short, color: x.color, icon: x.icon, leader: this.draft.party.leader || x.leader, pos: { ...x.pos } };
+    this.draft.party = { name: x.name, short: x.short, color: x.color, icon: x.icon, leader: x.leader, pos: { ...x.pos } };
     this.draft.basedOn = i;
     this.bump();
   }
@@ -212,14 +217,14 @@ export class Game {
   beginWorld() {
     const d = this.draft;
     const s = newWorld(d.world);
-    const party = { ...d.party, name: d.party.name.trim() || "My Party", short: (d.party.short.trim() || d.party.name.slice(0, 3)).toUpperCase().slice(0, 4), leader: d.party.leader.trim() || "You" };
-    if (d.world.politics) pol.newPolitics(s, d.pol, party, d.seat, d.basedOn);
+    const party = { ...d.party, name: d.party.name.trim() || "My Party", short: (d.party.short.trim() || d.party.name.slice(0, 3)).toUpperCase().slice(0, 4), leader: d.party.leader.trim() || pol.PARTY_PRESETS[Math.max(0, d.basedOn)].leader };
+    if (d.world.politics) pol.newPolitics(s, d.pol, party, d.seat, d.basedOn, { name: d.me.trim() || "You", asLeader: d.asLeader });
     this.s = s;
     this.start();
     if (s.pol) {
       this.panel = "politics";
       this.polTab = "campaign";
-      this.toast(`${party.leader}, the campaign starts now: ${d.pol.campaignWeeks} weeks to win ${s.pol.electorates[s.pol.seat].name}, and the city's ${s.pol.electorates.length} seats.`, "tip");
+      this.toast(`${pol.career(s.pol).name}, the campaign starts now: ${d.pol.campaignWeeks} weeks to win ${s.pol.electorates[s.pol.seat].name}, and the city's ${s.pol.electorates.length} seats.`, "tip");
       this.refreshOverlay();
     } else this.toast("You've been hired to plan it all. Zone some homes: tap Zone and drag over the fields.", "tip");
     this.bump();
@@ -1039,6 +1044,22 @@ export class Game {
 
   propose(kind: BillKind) {
     if (this.s) this.polRes(pol.proposeBill(this.s, kind));
+  }
+
+  askPortfolio(pf: Portfolio) {
+    if (this.s) this.polRes(pol.askPortfolio(this.s, pf));
+  }
+
+  soundOut() {
+    if (this.s) this.polRes(pol.soundOut(this.s));
+  }
+
+  challenge() {
+    if (this.s) this.polRes(pol.challenge(this.s));
+  }
+
+  standForLeader(stand: boolean) {
+    if (this.s) this.polRes(pol.standForLeader(this.s, stand));
   }
 
   closeNight() {

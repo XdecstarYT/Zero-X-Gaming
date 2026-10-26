@@ -236,6 +236,18 @@ export const FIRST_NAMES = ["Ana", "Ben", "Chloe", "Dev", "Eli", "Farah", "Gus",
 /** What's changed, newest first (the title screen's change log). */
 export const CHANGELOG: { version: string; date: string; title: string; items: string[] }[] = [
   {
+    version: "1.3",
+    date: "October 2026",
+    title: "Climb the party",
+    items: [
+      "Start as a candidate in a party with its own leader (or as the leader yourself).",
+      "Build a reputation: win your seat and the city, keep your promises, shine at Question Time and pass bills. Lose, break your word or cross the floor and it falls.",
+      "Ask the leader for a ministry (Housing, Transport, Treasury or the Environment), or its shadow in opposition. Your portfolio's bills carry the whole party.",
+      "Sound out your colleagues, then challenge the leader: the party's MPs vote, and the loser goes to the back bench. When a beaten leader quits, stand in the ballot.",
+      "Lead the party and it votes as you say, and your reputation moves its national vote. Win the most federal seats and you're Prime Minister, setting parliament's agenda.",
+    ],
+  },
+  {
     version: "1.2",
     date: "October 2026",
     title: "Electorates that grow with the city",

@@ -220,3 +220,134 @@ describe("promises", () => {
     expect(back.pol!.electorates.length).toBe(p.electorates.length);
   });
 });
+
+describe("your career in the party", () => {
+  const candidate = () => {
+    const s = newWorld(WS);
+    const p = pol.newPolitics(s, pol.defaultPolSettings(), mine, "town", 0, { name: "Jo Mayor", asLeader: false });
+    // Into parliament, between elections.
+    p.campaign = false;
+    p.role = "opposition";
+    p.electorates[p.seat].holder = 0;
+    p.campaignFrom = s.month + 100;
+    p.federal.seats = p.parties.map((_, i) => (i === 0 ? 20 : 27));
+    return { s, p, c: pol.career(p) };
+  };
+
+  it("starts you as a candidate in a party with its own leader", () => {
+    const { p, c } = candidate();
+    expect(c.rank).toBe("member");
+    expect(c.leaderName).toBe("Sam Planner");
+    expect(p.parties[0].leader).toBe("Sam Planner");
+    expect(p.electorates[p.seat].candidates[0]).toBe("Jo Mayor");
+    expect(pol.careerTitle(p)).toBe("Backbencher");
+    // As leader from the start, the party is yours.
+    const s2 = newWorld(WS);
+    const p2 = pol.newPolitics(s2, pol.defaultPolSettings(), mine, "town", 0, { name: "Jo Mayor", asLeader: true });
+    expect(pol.career(p2).rank).toBe("leader");
+    expect(p2.parties[0].leader).toBe("Jo Mayor");
+  });
+
+  it("earns a portfolio once your reputation is up, and the party backs your portfolio's bills", () => {
+    const { s, p, c } = candidate();
+    p.ap = 10;
+    expect(pol.askPortfolio(s, "transport")).toMatchObject({ ok: false });
+    c.rep = 80;
+    c.favour = 80;
+    for (let i = 0; i < 20 && c.rank !== "minister"; i++) {
+      c.cooldown = 0;
+      p.ap = 10;
+      expect(pol.askPortfolio(s, "transport").ok).toBe(true);
+    }
+    expect(c.rank).toBe("minister");
+    expect(c.portfolio).toBe("transport");
+    expect(pol.careerTitle(p)).toBe("Shadow Minister for Transport");
+    // The party votes for its minister's transport bill, even one it wouldn't have brought itself.
+    p.parties[0].pos.transit = -1;
+    p.federal.sitting = true;
+    p.federal.seats = p.parties.map((_, i) => (i === 0 ? 60 : 10));
+    const r = pol.proposeBill(s, "transitFund");
+    expect(r.ok && r.msg).toContain("passed");
+    expect(c.rep).toBeGreaterThan(80);
+  });
+
+  it("crossing the floor costs the leader's favour", () => {
+    const { s, p, c } = candidate();
+    p.federal.nextSitting = s.month + 1;
+    advance(s, 1);
+    const b = p.federal.bills.find((x) => x.status === "pending");
+    if (!b) return;
+    const before = c.favour;
+    const line = pol.BILLS[b.kind].vec;
+    const support = pol.AXES.reduce((a, ax) => a + p.parties[0].pos[ax] * line[ax], 0) * (b.repeal ? -1 : 1);
+    pol.vote(s, b.id, support > 0 ? "no" : "yes");
+    expect(c.favour).toBeLessThan(before);
+  });
+
+  it("rolls the leader in a challenge you have the numbers for, and benches you if you don't", () => {
+    const lose = candidate();
+    lose.c.rep = 55;
+    lose.c.leaderRep = 98;
+    lose.p.ap = 10;
+    expect(pol.challenge(lose.s).ok).toBe(true);
+    expect(lose.c.rank).toBe("member");
+    expect(lose.c.favour).toBe(5);
+    expect(pol.challenge(lose.s)).toMatchObject({ ok: false });
+
+    const win = candidate();
+    win.c.rep = 95;
+    win.c.leaderRep = 20;
+    win.p.ap = 10;
+    expect(pol.challenge(win.s).ok).toBe(true);
+    expect(win.c.rank).toBe("leader");
+    expect(win.p.parties[0].leader).toBe("Jo Mayor");
+    expect(pol.careerTitle(win.p)).toBe("Leader of Homes for All");
+  });
+
+  it("stands you in a leadership ballot when the leader quits", () => {
+    const { s, p, c } = candidate();
+    c.rep = 90;
+    c.vacancy = { rival: "Pat Rival", rivalRep: 40, until: s.month + 2 };
+    expect(pol.standForLeader(s, true).ok).toBe(true);
+    expect(c.rank).toBe("leader");
+    expect(p.parties[0].leader).toBe("Jo Mayor");
+    expect(c.vacancy).toBeNull();
+    // Let it go and the rival takes it.
+    const other = candidate();
+    other.c.vacancy = { rival: "Pat Rival", rivalRep: 40, until: other.s.month + 2 };
+    pol.standForLeader(other.s, false);
+    expect(other.c.leaderName).toBe("Pat Rival");
+    expect(other.p.parties[0].leader).toBe("Pat Rival");
+  });
+
+  it("makes the leader of the biggest party Prime Minister, who sets the agenda", () => {
+    const { s, p, c } = candidate();
+    c.rank = "leader";
+    c.leaderName = c.name;
+    p.federal.government = 0;
+    expect(pol.isPM(p)).toBe(true);
+    expect(pol.careerTitle(p)).toBe("Prime Minister");
+    p.federal.nextSitting = s.month + 1;
+    advance(s, 1);
+    expect(p.federal.sitting).toBe(true);
+    // No bill imposed: the PM brings two.
+    expect(p.federal.bills.length).toBe(0);
+    p.federal.seats = p.parties.map((_, i) => (i === 0 ? 60 : 10));
+    expect(pol.proposeBill(s, "housingAccord").ok).toBe(true);
+    expect(pol.proposeBill(s, "transitFund").ok).toBe(true);
+    expect(pol.proposeBill(s, "greenBelt")).toMatchObject({ ok: false });
+  });
+
+  it("election day moves your reputation: winning your seat and the city raise it", () => {
+    const { s, p, c } = candidate();
+    c.rep = 40;
+    p.role = "candidate";
+    p.campaign = true;
+    // Make it a landslide for us.
+    for (const g of pol.GROUP_ORDER) p.bonus[0][g] = 200;
+    const r = pol.election(s);
+    expect(r.mine).toBe(true);
+    expect(c.rep).toBeGreaterThan(50);
+    expect(c.log.some((l) => l.text.startsWith("Won "))).toBe(true);
+  });
+});

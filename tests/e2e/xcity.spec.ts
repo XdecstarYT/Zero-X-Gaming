@@ -59,6 +59,8 @@ test("XCity: zone a neighbourhood, set its rules, design a building, review an a
   await expect(page.getByTestId("xc-setup")).toBeVisible();
   await page.getByTestId("xc-politics-toggle").click();
   await page.getByTestId("xc-next").click();
+  // The same map every run (the road below is drawn over open land on it).
+  await page.getByTestId("xc-seed").fill("11");
   await page.getByTestId("xc-begin").click();
   await expect(page.getByTestId("xc-stat-pop")).toBeVisible();
   await expect(page.getByTestId("xc-date")).toContainText("January, Year 1");

@@ -214,6 +214,14 @@ export const css = `
 .xc-seatbars .bar i{display:block;height:100%;transition:width .5s ease}
 .xc-result{display:flex;flex-direction:column;gap:1px;padding:7px 10px;border-radius:10px;background:rgba(255,255,255,.05);border-left:4px solid;font-size:13px;animation:xcIn .3s ease}
 .xc-result span{display:flex;align-items:center;gap:6px}
+.xc-rep{display:grid;grid-template-columns:minmax(110px,42%) 1fr 30px;align-items:center;gap:8px;font-size:13px}
+.xc-rep .bar{height:10px;border-radius:8px;background:rgba(255,255,255,.08);overflow:hidden}
+.xc-rep .bar i{display:block;height:100%;border-radius:8px;transition:width .4s ease}
+.xc-rep b{text-align:right}
+.xc-ladder{display:flex;gap:4px}
+.xc-ladder span{flex:1;text-align:center;padding:7px 4px;border-radius:10px;font-size:11.5px;font-weight:650;background:rgba(255,255,255,.06);color:var(--ink3);line-height:1.15}
+.xc-ladder span.done{color:var(--ink2);background:rgba(255,255,255,.1)}
+.xc-ladder span.on{background:#f6f7f5;color:#121513}
 .xc-polchip{display:flex;align-items:center;gap:6px;padding:2px 10px;font-size:12.5px;font-weight:700;white-space:nowrap}
 .xc-menu{display:flex;flex-direction:column;gap:8px;width:min(320px,100%)}
 `;

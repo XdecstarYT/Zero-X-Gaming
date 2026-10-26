@@ -5,7 +5,7 @@ import { clamp, pointInPoly, rng, type Pts } from "./geom";
 import { inWater } from "./roads";
 import { advance, farmHectares, hooks, places } from "./sim";
 import { news, rand, type State } from "./state";
-import type { Axis, Bill, BillKind, ElectionResult, Electorate, GroupId, Party, Pol, PolSettings, Position, PromiseKind, PromiseRec, Role, SeatPref, SeatSize } from "./poltypes";
+import type { Axis, Bill, BillKind, Career, ElectionResult, Electorate, GroupId, Party, Pol, PolSettings, Portfolio, Position, PromiseKind, PromiseRec, Role, SeatPref, SeatSize } from "./poltypes";
 
 /**
  * XCity's politics. The city is split into electorates; parties stand candidates in each, and
@@ -388,9 +388,10 @@ export function redistribute(s: State, p: Pol, force = false): boolean {
   });
   const seat = heir[p.seat] >= 0 ? heir[p.seat] : regionAt(cs, old[p.seat].x, old[p.seat].z);
   // Your candidacy moves with you (and the seat's old candidate for your party stands elsewhere).
-  for (const e of next) if (e.candidates[p.player] === playerParty(p).leader && e.id !== seat) e.candidates[p.player] = name(s);
-  next[seat].candidates[p.player] = playerParty(p).leader;
-  if (next[seat].holder === p.player) next[seat].mp = playerParty(p).leader;
+  const me = career(p).name;
+  for (const e of next) if (e.candidates[p.player] === me && e.id !== seat) e.candidates[p.player] = name(s);
+  next[seat].candidates[p.player] = me;
+  if (next[seat].holder === p.player) next[seat].mp = me;
   for (const r of p.promises) if (r.electorate >= 0) r.electorate = heir[r.electorate] >= 0 ? heir[r.electorate] : 0;
   p.redraw = { month: s.month, from: old.length, to: next.length, fresh };
   p.redraws = (p.redraws ?? 1) + 1;
@@ -547,7 +548,11 @@ function localGroups(s: State, k: number) {
   return out;
 }
 
-export function newPolitics(s: State, settings: PolSettings, mine: PartyDraft, seat: number | SeatPref = "town", basedOn = -1): Pol {
+/**
+ * A new political world, ten weeks out. `me` is you: a candidate in a party led by `mine.leader`,
+ * or (as leader, or when left out) the leader yourself.
+ */
+export function newPolitics(s: State, settings: PolSettings, mine: PartyDraft, seat: number | SeatPref = "town", basedOn = -1, me?: { name: string; asLeader: boolean }): Pol {
   // Your rivals: the other presets (never the one you started your party from, nor a lookalike),
   // the big national parties and whoever speaks for the people here (a farm town gets its
   // country party, a renters' city its tenants' party).
@@ -600,10 +605,26 @@ export function newPolitics(s: State, settings: PolSettings, mine: PartyDraft, s
     redraw: null,
     nextId: 1,
   };
+  const myName = me?.name.trim() || mine.leader;
+  const lead = !me || me.asLeader;
+  if (lead) parties[0].leader = myName;
+  p.career = {
+    name: myName,
+    rank: lead ? "leader" : "member",
+    portfolio: null,
+    rep: lead ? 45 : 30,
+    favour: 55,
+    leaderName: parties[0].leader,
+    leaderRep: lead ? 45 : 55,
+    cooldown: 0,
+    sounded: null,
+    vacancy: null,
+    log: [],
+  };
   demographics(s, p);
   p.seat = typeof seat === "number" ? clamp(seat, 0, p.electorates.length - 1) : seatFor(p, seat);
   for (const e of p.electorates) {
-    e.candidates = parties.map((party, i) => (i === p.player && e.id === p.seat ? party.leader : name(s)));
+    e.candidates = parties.map((_, i) => (i === p.player && e.id === p.seat ? myName : name(s)));
   }
   // Each group starts out leaning to the AI party closest to it.
   for (const g of GROUP_ORDER) {
@@ -728,7 +749,7 @@ export function promise(s: State, kind: PromiseKind, electorate = -1): Res {
   for (const [g, v] of Object.entries(def.effects) as [GroupId, number][]) p.bonus[p.player][g] += v * k;
   if (def.local) p.electorates[electorate].effort[p.player] += 0.4;
   poll(s, p);
-  news(s, `${playerParty(p).leader} promises: ${rec.label}.`);
+  news(s, `${career(p).name} promises: ${rec.label}.`);
   return { ok: true, msg: `Promised: ${rec.label}.` };
 }
 
@@ -812,7 +833,10 @@ export function answerDebate(s: State, stance: -1 | 0 | 1): Res {
   for (const g of GROUP_ORDER) p.bonus[p.player][g] += 7 * (1 - Math.abs(GROUPS[g].pref[ax] - stance)) - 4;
   const flip = Math.abs(playerParty(p).pos[ax] - stance) > 1;
   if (flip) p.trust = clamp(p.trust - 6, 0, 100);
-  else p.trust = clamp(p.trust + 2, 0, 100);
+  else {
+    p.trust = clamp(p.trust + 2, 0, 100);
+    repute(s, p, 2, "A solid debate performance");
+  }
   poll(s, p);
   return { ok: true, msg: flip ? "A strong answer, but it isn't what your party stands for. Voters noticed." : "A solid performance in the debate." };
 }
@@ -1040,6 +1064,7 @@ export function monthPol(s: State) {
   if (p.government !== p.player && p.role !== "candidate") aiGovern(s, p);
   else if (p.government !== p.player && p.role === "candidate" && s.month % 2 === 0) aiGovern(s, p);
   federalMonth(s, p);
+  careerMonth(s, p);
   poll(s, p);
   if (!p.campaign) record(s, p);
   if (!p.campaign && s.month >= p.campaignFrom) {
@@ -1077,7 +1102,12 @@ function nationalSeats(s: State, p: Pol, city: number[], first = false) {
   const cityVotes = cityShare(p);
   const share = p.parties.map((party, i) => {
     let v = party.national + (R(s) - 0.5) * 0.04;
-    if (i === p.player && !first) v = 0.04 + cityVotes[i] * 0.45 + (p.trust - 50) / 1000;
+    if (i === p.player && !first) {
+      // A leader the country rates lifts the whole party; a weak one drags it.
+      const c = career(p);
+      const lead = c.rank === "leader" ? (c.rep - 35) / 180 : (c.leaderRep - 50) / 600;
+      v = 0.04 + cityVotes[i] * 0.45 + (p.trust - 50) / 1000 + lead;
+    }
     return Math.max(0.01, v);
   });
   const w = share.map((v) => Math.pow(v, 1.6));
@@ -1168,6 +1198,7 @@ export function election(s: State): ElectionResult {
   const res: ElectionResult = { month: s.month, seats, winner, mine, federal, federalWinner: fedWinner, kept, broken, rows };
   p.results.push(res);
   p.night = res;
+  careerElection(s, p, res);
   const w = p.parties[winner];
   news(s, `${w.name} ${winner === before ? "holds" : "wins"} the city with ${seats[winner]} of ${p.electorates.length} seats.`, winner === p.player ? "good" : "bad");
   poll(s, p);
@@ -1211,8 +1242,13 @@ function federalMonth(s: State, p: Pol) {
     F.sitting = true;
     F.asked = false;
     F.proposed = false;
-    // The government brings the bill it likes most (passing it, or repealing one it doesn't).
+    // The government brings the bill it likes most (passing it, or repealing one it doesn't);
+    // with you as Prime Minister, the agenda is yours to set.
     const gov = p.parties[F.government];
+    if (isPM(p)) {
+      news(s, "Parliament is sitting. As Prime Minister you set the agenda: bring in up to two bills.", "tip");
+      return;
+    }
     const options = BILL_ORDER.map((k) => newBill(p, k, -1, s.month)).filter((b) => billSupport(gov.pos, b) > 0.25);
     options.sort((a, b) => billSupport(gov.pos, b) - billSupport(gov.pos, a));
     const pick = options[Math.floor(R(s) * Math.min(2, options.length))];
@@ -1228,9 +1264,20 @@ function resolveBill(s: State, p: Pol, b: Bill) {
   p.parties.forEach((party, i) => {
     const seats = p.federal.seats[i];
     if (i === p.player) {
-      const v = b.myVote ?? (hasSeat(p) ? "abstain" : billSupport(party.pos, b) > 0 ? "yes" : "no");
-      if (v === "yes") yes += seats;
-      else if (v === "no") no2 += seats;
+      const line = billSupport(party.pos, b) > 0 ? "yes" : "no";
+      const mine = b.myVote ?? (hasSeat(p) ? "abstain" : line);
+      // The leader whips the party; a minister's own portfolio bill is the party's bill. Otherwise
+      // the party votes its line and your seat votes your way.
+      if (career(p).rank === "leader" || (b.by === p.player && backs(p, b.kind))) {
+        if (mine === "yes") yes += seats;
+        else if (mine === "no") no2 += seats;
+        return;
+      }
+      const own = hasSeat(p) ? Math.min(1, seats) : 0;
+      if (line === "yes") yes += seats - own;
+      else no2 += seats - own;
+      if (own && mine === "yes") yes += own;
+      else if (own && mine === "no") no2 += own;
       return;
     }
     if (billSupport(party.pos, b) > 0.05) yes += seats;
@@ -1254,7 +1301,15 @@ export function vote(s: State, billId: number, v: "yes" | "no" | "abstain"): Res
   b.myVote = v;
   // Crossing your own party's line costs trust; voting with your beliefs earns a little.
   const line = billSupport(playerParty(p).pos, b) > 0 ? "yes" : "no";
-  if (v !== "abstain" && v !== line) p.trust = clamp(p.trust - 3, 0, 100);
+  const c = career(p);
+  if (v !== "abstain" && v !== line) {
+    p.trust = clamp(p.trust - 3, 0, 100);
+    if (c.rank !== "leader") {
+      // Crossing the floor: the leader won't forget it.
+      c.favour = clamp(c.favour - 8, 0, 100);
+      repute(s, p, -2, `Crossed the floor on the ${BILLS[b.kind].title}`);
+    }
+  } else if (v === line && c.rank !== "leader") c.favour = clamp(c.favour + 1, 0, 100);
   resolveBill(s, p, b);
   return { ok: true, msg: `${BILLS[b.kind].title}${b.repeal ? " (repeal)" : ""}: ${b.status} ${b.yes}–${b.no}.` };
 }
@@ -1272,6 +1327,7 @@ export function askQuestion(s: State, topic: Axis): Res {
   const govIsMine = p.federal.government === p.player;
   if (!govIsMine) p.bonus[p.federal.government].renters -= 1;
   playerParty(p).national += 0.004;
+  repute(s, p, 2, `A sharp question on ${AXIS_INFO[topic].name.toLowerCase()} at Question Time`);
   poll(s, p);
   return { ok: true, msg: govIsMine ? `A friendly question on ${AXIS_INFO[topic].name.toLowerCase()}; your minister shone.` : `You grilled the government on ${AXIS_INFO[topic].name.toLowerCase()}. It made the evening news.` };
 }
@@ -1282,13 +1338,276 @@ export function proposeBill(s: State, kind: BillKind): Res {
   if (!p) return no("No politics in this world");
   if (!hasSeat(p)) return no("You need a seat in parliament");
   if (!p.federal.sitting) return no("Parliament isn't sitting");
-  if (p.federal.proposed) return no("One bill a sitting");
+  // The Prime Minister sets the government's agenda (two bills a sitting); anyone else gets one.
+  const pm = isPM(p);
+  const used = p.federal.bills.filter((x) => x.by === p.player).length;
+  if (used >= (pm ? 2 : 1)) return no(pm ? "Two government bills a sitting" : "One bill a sitting");
   p.federal.proposed = true;
   const b = newBill(p, kind, p.player, s.month);
   b.myVote = "yes";
   p.federal.bills.push(b);
   resolveBill(s, p, b);
-  return { ok: true, msg: `Your ${BILLS[kind].title}${b.repeal ? " repeal" : ""} ${b.status}, ${b.yes} to ${b.no}.` };
+  const title = `${BILLS[kind].title}${b.repeal ? " repeal" : ""}`;
+  if (b.status === "passed") repute(s, p, pm ? 3 : 4, `Your ${title} passed`);
+  else repute(s, p, -1, `Your ${title} was voted down`);
+  return { ok: true, msg: `Your ${title} ${b.status}, ${b.yes} to ${b.no}.` };
+}
+
+/* ------------------------------------------------------------------ your career in the party */
+
+export const PORTFOLIOS: Record<Portfolio, { name: string; icon: string; axis: Axis; bills: BillKind[] }> = {
+  housing: { name: "Housing", icon: "🏘️", axis: "housing", bills: ["housingAccord", "firstHome"] },
+  transport: { name: "Transport", icon: "🚋", axis: "transit", bills: ["transitFund", "parkingReform"] },
+  treasury: { name: "Treasury", icon: "💰", axis: "tax", bills: ["rateCap"] },
+  environment: { name: "Environment", icon: "🌳", axis: "green", bills: ["greenBelt"] },
+};
+export const PORTFOLIO_ORDER: Portfolio[] = ["housing", "transport", "treasury", "environment"];
+/** The reputation you need to be given a portfolio, to stand for leader, and to challenge one. */
+export const REP_FOR_PORTFOLIO = 35;
+export const REP_TO_STAND = 40;
+export const REP_FOR_CHALLENGE = 50;
+
+/** Your career (a save from before careers: you were always the leader). */
+export function career(p: Pol): Career {
+  if (!p.career) {
+    const me = playerParty(p).leader;
+    p.career = { name: me, rank: "leader", portfolio: null, rep: 50, favour: 50, leaderName: me, leaderRep: 50, cooldown: 0, sounded: null, vacancy: null, log: [] };
+  }
+  return p.career;
+}
+
+/** Leader of a party that has the most federal seats: Prime Minister. */
+export function isPM(p: Pol) {
+  return career(p).rank === "leader" && p.federal.government === p.player;
+}
+
+export function careerTitle(p: Pol) {
+  const c = career(p);
+  const inGov = p.federal.government === p.player;
+  if (c.rank === "leader") return inGov ? "Prime Minister" : `Leader of ${playerParty(p).name}`;
+  if (c.rank === "minister" && c.portfolio) return `${inGov ? "Minister" : "Shadow Minister"} for ${PORTFOLIOS[c.portfolio].name}`;
+  return hasSeat(p) ? "Backbencher" : "Party member";
+}
+
+function careerLog(s: State, p: Pol, text: string, good: boolean) {
+  const c = career(p);
+  c.log.unshift({ month: s.month, text, good });
+  if (c.log.length > 30) c.log.length = 30;
+}
+
+/** Your reputation moves (and the move is remembered, with why). */
+function repute(s: State, p: Pol, d: number, why: string) {
+  const c = career(p);
+  if (!d) return;
+  c.rep = clamp(c.rep + d, 0, 100);
+  if (c.rank === "leader") c.leaderRep = c.rep;
+  careerLog(s, p, `${why} (${d > 0 ? "+" : ""}${Math.round(d)} reputation)`, d > 0);
+}
+
+/** Can a minister of this portfolio (or the leader) put this bill to the party as its own? */
+function backs(p: Pol, kind: BillKind) {
+  const c = career(p);
+  return c.rank === "leader" || (c.rank === "minister" && !!c.portfolio && PORTFOLIOS[c.portfolio].bills.includes(kind));
+}
+
+/** Ask the leader for a portfolio (or for a different one, in a reshuffle). */
+export function askPortfolio(s: State, pf: Portfolio): Res {
+  const p = s.pol;
+  if (!p) return no("No politics in this world");
+  const c = career(p);
+  if (c.rank === "leader") return no("You lead the party: the portfolios are yours to hand out");
+  if (!hasSeat(p)) return no("You need a seat in parliament first");
+  if (c.rank === "minister" && c.portfolio === pf) return no("It's already yours");
+  if (s.month < c.cooldown) return no(`The leader won't hear it again for ${Math.ceil(c.cooldown - s.month)} months`);
+  if (c.rep < REP_FOR_PORTFOLIO) return no(`Build your reputation to ${REP_FOR_PORTFOLIO} first (it's ${Math.round(c.rep)})`);
+  const err = spend(p, 1, 0);
+  if (err) return no(err);
+  const chance = clamp((c.rep - 30) / 45 + (c.favour - 50) / 90 + (c.rank === "minister" ? 0.1 : 0), 0.05, 0.95);
+  const title = `${p.federal.government === p.player ? "Minister" : "Shadow Minister"} for ${PORTFOLIOS[pf].name}`;
+  if (R(s) < chance) {
+    c.rank = "minister";
+    c.portfolio = pf;
+    c.favour = clamp(c.favour + 4, 0, 100);
+    repute(s, p, 3, `${c.leaderName} made you ${title}`);
+    news(s, `${c.name} is the new ${title}.`, "good");
+    return { ok: true, msg: `${c.leaderName} said yes: you're ${title}.` };
+  }
+  c.cooldown = s.month + 3;
+  c.favour = clamp(c.favour - 3, 0, 100);
+  careerLog(s, p, `Asked to be ${title}; ${c.leaderName} said not yet`, false);
+  return { ok: true, msg: `${c.leaderName} said not yet. Build your reputation (and their favour) and ask again in a few months.` };
+}
+
+/** How much of the party room would back you against the leader today. */
+function caucusSupport(p: Pol) {
+  const c = career(p);
+  let v = 0.5 + (c.rep - c.leaderRep) / 90 + (c.rank === "minister" ? 0.06 : 0) - (c.favour < 25 ? 0.04 : 0);
+  // A leader who has just lost an election is easier to roll.
+  const last = p.results[p.results.length - 1];
+  if (last && last.federalWinner !== p.player) v += 0.04;
+  return clamp(v, 0.03, 0.97);
+}
+
+/** Sound out your colleagues: roughly how many would vote for you in a challenge. */
+export function soundOut(s: State): Res {
+  const p = s.pol;
+  if (!p) return no("No politics in this world");
+  const c = career(p);
+  if (c.rank === "leader") return no("You're the leader already");
+  if (!hasSeat(p)) return no("You need a seat in parliament");
+  const err = spend(p, 1, 0);
+  if (err) return no(err);
+  c.favour = clamp(c.favour - 2, 0, 100);
+  const est = clamp(caucusSupport(p) + (R(s) - 0.5) * 0.12, 0, 1);
+  c.sounded = { month: s.month, est };
+  return { ok: true, msg: `About ${Math.round(est * 100)}% of your colleagues would back you${est > 0.5 ? ". The numbers might be there." : "."} Word gets round, though: ${c.leaderName} is wary.` };
+}
+
+/** Take the leadership. */
+function becomeLeader(s: State, p: Pol, how: string) {
+  const c = career(p);
+  const was = c.leaderName;
+  c.rank = "leader";
+  c.portfolio = null;
+  c.leaderName = c.name;
+  c.vacancy = null;
+  c.sounded = null;
+  playerParty(p).leader = c.name;
+  repute(s, p, 8, how);
+  c.leaderRep = c.rep;
+  news(s, `${c.name} is the new leader of ${playerParty(p).name}${was !== c.name ? `, in place of ${was}` : ""}${p.federal.government === p.player ? ", and so Prime Minister" : ""}.`, "good");
+}
+
+/** Challenge the leader: the party's MPs vote, and the loser goes to the back bench. */
+export function challenge(s: State): Res {
+  const p = s.pol;
+  if (!p) return no("No politics in this world");
+  const c = career(p);
+  if (c.rank === "leader") return no("You're the leader already");
+  if (!hasSeat(p)) return no("You need a seat in parliament");
+  if (s.month < c.cooldown) return no(`Too soon: the party won't have another spill for ${Math.ceil(c.cooldown - s.month)} months`);
+  if (c.rep < REP_FOR_CHALLENGE) return no(`Build your reputation to ${REP_FOR_CHALLENGE} first (it's ${Math.round(c.rep)})`);
+  const err = spend(p, 2, 0);
+  if (err) return no(err);
+  const room = Math.max(3, p.federal.seats[p.player]);
+  const votes = Math.round(room * clamp(caucusSupport(p) + (R(s) - 0.5) * 0.1, 0, 1));
+  const tally = `${votes} votes to ${room - votes}`;
+  if (votes * 2 > room) {
+    becomeLeader(s, p, `You rolled ${c.leaderName}, ${tally}`);
+    return { ok: true, msg: `You won, ${tally}! You lead ${playerParty(p).name}${isPM(p) ? ", and you're Prime Minister" : ""}.` };
+  }
+  c.rank = "member";
+  c.portfolio = null;
+  c.favour = 5;
+  c.cooldown = s.month + 12;
+  c.sounded = null;
+  c.leaderRep = clamp(c.leaderRep - 4, 0, 100);
+  repute(s, p, -12, `Your challenge to ${c.leaderName} failed, ${tally}`);
+  news(s, `${c.leaderName} sees off a challenge from ${c.name}, ${tally}.`, "bad");
+  return { ok: true, msg: `You lost, ${tally}. ${c.leaderName} stays, and you're on the back bench.` };
+}
+
+/** The leader has stood down: stand in the ballot, or let it go. */
+export function standForLeader(s: State, stand: boolean): Res {
+  const p = s.pol;
+  if (!p) return no("No politics in this world");
+  const c = career(p);
+  const v = c.vacancy;
+  if (!v) return no("There's no ballot on");
+  if (stand && !hasSeat(p)) return no("You need a seat in parliament to stand");
+  if (stand && c.rep < REP_TO_STAND) return no(`You need a reputation of ${REP_TO_STAND} to stand (it's ${Math.round(c.rep)})`);
+  c.vacancy = null;
+  if (stand) {
+    const share = clamp(0.5 + (c.rep - v.rivalRep) / 60 + (c.rank === "minister" ? 0.05 : 0) + (R(s) - 0.5) * 0.12, 0.03, 0.97);
+    const room = Math.max(3, p.federal.seats[p.player]);
+    const votes = Math.round(room * share);
+    if (votes * 2 > room) {
+      becomeLeader(s, p, `You won the leadership ballot against ${v.rival}, ${votes} to ${room - votes}`);
+      return { ok: true, msg: `You won the ballot, ${votes} to ${room - votes}. You lead ${playerParty(p).name}${isPM(p) ? ", and you're Prime Minister" : ""}!` };
+    }
+    repute(s, p, -3, `Lost the leadership ballot to ${v.rival}, ${room - votes} to ${votes}`);
+  }
+  c.leaderName = v.rival;
+  c.leaderRep = v.rivalRep;
+  c.favour = stand ? 40 : 60;
+  playerParty(p).leader = v.rival;
+  news(s, `${v.rival} is the new leader of ${playerParty(p).name}.`);
+  return { ok: true, msg: stand ? `${v.rival} won the ballot.` : `${v.rival} takes the leadership unopposed, and remembers who stood aside.` };
+}
+
+/** Monthly: loyalty is noticed, ministers build a record, and an open ballot closes. */
+function careerMonth(s: State, p: Pol) {
+  const c = career(p);
+  if (c.vacancy && s.month >= c.vacancy.until) standForLeader(s, false);
+  if (c.rank === "minister") {
+    if (!hasSeat(p)) {
+      careerLog(s, p, `Out of parliament, out of the ministry: you lost ${PORTFOLIOS[c.portfolio!].name}`, false);
+      c.rank = "member";
+      c.portfolio = null;
+    } else c.rep = clamp(c.rep + (p.federal.government === p.player ? 0.4 : 0.25), 0, 100);
+  } else if (c.rank === "member" && hasSeat(p)) c.favour = clamp(c.favour + 0.3, 0, 75);
+  if (c.rank !== "leader") c.leaderRep = clamp(c.leaderRep + (55 - c.leaderRep) * 0.02, 0, 100);
+}
+
+/** After election day: what it did to your name, your rank, and your party's leadership. */
+function careerElection(s: State, p: Pol, res: ElectionResult) {
+  const c = career(p);
+  const row = res.rows.find((r) => r.electorate === p.seat);
+  if (res.mine) repute(s, p, 8 + Math.round((row?.margin ?? 0) * 20), `Won ${p.electorates[p.seat].name}`);
+  else repute(s, p, -12, `Lost ${p.electorates[p.seat].name}`);
+  if (res.winner === p.player) repute(s, p, c.rank === "leader" ? 10 : 6, `${playerParty(p).name} won the city`);
+  else repute(s, p, c.rank === "leader" ? -6 : -3, `${playerParty(p).name} lost the city`);
+  if (res.kept || res.broken) repute(s, p, res.kept * 3 - res.broken * 4, `Kept ${res.kept} promise${res.kept === 1 ? "" : "s"}, broke ${res.broken}`);
+  const fedWon = res.federalWinner === p.player;
+  if (c.rank === "leader") {
+    if (!res.mine) {
+      // A leader without a seat can't lead from the floor: they stand down.
+      c.rank = "member";
+      const rival = name(s);
+      c.leaderName = rival;
+      c.leaderRep = 50;
+      c.favour = 50;
+      playerParty(p).leader = rival;
+      repute(s, p, -8, `You lost your seat and stood down as leader; ${rival} takes over`);
+      return;
+    }
+    if (fedWon) {
+      repute(s, p, 12, `${playerParty(p).name} won the federal election: you're Prime Minister`);
+      news(s, `${c.name} will be Prime Minister.`, "good");
+    } else {
+      repute(s, p, -6, `${playerParty(p).name} lost the federal election`);
+      // A leader the party has lost faith in gets rolled.
+      if (c.rep < 30 && R(s) < (40 - c.rep) / 40) {
+        const rival = name(s);
+        c.rank = "member";
+        c.leaderName = rival;
+        c.leaderRep = 55;
+        c.favour = 20;
+        c.cooldown = s.month + 12;
+        playerParty(p).leader = rival;
+        repute(s, p, -10, `${rival} rolled you as leader after the defeat`);
+        news(s, `${rival} replaces ${c.name} as leader of ${playerParty(p).name}.`, "bad");
+      }
+    }
+    return;
+  }
+  if (c.rank === "minister" && !res.mine) {
+    careerLog(s, p, `Out of parliament, out of the ministry: you lost ${PORTFOLIOS[c.portfolio!].name}`, false);
+    c.rank = "member";
+    c.portfolio = null;
+  }
+  if (fedWon) c.leaderRep = clamp(c.leaderRep + 8, 0, 100);
+  else {
+    c.leaderRep = clamp(c.leaderRep - 8, 0, 100);
+    // Beaten, the leader may go, and the leadership is open.
+    if (R(s) < 0.35 + (55 - c.leaderRep) / 60) {
+      const rival = name(s);
+      news(s, `${c.leaderName} resigns as leader of ${playerParty(p).name} after the defeat.`, "tip");
+      careerLog(s, p, `${c.leaderName} stood down: the leadership is open`, true);
+      c.vacancy = { rival, rivalRep: Math.round(38 + R(s) * 24), until: s.month + 2 };
+      if (!res.mine) standForLeader(s, false);
+    }
+  }
 }
 
 export function partyName(p: Pol, i: number) {
@@ -1300,9 +1619,10 @@ export function roleText(p: Pol) {
   const party = playerParty(p);
   const gov = p.parties[p.government];
   const r: Role = p.role;
-  if (r === "candidate") return `${party.leader} is standing for ${p.electorates[p.seat].name}. ${gov.name} runs the city.`;
+  const c = career(p);
+  if (r === "candidate") return `${c.name} is standing for ${p.electorates[p.seat].name}${c.rank === "leader" ? "" : ` (${party.name} is led by ${c.leaderName})`}. ${gov.name} runs the city.`;
   if (r === "govern") return `${party.name} runs the city${hasSeat(p) ? `, and you hold ${p.electorates[p.seat].name}` : ", though you lost your own seat"}.`;
-  if (r === "opposition") return `${gov.name} runs the city. You lead the opposition from ${p.electorates[p.seat].name}.`;
-  return `${gov.name} runs the city, and you lost ${p.electorates[p.seat].name}. You lead ${party.name} from outside parliament.`;
+  if (r === "opposition") return `${gov.name} runs the city. You're in opposition, ${careerTitle(p)}, from ${p.electorates[p.seat].name}.`;
+  return `${gov.name} runs the city, and you lost ${p.electorates[p.seat].name}. You fight on for ${party.name} from outside parliament.`;
 }
 

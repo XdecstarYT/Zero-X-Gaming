@@ -112,6 +112,18 @@ from day one). You lead a party and win the right to plan:
   government bills to vote on (a housing accord paying cities per new home, a transit fund halving
   tram costs, parking reform, a rates cap, a green belt, first home grants), a question to ask at
   Question Time and a bill of your own to bring in. Laws in force change the city's sim.
+- **Your career** (`career`, the Party tab): you start as a candidate in a party led by someone
+  else (or as its leader, if you choose). Reputation (0–100) rises with winning your seat and the
+  city, kept promises, debates, Question Time and bills that pass, and falls with defeats, broken
+  promises and crossing the floor; the leader's favour rises with loyalty. With a seat and 35
+  reputation you can ask for a portfolio (Housing, Transport, Treasury, Environment; shadow ones
+  in opposition), granted on reputation and favour, and the party then backs your portfolio's
+  bills. With 50 you can challenge the leader (sound out colleagues first): the party's MPs vote on
+  your reputation against the leader's standing; lose and you're benched for a year. A beaten
+  leader may quit, opening a ballot you can stand in (40 reputation). As leader the party votes as
+  you do and your reputation moves its national vote; win the most federal seats and you're Prime
+  Minister and set the agenda (two bills a sitting, nothing imposed). A leader who loses their seat
+  stands down, and one whose reputation collapses after a defeat can be rolled.
 - The map tints each electorate by who holds it (or leads the polls in a campaign) with your seat
   outlined in gold; the politics panel has campaign, promises, groups, opposition, parliament and
   polls tabs.

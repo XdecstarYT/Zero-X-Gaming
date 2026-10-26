@@ -119,6 +119,34 @@ export interface ElectionResult {
 
 export type Role = "candidate" | "govern" | "opposition" | "out";
 
+/** A ministry in the federal government (or its shadow, in opposition). */
+export type Portfolio = "housing" | "transport" | "treasury" | "environment";
+
+/** How far up your party you've climbed: a member, a (shadow) minister, or its leader. */
+export type Rank = "member" | "minister" | "leader";
+
+/** Your career in your party. */
+export interface Career {
+  /** Your name (the party's leader may be someone else). */
+  name: string;
+  rank: Rank;
+  portfolio: Portfolio | null;
+  /** Your reputation, 0..100: winning, keeping your word and shining in parliament raise it. */
+  rep: number;
+  /** How the party's leader regards you, 0..100 (loyalty pays; disloyalty is remembered). */
+  favour: number;
+  /** The party's leader (you, once you've taken it) and their standing with the party, 0..100. */
+  leaderName: string;
+  leaderRep: number;
+  /** No asking or challenging again before this month. */
+  cooldown: number;
+  /** What sounding out your colleagues told you. */
+  sounded: { month: number; est: number } | null;
+  /** The leader has stood down: a ballot is open (with the rival you'd face). */
+  vacancy: { rival: string; rivalRep: number; until: number } | null;
+  log: { month: number; text: string; good: boolean }[];
+}
+
 /** Where you'd like to stand: the seat round the town centre, the suburbs, or the farms. */
 export type SeatPref = "town" | "suburbs" | "country";
 
@@ -170,6 +198,8 @@ export interface Pol {
   log: GovtAct[];
   /** A debate this week, waiting for your answer. */
   debate: { topic: Axis; asked: boolean } | null;
+  /** Your climb up your party (absent in saves from before it). */
+  career?: Career;
   /** How many times the map has been drawn (the first counts). */
   redraws?: number;
   /** What the last redraw did, for the campaign HQ. */

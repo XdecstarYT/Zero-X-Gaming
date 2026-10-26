@@ -46,7 +46,8 @@ test("XCity politics: set up a world and a party, campaign for ten weeks, electi
   await page.getByTestId("xc-next").click();
   await page.getByTestId("xc-preset-1").click();
   await page.getByTestId("xc-party-name").fill("Parkton First");
-  await page.getByTestId("xc-leader").fill("Jo Mayor");
+  await page.getByTestId("xc-my-name").fill("Jo Mayor");
+  await page.getByTestId("xc-leader").fill("Pat Leader");
   await page.getByTestId("xc-stand-country").click();
   await shot(page, "4party", project);
   await page.getByTestId("xc-begin").click();
@@ -106,5 +107,28 @@ test("XCity politics: set up a world and a party, campaign for ten weeks, electi
     await page.getByTestId("xc-pol-opposition").click();
     await shot(page, "11opposition", project);
   }
+
+  // Up the party: a ministry, then the leadership.
+  await page.getByTestId("xc-pol-party").click();
+  await expect(page.getByTestId("xc-career")).toContainText("Jo Mayor");
+  await page.evaluate(() => {
+    const s = (window as unknown as { __xc: { s: { pol: { ap: number; career: { rep: number; favour: number; leaderRep: number; cooldown: number } } } } }).__xc.s;
+    Object.assign(s.pol.career, { rep: 92, favour: 95, leaderRep: 10, cooldown: 0 });
+    s.pol.ap = 9;
+  });
+  for (let i = 0; i < 8 && (await st(page, (s) => (s.pol as unknown as { career: { rank: string } }).career.rank)) === "member"; i++) {
+    await page.evaluate(() => {
+      const s = (window as unknown as { __xc: { s: { pol: { ap: number; career: { cooldown: number } } } } }).__xc.s;
+      s.pol.career.cooldown = 0;
+      s.pol.ap = 9;
+    });
+    await page.getByTestId("xc-portfolio-housing").click();
+  }
+  await expect(page.getByTestId("xc-career")).toContainText("Minister for Housing");
+  await page.getByTestId("xc-sound-out").click();
+  await shot(page, "12party", project);
+  await page.getByTestId("xc-challenge").click();
+  await expect(page.getByTestId("xc-career")).toContainText(/Leader of Parkton First|Prime Minister/);
+  await shot(page, "13leader", project);
   expect(errors).toEqual([]);
 });

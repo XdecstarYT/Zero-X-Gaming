@@ -1011,7 +1011,9 @@ NextX title. You start with a farming village at a crossroads by a river and pla
   electorates, which are drawn round where people live (about as many voters each) and redrawn
   with more seats as the city grows; election night decides who governs. Win and you plan the city; lose and an AI party
   governs while you protest and lobby from opposition. Winning your own seat puts you in the
-  federal parliament to vote on bills, ask questions and bring in laws that change the city. The
+  federal parliament to vote on bills, ask questions and bring in laws that change the city. A
+  reputation built on winning and keeping your word takes you up the party: ask for a ministry,
+  challenge the leader, lead the party, and be Prime Minister if it wins the federal election. The
   title screen adds a change log, settings and a setup for politics, the world and your party.
 
 The 3D city (`render/`) is drawn on the NextX look: a painted ground (patchwork fields, orchards,

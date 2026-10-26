@@ -252,7 +252,7 @@ export function Setup({ game }: { game: Game }) {
               <div className="xc-sec">
                 <h5>Map seed</h5>
                 <div className="xc-row" style={{ alignItems: "center" }}>
-                  <input className="xc-input" style={{ width: 120 }} inputMode="numeric" value={d.world.seed} onChange={(e) => game.editSetup({ world: { seed: Math.max(1, Number(e.target.value.replace(/\D/g, "")) || 1) } })} />
+                  <input className="xc-input" style={{ width: 120 }} inputMode="numeric" data-testid="xc-seed" value={d.world.seed} onChange={(e) => game.editSetup({ world: { seed: Math.max(1, Number(e.target.value.replace(/\D/g, "")) || 1) } })} />
                   <button className="xc-btn small" type="button" onClick={() => game.editSetup({ world: { seed: Math.floor(Math.random() * 1e6) } })}>
                     🎲 Random
                   </button>
@@ -313,10 +313,32 @@ function PartyDesigner({ game }: { game: Game }) {
           <input className="xc-input" value={party.short} maxLength={4} onChange={(e) => game.editSetup({ party: { short: e.target.value.toUpperCase() } })} />
         </div>
         <div className="xc-sec" style={{ flex: "2 1 180px" }}>
-          <h5>Your name (the leader)</h5>
-          <input className="xc-input" value={party.leader} maxLength={24} onChange={(e) => game.editSetup({ party: { leader: e.target.value } })} data-testid="xc-leader" />
+          <h5>Your name</h5>
+          <input className="xc-input" value={d.me} maxLength={24} placeholder="You" onChange={(e) => game.editSetup({ me: e.target.value })} data-testid="xc-my-name" />
         </div>
       </div>
+      <div className="xc-sec">
+        <h5>You start as</h5>
+        <div className="xc-row">
+          <button className={`xc-chip${!d.asLeader ? " on" : ""}`} type="button" onClick={() => game.editSetup({ asLeader: false })} data-testid="xc-start-candidate">
+            🙋 A candidate
+          </button>
+          <button className={`xc-chip${d.asLeader ? " on" : ""}`} type="button" onClick={() => game.editSetup({ asLeader: true })} data-testid="xc-start-leader">
+            👑 The party leader
+          </button>
+        </div>
+        <p className="xc-hint">
+          {d.asLeader
+            ? "The party is yours from day one: it votes as you say, and if it wins the most federal seats you're Prime Minister."
+            : "Win your seat, build a reputation, ask for a ministry and, when the numbers are there, challenge the leader. Lead the party to a federal win and you're Prime Minister."}
+        </p>
+      </div>
+      {!d.asLeader && (
+        <div className="xc-sec">
+          <h5>The party&apos;s leader</h5>
+          <input className="xc-input" value={party.leader} maxLength={24} onChange={(e) => game.editSetup({ party: { leader: e.target.value } })} data-testid="xc-leader" />
+        </div>
+      )}
       <div className="xc-sec">
         <h5>Colour</h5>
         <div className="xc-swatches">
@@ -353,7 +375,7 @@ function PartyDesigner({ game }: { game: Game }) {
         <p className="xc-hint">Who&apos;ll like you: {groupFit(party.pos)}</p>
       </div>
       <div className="xc-sec">
-        <h5>Where you stand</h5>
+        <h5>Your electorate</h5>
         <div className="xc-row">
           {SEAT_PREFS.map(([v, l]) => (
             <button key={v} className={`xc-chip${d.seat === v ? " on" : ""}`} type="button" onClick={() => game.editSetup({ seat: v })} data-testid={`xc-stand-${v}`}>
@@ -368,7 +390,7 @@ function PartyDesigner({ game }: { game: Game }) {
         <div>
           <b style={{ color: party.color }}>{party.name || "Your party"}</b>
           <div className="dim" style={{ fontSize: 12 }}>
-            {party.short} · led by {party.leader || "you"}
+            {party.short} · led by {d.asLeader ? d.me.trim() || "you" : party.leader || "someone"}{!d.asLeader && ` · ${d.me.trim() || "you"} standing`}
           </div>
         </div>
       </div>
@@ -391,6 +413,7 @@ const TABS: [PolTab, string][] = [
   ["promises", "Promises"],
   ["groups", "Groups"],
   ["opposition", "Opposition"],
+  ["party", "Party"],
   ["parliament", "Parliament"],
   ["polls", "Polls"],
 ];
@@ -448,6 +471,7 @@ export function PoliticsPanel({ game }: { game: Game }) {
         {tab === "promises" && <PromisesTab game={game} />}
         {tab === "groups" && <GroupsTab game={game} />}
         {tab === "opposition" && <OppositionTab game={game} />}
+        {tab === "party" && <PartyTab game={game} />}
         {tab === "parliament" && <ParliamentTab game={game} />}
         {tab === "polls" && <PollsTab game={game} />}
       </div>
@@ -747,6 +771,139 @@ function OppositionTab({ game }: { game: Game }) {
   );
 }
 
+function Meter({ label, v, color, id }: { label: string; v: number; color: string; id?: string }) {
+  return (
+    <div className="xc-rep" data-testid={id ? `xc-meter-${id}` : undefined}>
+      <span>{label}</span>
+      <span className="bar">
+        <i style={{ width: `${clampPct(v)}%`, background: color }} />
+      </span>
+      <b className="num">{Math.round(v)}</b>
+    </div>
+  );
+}
+
+const clampPct = (v: number) => Math.max(0, Math.min(100, v));
+
+const LADDER = ["Member", "Minister", "Leader", "Prime Minister"];
+
+function PartyTab({ game }: { game: Game }) {
+  const s = game.s!;
+  const p = s.pol!;
+  const c = pol.career(p);
+  const me = pol.playerParty(p);
+  const seat = pol.hasSeat(p);
+  const pm = pol.isPM(p);
+  const inGov = p.federal.government === p.player;
+  const step = pm ? 3 : c.rank === "leader" ? 2 : c.rank === "minister" ? 1 : 0;
+  const room = Math.max(3, p.federal.seats[p.player]);
+  const waiting = s.month < c.cooldown ? Math.ceil(c.cooldown - s.month) : 0;
+  return (
+    <>
+      <div className="xc-note" style={{ borderLeft: `4px solid ${me.color}` }} data-testid="xc-career">
+        {pm ? "🏛️" : c.rank === "leader" ? "👑" : c.rank === "minister" ? "📁" : "🙋"}{" "}
+        <span>
+          <b>
+            {c.name}, {pol.careerTitle(p)}
+          </b>
+          <br />
+          <span className="dim">
+            {c.rank === "leader"
+              ? pm
+                ? "You lead the country: your party votes as you say, and you set parliament's agenda."
+                : `You lead ${me.name}: it votes as you say, and how the country rates you moves its national vote. Win the most federal seats and you're Prime Minister.`
+              : `${me.name} is led by ${c.leaderName}.${inGov ? " It governs the country." : ""}`}
+          </span>
+        </span>
+      </div>
+      <div className="xc-ladder" aria-label="Your climb">
+        {LADDER.map((t, i) => (
+          <span key={t} className={i === step ? "on" : i < step ? "done" : ""}>
+            {t}
+          </span>
+        ))}
+      </div>
+      <div className="xc-sec" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <Meter label="⭐ Reputation" v={c.rep} color="#f5b52e" id="rep" />
+        {c.rank !== "leader" && <Meter label="🤝 Leader's favour" v={c.favour} color="#58b7ff" id="favour" />}
+        {c.rank !== "leader" && <Meter label={`👑 ${c.leaderName.split(" ")[0]}'s standing`} v={c.leaderRep} color={me.color} />}
+        <p className="xc-hint">Winning your seat and the city, keeping promises, good debates, sharp questions and bills that pass build your reputation. Losing, broken promises and crossing the floor cost it.</p>
+      </div>
+      {c.vacancy && (
+        <div className="xc-note yes" data-testid="xc-vacancy" style={{ flexWrap: "wrap" }}>
+          🗳️{" "}
+          <span style={{ flex: "1 1 200px" }}>
+            <b>The leadership is open.</b> {c.vacancy.rival} is standing. Will you? You need a seat and {pol.REP_TO_STAND} reputation; the party&apos;s {room} MPs vote.
+          </span>
+          <div className="xc-actions" style={{ flex: "1 1 100%" }}>
+            <button className="xc-btn white small grow" type="button" disabled={!seat || c.rep < pol.REP_TO_STAND} onClick={() => game.standForLeader(true)} data-testid="xc-stand-leader">
+              Stand for leader
+            </button>
+            <button className="xc-btn small grow" type="button" onClick={() => game.standForLeader(false)} data-testid="xc-pass-leader">
+              Let it go
+            </button>
+          </div>
+        </div>
+      )}
+      {c.rank !== "leader" && (
+        <>
+          <div className="xc-sec">
+            <h5>{inGov ? "Ask for a ministry" : "Ask for a shadow ministry"} · 1⚡</h5>
+            <div className="xc-terms">
+              {pol.PORTFOLIO_ORDER.map((k) => (
+                <button key={k} className={`xc-btn tiny${c.portfolio === k ? " blue" : ""}`} type="button" disabled={!seat || c.portfolio === k} onClick={() => game.askPortfolio(k)} data-testid={`xc-portfolio-${k}`}>
+                  {pol.PORTFOLIOS[k].icon} {pol.PORTFOLIOS[k].name}
+                </button>
+              ))}
+            </div>
+            <p className="xc-hint">
+              {!seat
+                ? "Win a seat in parliament first."
+                : c.rep < pol.REP_FOR_PORTFOLIO
+                  ? `${c.leaderName} won't consider you below ${pol.REP_FOR_PORTFOLIO} reputation (you're on ${Math.round(c.rep)}).`
+                  : waiting
+                    ? `${c.leaderName} won't hear it again for ${waiting} month${waiting === 1 ? "" : "s"}.`
+                    : "The leader decides: the better your reputation and their favour, the likelier a yes."}
+              {c.portfolio && ` As minister, bring in a ${pol.PORTFOLIOS[c.portfolio].name.toLowerCase()} bill and the whole party backs it.`}
+            </p>
+          </div>
+          <div className="xc-sec">
+            <h5>The leadership</h5>
+            <div className="xc-actions" style={{ flexWrap: "wrap" }}>
+              <button className="xc-btn small grow" type="button" disabled={!seat} onClick={() => game.soundOut()} data-testid="xc-sound-out">
+                👂 Sound out colleagues · 1⚡
+              </button>
+              <button className="xc-btn white small grow" type="button" disabled={!seat || c.rep < pol.REP_FOR_CHALLENGE || waiting > 0} onClick={() => game.challenge()} data-testid="xc-challenge">
+                ⚔️ Challenge {c.leaderName.split(" ")[0]} · 2⚡
+              </button>
+            </div>
+            {c.sounded && (
+              <p className="xc-hint">
+                In {dateLabel(c.sounded.month, MONTHS)}, about {pct(c.sounded.est)} of your colleagues would have backed you.
+              </p>
+            )}
+            <p className="xc-hint">
+              A challenge needs {pol.REP_FOR_CHALLENGE} reputation. The party&apos;s {room} MPs vote: win and you lead the party{inGov ? ", and the country" : ""}; lose and you&apos;re on the back bench, and the leader won&apos;t forget.
+            </p>
+          </div>
+        </>
+      )}
+      <div className="xc-sec">
+        <h5>Your career</h5>
+        {c.log.slice(0, 10).map((l, i) => (
+          <div key={i} style={{ fontSize: 13, display: "flex", gap: 6 }}>
+            <span>{l.good ? "▲" : "▼"}</span>
+            <span>
+              {l.text} <span className="dim">· {dateLabel(l.month, MONTHS)}</span>
+            </span>
+          </div>
+        ))}
+        {!c.log.length && <p className="xc-hint">It starts with winning your seat.</p>}
+      </div>
+    </>
+  );
+}
+
 function ParliamentTab({ game }: { game: Game }) {
   const s = game.s!;
   const p = s.pol!;
@@ -754,6 +911,9 @@ function ParliamentTab({ game }: { game: Game }) {
   const seat = pol.hasSeat(p);
   const gov = p.parties[F.government];
   const majority = Math.floor(F.seats.reduce((a, b) => a + b, 0) / 2) + 1;
+  const c = pol.career(p);
+  const billsDone = F.bills.filter((b) => b.by === p.player).length >= (pol.isPM(p) ? 2 : 1);
+  const portfolioBills = c.rank === "minister" && c.portfolio ? pol.PORTFOLIOS[c.portfolio].bills : [];
   return (
     <>
       <Hemicycle p={p} seats={F.seats} />
@@ -761,7 +921,8 @@ function ParliamentTab({ game }: { game: Game }) {
       <div className="xc-note" style={{ borderLeft: `4px solid ${gov.color}` }}>
         🏛️{" "}
         <span>
-          <b>{gov.name}</b> governs the country with {F.seats[F.government]} seats ({majority} for a majority). You {seat ? `sit for ${p.electorates[p.seat].name}` : "have no seat in parliament"}.
+          <b>{gov.name}</b> governs the country with {F.seats[F.government]} seats ({majority} for a majority). You {seat ? `sit for ${p.electorates[p.seat].name} as ${pol.careerTitle(p)}` : "have no seat in parliament"}.
+          {seat && (pol.career(p).rank === "leader" ? " Your party votes as you do." : ` Your party votes its line; your own vote is yours.`)}
         </span>
       </div>
       {!F.sitting ? (
@@ -770,11 +931,11 @@ function ParliamentTab({ game }: { game: Game }) {
         <>
           <div className="xc-sec">
             <h5>On the floor</h5>
-            {!F.bills.length && <p className="xc-hint">No government bills this sitting.</p>}
+            {!F.bills.length && <p className="xc-hint">{pol.isPM(p) ? "As Prime Minister you set the agenda: bring in the government's bills below." : "No government bills this sitting."}</p>}
             {F.bills.map((b) => (
               <div key={b.id} className="xc-agenda-card" data-testid={`xc-bill-${b.id}`}>
                 <div className="by">
-                  <span>{b.by < 0 ? `${gov.short} government bill` : `Private member's bill (${p.parties[b.by]?.short})`}</span>
+                  <span>{b.by < 0 ? `${gov.short} government bill` : b.by === p.player && pol.isPM(p) ? "Your government's bill" : `Private member's bill (${p.parties[b.by]?.short})`}</span>
                   <span>{b.status === "pending" ? "Vote now" : `${b.status} ${b.yes}–${b.no}`}</span>
                 </div>
                 <h4>
@@ -811,10 +972,12 @@ function ParliamentTab({ game }: { game: Game }) {
                 </div>
               </div>
               <div className="xc-sec">
-                <h5>Bring in a bill {F.proposed && "· done this sitting"}</h5>
+                <h5>
+                  {pol.isPM(p) ? "The government's agenda (two bills)" : "Bring in a bill"} {billsDone && "· done this sitting"}
+                </h5>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {pol.BILL_ORDER.map((k) => (
-                    <button key={k} className="xc-promise" type="button" disabled={F.proposed} onClick={() => game.propose(k)} data-testid={`xc-propose-${k}`}>
+                    <button key={k} className="xc-promise" type="button" disabled={billsDone} onClick={() => game.propose(k)} data-testid={`xc-propose-${k}`}>
                       <span style={{ flex: 1, textAlign: "left" }}>
                         <b>
                           {F.laws[k] ? "Repeal the " : ""}
@@ -822,6 +985,7 @@ function ParliamentTab({ game }: { game: Game }) {
                         </b>
                         <br />
                         <small className="dim">{pol.BILLS[k].blurb}</small>
+                        {portfolioBills.includes(k) && <small style={{ display: "block", color: "var(--gold)" }}>Your portfolio: the party will back it</small>}
                       </span>
                     </button>
                   ))}
@@ -972,6 +1136,7 @@ export function ElectionNight({ game }: { game: Game }) {
                 {hung && "No one has a majority: a government tied for the most seats carries on, or else the tied party with the most votes takes over. "}
                 {r.mine ? `You hold ${p.electorates[p.seat].name} and take your seat in the federal parliament.` : `You lost ${p.electorates[p.seat].name}.`} Across the country, {p.parties[r.federalWinner].name} wins {r.federal[r.federalWinner]} of {r.federal.reduce((a, b) => a + b, 0)} seats.
                 {(r.kept > 0 || r.broken > 0) && ` You kept ${r.kept} promise${r.kept === 1 ? "" : "s"} and broke ${r.broken}.`}
+                {pol.isPM(p) && r.federalWinner === p.player && ` ${pol.career(p).name} will be Prime Minister!`}
               </span>
             </div>
           )}
