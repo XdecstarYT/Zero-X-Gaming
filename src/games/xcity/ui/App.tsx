@@ -8,6 +8,8 @@ import { fmt, SPEEDS, type Game, type Tool, type TransitTool } from "../game";
 import { dateLabel } from "../state";
 import { MONTHS } from "../data";
 import { Panels, PatternIcon, Wanted } from "./panels";
+import { ChangeLog, ElectionNight, SettingsPanel, Setup } from "./politics";
+import { canPlan, cityShare, playerParty } from "../politics";
 
 const noSubscribe = () => () => {};
 
@@ -43,6 +45,7 @@ export function App({ game }: { game: Game }) {
       <GlassDefs prefix="xc" />
       <canvas ref={canvas} className="xc-canvas" aria-label="The city. Drag to move, pinch or scroll to zoom, two fingers to turn." tabIndex={0} data-testid="xc-canvas" />
       {game.screen === "title" && <Title game={game} />}
+      {game.screen === "setup" && <Setup game={game} />}
       {game.screen === "play" && game.s && (
         <>
           <TopBar game={game} />
@@ -50,6 +53,7 @@ export function App({ game }: { game: Game }) {
           {game.pending ? <Confirm game={game} /> : !game.panel && game.tool !== "inspect" && <ToolOptions game={game} />}
           <Panels game={game} />
           <Dock game={game} />
+          {game.s.pol?.night && <ElectionNight game={game} />}
         </>
       )}
       {game.loading < 1 && game.screen === "play" && (
@@ -66,23 +70,38 @@ export function App({ game }: { game: Game }) {
 
 function Title({ game }: { game: Game }) {
   return (
-    <div className="xc-title" data-testid="xc-title">
-      <PoweredBy />
-      <h1 className="xc-logo">
-        <span>X</span>CITY
-      </h1>
-      <p className="xc-tag">A city builder that takes zoning seriously. Grow a farming village into a metropolis, street by street and storey by storey. You just got hired to plan it all.</p>
-      <div className="xc-actions">
-        <button className="xc-btn white" type="button" onClick={() => game.newGame()} data-testid="xc-new">
-          New city
-        </button>
-        {game.hasSave && (
-          <button className="xc-btn" type="button" onClick={() => game.continueGame()} data-testid="xc-continue">
-            Continue
+    <>
+      <div className="xc-title" data-testid="xc-title">
+        <PoweredBy />
+        <h1 className="xc-logo">
+          <span>X</span>CITY
+        </h1>
+        <p className="xc-tag">A city builder that takes zoning seriously, and the politics that come with it. Win the election, then plan it all.</p>
+        <div className="xc-menu">
+          {game.hasSave && (
+            <button className="xc-btn white wide" type="button" onClick={() => game.continueGame()} data-testid="xc-continue">
+              Continue
+            </button>
+          )}
+          <button className={`xc-btn wide${game.hasSave ? "" : " white"}`} type="button" onClick={() => game.startSetup()} data-testid="xc-new">
+            Start a new world
           </button>
-        )}
+          <div className="xc-actions">
+            <button className="xc-btn grow" type="button" onClick={() => game.openTitlePanel("changelog")} data-testid="xc-changelog-open">
+              📰 Change log
+            </button>
+            <button className="xc-btn grow" type="button" onClick={() => game.openTitlePanel("settings")} data-testid="xc-settings-open">
+              ⚙️ Settings
+            </button>
+          </div>
+        </div>
       </div>
-    </div>
+      {game.titlePanel && (
+        <div className="xc-title-panel" onClick={(e) => e.target === e.currentTarget && game.openTitlePanel(null)}>
+          {game.titlePanel === "changelog" ? <ChangeLog game={game} /> : <SettingsPanel game={game} />}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -112,6 +131,7 @@ function TopBar({ game }: { game: Game }) {
         <Stat label="Budget" value={`$${fmt(s.money)}`} cls={s.money < 0 ? "bad" : ""} id="money" />
         <Stat label="Clout" value={`✦${s.clout}`} cls="gold" id="clout" />
       </div>
+      {s.pol && <PolChip game={game} />}
       <div className="xc-bar xc-glass xc-clock">
         <span className="date num" data-testid="xc-date">
           {dateLabel(s.month, MONTHS)}
@@ -132,6 +152,26 @@ function TopBar({ game }: { game: Game }) {
   );
 }
 
+function PolChip({ game }: { game: Game }) {
+  const p = game.s!.pol!;
+  const me = playerParty(p);
+  const share = cityShare(p)[p.player];
+  return (
+    <div className="xc-bar xc-glass">
+      <button className="xc-polchip" type="button" onClick={() => game.openPanel("politics")} data-testid="xc-polchip">
+        <span style={{ fontSize: 15 }}>{me.icon}</span>
+        <span style={{ color: me.color }}>{Math.round(share * 100)}%</span>
+        <span className="dim">{p.campaign ? `Week ${p.week + 1}/${p.settings.campaignWeeks}` : p.government === p.player ? "Governing" : "Opposition"}</span>
+      </button>
+      {p.campaign && (
+        <button className="xc-btn white tiny" type="button" onClick={() => game.endWeek()} data-testid="xc-end-week-top">
+          End week ▶
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Stat({ label, value, cls, extra, id }: { label: string; value: string; cls?: string; extra?: React.ReactNode; id: string }) {
   return (
     <div className="xc-stat" data-testid={`xc-stat-${id}`}>
@@ -148,17 +188,26 @@ function Dock({ game }: { game: Game }) {
   const s = game.s!;
   return (
     <nav className="xc-dock xc-glass" aria-label="Tools">
-      {TOOLS.map((t) => (
+      {TOOLS.filter((t) => t.id === "inspect" || canPlan(s)).map((t) => (
         <button key={t.id} className={`xc-tool${game.tool === t.id ? " on" : ""}`} type="button" onClick={() => game.setTool(t.id)} data-testid={`xc-tool-${t.id}`} aria-pressed={game.tool === t.id}>
           <span aria-hidden>{t.icon}</span>
           {t.label}
         </button>
       ))}
-      <button className={`xc-tool${game.panel === "agenda" ? " on" : ""}`} type="button" onClick={() => game.openPanel("agenda")} data-testid="xc-tool-agenda">
-        <span aria-hidden>📋</span>
-        Agenda
-        {s.apps.length > 0 && <b className="xc-badge">{s.apps.length}</b>}
-      </button>
+      {s.pol && (
+        <button className={`xc-tool${game.panel === "politics" ? " on" : ""}`} type="button" onClick={() => game.openPanel("politics")} data-testid="xc-tool-politics">
+          <span aria-hidden>🗳️</span>
+          Politics
+          {(s.pol.campaign || (s.pol.federal.sitting && s.pol.federal.bills.some((b) => b.status === "pending"))) && <b className="xc-badge">!</b>}
+        </button>
+      )}
+      {canPlan(s) && (
+        <button className={`xc-tool${game.panel === "agenda" ? " on" : ""}`} type="button" onClick={() => game.openPanel("agenda")} data-testid="xc-tool-agenda">
+          <span aria-hidden>📋</span>
+          Agenda
+          {s.apps.length > 0 && <b className="xc-badge">{s.apps.length}</b>}
+        </button>
+      )}
       <button className={`xc-tool${game.panel === "city" ? " on" : ""}`} type="button" onClick={() => game.openPanel("city")} data-testid="xc-tool-city">
         <span aria-hidden>📊</span>
         City

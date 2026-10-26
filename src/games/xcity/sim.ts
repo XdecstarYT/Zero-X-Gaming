@@ -10,6 +10,11 @@ import { assignDistricts } from "./world";
  * (and what they ask permission for), how people get about, what they think of you, and the books.
  */
 
+/** Things other modules hang off the month (politics, so the city never has to import it). */
+export const hooks: { month?: (s: State) => void } = {};
+
+const lawOn = (s: State, k: string) => !!(s.pol?.federal.laws as Record<string, boolean> | undefined)?.[k];
+
 /* ------------------------------------------------------------------ stats */
 
 const farmCache = new WeakMap<State, { zrev: number; ha: number }>();
@@ -257,7 +262,7 @@ export function bestPlan(s: State, lot: Lot, max: number): { plan: Plan; st: Pla
       roof: form === "house" || form === "townhouse" ? "plain" : ROOF_ODDS[Math.floor(rand(s) * ROOF_ODDS.length)],
       bay: style === "brick" && rand(s) < 0.35,
       color: "",
-      parking: rules.parking,
+      parking: lawOn(s, "parkingReform") ? 0 : rules.parking,
       affordable: useHere === "homes" || useHere === "mixed" ? rules.affordable : 0,
       name: "",
       lots,
@@ -477,7 +482,7 @@ export function monthTick(s: State) {
   s.rentIndex += (rt - s.rentIndex) * 0.12;
   // The region keeps growing; more so if people like it here.
   const attract = clamp(0.4 + s.approval / 100 + s.modes.transit * 1.5 + (s.rentIndex < 1.3 ? 0.2 : 0), 0.3, 2);
-  s.regionPull += 8 + s.regionPull * 0.014 * attract;
+  s.regionPull += (8 + s.regionPull * 0.014 * attract) * (s.pace ?? 1) * (lawOn(s, "firstHome") ? 1.15 : 1);
   transport(s, P);
   // Construction.
   let completed = 0;
@@ -509,7 +514,9 @@ export function monthTick(s: State) {
   // The books.
   const B = s.budget;
   B.tax = Math.round((s.stats.value * s.taxRate) / 100 / 12);
-  B.farms = s.stats.farmJobs * 220;
+  B.farms = Math.round(s.stats.farmJobs * 220 * (lawOn(s, "greenBelt") ? 1.6 : 1));
+  B.grants = lawOn(s, "housingAccord") ? completed * 25_000 : 0;
+  if (lawOn(s, "rateCap") && s.taxRate > 1) s.taxRate = 1;
   for (const e of s.edges) {
     if (!e) continue;
     B.roads += e.len * (ROADS[e.kind].upkeep + (e.bike ? 0.1 : 0));
@@ -520,7 +527,7 @@ export function monthTick(s: State) {
   B.services = Math.round(s.stats.pop * 32);
   B.roads = Math.round(B.roads);
   B.transit = Math.round(B.transit);
-  s.money += B.tax + B.farms - B.roads - B.transit - B.civic - B.services;
+  s.money += B.tax + B.farms + B.grants - B.roads - B.transit - B.civic - B.services;
   computeStats(s);
   // Milestones.
   while (s.milestone + 1 < MILESTONES.length && s.stats.pop >= MILESTONES[s.milestone + 1].pop) {
@@ -532,6 +539,7 @@ export function monthTick(s: State) {
   if (s.money < 0 && s.month % 3 === 0) news(s, "The city is in the red. Raise taxes or cut costs.", "bad");
   s.history.push({ month: s.month, pop: s.stats.pop, rent: Math.round(1350 * s.rentIndex), homes: s.stats.homes, approval: Math.round(s.approval), money: Math.round(s.money) });
   if (s.history.length > 240) s.history.shift();
+  hooks.month?.(s);
 }
 
 /** Run the clock forward by a fraction of a month (or several). */

@@ -5,6 +5,7 @@ import { BANDS, CIVICS, MILESTONES, MONTHS, PARKING_NAMES, PATTERNS, ROOF_ORDER,
 import { planStats } from "../design";
 import { fmt, type Game } from "../game";
 import { TERMS, type Term } from "../actions";
+import { PoliticsPanel } from "./politics";
 import { dateLabel, type Application, type BUse } from "../state";
 
 /* ------------------------------------------------------------------ bits */
@@ -171,6 +172,8 @@ export function Panels({ game }: { game: Game }) {
       return <CityPanel game={game} />;
     case "help":
       return <HelpPanel game={game} />;
+    case "politics":
+      return game.s?.pol ? <PoliticsPanel game={game} /> : null;
     default:
       return null;
   }

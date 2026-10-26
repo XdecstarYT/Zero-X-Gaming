@@ -6,7 +6,7 @@ import { addLoss, addRoad, demolish, fillLots, inWater, lotObb, lotRow, nearestE
 import { places, startBuilding, submit } from "./sim";
 import { distToPoly, obbSamples } from "./geom";
 import { ix, news, type Application, type Plan, type State } from "./state";
-import { addDistrict, assignDistricts } from "./world";
+import { addDistrict, assignDistricts, districtAt as districtAtPoint } from "./world";
 
 /**
  * Everything the planner can do: lay and upgrade roads, zone districts (and lay out their
@@ -65,7 +65,7 @@ export function upgradeRoad(s: State, id: number, change: { kind?: RoadKind; bik
   let cost = 0;
   if (kind !== e.kind) cost += roadCost(s, e.pts, kind) - (ROADS[kind].cost < ROADS[e.kind].cost ? roadCost(s, e.pts, kind) * 0.8 : roadCost(s, e.pts, e.kind) * 0.6);
   if (bike && !e.bike) cost += e.len * BIKE_COST;
-  if (tram && !e.tram) cost += e.len * TRAM_COST;
+  if (tram && !e.tram) cost += e.len * TRAM_COST * (s.pol?.federal.laws.transitFund ? 0.5 : 1);
   cost = Math.max(0, Math.round(cost));
   if (cost > s.money) return fail("Not enough money");
   const loss = noLoss();
@@ -232,6 +232,8 @@ export function layOut(s: State, r: OBB, poly: Pts, pattern: Pattern, use: Use, 
     addLoss(loss, res.loss);
   }
   if (!roads) return fail("No room for streets there");
+  // The Green Belt Act puts a levy on building over farmland.
+  if (s.pol?.federal.laws.greenBelt && districtAtPoint(s, r.x, r.z)?.use === "farms") cost = Math.round(cost * 1.25);
   // Link a stranded neighbourhood to the nearest point on a connected road.
   refreshConn(s);
   if (!made.some((id) => s.edges[id]?.conn)) {
@@ -410,7 +412,7 @@ export function changeTerms(s: State, id: number, term: Term): Result<{ msg: str
 }
 
 export function setTax(s: State, rate: number) {
-  s.taxRate = Math.max(0.3, Math.min(2.5, Math.round(rate * 10) / 10));
+  s.taxRate = Math.max(0.3, Math.min(s.pol?.federal.laws.rateCap ? 1 : 2.5, Math.round(rate * 10) / 10));
 }
 
 /** Snap a point to the nearest junction, for drawing roads. */

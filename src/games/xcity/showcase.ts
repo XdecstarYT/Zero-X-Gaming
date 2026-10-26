@@ -36,3 +36,29 @@ export async function showcaseCity(tick: () => Promise<void> = async () => {}, y
   }
   return s;
 }
+
+/** A new world from its settings: a village, or a small town a couple of years on. */
+export function newWorld(ws: import("./poltypes").WorldSettings): State {
+  const s = prepare(newCity(ws.seed));
+  s.name = ws.name.trim().slice(0, 24) || "XCity";
+  s.pace = ws.pace === "relaxed" ? 0.7 : ws.pace === "booming" ? 1.45 : 1;
+  if (ws.start === "town") {
+    s.money = 400_000_000;
+    const zone = (x0: number, z0: number, x1: number, z1: number, p: "grid" | "curvy", use: "homes" | "jobs", band: number) => {
+      const r = districtRect(x0, z0, x1, z1);
+      act.layOut(s, r.obb, r.poly, p, use, band);
+    };
+    zone(380, 260, 900, 760, "grid", "homes", 2);
+    zone(-900, 260, -380, 760, "curvy", "homes", 1);
+    zone(1150, -300, 1500, 150, "grid", "jobs", 2);
+    advance(s, 24);
+    for (const a of [...s.apps]) act.decide(s, a.id, false);
+    s.month = 0;
+    s.t = 0;
+    s.history = [];
+    s.news = [];
+    s.budget = { ...s.budget, builds: 0 };
+  }
+  s.money = ws.money === "tight" ? 12_000_000 : ws.money === "rich" ? 80_000_000 : 30_000_000;
+  return s;
+}

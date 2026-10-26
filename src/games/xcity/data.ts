@@ -232,3 +232,32 @@ export const DEVELOPERS = [
 ];
 
 export const FIRST_NAMES = ["Ana", "Ben", "Chloe", "Dev", "Eli", "Farah", "Gus", "Hana", "Ivan", "Jo", "Kai", "Lena", "Mo", "Nia", "Omar", "Pia", "Raj", "Sol", "Tess", "Uma", "Vic", "Wes", "Yara", "Zed"];
+
+/** What's changed, newest first (the title screen's change log). */
+export const CHANGELOG: { version: string; date: string; title: string; items: string[] }[] = [
+  {
+    version: "1.1",
+    date: "October 2026",
+    title: "Politics",
+    items: [
+      "Elections: the city is split into electorates, and parties stand candidates in every one.",
+      "Make your own party: name, colour, symbol, leader and where it stands on housing, transport, tax and the environment.",
+      "Ten-week campaigns: door-knock, rally, run ads, fundraise, make promises and win endorsements.",
+      "A televised debate, polls week by week, and election night, seat by seat.",
+      "Lose, and another party runs the city its own way: protest, lobby City Hall and make your case for next time.",
+      "Win your seat and you sit in the federal parliament: vote on bills, ask questions and bring in laws that change your city.",
+      "New world settings: start as a village or a small town, how fast the region grows, and how much money there is.",
+    ],
+  },
+  {
+    version: "1.0",
+    date: "October 2026",
+    title: "XCity opens",
+    items: [
+      "Zone by use and height, with rules for parking, affordable homes and corner shops.",
+      "Lay out streets as a grid, curves, cul-de-sacs or superblocks.",
+      "Developers pitch projects; approve, deny or change the terms.",
+      "Design your own buildings, and cater to cars, bikes or trams.",
+    ],
+  },
+];

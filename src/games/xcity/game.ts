@@ -14,12 +14,19 @@ import { lotObb, lotRow, nearestEdge, roadClears, roadCost, roadHalf } from "./r
 import { advance, load, prepare, save, score } from "./sim";
 import { ix, type Application, type Building, type Plan, type State } from "./state";
 import { newCity } from "./world";
+import * as pol from "./politics";
+import { newWorld } from "./showcase";
+import type { Ask, CampaignKind } from "./politics";
+import type { Axis, BillKind, GroupId, PolSettings, PromiseKind, WorldSettings } from "./poltypes";
 import { View, pickQuality, type Quality } from "./render/view";
 import { heightOf } from "./render/chunks";
 
-export type Screen = "title" | "play";
+export type Screen = "title" | "setup" | "play";
+export type TitlePanel = null | "changelog" | "settings";
+export type SetupStep = "politics" | "world" | "party";
+export type PolTab = "campaign" | "promises" | "groups" | "opposition" | "parliament" | "polls";
 export type Tool = "inspect" | "road" | "zone" | "upzone" | "design" | "transit" | "civic" | "bulldoze";
-export type Panel = null | "city" | "agenda" | "district" | "building" | "design" | "help";
+export type Panel = null | "city" | "agenda" | "district" | "building" | "design" | "help" | "politics";
 export type TransitTool = "bike" | "tram" | "avenue" | "street";
 
 export interface Toast {
@@ -110,8 +117,9 @@ export class Game {
   attach(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     try {
-      const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as { quality?: Quality };
+      const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as { quality?: Quality; autosave?: boolean };
       this.quality = p.quality ?? pickQuality();
+      if (p.autosave === false) this.autosave = false;
     } catch {
       this.quality = pickQuality();
     }
@@ -149,10 +157,77 @@ export class Game {
     this.submitFinal();
   }
 
-  newGame(seed = Math.floor(Math.random() * 1e6)) {
-    this.s = prepare(newCity(seed));
+  /* -------------------------------------------------------------- menus and the new-world setup */
+
+  titlePanel: TitlePanel = null;
+  step: SetupStep = "politics";
+  draft = {
+    pol: pol.defaultPolSettings(),
+    world: { name: "XCity", seed: Math.floor(Math.random() * 1e6), start: "village", pace: "normal", money: "normal", politics: true } as WorldSettings,
+    party: { ...pol.PARTY_PRESETS[0], pos: { ...pol.PARTY_PRESETS[0].pos } } as pol.PartyDraft,
+    seat: 0,
+    /** The preset the party was started from (it won't also stand against you). */
+    basedOn: 0,
+  };
+  autosave = true;
+
+  openTitlePanel(p: TitlePanel) {
+    this.titlePanel = this.titlePanel === p ? null : p;
+    this.bump();
+  }
+
+  /** Start setting up a new world (politics, then the world, then your party). */
+  startSetup() {
+    this.screen = "setup";
+    this.step = "politics";
+    this.titlePanel = null;
+    this.draft.world = { ...this.draft.world, seed: Math.floor(Math.random() * 1e6) };
+    this.bump();
+  }
+
+  setStep(step: SetupStep) {
+    this.step = step;
+    this.bump();
+  }
+
+  editSetup(patch: { pol?: Partial<PolSettings>; world?: Partial<WorldSettings>; party?: Partial<pol.PartyDraft>; seat?: number }) {
+    const d = this.draft;
+    if (patch.pol) d.pol = { ...d.pol, ...patch.pol };
+    if (patch.world) d.world = { ...d.world, ...patch.world };
+    if (patch.party) d.party = { ...d.party, ...patch.party, pos: { ...d.party.pos, ...(patch.party.pos ?? {}) } };
+    if (patch.seat !== undefined) d.seat = patch.seat;
+    d.seat = Math.min(d.seat, d.pol.electorates - 1);
+    this.bump();
+  }
+
+  /** Start the party from one of the presets. */
+  usePreset(i: number) {
+    const x = pol.PARTY_PRESETS[i];
+    this.draft.party = { name: x.name, short: x.short, color: x.color, icon: x.icon, leader: this.draft.party.leader || x.leader, pos: { ...x.pos } };
+    this.draft.basedOn = i;
+    this.bump();
+  }
+
+  /** Build the world from the setup and begin (ten weeks out from the election, with politics on). */
+  beginWorld() {
+    const d = this.draft;
+    const s = newWorld(d.world);
+    const party = { ...d.party, name: d.party.name.trim() || "My Party", short: (d.party.short.trim() || d.party.name.slice(0, 3)).toUpperCase().slice(0, 4), leader: d.party.leader.trim() || "You" };
+    if (d.world.politics) pol.newPolitics(s, d.pol, party, d.seat, d.basedOn);
+    this.s = s;
     this.start();
-    this.toast("You've been hired to plan it all. Zone some homes: tap Zone and drag over the fields.", "tip");
+    if (s.pol) {
+      this.panel = "politics";
+      this.polTab = "campaign";
+      this.toast(`${party.leader}, the campaign starts now: ${d.pol.campaignWeeks} weeks to win ${s.pol.electorates[s.pol.seat].name}, and the city.`, "tip");
+      this.refreshOverlay();
+    } else this.toast("You've been hired to plan it all. Zone some homes: tap Zone and drag over the fields.", "tip");
+    this.bump();
+  }
+
+  newGame(seed = Math.floor(Math.random() * 1e6)) {
+    this.draft.world = { ...this.draft.world, seed, politics: false };
+    this.beginWorld();
   }
 
   continueGame() {
@@ -194,7 +269,8 @@ export class Game {
 
   setQuality(q: Quality) {
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ quality: q }));
+      const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ ...prefs, quality: q }));
     } catch {}
     this.toast("Graphics change after a reload.");
   }
@@ -209,11 +285,18 @@ export class Game {
     const v = this.view;
     if (!s || !v) return;
     if (document.hidden) return;
-    if (this.screen === "play" && !this.paused && this.speed > 0) {
+    // During a campaign the clock moves a week at a time, when you end the week.
+    if (this.screen === "play" && !this.paused && this.speed > 0 && !s.pol?.campaign && !s.pol?.night) {
       const before = s.month;
       advance(s, (dt * SPEEDS[this.speed]) / MONTH_SECONDS);
       this.activeMs += dt * 1000;
       if (s.month !== before) this.onMonth();
+      if (s.pol?.campaign) {
+        this.panel = "politics";
+        this.polTab = "campaign";
+        this.toast(`The campaign is on: ${s.pol.settings.campaignWeeks} weeks to election day.`, "tip");
+        this.refreshOverlay();
+      }
     } else if (this.screen === "title") {
       v.rig.goal.yaw += dt * 0.04;
     }
@@ -234,7 +317,7 @@ export class Game {
       this.bump();
     }
     this.saveT += dt;
-    if (this.saveT > 45 && this.screen === "play") {
+    if (this.saveT > 45 && this.screen === "play" && this.autosave) {
       this.saveT = 0;
       this.persist();
     }
@@ -250,7 +333,15 @@ export class Game {
     }
     this.report.progress(score(s));
     this.refreshGhost();
+    const P = s.pol;
+    if (P?.federal.sitting && !this.sittingSeen && pol.hasSeat(P)) {
+      this.sittingSeen = true;
+      this.toast("Parliament is sitting: there's a vote, and Question Time.", "tip");
+    }
+    if (P && !P.federal.sitting) this.sittingSeen = false;
   }
+
+  private sittingSeen = false;
 
   /* -------------------------------------------------------------- input */
 
@@ -398,6 +489,10 @@ export class Game {
   /* -------------------------------------------------------------- tools */
 
   setTool(t: Tool) {
+    if (t !== "inspect" && this.s && !pol.canPlan(this.s)) {
+      this.toast(`${this.s.pol!.parties[this.s.pol!.government].name} runs the city. Win an election to plan it.`, "bad");
+      return;
+    }
     this.clearDrafts();
     this.tool = t;
     this.design = null;
@@ -622,6 +717,12 @@ export class Game {
       case "upzone":
         return;
       default: {
+        if (s.pol && this.panel === "politics" && w) {
+          this.selElectorate = pol.electorateAt(s.pol, w.x, w.z);
+          this.refreshOverlay();
+          this.bump();
+          return;
+        }
         const b = v.buildingAt(s, sx, sy);
         if (b) {
           this.selBuilding = b.id;
@@ -787,6 +888,7 @@ export class Game {
     if (!v || !s) return;
     const zoning = this.tool === "zone" || this.tool === "upzone";
     v.overlay.districts(s, zoning, this.panel === "district" ? this.selDistrict : -1);
+    v.overlay.electorates(s.pol && (this.panel === "politics" || s.pol.night) ? s.pol : null, this.selElectorate);
     const b = this.selBuilding >= 0 ? s.buildings[this.selBuilding] : null;
     v.overlay.select(b ? { x: b.x, z: b.z, ux: b.ux, uz: b.uz, hw: b.hw, hd: b.hd, h: heightOf(b) } : null);
   }
@@ -833,6 +935,110 @@ export class Game {
     if (patch.band !== undefined) this.zoneBand = patch.band;
     if (patch.pattern) this.pattern = patch.pattern;
     if (patch.rules) this.zoneRules = { ...this.zoneRules, ...patch.rules };
+    this.bump();
+  }
+
+  /* -------------------------------------------------------------- politics */
+
+  polTab: PolTab = "campaign";
+  selElectorate = -1;
+
+  selectElectorate(id: number) {
+    this.selElectorate = this.selElectorate === id ? -1 : id;
+    const e = this.s?.pol?.electorates[id];
+    if (e && this.selElectorate === id) this.view?.focus(e.x, e.z, 1500);
+    this.refreshOverlay();
+    this.bump();
+  }
+
+  setAutosave(on: boolean) {
+    this.autosave = on;
+    try {
+      const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ ...prefs, autosave: on }));
+    } catch {}
+    this.bump();
+  }
+
+  deleteSave() {
+    try {
+      localStorage.removeItem(SAVE_KEY);
+    } catch {}
+    this.toast("Saved world deleted.");
+    this.bump();
+  }
+
+  setPolTab(t: PolTab) {
+    this.polTab = t;
+    this.panel = "politics";
+    this.refreshOverlay();
+    this.bump();
+  }
+
+  private polRes(r: pol.Res) {
+    this.toast(r.ok ? r.msg : r.why, r.ok ? "good" : "bad");
+    this.refreshOverlay();
+    this.bump();
+  }
+
+  endWeek() {
+    const s = this.s;
+    if (!s?.pol?.campaign) return;
+    const before = s.month;
+    const r = pol.endWeek(s);
+    if (s.month !== before) this.onMonth();
+    if (r) this.toast("The polls have closed. Election night!", "tip");
+    this.refreshOverlay();
+    this.bump();
+  }
+
+  campaign(kind: CampaignKind, e = this.selElectorate) {
+    if (this.s) this.polRes(pol.campaign(this.s, kind, e));
+  }
+
+  promise(kind: PromiseKind, e = this.selElectorate) {
+    if (this.s) this.polRes(pol.promise(this.s, kind, e));
+  }
+
+  lobby(g: GroupId) {
+    if (this.s) this.polRes(pol.lobbyGroup(this.s, g));
+  }
+
+  debate(stance: -1 | 0 | 1) {
+    if (this.s) this.polRes(pol.answerDebate(this.s, stance));
+  }
+
+  protest(id: number) {
+    if (this.s) this.polRes(pol.protest(this.s, id));
+  }
+
+  askCityHall(a: Ask) {
+    if (this.s) this.polRes(pol.lobbyGovernment(this.s, a));
+  }
+
+  voteBill(id: number, v: "yes" | "no" | "abstain") {
+    if (this.s) this.polRes(pol.vote(this.s, id, v));
+  }
+
+  question(topic: Axis) {
+    if (this.s) this.polRes(pol.askQuestion(this.s, topic));
+  }
+
+  propose(kind: BillKind) {
+    if (this.s) this.polRes(pol.proposeBill(this.s, kind));
+  }
+
+  closeNight() {
+    const s = this.s;
+    if (!s?.pol) return;
+    const P = s.pol;
+    pol.closeNight(s);
+    if (P.role === "govern") this.toast("You run the city now. The planning tools are yours: zone, upzone, design, build.", "good");
+    else if (P.role === "opposition") this.toast("Another party runs the city. Hold them to account: protest, lobby and get ready for next time.", "info");
+    else this.toast("You lost your seat. Your party fights on from outside parliament.", "bad");
+    this.panel = null;
+    this.tool = "inspect";
+    this.refreshOverlay();
     this.bump();
   }
 

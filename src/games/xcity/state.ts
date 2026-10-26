@@ -1,5 +1,6 @@
 import type { CivicKind, Crop, Parking, Pattern, RoadKind, Roof, Rules, Style, Use } from "./data";
 import { Hash, type Pts } from "./geom";
+import type { Pol } from "./poltypes";
 
 /** A junction (or a dead end) in the road network. */
 export interface RNode {
@@ -146,6 +147,8 @@ export interface Budget {
   civic: number;
   /** Police, fire, bins and the rest, per resident. */
   services: number;
+  /** Federal grants (the Housing Accord). */
+  grants: number;
   builds: number;
 }
 
@@ -208,6 +211,10 @@ export interface State {
   /** Bumped when only districts change. */
   zrev: number;
   over: boolean;
+  /** How fast the region grows (1 is normal). */
+  pace?: number;
+  /** Politics: parties, electorates, elections and parliament (absent in a sandbox). */
+  pol?: Pol;
 }
 
 /** Lookups rebuilt from the state (never saved). */
@@ -273,7 +280,7 @@ export function emptyStats(): Stats {
 }
 
 export function emptyBudget(): Budget {
-  return { tax: 0, fees: 0, farms: 0, rents: 0, roads: 0, transit: 0, civic: 0, services: 0, builds: 0 };
+  return { tax: 0, fees: 0, farms: 0, rents: 0, roads: 0, transit: 0, civic: 0, services: 0, grants: 0, builds: 0 };
 }
 
 export function news(s: State, text: string, kind: NewsItem["kind"] = "info") {

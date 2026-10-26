@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { USES } from "../data";
 import type { Pts } from "../geom";
 import type { State } from "../state";
+import type { Pol } from "../poltypes";
 import { offsetLine } from "./roadmesh";
 
 /**
@@ -65,11 +66,13 @@ export class Overlay {
   private draftG = new THREE.Group();
   private ghostG = new THREE.Group();
   private selG = new THREE.Group();
+  private elecG = new THREE.Group();
+  private elecKey = "";
   private key = "";
   private time = 0;
 
   constructor() {
-    this.group.add(this.zones, this.draftG, this.ghostG, this.selG);
+    this.group.add(this.zones, this.draftG, this.ghostG, this.selG, this.elecG);
   }
 
   private clear(g: THREE.Group) {
@@ -96,6 +99,24 @@ export class Overlay {
       const col = USES[d.use].color;
       this.zones.add(polyMesh(d.poly, fillMat(col, hi ? 0.32 : 0.16), 0.35 + (hi ? 0.05 : 0)));
       this.zones.add(band(d.poly, hi ? 4 : 2.2, fillMat(hi ? "#ffffff" : col, hi ? 0.95 : 0.8), 0.45, true));
+    }
+  }
+
+  /** The electorates, each tinted by who's ahead there (or null to hide them). */
+  electorates(p: Pol | null, selected: number) {
+    const lead = (e: Pol["electorates"][number]) => e.support.indexOf(Math.max(...e.support));
+    const key = p ? `${selected}|${p.electorates.map((e) => `${e.holder}${lead(e)}`).join(",")}|${p.night ? 1 : 0}` : "";
+    if (key === this.elecKey) return;
+    this.elecKey = key;
+    this.clear(this.elecG);
+    if (!p) return;
+    for (const e of p.electorates) {
+      const who = p.night || !p.campaign ? e.holder : lead(e);
+      const col = p.parties[who]?.color ?? "#888888";
+      const sel = e.id === selected;
+      this.elecG.add(polyMesh(e.poly, fillMat(col, sel ? 0.34 : 0.2), 0.32));
+      this.elecG.add(band(e.poly, sel ? 7 : 4, fillMat(sel ? "#ffffff" : col, 0.9), 0.5, true));
+      if (e.id === p.seat) this.elecG.add(band(e.poly, 2, fillMat("#ffd166", 0.95), 0.55, true));
     }
   }
 
@@ -156,7 +177,7 @@ export class Overlay {
   }
 
   dispose() {
-    for (const g of [this.zones, this.draftG, this.ghostG, this.selG]) this.clear(g);
+    for (const g of [this.zones, this.draftG, this.ghostG, this.selG, this.elecG]) this.clear(g);
   }
 }
 

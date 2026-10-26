@@ -54,7 +54,12 @@ test("XCity: zone a neighbourhood, set its rules, design a building, review an a
   await dismissRotate(page);
   await expect(page.getByTestId("xc-title")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("nextx-powered")).toBeVisible();
+  // A sandbox world: politics off, plan from day one.
   await page.getByTestId("xc-new").click();
+  await expect(page.getByTestId("xc-setup")).toBeVisible();
+  await page.getByTestId("xc-politics-toggle").click();
+  await page.getByTestId("xc-next").click();
+  await page.getByTestId("xc-begin").click();
   await expect(page.getByTestId("xc-stat-pop")).toBeVisible();
   await expect(page.getByTestId("xc-date")).toContainText("January, Year 1");
 
