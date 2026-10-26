@@ -39,13 +39,14 @@ class XCity implements GameModule {
     this.root.render(createElement(App, { game: this.game }));
     if (new URLSearchParams(window.location.search).has("xc")) {
       // Test hooks: the controller, and a way to grow a city fast.
-      const w = window as unknown as { __xc?: Game; __xcGrow?: (years: number) => Promise<void>; __xcPitch?: () => number };
+      const w = window as unknown as { __xc?: Game; __xcGrow?: (years: number) => Promise<void>; __xcPitch?: () => number; __xcSkip?: (months: number) => void };
       w.__xc = this.game;
       const game = this.game;
       w.__xcGrow = async (years: number) => {
         game.s = await showcaseCity(async () => {}, years);
         game.bump();
       };
+      w.__xcSkip = (months: number) => game.skipMonths(months);
       // A developer pitches a mid-rise in place of a house, two storeys over the zoning.
       w.__xcPitch = () => {
         const s = game.s!;

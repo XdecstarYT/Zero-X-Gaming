@@ -9,13 +9,15 @@ type P = { pol: { campaign: boolean; week: number; role: string; night: unknown;
 const st = <T,>(page: Page, f: (s: P) => T) => page.evaluate(`(${f.toString()})(window.__xc.s)`) as Promise<T>;
 
 test("XCity politics: set up a world and a party, campaign for ten weeks, election night, then parliament", async ({ page }, info) => {
-  test.setTimeout(300_000);
+  test.setTimeout(480_000);
   const project = info.project.name;
   const mobile = project === "mobile";
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   if (!mobile) await page.setViewportSize({ width: 1400, height: 900 });
   await page.addInitScript(() => {
+    // Low graphics: headless browsers draw WebGL in software, a few frames a second at best.
+    if (!localStorage.getItem("zx-xcity-prefs")) localStorage.setItem("zx-xcity-prefs", JSON.stringify({ quality: "low" }));
     if (!localStorage.getItem("zx-season-s1"))
       localStorage.setItem("zx-season-s1", JSON.stringify({ xp: 0, matches: 0, wins: 0, kills: 0, coins: 100, hasPass: false, purchases: [], challenges: {} }));
   });
@@ -75,8 +77,9 @@ test("XCity politics: set up a world and a party, campaign for ten weeks, electi
   await expect(page.getByTestId("xc-night")).toBeVisible();
   await page.waitForTimeout(2000);
   await shot(page, "8night", project);
-  if (await page.getByTestId("xc-night-skip").isVisible()) await page.getByTestId("xc-night-skip").click();
-  await expect(page.getByTestId("xc-night-verdict")).toBeVisible();
+  // Skip the rest of the count (unless it has already finished).
+  await page.getByTestId("xc-night-skip").click({ timeout: 3000 }).catch(() => {});
+  await expect(page.getByTestId("xc-night-verdict")).toBeVisible({ timeout: 30_000 });
   await shot(page, "9verdict", project);
   await page.getByTestId("xc-night-continue").click();
   const role = await st(page, (s) => s.pol.role);
@@ -90,8 +93,8 @@ test("XCity politics: set up a world and a party, campaign for ten weeks, electi
     s.pol.electorates[s.pol.seat].holder = s.pol.player;
     s.pol.federal.nextSitting = s.month + 1;
   });
-  await page.getByTestId("xc-speed-3").click();
-  await expect.poll(() => st(page, (s) => s.pol.federal.sitting), { timeout: 90_000 }).toBe(true);
+  await page.evaluate(() => (window as unknown as { __xcSkip: (n: number) => void }).__xcSkip(1));
+  await expect.poll(() => st(page, (s) => s.pol.federal.sitting)).toBe(true);
   await page.getByTestId("xc-tool-politics").click();
   await page.getByTestId("xc-pol-parliament").click();
   await expect(page.getByTestId("xc-politics")).toContainText("Question Time");

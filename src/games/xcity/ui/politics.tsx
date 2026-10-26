@@ -873,6 +873,7 @@ export function ElectionNight({ game }: { game: Game }) {
   const w = p.parties[r.winner];
   const me = pol.playerParty(p);
   const majority = Math.floor(p.electorates.length / 2) + 1;
+  const hung = r.seats[r.winner] < majority;
   return (
     <div className="xc-night" data-testid="xc-night">
       <section className="xc-panel xc-glass xc-center">
@@ -925,8 +926,15 @@ export function ElectionNight({ game }: { game: Game }) {
               {w.icon}{" "}
               <span>
                 <b>
-                  {r.winner === p.player ? `${me.name} wins! You run ${s.name}.` : `${w.name} wins ${s.name}.`}
+                  {hung
+                    ? r.winner === p.player
+                      ? `A hung council, and ${me.name} governs ${s.name}!`
+                      : `A hung council: ${w.name} governs ${s.name}.`
+                    : r.winner === p.player
+                      ? `${me.name} wins! You run ${s.name}.`
+                      : `${w.name} wins ${s.name}.`}
                 </b>{" "}
+                {hung && "No one has a majority: a government tied for the most seats carries on, or else the tied party with the most votes takes over. "}
                 {r.mine ? `You hold ${p.electorates[p.seat].name} and take your seat in the federal parliament.` : `You lost ${p.electorates[p.seat].name}.`} Across the country, {p.parties[r.federalWinner].name} wins {r.federal[r.federalWinner]} of {r.federal.reduce((a, b) => a + b, 0)} seats.
                 {(r.kept > 0 || r.broken > 0) && ` You kept ${r.kept} promise${r.kept === 1 ? "" : "s"} and broke ${r.broken}.`}
               </span>

@@ -70,6 +70,41 @@ building yourself.
 - `overlay.ts`: district tints and outlines, the road being drawn, the area being dragged with the
   streets its pattern would lay, the volume of a proposed building, the selection.
 
+## Politics (`poltypes.ts`, `politics.ts`, `ui/politics.tsx`)
+
+A new world can be political (the setup's first step; switch it off for a sandbox where you plan
+from day one). You lead a party and win the right to plan:
+
+- **Setup**: the title screen has Continue, New world, the change log and settings (graphics,
+  autosave, delete the save). Then politics settings (first past the post or preferential voting,
+  2–4 year terms, 6, 10 or 14 campaign weeks, 4, 6 or 8 electorates, 2–5 rival parties, 51, 101 or 151 federal seats,
+  difficulty), world settings (name, seed, a village or a town, pace, money) and your party: start
+  from one of six presets or from scratch, and pick the name, short name, leader, colour, icon,
+  where it stands on housing, transport, tax and the environment, and the electorate you stand in.
+- **Electorates** are Voronoi cells over the map (the town in the first), each with its share of
+  seven voter groups (renters, owners, families, the young, retirees, business, farmers) worked out
+  from what's built there. A party's support in one comes from how close it stands to each group,
+  goodwill from promises, debates and protests, endorsements, campaign effort, incumbency, how the
+  city government is doing and your trust, through a softmax.
+- **The campaign** starts ten weeks out (or as set) and runs a week at a time: the clock stops and
+  you spend action points on doorknocking, rallies, ads and fundraising in any electorate, make up
+  to six promises, lobby groups until they endorse you, and answer the televised debate three weeks
+  out. AI parties campaign too. Election day counts every seat (preferences transfer to the
+  closest party); election night declares them one by one. A hung council goes to the government
+  if it's tied for most seats, else to the tied party with the most votes.
+- **After it**: if your party governs, you plan the city with every tool until the next election
+  (and promises are judged against what you did). If you lose, another party governs: the AI
+  decides applications, moves tax, lays out homes, upzones, builds trams, bike lanes and parks, each
+  logged, and from opposition you can protest (and maybe stop a building still going up), lobby
+  City Hall and keep campaigning. The next campaign comes round each term.
+- **Federal parliament**: winning your own seat sends you to it. It sits every three months, with
+  government bills to vote on (a housing accord paying cities per new home, a transit fund halving
+  tram costs, parking reform, a rates cap, a green belt, first home grants), a question to ask at
+  Question Time and a bill of your own to bring in. Laws in force change the city's sim.
+- The map tints each electorate by who holds it (or leads the polls in a campaign) with your seat
+  outlined in gold; the politics panel has campaign, promises, groups, opposition, parliament and
+  polls tabs.
+
 ## Playing
 
 `game.ts` is the controller: tools (look, roads, zone, upzone, design, transit, civic, bulldoze),
@@ -80,5 +115,5 @@ options, the confirm sheet, toasts (applications get a Review card), and the pan
 (zoning with the height picture, rules, copy a district), the designer, the agenda, a building,
 the city (overview, budget, travel) and the menu.
 
-`?xc` exposes `window.__xc` (the controller), `__xcGrow(years)` (a grown city) and `__xcPitch()`
+`?xc` exposes `window.__xc` (the controller), `__xcGrow(years)` (a grown city), `__xcSkip(months)` and `__xcPitch()`
 (a developer's application) for the tests.

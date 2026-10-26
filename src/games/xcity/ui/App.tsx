@@ -157,7 +157,7 @@ function PolChip({ game }: { game: Game }) {
   const me = playerParty(p);
   const share = cityShare(p)[p.player];
   return (
-    <div className="xc-bar xc-glass">
+    <div className="xc-bar xc-glass xc-polbar">
       <button className="xc-polchip" type="button" onClick={() => game.openPanel("politics")} data-testid="xc-polchip">
         <span style={{ fontSize: 15 }}>{me.icon}</span>
         <span style={{ color: me.color }}>{Math.round(share * 100)}%</span>
@@ -369,7 +369,7 @@ function Confirm({ game }: { game: Game }) {
 
 function Toasts({ game }: { game: Game }) {
   return (
-    <div className="xc-toasts" aria-live="polite">
+    <div className={`xc-toasts${game.s?.pol ? " pol" : ""}`} aria-live="polite">
       {game.toasts.map((t) => {
         const a = t.app !== undefined ? game.s!.apps.find((x) => x.id === t.app) : null;
         if (a)

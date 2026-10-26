@@ -1006,6 +1006,12 @@ NextX title. You start with a farming village at a crossroads by a river and pla
   costs clout.
 - Demand, rents, approval, transport (cars, bike lanes, trams on avenues), the budget and milestones
   run month by month.
+- **Politics** (`politics.ts`): a world can be political. Design your party, then campaign for ten
+  weeks (doorknocks, rallies, ads, promises, lobbying voter groups, a debate) across the map's
+  electorates; election night decides who governs. Win and you plan the city; lose and an AI party
+  governs while you protest and lobby from opposition. Winning your own seat puts you in the
+  federal parliament to vote on bills, ask questions and bring in laws that change the city. The
+  title screen adds a change log, settings and a setup for politics, the world and your party.
 
 The 3D city (`render/`) is drawn on the NextX look: a painted ground (patchwork fields, orchards,
 yards, paving), roads with junctions, markings, bike lanes, tram tracks and bridges, buildings in

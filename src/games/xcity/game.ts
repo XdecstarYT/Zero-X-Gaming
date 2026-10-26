@@ -323,6 +323,17 @@ export class Game {
     }
   };
 
+  /** Run the clock forward a number of months at once (for tests; campaigns still go week by week). */
+  skipMonths(n: number) {
+    const s = this.s;
+    for (let i = 0; i < n && s && !s.pol?.campaign && !s.pol?.night; i++) {
+      advance(s, 1);
+      this.onMonth();
+    }
+    this.refreshOverlay();
+    this.bump();
+  }
+
   private onMonth() {
     const s = this.s!;
     // Fresh news as toasts (applications get a Review button).

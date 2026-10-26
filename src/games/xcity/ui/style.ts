@@ -58,7 +58,7 @@ export const css = `
 .xc-clock .date{font-size:12.5px;font-weight:700;padding:0 8px;white-space:nowrap}
 .xc-speed{min-width:32px;height:32px;border-radius:10px;font-weight:800;font-size:12px;color:var(--ink2)}
 .xc-speed.on{background:#f6f7f5;color:#121513}
-@container xc (max-width: 700px){.xc-top{flex-wrap:wrap}.xc-stats{order:3;flex:1 1 100%}.xc-clock{margin-left:auto}.xc-city small{display:none}}
+@container xc (max-width: 700px){.xc-top{flex-wrap:wrap}.xc-stats{order:3;flex:1 1 100%}.xc-clock{margin-left:auto}.xc-city small{display:none}.xc-polbar{order:2;flex:1 1 100%}.xc-polbar .xc-polchip{flex:1}}
 
 /* demand meter (Homes · Wanted) */
 .xc-want{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
@@ -82,13 +82,15 @@ export const css = `
 /* panels: bottom sheets on phones, a side panel on wide screens */
 .xc-panel{position:absolute;left:8px;right:8px;bottom:calc(72px + env(safe-area-inset-bottom));max-height:min(64%,640px);display:flex;flex-direction:column;z-index:7;overflow:hidden}
 @container xc (min-width: 820px){.xc-panel{left:auto;right:12px;top:70px;bottom:84px;width:400px;max-height:none}}
-.xc-panel-h{display:flex;align-items:center;gap:10px;padding:14px 14px 8px}
+.xc-panel-h{flex:none;display:flex;align-items:center;gap:10px;padding:14px 14px 8px}
 .xc-panel-h .ic{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:rgba(255,255,255,.95);flex:none}
 .xc-panel-h h3{margin:0;font-size:17px;line-height:1.15}
 .xc-panel-h p{margin:2px 0 0;font-size:12px;color:var(--ink3)}
 .xc-panel-h .x{margin-left:auto;width:32px;height:32px;border-radius:10px;font-size:18px;color:var(--ink2);flex:none}
 .xc-body{overflow-y:auto;padding:4px 14px 14px;display:flex;flex-direction:column;gap:12px;overscroll-behavior:contain}
-.xc-tabs{display:flex;gap:16px;padding:0 14px;border-bottom:1px solid var(--line)}
+.xc-tabs{display:flex;gap:16px;padding:0 14px;border-bottom:1px solid var(--line);flex:none;overflow-x:auto;scrollbar-width:none}
+.xc-tabs::-webkit-scrollbar{display:none}
+.xc-tabs button{flex:none;white-space:nowrap}
 .xc-tabs button{padding:8px 0;font-size:13.5px;font-weight:650;color:var(--ink3);border-bottom:2px solid transparent!important}
 .xc-tabs button.on{color:var(--ink);border-bottom-color:var(--ink)!important}
 .xc-sec h5{margin:0 0 6px;font-size:11.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.07em}
@@ -141,6 +143,7 @@ export const css = `
 /* toasts (applications get a card with Review) */
 .xc-toasts{position:absolute;left:8px;top:calc(64px + env(safe-area-inset-top));display:flex;flex-direction:column;gap:6px;z-index:8;width:min(360px,calc(100% - 16px));pointer-events:none}
 @container xc (max-width: 700px){.xc-toasts{top:calc(112px + env(safe-area-inset-top))}}
+@container xc (max-width: 700px){.xc-toasts.pol{top:calc(178px + env(safe-area-inset-top))}}
 .xc-toast{pointer-events:auto;padding:10px 12px;font-size:13px;line-height:1.35;border-left:4px solid var(--ink3)!important;animation:xcIn .25s ease}
 .xc-toast.good{border-left-color:var(--green)!important}
 .xc-toast.bad{border-left-color:var(--bad)!important}
