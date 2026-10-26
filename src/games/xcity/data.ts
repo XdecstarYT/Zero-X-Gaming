@@ -236,6 +236,17 @@ export const FIRST_NAMES = ["Ana", "Ben", "Chloe", "Dev", "Eli", "Farah", "Gus",
 /** What's changed, newest first (the title screen's change log). */
 export const CHANGELOG: { version: string; date: string; title: string; items: string[] }[] = [
   {
+    version: "1.4",
+    date: "October 2026",
+    title: "A more real-looking city",
+    items: [
+      "The river is real water now: deep, reflective and rippling, with reedy, muddy banks.",
+      "Roofs have their coverings: tiles and shingles on pitched roofs; membrane, gravel, air-conditioning units, vents and lift housings on flat ones.",
+      "Fuller trees, shaded by the light and broken into clumps of leaves, and more of them on the green between blocks.",
+      "Grass and fields that vary across the map, and a haze that softens the far side of town and the farms beyond.",
+    ],
+  },
+  {
     version: "1.3",
     date: "October 2026",
     title: "Climb the party",

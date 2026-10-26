@@ -70,6 +70,14 @@ building yourself.
 - `overlay.ts`: district tints and outlines, the road being drawn, the area being dragged with the
   streets its pattern would lay, the volume of a proposed building, the selection.
 
+Realism: the ground shader varies grass and crops over hundreds of metres from a smooth noise
+texture (`macroTexture`) as well as the fine grain up close; the river sits clear of the ground
+(no z-fighting) as deep, sky-reflecting water with moving ripples; roofs are their own mesh with
+a world-space roof shader (tile or shingle courses on slopes, membrane seams and gravel on flat
+roofs) and flat roofs carry condensers, vents and lift overruns; trees are clumped crowns shaded
+darker underneath and inside, broken into leaf clusters by a foliage shader; distance haze and a
+calmer grade give aerial perspective.
+
 ## Politics (`poltypes.ts`, `politics.ts`, `ui/politics.tsx`)
 
 A new world can be political (the setup's first step; switch it off for a sandbox where you plan

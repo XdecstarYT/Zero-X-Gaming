@@ -56,6 +56,7 @@ export function buildChunk(s: State, id: number, quality: "low" | "medium" | "hi
   const z0 = -MAP_HALF + j * CHUNK;
   const fs = new FacadeSheet();
   const props = new Sheet();
+  const roofs = new Sheet();
   const trees: TreeSpot[] = [];
   const sites: Building[] = [];
   for (const b of s.buildings) {
@@ -65,7 +66,7 @@ export function buildChunk(s: State, id: number, quality: "low" | "medium" | "hi
       site(b, props);
       continue;
     }
-    building(s, b, fs, props, trees);
+    building(s, b, fs, props, roofs, trees);
   }
   nature(s, x0, z0, trees, quality);
   const group = new THREE.Group();
@@ -73,6 +74,15 @@ export function buildChunk(s: State, id: number, quality: "low" | "medium" | "hi
   if (!fs.empty) {
     const g = fs.geometry();
     const m = new THREE.Mesh(g, facadeMaterial(quality !== "low"));
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.userData.pick = true;
+    group.add(m);
+    disposables.push(g);
+  }
+  if (!roofs.empty) {
+    const g = roofs.geometry();
+    const m = new THREE.Mesh(g, MATS.roof);
     m.castShadow = true;
     m.receiveShadow = true;
     m.userData.pick = true;
@@ -155,7 +165,7 @@ function look(fs: FacadeSheet, b: Building, type: number, shop = false) {
   fs.look = { type, floor: floorHeight(b), gf: groundHeight(b), seed: (b.seed % 997) / 97, accent: tmp.set(b.style === "brick" ? "#e9e2d2" : b.style === "glass" ? "#2a3440" : "#3a3a3a").clone(), shop };
 }
 
-function building(s: State, b: Building, fs: FacadeSheet, props: Sheet, trees: TreeSpot[]) {
+function building(s: State, b: Building, fs: FacadeSheet, props: Sheet, roofs: Sheet, trees: TreeSpot[]) {
   const R = rng(b.seed);
   const wall = new THREE.Color(b.color);
   const type = STYLES[b.style].wall;
@@ -169,12 +179,12 @@ function building(s: State, b: Building, fs: FacadeSheet, props: Sheet, trees: T
       look(fs, b, type);
       obox(fs, x, z, ux, uz, hw, hd, 0, H, wall, false);
       // Ridge along the street on a wide house, front to back on a narrow one.
-      if (hw >= hd * 0.85) gable(props, fs, x, z, ux, uz, hw, hd, H, 2.6 + R() * 0.8, roofCol, wall);
-      else gable(props, fs, x, z, -uz, ux, hd, hw, H, 2.6 + R() * 0.8, roofCol, wall);
+      if (hw >= hd * 0.85) gable(roofs, fs, x, z, ux, uz, hw, hd, H, 2.6 + R() * 0.8, roofCol, wall);
+      else gable(roofs, fs, x, z, -uz, ux, hd, hw, H, 2.6 + R() * 0.8, roofCol, wall);
       // A porch on the front, and a chimney.
       const px = x + fx * (hd + 1.1);
       const pz = z + fz * (hd + 1.1);
-      obox(props, px, pz, ux, uz, Math.min(hw * 0.6, 3), 1.1, 2.5, 2.7, color("#e8e4da"), true, roofCol);
+      obox(props, px, pz, ux, uz, Math.min(hw * 0.6, 3), 1.1, 2.5, 2.7, color("#e8e4da"), true, roofCol, roofs);
       for (const sx of [-1, 1]) addGeo(props, new THREE.CylinderGeometry(0.08, 0.08, 2.5, 5).translate(0, 1.25, 0), color("#f0ece4"), place(px + ux * sx * (Math.min(hw * 0.6, 3) - 0.2) + fx * 0.9, 0, pz + uz * sx * (Math.min(hw * 0.6, 3) - 0.2) + fz * 0.9));
       if (R() < 0.7) obox(props, x + ux * hw * 0.55, z + uz * hw * 0.55, ux, uz, 0.45, 0.45, H, H + 3.4, color("#8a5040"));
       // Trees in the back yard.
@@ -190,7 +200,7 @@ function building(s: State, b: Building, fs: FacadeSheet, props: Sheet, trees: T
         const bx = bp.x + ux * 3;
         const bz = bp.z + uz * 3;
         obox(props, bx, bz, ux, uz, 6.5, 4.5, 0, 4.2, barnCol, false);
-        gable(props, props, bx, bz, ux, uz, 6.5, 4.5, 4.2, 3.2, color("#4a4c50"), barnCol, 0.3);
+        gable(roofs, props, bx, bz, ux, uz, 6.5, 4.5, 4.2, 3.2, color("#4a4c50"), barnCol, 0.3);
         addGeo(props, new THREE.CylinderGeometry(2.4, 2.4, 11, 14).translate(0, 5.5, 0), color("#c9cdd0"), place(bp.x - ux * 7.5, 0, bp.z - uz * 7.5));
         addGeo(props, new THREE.SphereGeometry(2.4, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 11, 0), color("#a9adb0"), place(bp.x - ux * 7.5, 0, bp.z - uz * 7.5));
         for (let k = 0; k < 4; k++) trees.push({ kind: "tall", x: x + ux * (hw + 4 + k * 5) - fx * 2, z: z + uz * (hw + 4 + k * 5) - fz * 2, k: 0.9 + R() * 0.4 });
@@ -207,11 +217,11 @@ function building(s: State, b: Building, fs: FacadeSheet, props: Sheet, trees: T
         const c = new THREE.Color(k === 0 ? b.color : pal[(b.seed + k * 3) % pal.length]);
         look(fs, b, type);
         fs.look.seed += k * 1.7;
-        obox(fs, cx, cz, ux, uz, uw - 0.02, hd, 0, H, c, b.storeys > 2, roofCol);
-        if (b.storeys <= 2) gable(props, fs, cx, cz, -uz, ux, hd, uw - 0.02, H, 2.4, roofCol, c, 0.2);
+        obox(fs, cx, cz, ux, uz, uw - 0.02, hd, 0, H, c, b.storeys > 2, flatRoof(b), roofs);
+        if (b.storeys <= 2) gable(roofs, fs, cx, cz, -uz, ux, hd, uw - 0.02, H, 2.4, roofCol, c, 0.2);
         else {
-          // A cornice and a stoop.
-          obox(props, cx, cz, ux, uz, uw, hd + 0.25, H, H + 0.55, color("#e4ddcf"));
+          // A cornice (a band round the top, not a lid) and a stoop.
+          obox(props, cx, cz, ux, uz, uw, hd + 0.25, H - 0.35, H + 0.55, color("#e4ddcf"), false);
           obox(props, cx + fx * (hd + 0.8), cz + fz * (hd + 0.8), ux, uz, 0.9, 0.8, 0, 0.9, color("#bdb4a4"));
         }
       }
@@ -223,7 +233,7 @@ function building(s: State, b: Building, fs: FacadeSheet, props: Sheet, trees: T
     }
     case "shop": {
       look(fs, b, type, true);
-      obox(fs, x, z, ux, uz, hw, hd, 0, H, wall, true, color("#8d8a84"));
+      obox(fs, x, z, ux, uz, hw, hd, 0, H, wall, true, color("#8d8a84"), roofs);
       parapet(props, b, H, color("#d6d0c2"));
       // An awning over the shopfront.
       const aw = color(AWNINGS[b.seed % AWNINGS.length]);
@@ -235,25 +245,25 @@ function building(s: State, b: Building, fs: FacadeSheet, props: Sheet, trees: T
       const p = (a: number, dd: number, y: number) => [ax + ux * hw * 0.92 * a + vx * dd * sgn, y, az + uz * hw * 0.92 * a + vz * dd * sgn];
       props.quad(p(-1, -0.9, 3.3), p(1, -0.9, 3.3), p(1, 0.9, 2.8), p(-1, 0.9, 2.8), [[0, 0], [1, 0], [1, 1], [0, 1]], [fx * 0.3, 0.95, fz * 0.3], aw);
       obox(props, x + fx * (hd + 0.05), z + fz * (hd + 0.05), ux, uz, hw * 0.7, 0.08, 3.5, 4.1, color("#f3efe4"));
-      rooftop(props, b, H, R);
+      rooftop(props, roofs, b, H, R);
       break;
     }
     case "workshop": {
       look(fs, b, 6);
-      obox(fs, x, z, ux, uz, hw, hd, 0, H, wall, true, color("#7d7b77"));
+      obox(fs, x, z, ux, uz, hw, hd, 0, H, wall, true, color("#7d7b77"), roofs);
       // A sawtooth of small pitched roofs.
       const n = Math.max(2, Math.round(hd / 4));
       const step = (hd * 2) / n;
       for (let k = 0; k < n; k++) {
         const off = -hd + step * (k + 0.5);
-        gable(props, props, x - uz * off, z + ux * off, ux, uz, hw, step / 2, H, 1.4, color("#8f969b"), color("#8f969b"), 0.05);
+        gable(roofs, props, x - uz * off, z + ux * off, ux, uz, hw, step / 2, H, 1.4, color("#8f969b"), color("#8f969b"), 0.05);
       }
       // Roller doors on the front.
       for (let k = -1; k <= 1; k += 2) obox(props, x + fx * (hd + 0.05) + ux * k * hw * 0.45, z + fz * (hd + 0.05) + uz * k * hw * 0.45, ux, uz, 2, 0.06, 0, 3.6, color("#b0b4b8"));
       break;
     }
     case "civic": {
-      civic(s, b, fs, props, trees, R);
+      civic(s, b, fs, props, roofs, trees, R);
       break;
     }
     default: {
@@ -262,27 +272,27 @@ function building(s: State, b: Building, fs: FacadeSheet, props: Sheet, trees: T
       look(fs, b, type, b.use === "mixed" || (b.use === "jobs" && b.storeys < 6));
       if (b.form === "tower") {
         const podH = groundHeight(b) + 3 * floorHeight(b);
-        obox(fs, x, z, ux, uz, hw, hd, 0, podH, wall, true, flatRoof(b));
+        obox(fs, x, z, ux, uz, hw, hd, 0, podH, wall, true, flatRoof(b), roofs);
         const tw = hw * 0.72;
         const td = hd * 0.82;
         const mid = podH + (H - podH) * 0.82;
-        obox(fs, x, z, ux, uz, tw, td, podH, mid, wall, true, flatRoof(b));
-        obox(fs, x, z, ux, uz, tw * 0.82, td * 0.82, mid, H, wall, true, flatRoof(b));
+        obox(fs, x, z, ux, uz, tw, td, podH, mid, wall, true, flatRoof(b), roofs);
+        obox(fs, x, z, ux, uz, tw * 0.82, td * 0.82, mid, H, wall, true, flatRoof(b), roofs);
         parapet(props, { ...b, hw: tw * 0.82, hd: td * 0.82 }, H, glass ? color("#a8b4bc") : color("#d6d0c2"));
         // A crown and a mast.
         obox(props, x, z, ux, uz, tw * 0.4, td * 0.4, H, H + 4, color("#d9d7d2"));
         addGeo(props, new THREE.CylinderGeometry(0.15, 0.3, 14, 6).translate(0, H + 11, 0), color("#cfcfcf"), place(x, 0, z));
       } else if (b.storeys > 12) {
         const lower = groundHeight(b) + 7 * floorHeight(b);
-        obox(fs, x, z, ux, uz, hw, hd, 0, lower, wall, true, flatRoof(b));
-        obox(fs, x, z, ux, uz, hw - 1.8, hd - 1.6, lower, H, wall, true, flatRoof(b));
+        obox(fs, x, z, ux, uz, hw, hd, 0, lower, wall, true, flatRoof(b), roofs);
+        obox(fs, x, z, ux, uz, hw - 1.8, hd - 1.6, lower, H, wall, true, flatRoof(b), roofs);
         parapet(props, { ...b, hw: hw - 1.8, hd: hd - 1.6 }, H, glass ? color("#a8b4bc") : color("#d8d2c4"));
         parapet(props, b, lower, color("#d8d2c4"));
-        rooftop(props, { ...b, hw: hw - 1.8, hd: hd - 1.6 }, H, R);
+        rooftop(props, roofs, { ...b, hw: hw - 1.8, hd: hd - 1.6 }, H, R);
       } else {
-        obox(fs, x, z, ux, uz, hw, hd, 0, H, wall, true, flatRoof(b));
+        obox(fs, x, z, ux, uz, hw, hd, 0, H, wall, true, flatRoof(b), roofs);
         parapet(props, b, H, b.style === "brick" ? color("#d9d1bf") : color("#cfcac0"));
-        rooftop(props, b, H, R);
+        rooftop(props, roofs, b, H, R);
       }
       if (b.bay && b.form !== "tower") bays(fs, b, H);
       if (b.use === "mixed" || b.use === "shops") {
@@ -311,7 +321,7 @@ function parapet(props: Sheet, b: Pick<Building, "x" | "z" | "ux" | "uz" | "hw" 
 }
 
 /** What's on a flat roof: plant and a water tank, or the planner's choice of green, terrace or solar. */
-function rooftop(props: Sheet, b: Building, H: number, R: () => number) {
+function rooftop(props: Sheet, roofs: Sheet, b: Building, H: number, R: () => number) {
   const { x, z, ux, uz, hw, hd } = b;
   const y = H + 0.02;
   if (b.roof === "green") {
@@ -336,9 +346,28 @@ function rooftop(props: Sheet, b: Building, H: number, R: () => number) {
       addGeo(props, new THREE.BoxGeometry(hw * 1.7, 0.08, 1.7).rotateX(-0.45).translate(0, 0.7, 0), color("#1d2b45"), place(cx, y, cz, ux, uz));
     }
   } else {
-    oflat(props, x, z, ux, uz, hw - 0.3, hd - 0.3, y + 0.02, flatRoof(b).multiplyScalar(1.08));
-    // Plant boxes, and a timber water tank on a brick building.
-    for (let k = 0; k < 2; k++) obox(props, x + ux * (R() - 0.5) * hw, z + uz * (R() - 0.5) * hw, ux, uz, 1.1, 0.8, y, y + 1.3, color("#b9bcbf"));
+    oflat(roofs, x, z, ux, uz, hw - 0.3, hd - 0.3, y + 0.02, flatRoof(b).multiplyScalar(1.08));
+    // Plant: air-conditioning condensers (with their fans), vents, and a lift overrun on taller blocks.
+    const vx = -uz;
+    const vz = ux;
+    const spot = () => ({ x: x + ux * (R() - 0.5) * hw * 1.4 + vx * (R() - 0.5) * hd * 1.2, z: z + uz * (R() - 0.5) * hw * 1.4 + vz * (R() - 0.5) * hd * 1.2 });
+    const units = 2 + Math.floor(R() * 3);
+    for (let k = 0; k < units; k++) {
+      const p = spot();
+      obox(props, p.x, p.z, ux, uz, 0.9, 0.55, y, y + 1.0, color("#c3c6c8"));
+      addGeo(props, new THREE.CylinderGeometry(0.36, 0.36, 0.04, 12).translate(0, y + 1.02, 0), color("#3a3d40"), place(p.x, 0, p.z));
+    }
+    for (let k = 0; k < 3; k++) {
+      const p = spot();
+      addGeo(props, new THREE.CylinderGeometry(0.16, 0.16, 0.9, 8).translate(0, y + 0.45, 0), color("#9a9da0"), place(p.x, 0, p.z));
+      addGeo(props, new THREE.CylinderGeometry(0.26, 0.22, 0.14, 8).translate(0, y + 0.95, 0), color("#8a8d90"), place(p.x, 0, p.z));
+    }
+    if (b.storeys >= 5) {
+      const ox = x - ux * hw * 0.35;
+      const oz = z - uz * hw * 0.35;
+      obox(props, ox, oz, ux, uz, 1.8, 1.6, y, y + 3.2, color(b.style === "brick" ? "#a4553f" : "#c9c4b8"), true, flatRoof(b), roofs);
+    }
+    // And a timber water tank on a brick building.
     if (b.style === "brick" && b.storeys >= 5 && R() < 0.75) {
       const tx = x + ux * hw * 0.4;
       const tz = z + uz * hw * 0.4;
@@ -361,7 +390,7 @@ function bays(fs: FacadeSheet, b: Building, H: number) {
   }
 }
 
-function civic(_s: State, b: Building, fs: FacadeSheet, props: Sheet, trees: TreeSpot[], R: () => number) {
+function civic(_s: State, b: Building, fs: FacadeSheet, props: Sheet, roofs: Sheet, trees: TreeSpot[], R: () => number) {
   const { x, z, ux, uz, hw, hd, fx, fz } = b;
   const kind = b.civic ?? "park";
   if (kind === "park" || kind === "plaza") {
@@ -383,7 +412,7 @@ function civic(_s: State, b: Building, fs: FacadeSheet, props: Sheet, trees: Tre
   const wall = new THREE.Color(kind === "clinic" ? "#ecebe6" : kind === "library" ? "#d4bf94" : b.color);
   const type = kind === "clinic" ? 4 : kind === "library" ? 2 : 3;
   look(fs, b, type);
-  obox(fs, x, z, ux, uz, hw, hd, 0, H, wall, true, flatRoof(b));
+  obox(fs, x, z, ux, uz, hw, hd, 0, H, wall, true, flatRoof(b), roofs);
   parapet(props, b, H, color("#e6e0d2"));
   if (kind === "school") {
     // A flagpole and a covered area.
@@ -454,7 +483,9 @@ function nature(s: State, x0: number, z0: number, trees: TreeSpot[], quality: "l
     const wantWild = !d && R() < 0.3;
     const wantRiver = near < s.riverHalf + 45 && near > s.riverHalf + 6;
     const hedge = d?.use === "farms" && d.crop !== "orchard" && R() < 0.12;
-    if (!(wantPark || wantWild || wantRiver || hedge)) continue;
+    // The green between blocks in town gets the odd tree too.
+    const wantTown = !!d && (d.use === "homes" || d.use === "mixed") && R() < 0.35;
+    if (!(wantPark || wantWild || wantRiver || hedge || wantTown)) continue;
     if (!clear(x, z, 3) || nearBuilding(s, x, z)) continue;
     trees.push({ kind: R() < 0.25 ? "pine" : R() < 0.5 ? "tall" : "round", x, z, k: 0.8 + R() * 0.6 });
   }

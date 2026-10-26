@@ -34,6 +34,40 @@ export function grainTexture() {
   return t;
 }
 
+/** Smooth tileable noise (a few octaves of value noise), for variation over hundreds of metres. */
+export function macroTexture() {
+  const N = 256;
+  const { c, g } = canvas(N);
+  const img = g.createImageData(N, N);
+  const R = rng(63);
+  const v = new Float32Array(N * N);
+  for (const [cells, amp] of [[4, 0.5], [8, 0.27], [16, 0.15], [32, 0.08]] as [number, number][]) {
+    const lat = Array.from({ length: cells * cells }, () => R());
+    const at = (i: number, j: number) => lat[((j + cells) % cells) * cells + ((i + cells) % cells)];
+    for (let y = 0; y < N; y++)
+      for (let x = 0; x < N; x++) {
+        const fx = (x / N) * cells;
+        const fy = (y / N) * cells;
+        const i = Math.floor(fx);
+        const j = Math.floor(fy);
+        const sx = (fx - i) * (fx - i) * (3 - 2 * (fx - i));
+        const sy = (fy - j) * (fy - j) * (3 - 2 * (fy - j));
+        const a = at(i, j) + (at(i + 1, j) - at(i, j)) * sx;
+        const b = at(i, j + 1) + (at(i + 1, j + 1) - at(i, j + 1)) * sx;
+        v[y * N + x] += (a + (b - a) * sy) * amp;
+      }
+  }
+  for (let k = 0; k < N * N; k++) {
+    const q = Math.max(0, Math.min(255, Math.round(v[k] * 255)));
+    img.data[k * 4] = img.data[k * 4 + 1] = img.data[k * 4 + 2] = q;
+    img.data[k * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
 /** Soft ripples for the river: a tileable normal map. */
 export function rippleTexture() {
   const N = 256;
@@ -73,7 +107,7 @@ const CROPS: Record<Crop, string[][]> = {
   orchard: [["#7d8a4a", "#6d6a45"], ["#86924f", "#706b47"]],
 };
 
-export const GROUND_BASE = "#7f9b4c";
+export const GROUND_BASE = "#748a48";
 
 /** Paint the whole map's ground onto a canvas (N pixels across MAP_HALF*2 metres). */
 export class GroundPainter {
@@ -128,7 +162,7 @@ export class GroundPainter {
       const y = R() * N;
       const r = (20 + R() * 90) * this.k;
       const gr = g.createRadialGradient(x, y, 0, x, y, r);
-      const c = R() < 0.5 ? "rgba(98,128,58,0.35)" : "rgba(150,160,80,0.28)";
+      const c = R() < 0.4 ? "rgba(84,110,52,0.35)" : R() < 0.7 ? "rgba(140,146,84,0.3)" : "rgba(120,112,72,0.22)";
       gr.addColorStop(0, c);
       gr.addColorStop(1, "rgba(0,0,0,0)");
       g.fillStyle = gr;
@@ -138,14 +172,16 @@ export class GroundPainter {
     // Riverbanks: a muddy, reedy fringe.
     g.lineCap = "round";
     g.lineJoin = "round";
-    g.strokeStyle = "#7d7a52";
-    g.lineWidth = (s.riverHalf * 2 + 14) * this.k;
-    g.beginPath();
-    for (let i = 0; i < s.river.length; i += 2) {
-      if (i === 0) g.moveTo(this.X(s.river[i]), this.Z(s.river[i + 1]));
-      else g.lineTo(this.X(s.river[i]), this.Z(s.river[i + 1]));
+    for (const [col, extra] of [["#5f6f3e", 26], ["#6a6446", 12], ["#4f5440", 5]] as [string, number][]) {
+      g.strokeStyle = col;
+      g.lineWidth = (s.riverHalf * 2 + extra) * this.k;
+      g.beginPath();
+      for (let i = 0; i < s.river.length; i += 2) {
+        if (i === 0) g.moveTo(this.X(s.river[i]), this.Z(s.river[i + 1]));
+        else g.lineTo(this.X(s.river[i]), this.Z(s.river[i + 1]));
+      }
+      g.stroke();
     }
-    g.stroke();
     for (const l of s.lots) {
       if (!l) continue;
       const b = l.bld >= 0 ? s.buildings[l.bld] : null;
@@ -161,16 +197,16 @@ export class GroundPainter {
     g.clip();
     if (d.use === "farms") this.fields(d);
     else if (d.use === "parks") {
-      g.fillStyle = "#6ea445";
+      g.fillStyle = "#5f8c3d";
       g.fill();
       // Mowing stripes.
-      g.globalAlpha = 0.12;
-      g.fillStyle = "#9fd06a";
+      g.globalAlpha = 0.1;
+      g.fillStyle = "#8db862";
       const step = 6 * this.k;
       for (let y = 0; y < this.N; y += step * 2) g.fillRect(0, y, this.N, step);
       g.globalAlpha = 1;
     } else {
-      g.fillStyle = "#7fa04d";
+      g.fillStyle = "#71894a";
       g.fill();
     }
     g.restore();
@@ -229,7 +265,7 @@ export class GroundPainter {
     if (!b) {
       if (!d || use === "farms" || use === "parks") return;
       // A vacant plot in town: rough grass with a worn edge.
-      g.fillStyle = "#8a9d55";
+      g.fillStyle = "#858f58";
       this.orect(x, z, ux, uz, LOT_W / 2 - 0.4, LOT_D / 2 - 0.4);
       g.fill();
       return;
@@ -250,7 +286,7 @@ export class GroundPainter {
     }
     if (b.use === "civic") {
       if (b.civic === "park") {
-        g.fillStyle = "#68a243";
+        g.fillStyle = "#5c8c3c";
         this.orect(x, z, ux, uz, LOT_W / 2, LOT_D / 2);
         g.fill();
         g.strokeStyle = "#cdbf9e";
@@ -265,7 +301,7 @@ export class GroundPainter {
         g.fill();
       } else if (b.civic === "school") {
         // A playing field behind.
-        g.fillStyle = "#6aa848";
+        g.fillStyle = "#5e9440";
         this.orect(x, z, ux, uz, LOT_W / 2, LOT_D / 2);
         g.fill();
       } else {
@@ -277,7 +313,7 @@ export class GroundPainter {
     }
     if (b.form === "house" || b.form === "townhouse") {
       // Lawn, with a driveway down one side for a house.
-      g.fillStyle = b.form === "house" ? "#6f9d44" : "#719a47";
+      g.fillStyle = b.form === "house" ? "#628a3e" : "#678a42";
       this.orect(x, z, ux, uz, LOT_W / 2 - 0.3, LOT_D / 2 - 0.3);
       g.fill();
       if (b.form === "house") {
@@ -311,7 +347,7 @@ export class GroundPainter {
       }
     } else if (b.form !== "workshop") {
       // A strip of garden behind.
-      g.fillStyle = "#6f9a46";
+      g.fillStyle = "#62873f";
       this.orect(x - f.x * 12, z - f.z * 12, ux, uz, LOT_W / 2 - 0.6, 3.4);
       g.fill();
     }
@@ -319,19 +355,27 @@ export class GroundPainter {
 }
 
 /** The ground material: the painted map, fine grain up close. */
-export function groundMaterial(map: THREE.Texture, grain: THREE.Texture) {
+export function groundMaterial(map: THREE.Texture, grain: THREE.Texture, macro: THREE.Texture) {
   const m = new THREE.MeshStandardMaterial({ map, roughness: 0.96, metalness: 0 });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.tGrain = { value: grain };
+    sh.uniforms.tMacro = { value: macro };
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vGW;").replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvGW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nuniform sampler2D tGrain;\nvarying vec3 vGW;")
+      .replace("#include <common>", "#include <common>\nuniform sampler2D tGrain;\nuniform sampler2D tMacro;\nvarying vec3 vGW;")
       .replace(
         "#include <map_fragment>",
         `#include <map_fragment>
         float gr = texture2D(tGrain, vGW.xz / 6.0).r * 0.6 + texture2D(tGrain, vGW.xz / 37.0).r * 0.4;
         float fade = clamp(length(vGW - cameraPosition) / 900.0, 0.0, 1.0);
-        diffuseColor.rgb *= mix(0.72 + gr * 0.45, 1.0, fade);`,
+        diffuseColor.rgb *= mix(0.72 + gr * 0.45, 1.0, fade);
+        // Over hundreds of metres, grass is never one colour: drier patches, lusher hollows.
+        float m1 = texture2D(tMacro, vGW.xz / 420.0).r;
+        float m2 = texture2D(tMacro, vGW.xz / 97.0 + 0.31).r;
+        float veg = smoothstep(0.0, 0.06, diffuseColor.g - max(diffuseColor.r, diffuseColor.b) * 0.92);
+        vec3 tintV = mix(vec3(0.9, 0.98, 0.86), vec3(1.1, 1.03, 0.8), smoothstep(0.3, 0.7, m1));
+        diffuseColor.rgb *= mix(vec3(1.0), tintV * (0.88 + m2 * 0.24), veg);
+        diffuseColor.rgb *= 0.94 + m2 * 0.1;`,
       );
   };
   m.customProgramCacheKey = () => "xc-ground";
@@ -417,7 +461,7 @@ export function riverMesh(s: State, normal: THREE.Texture) {
     const nz = dx / l;
     if (i > 0) acc += Math.hypot(p[i] - p[i - 2], p[i + 1] - p[i - 1]);
     const w = s.riverHalf + 2;
-    pos.push(p[i] + nx * w, 0.02, p[i + 1] + nz * w, p[i] - nx * w, 0.02, p[i + 1] - nz * w);
+    pos.push(p[i] + nx * w, 0.3, p[i + 1] + nz * w, p[i] - nx * w, 0.3, p[i + 1] - nz * w);
     uv.push(acc / 30, 0, acc / 30, (w * 2) / 30);
     if (i > 0) {
       const k = i - 2;
@@ -435,7 +479,18 @@ export function riverMesh(s: State, normal: THREE.Texture) {
     g.setIndex(idx.map((_, i) => idx[i - (i % 3) + [0, 2, 1][i % 3]]));
     g.computeVertexNormals();
   }
-  const m = new THREE.MeshStandardMaterial({ color: "#2f5d66", roughness: 0.12, metalness: 0.2, normalMap: normal, normalScale: new THREE.Vector2(0.35, 0.35), envMapIntensity: 1.2 });
+  // Deep, slightly green-brown river water that mirrors the sky; drawn just above the banks.
+  const m = new THREE.MeshStandardMaterial({
+    color: "#284346",
+    roughness: 0.07,
+    metalness: 0.05,
+    normalMap: normal,
+    normalScale: new THREE.Vector2(0.5, 0.5),
+    envMapIntensity: 1.5,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -4,
+  });
   normal.repeat.set(1, 1);
   const mesh = new THREE.Mesh(g, m);
   mesh.receiveShadow = true;

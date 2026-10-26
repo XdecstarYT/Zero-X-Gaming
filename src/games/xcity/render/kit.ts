@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { FacadeSheet, Sheet } from "@/games/heatwave/render/sheet";
 
 /**
@@ -12,7 +13,7 @@ export { FacadeSheet, Sheet };
 const tmpC = new THREE.Color();
 
 /** Walls (and optionally a top) of a box turned to the axis (ux, uz), centred at (x, z). */
-export function obox(sh: Sheet, x: number, z: number, ux: number, uz: number, hw: number, hd: number, y0: number, y1: number, col: THREE.Color, top = true, topCol?: THREE.Color) {
+export function obox(sh: Sheet, x: number, z: number, ux: number, uz: number, hw: number, hd: number, y0: number, y1: number, col: THREE.Color, top = true, topCol?: THREE.Color, topSheet: Sheet = sh) {
   const vx = -uz;
   const vz = ux;
   const c = (a: number, b: number) => [x + ux * hw * a + vx * hd * b, z + uz * hw * a + vz * hd * b];
@@ -33,7 +34,7 @@ export function obox(sh: Sheet, x: number, z: number, ux: number, uz: number, hw
   }
   if (top) {
     const tc = topCol ?? col;
-    sh.quad([P[3][0], y1, P[3][1]], [P[2][0], y1, P[2][1]], [P[1][0], y1, P[1][1]], [P[0][0], y1, P[0][1]], [[0, 0], [1, 0], [1, 1], [0, 1]], [0, 1, 0], tc);
+    topSheet.quad([P[3][0], y1, P[3][1]], [P[2][0], y1, P[2][1]], [P[1][0], y1, P[1][1]], [P[0][0], y1, P[0][1]], [[0, 0], [1, 0], [1, 1], [0, 1]], [0, 1, 0], tc);
   }
 }
 
@@ -109,8 +110,82 @@ export function color(hex: string, k = 1) {
 
 /* ------------------------------------------------------------------ materials */
 
+/** Value noise in GLSL (hash, 3D noise), shared by the roof and foliage shaders. */
+const NOISE_GLSL = `
+float xcHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float xcNoise(vec3 x) {
+  vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(xcHash(i), xcHash(i + vec3(1,0,0)), f.x), mix(xcHash(i + vec3(0,1,0)), xcHash(i + vec3(1,1,0)), f.x), f.y),
+             mix(mix(xcHash(i + vec3(0,0,1)), xcHash(i + vec3(1,0,1)), f.x), mix(xcHash(i + vec3(0,1,1)), xcHash(i + vec3(1,1,1)), f.x), f.y), f.z);
+}`;
+
+/** World position (and world normal) into the fragment shader, instanced or not. */
+function worldVaryings(sh: { vertexShader: string; fragmentShader: string }, normal = false) {
+  sh.vertexShader = sh.vertexShader
+    .replace("#include <common>", `#include <common>\nvarying vec3 vXW;${normal ? "\nvarying vec3 vXN;" : ""}`)
+    .replace(
+      "#include <begin_vertex>",
+      `#include <begin_vertex>
+      vec4 xcW = vec4(transformed, 1.0);
+      #ifdef USE_INSTANCING
+      xcW = instanceMatrix * xcW;
+      #endif
+      vXW = (modelMatrix * xcW).xyz;${normal ? "\n      vXN = normalize(mat3(modelMatrix) * objectNormal);" : ""}`,
+    );
+  sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\nvarying vec3 vXW;${normal ? "\nvarying vec3 vXN;" : ""}\n${NOISE_GLSL}`);
+}
+
+/**
+ * Roofs, with their covering drawn per pixel in world space: on pitched roofs, courses of tiles
+ * or shingles (each a slightly different shade, with the shadow line under each course); on flat
+ * roofs, membrane sheets with seams, gravel speckle and weathering.
+ */
+function roofMaterial() {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0.02 });
+  m.onBeforeCompile = (sh) => {
+    worldVaryings(sh, true);
+    sh.fragmentShader = sh.fragmentShader.replace(
+      "#include <color_fragment>",
+      `#include <color_fragment>
+      vec3 w = vXW;
+      float stain = xcNoise(w * 0.18) * 0.6 + xcNoise(w * 0.7) * 0.4;
+      if (vXN.y > 0.97) {
+        float seam = 1.0 - smoothstep(0.0, 0.02, abs(fract((w.x + w.z * 0.13) / 2.6) - 0.5) - 0.48);
+        float speck = xcNoise(w * 7.0);
+        diffuseColor.rgb *= (0.86 + speck * 0.18) * (1.0 - seam * 0.06) * (0.86 + stain * 0.22);
+      } else if (vXN.y > 0.2) {
+        float row = w.y * 4.4;
+        float fr = fract(row);
+        float along = (w.x + w.z) * 3.1 + floor(row) * 0.5;
+        float tile = xcHash(vec3(floor(along), floor(row), 3.0));
+        float gap = smoothstep(0.0, 0.07, fract(along)) * smoothstep(1.0, 0.93, fract(along));
+        diffuseColor.rgb *= (0.7 + 0.3 * smoothstep(0.0, 0.16, fr)) * (0.88 + tile * 0.2) * (0.9 + 0.1 * gap) * (0.9 + stain * 0.15);
+      }`,
+    );
+  };
+  m.customProgramCacheKey = () => "xc-roof";
+  return m;
+}
+
+/** Leaves: the crown's vertex shading, broken up into clumps of foliage by world-space noise. */
+function foliageMaterial() {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 });
+  m.onBeforeCompile = (sh) => {
+    worldVaryings(sh);
+    sh.fragmentShader = sh.fragmentShader.replace(
+      "#include <color_fragment>",
+      `#include <color_fragment>
+      float lf = xcNoise(vXW * 1.7) * 0.6 + xcNoise(vXW * 4.3) * 0.4;
+      diffuseColor.rgb *= 0.74 + lf * 0.46;`,
+    );
+  };
+  m.customProgramCacheKey = () => "xc-foliage";
+  return m;
+}
+
 export const MATS = {
   props: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.02, side: THREE.DoubleSide }),
+  roof: roofMaterial(),
   metal: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.55 }),
   glow: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),
 };
@@ -169,23 +244,78 @@ function mergeAll(list: THREE.BufferGeometry[]) {
 
 export type TreeKind = "round" | "tall" | "pine" | "fruit";
 
-/** A tree about 1 unit tall per metre of scale: trunk and a lumpy crown, vertex-coloured. */
-export function treeGeometry(kind: TreeKind): THREE.BufferGeometry {
-  const trunkH = kind === "fruit" ? 0.9 : kind === "pine" ? 1.2 : 2.2;
-  const trunk = paintGeo(new THREE.CylinderGeometry(0.1, 0.16, trunkH, 5).translate(0, trunkH / 2, 0), "#5a4232");
-  let crown: THREE.BufferGeometry;
-  if (kind === "pine") crown = paintGeo(jitter(new THREE.ConeGeometry(1.6, 5.2, 7).translate(0, trunkH + 2.4, 0), 0.08, 3), "#2f5a35", 0.2);
-  else if (kind === "fruit") crown = paintGeo(jitter(new THREE.IcosahedronGeometry(1.3, 1).scale(1, 0.8, 1).translate(0, trunkH + 0.9, 0), 0.16, 7), "#5f8a3a", 0.25);
-  else if (kind === "tall") crown = paintGeo(jitter(new THREE.IcosahedronGeometry(1.7, 1).scale(1, 1.5, 1).translate(0, trunkH + 2.1, 0), 0.14, 11), "#4f7d36", 0.25);
-  else {
-    const a = jitter(new THREE.IcosahedronGeometry(2.1, 1).translate(0, trunkH + 1.7, 0), 0.15, 5);
-    const b = jitter(new THREE.IcosahedronGeometry(1.4, 1).translate(0.9, trunkH + 2.6, 0.5), 0.15, 9);
-    crown = mergeAll([paintGeo(a, "#4c7a33", 0.25), paintGeo(b, "#56853a", 0.25)]);
+/**
+ * Shade a crown the way light falls on a tree: darker underneath and inside, brighter on top and
+ * on the outside, with a little variation from leaf to leaf.
+ */
+function shadeCrown(g: THREE.BufferGeometry, hex: string, y0: number, y1: number, cx = 0, cz = 0) {
+  const geo = g.index ? g.toNonIndexed() : g;
+  const pos = geo.getAttribute("position");
+  const nor = geo.getAttribute("normal");
+  const c = new Float32Array(pos.count * 3);
+  const base = new THREE.Color(hex);
+  let a = 7;
+  for (let i = 0; i < pos.count; i++) {
+    const h = Math.max(0, Math.min(1, (pos.getY(i) - y0) / Math.max(0.01, y1 - y0)));
+    const ox = pos.getX(i) - cx;
+    const oz = pos.getZ(i) - cz;
+    const out = (ox * nor.getX(i) + oz * nor.getZ(i)) / (Math.hypot(ox, oz) || 1);
+    a = (a * 9301 + 49297) % 233280;
+    const k = (0.52 + 0.48 * h) * (0.86 + 0.14 * Math.max(0, out)) * (0.9 + nor.getY(i) * 0.1) * (0.92 + (a / 233280) * 0.16);
+    c[i * 3] = base.r * k;
+    c[i * 3 + 1] = base.g * k;
+    c[i * 3 + 2] = base.b * k;
   }
-  return mergeAll([trunk, crown]);
+  geo.setAttribute("color", new THREE.BufferAttribute(c, 3));
+  return geo;
 }
 
-export const treeMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
+/** A clump of foliage: a lumpy ball. */
+const lump = (r: number, x: number, y: number, z: number, seed: number, sy = 1, detail = 0) => jitter(welded(new THREE.IcosahedronGeometry(r, detail)).scale(1, sy, 1), detail ? 0.18 : 0.12, seed).translate(x, y, z);
+
+/** Weld a shape's shared corners so it can be dented without tearing (and shades smoothly). */
+function welded(g: THREE.BufferGeometry) {
+  g.deleteAttribute("normal");
+  g.deleteAttribute("uv");
+  const out = mergeVertices(g, 1e-4);
+  g.dispose();
+  return out;
+}
+
+/** A tree about 1 unit tall per metre of scale: a trunk (with a couple of limbs) and a crown of clumps. */
+export function treeGeometry(kind: TreeKind): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const bark = kind === "pine" ? "#4a3a2e" : "#5a4636";
+  const trunkH = kind === "fruit" ? 1.1 : kind === "pine" ? 1.6 : kind === "tall" ? 2.4 : 2.6;
+  parts.push(paintGeo(new THREE.CylinderGeometry(kind === "pine" ? 0.14 : 0.12, kind === "pine" ? 0.22 : 0.2, trunkH + 0.6, 6).translate(0, (trunkH + 0.6) / 2, 0), bark, 0.15));
+  if (kind === "pine") {
+    // Tiers of drooping boughs, narrowing to a spire.
+    const tiers: [number, number, number][] = [[2.3, 2.6, 2.4], [1.85, 2.4, 3.9], [1.4, 2.2, 5.3], [0.9, 2.0, 6.6], [0.45, 1.5, 7.7]];
+    tiers.forEach(([r, h, y], k) => parts.push(shadeCrown(jitter(welded(new THREE.ConeGeometry(r, h, 7, 1, true)), 0.1, 13 + k).translate(0, y, 0), "#2c4b31", 1.2, 8.5)));
+  } else if (kind === "tall") {
+    // A columnar tree (poplar): clumps stacked up a narrow crown.
+    const ls = [lump(1.35, 0, 3.4, 0, 3, 1.25, 1), lump(1.25, 0.25, 4.9, -0.2, 5, 1.3), lump(1.05, -0.2, 6.3, 0.15, 7, 1.3), lump(0.75, 0.1, 7.5, 0, 11, 1.2)];
+    for (const l of ls) parts.push(shadeCrown(l, "#4e7535", 2.2, 8.3));
+  } else if (kind === "fruit") {
+    const ls = [lump(1.25, 0, 2.1, 0, 7, 0.85), lump(0.85, 0.75, 2.4, 0.35, 9), lump(0.8, -0.65, 2.3, -0.45, 13)];
+    for (const l of ls) parts.push(shadeCrown(l, "#5a8235", 1.0, 3.3));
+  } else {
+    // A broadleaf: limbs reaching out to a wide crown of clumps.
+    for (const [ax, az] of [[0.7, 0.3], [-0.5, -0.6]]) parts.push(paintGeo(new THREE.CylinderGeometry(0.06, 0.1, 2, 4, 1, true).rotateZ(-ax * 0.8).rotateX(az * 0.8).translate(ax * 0.6, trunkH + 0.6, az * 0.6), bark));
+    const ls = [
+      lump(2.1, 0, trunkH + 2.0, 0, 5, 0.85, 1),
+      lump(1.55, 1.45, trunkH + 1.6, 0.4, 9),
+      lump(1.5, -1.35, trunkH + 1.7, -0.5, 11),
+      lump(1.45, 0.3, trunkH + 1.5, 1.4, 15),
+      lump(1.4, -0.4, trunkH + 1.6, -1.45, 17),
+      lump(1.35, 0.4, trunkH + 3.1, 0.2, 19),
+    ];
+    for (const l of ls) parts.push(shadeCrown(l, "#4a7231", trunkH + 0.3, trunkH + 4.4));
+  }
+  return mergeAll(parts);
+}
+
+export const treeMaterial = foliageMaterial();
 
 /* ------------------------------------------------------------------ vehicles */
 

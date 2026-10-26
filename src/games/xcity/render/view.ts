@@ -10,7 +10,7 @@ import { Rig } from "@/nextx/rig";
 import { MAP_HALF } from "../data";
 import type { Building, State } from "../state";
 import { buildChunk, chunkOf, heightOf } from "./chunks";
-import { countryTexture, grainTexture, GroundPainter, groundMaterial, hillRing, rippleTexture, riverMesh } from "./ground";
+import { countryTexture, grainTexture, GroundPainter, groundMaterial, hillRing, macroTexture, rippleTexture, riverMesh } from "./ground";
 import { Overlay } from "./overlay";
 import { buildRoads, type RoadMeshes } from "./roadmesh";
 import { Traffic } from "./traffic";
@@ -103,7 +103,8 @@ export class View {
     const az = 0.9;
     this.sunDir.set(Math.cos(az) * Math.sqrt(1 - SUN_H * SUN_H), SUN_H, Math.sin(az) * Math.sqrt(1 - SUN_H * SUN_H)).normalize();
     u.uSunDir.value.copy(this.sunDir);
-    this.scene.fog = new THREE.Fog(L.horizon.clone().lerp(new THREE.Color("#d8e2ea"), 0.4), 1500, 9000);
+    // Aerial perspective: the far side of town and the farms beyond fade into a pale blue haze.
+    this.scene.fog = new THREE.Fog(L.horizon.clone().lerp(new THREE.Color("#c4d0da"), 0.55), 900, 7000);
     this.sun = new THREE.DirectionalLight(L.sun, L.sunI * 0.95);
     this.sun.castShadow = quality !== "low";
     const sm = quality === "high" ? 4096 : 2048;
@@ -121,7 +122,7 @@ export class View {
     // The ground and the country round it.
     this.painter = new GroundPainter(quality === "high" ? 4096 : quality === "medium" ? 2048 : 1024);
     const gg = new THREE.PlaneGeometry(MAP_HALF * 2, MAP_HALF * 2, 1, 1).rotateX(-Math.PI / 2);
-    this.ground = new THREE.Mesh(gg, groundMaterial(this.painter.tex, this.grain));
+    this.ground = new THREE.Mesh(gg, groundMaterial(this.painter.tex, this.grain, macroTexture()));
     this.ground.receiveShadow = true;
     this.scene.add(this.ground);
     const ct = countryTexture();
@@ -167,8 +168,8 @@ export class View {
       }
       this.composer.addPass(new OutputPass());
       const grade = new ShaderPass(GRADE);
-      grade.uniforms.uSat.value = 1.06;
-      grade.uniforms.uContrast.value = 1.04;
+      grade.uniforms.uSat.value = 0.96;
+      grade.uniforms.uContrast.value = 1.06;
       grade.uniforms.uWarm.value = 0.025;
       grade.uniforms.uVignette.value = 0.3;
       this.composer.addPass(grade);
@@ -310,8 +311,8 @@ export class View {
     this.camera.updateProjectionMatrix();
     this.sky.position.copy(this.camera.position);
     const fog = this.scene.fog as THREE.Fog;
-    fog.near = 500 + d * 0.9;
-    fog.far = 5200 + d * 3.2;
+    fog.near = 260 + d * 0.42;
+    fog.far = 3600 + d * 2.3;
     // The sun's shadow follows what's in view.
     const T = this.rig.cur.target;
     const S = Math.max(70, Math.min(1100, d * 0.85));
