@@ -58,6 +58,7 @@ export const css = `
 .xc-clock .date{font-size:12.5px;font-weight:700;padding:0 8px;white-space:nowrap}
 .xc-speed{min-width:32px;height:32px;border-radius:10px;font-weight:800;font-size:12px;color:var(--ink2)}
 .xc-speed.on{background:#f6f7f5;color:#121513}
+.xc-polbar{flex:none}
 @container xc (max-width: 700px){.xc-top{flex-wrap:wrap}.xc-stats{order:3;flex:1 1 100%}.xc-clock{margin-left:auto}.xc-city small{display:none}.xc-polbar{order:2;flex:1 1 100%}.xc-polbar .xc-polchip{flex:1}}
 
 /* demand meter (Homes · Wanted) */
