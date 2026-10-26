@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { CHANGELOG } from "../data";
 import { fmt, type Game, type PolTab } from "../game";
 import * as pol from "../politics";
-import type { Axis, Electorate, GroupId, Pol } from "../poltypes";
+import type { Axis, Electorate, GroupId, Pol, SeatPref } from "../poltypes";
 import { dateLabel } from "../state";
 import { MONTHS } from "../data";
 
@@ -172,6 +172,12 @@ function Choice<T extends string | number>({ label, value, options, onChange, id
   );
 }
 
+const SEAT_PREFS: [SeatPref, string][] = [
+  ["town", "🏘️ The town centre"],
+  ["suburbs", "🏡 The suburbs"],
+  ["country", "🌾 The country"],
+];
+
 const COLOURS = ["#1fb5a0", "#3557a8", "#d0453b", "#e0a020", "#3c9a46", "#8a6a3a", "#8b5cf6", "#ec4899", "#0ea5e9", "#f97316"];
 const ICONS = ["🏠", "🏛️", "✊", "💼", "🌿", "🌾", "⭐", "🚋", "🦉", "🔥", "🌊", "🗽", "⚖️", "🌻"];
 
@@ -226,7 +232,10 @@ export function Setup({ game }: { game: Game }) {
                   <Choice label="Voting" value={d.pol.system} options={[["preferential", "Preferential"], ["fptp", "First past the post"]]} onChange={(v) => game.editSetup({ pol: { system: v } })} />
                   <Choice label="Term" value={d.pol.termYears} options={[[2, "2 years"], [3, "3 years"], [4, "4 years"]]} onChange={(v) => game.editSetup({ pol: { termYears: v } })} />
                   <Choice label="Campaign" value={d.pol.campaignWeeks} options={[[6, "6 weeks"], [10, "10 weeks"], [14, "14 weeks"]]} onChange={(v) => game.editSetup({ pol: { campaignWeeks: v } })} />
-                  <Choice label="Electorates in the city" value={d.pol.electorates} options={[[4, "4"], [6, "6"], [8, "8"]]} onChange={(v) => game.editSetup({ pol: { electorates: v } })} id="xc-electorates" />
+                  <Choice label="Seats" value={d.pol.seats} options={[["fewer", "Fewer, bigger"], ["normal", "Normal"], ["more", "More, smaller"]]} onChange={(v) => game.editSetup({ pol: { seats: v } })} id="xc-seats" />
+                  <p className="xc-hint" style={{ marginTop: -6 }}>
+                    The Electoral Commission draws the electorates round where people live, so each has about as many voters. As the city grows it gets more seats, and the map is redrawn before an election.
+                  </p>
                   <Choice label="Rival parties" value={d.pol.aiParties} options={[[2, "2"], [3, "3"], [4, "4"], [5, "5"]]} onChange={(v) => game.editSetup({ pol: { aiParties: v } })} />
                   <Choice label="Federal parliament" value={d.pol.federalSeats} options={[[51, "51 seats"], [101, "101 seats"], [151, "151 seats"]]} onChange={(v) => game.editSetup({ pol: { federalSeats: v } })} />
                   <Choice label="Difficulty" value={d.pol.difficulty} options={[["easy", "Easy"], ["normal", "Normal"], ["hard", "Hard"]]} onChange={(v) => game.editSetup({ pol: { difficulty: v } })} />
@@ -344,15 +353,15 @@ function PartyDesigner({ game }: { game: Game }) {
         <p className="xc-hint">Who&apos;ll like you: {groupFit(party.pos)}</p>
       </div>
       <div className="xc-sec">
-        <h5>Your electorate</h5>
+        <h5>Where you stand</h5>
         <div className="xc-row">
-          {pol.ELECTORATE_NAMES.slice(0, d.pol.electorates).map((n, i) => (
-            <button key={n} className={`xc-chip${d.seat === i ? " on" : ""}`} type="button" onClick={() => game.editSetup({ seat: i })}>
-              {n}
-              {i === 0 ? " (the town)" : ""}
+          {SEAT_PREFS.map(([v, l]) => (
+            <button key={v} className={`xc-chip${d.seat === v ? " on" : ""}`} type="button" onClick={() => game.editSetup({ seat: v })} data-testid={`xc-stand-${v}`}>
+              {l}
             </button>
           ))}
         </div>
+        <p className="xc-hint">The seats are drawn when the world is; you&apos;ll stand in the one that fits.</p>
       </div>
       <div className="xc-preview" style={{ borderColor: party.color }}>
         <span style={{ fontSize: 28 }}>{party.icon}</span>
@@ -468,6 +477,31 @@ function ElectorateRow({ game, e }: { game: Game; e: Electorate }) {
   );
 }
 
+/** What the Electoral Commission has done, or will do, to the map. */
+function SeatsNote({ s, p }: { s: NonNullable<Game["s"]>; p: Pol }) {
+  const due = pol.seatsFor(s, p.settings.seats);
+  const r = p.redraw;
+  if (p.campaign && r)
+    return (
+      <div className="xc-note" data-testid="xc-redraw">
+        🗺️{" "}
+        <span>
+          The map was redrawn for this election: {r.to === r.from ? `still ${r.to} seats, with new boundaries` : `${r.to} seats, ${r.to > r.from ? "up" : "down"} from ${r.from}`}
+          {r.fresh.length ? ` (new: ${r.fresh.join(", ")})` : ""}. Each seat is held notionally by the party that held most of its voters.
+        </span>
+      </div>
+    );
+  if (p.campaign || due === p.electorates.length) return null;
+  return (
+    <div className="xc-note" data-testid="xc-redraw-due">
+      🗺️{" "}
+      <span>
+        {s.name} has grown: the Electoral Commission will redraw the map for the next election, with {due} seats {due > p.electorates.length ? "instead of" : "down from"} {p.electorates.length}.
+      </span>
+    </div>
+  );
+}
+
 function CampaignTab({ game }: { game: Game }) {
   const s = game.s!;
   const p = s.pol!;
@@ -493,6 +527,7 @@ function CampaignTab({ game }: { game: Game }) {
           📅 Next election: {dateLabel(p.electionAt, MONTHS)}. The campaign starts {dateLabel(p.campaignFrom, MONTHS)}. You get 2 more actions each month until then.
         </div>
       )}
+      <SeatsNote s={s} p={p} />
       {p.debate && !p.debate.asked && <Debate game={game} />}
       <div className="xc-sec">
         <h5>Electorates · tap one, or tap the map</h5>
@@ -846,7 +881,7 @@ function PollsTab({ game }: { game: Game }) {
             .map((r) => (
               <div key={r.month} style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}>
                 <PartyDot color={p.parties[r.winner].color} />
-                {dateLabel(r.month, MONTHS)}: {p.parties[r.winner].name} won {r.seats[r.winner]} of {p.electorates.length}
+                {dateLabel(r.month, MONTHS)}: {p.parties[r.winner].name} won {r.seats[r.winner]} of {r.rows.length}
                 {r.mine ? " · you held your seat" : " · you lost your seat"}
               </div>
             ))}
@@ -872,7 +907,7 @@ export function ElectionNight({ game }: { game: Game }) {
   const tally = p.parties.map((_, i) => r.rows.slice(0, shown).filter((x) => x.winner === i).length);
   const w = p.parties[r.winner];
   const me = pol.playerParty(p);
-  const majority = Math.floor(p.electorates.length / 2) + 1;
+  const majority = Math.floor(r.rows.length / 2) + 1;
   const hung = r.seats[r.winner] < majority;
   return (
     <div className="xc-night" data-testid="xc-night">
@@ -896,7 +931,7 @@ export function ElectionNight({ game }: { game: Game }) {
                   {x.icon} {x.short}
                 </span>
                 <span className="bar">
-                  <i style={{ width: `${(tally[i] / p.electorates.length) * 100}%`, background: x.color }} />
+                  <i style={{ width: `${(tally[i] / r.rows.length) * 100}%`, background: x.color }} />
                 </span>
                 <b className="num">{tally[i]}</b>
               </div>
@@ -911,10 +946,10 @@ export function ElectionNight({ game }: { game: Game }) {
                 <div key={row.electorate} className="xc-result" style={{ borderLeftColor: win.color }}>
                   <b>
                     {row.electorate === p.seat && "⭐ "}
-                    {e.name}
+                    {row.name ?? e.name}
                   </b>
                   <span>
-                    <PartyDot color={win.color} /> {win.short} {gain ? `gain from ${p.parties[row.was].short}` : "hold"} · {pct(row.margin)} margin
+                    <PartyDot color={win.color} /> {win.short} {gain ? `gain from ${p.parties[row.was].short}${p.redraw ? " (notional)" : ""}` : "hold"} · {pct(row.margin)} margin
                   </span>
                   <small className="dim">{e.candidates[row.winner]} elected</small>
                 </div>

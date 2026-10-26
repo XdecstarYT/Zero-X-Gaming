@@ -236,6 +236,18 @@ export const FIRST_NAMES = ["Ana", "Ben", "Chloe", "Dev", "Eli", "Farah", "Gus",
 /** What's changed, newest first (the title screen's change log). */
 export const CHANGELOG: { version: string; date: string; title: string; items: string[] }[] = [
   {
+    version: "1.2",
+    date: "October 2026",
+    title: "Electorates that grow with the city",
+    items: [
+      "The Electoral Commission draws the electorates round where people live, so every seat has about as many voters: small seats in town, big ones out on the farms.",
+      "As the city grows it gets more seats (a village has about 4, a big city up to 16), and the map is redrawn before an election.",
+      "Redrawn seats are held notionally by the party that held most of their voters; names and members carry on, new seats get new names.",
+      "Choose fewer, bigger seats or more, smaller ones, and whether you stand in the town centre, the suburbs or the country.",
+      "Rival parties fit the place: a farm town gets its country party.",
+    ],
+  },
+  {
     version: "1.1",
     date: "October 2026",
     title: "Politics",

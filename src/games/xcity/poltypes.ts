@@ -27,6 +27,7 @@ export interface Party {
 export interface Electorate {
   id: number;
   name: string;
+  /** Where its voters are centred. */
   x: number;
   z: number;
   poly: Pts;
@@ -113,16 +114,23 @@ export interface ElectionResult {
   /** Promises kept and broken this term (yours). */
   kept: number;
   broken: number;
-  rows: { electorate: number; votes: number[]; winner: number; margin: number; was: number }[];
+  rows: { electorate: number; name?: string; votes: number[]; winner: number; margin: number; was: number }[];
 }
 
 export type Role = "candidate" | "govern" | "opposition" | "out";
+
+/** Where you'd like to stand: the seat round the town centre, the suburbs, or the farms. */
+export type SeatPref = "town" | "suburbs" | "country";
+
+/** How many people a seat stands for: fewer, bigger seats or more, smaller ones. */
+export type SeatSize = "fewer" | "normal" | "more";
 
 export interface PolSettings {
   system: "fptp" | "preferential";
   termYears: number;
   campaignWeeks: number;
-  electorates: number;
+  /** Electorates aren't chosen: the Electoral Commission draws them from where people live, more as the city grows. */
+  seats: SeatSize;
   aiParties: number;
   federalSeats: number;
   difficulty: "easy" | "normal" | "hard";
@@ -162,6 +170,10 @@ export interface Pol {
   log: GovtAct[];
   /** A debate this week, waiting for your answer. */
   debate: { topic: Axis; asked: boolean } | null;
+  /** How many times the map has been drawn (the first counts). */
+  redraws?: number;
+  /** What the last redraw did, for the campaign HQ. */
+  redraw?: { month: number; from: number; to: number; fresh: string[] } | null;
   nextId: number;
 }
 

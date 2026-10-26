@@ -17,7 +17,7 @@ import { newCity } from "./world";
 import * as pol from "./politics";
 import { newWorld } from "./showcase";
 import type { Ask, CampaignKind } from "./politics";
-import type { Axis, BillKind, GroupId, PolSettings, PromiseKind, WorldSettings } from "./poltypes";
+import type { Axis, BillKind, GroupId, PolSettings, PromiseKind, SeatPref, WorldSettings } from "./poltypes";
 import { View, pickQuality, type Quality } from "./render/view";
 import { heightOf } from "./render/chunks";
 
@@ -165,7 +165,8 @@ export class Game {
     pol: pol.defaultPolSettings(),
     world: { name: "XCity", seed: Math.floor(Math.random() * 1e6), start: "village", pace: "normal", money: "normal", politics: true } as WorldSettings,
     party: { ...pol.PARTY_PRESETS[0], pos: { ...pol.PARTY_PRESETS[0].pos } } as pol.PartyDraft,
-    seat: 0,
+    /** Where you'd like to stand (the seats themselves are drawn when the world is). */
+    seat: "town" as SeatPref,
     /** The preset the party was started from (it won't also stand against you). */
     basedOn: 0,
   };
@@ -190,13 +191,12 @@ export class Game {
     this.bump();
   }
 
-  editSetup(patch: { pol?: Partial<PolSettings>; world?: Partial<WorldSettings>; party?: Partial<pol.PartyDraft>; seat?: number }) {
+  editSetup(patch: { pol?: Partial<PolSettings>; world?: Partial<WorldSettings>; party?: Partial<pol.PartyDraft>; seat?: SeatPref }) {
     const d = this.draft;
     if (patch.pol) d.pol = { ...d.pol, ...patch.pol };
     if (patch.world) d.world = { ...d.world, ...patch.world };
     if (patch.party) d.party = { ...d.party, ...patch.party, pos: { ...d.party.pos, ...(patch.party.pos ?? {}) } };
     if (patch.seat !== undefined) d.seat = patch.seat;
-    d.seat = Math.min(d.seat, d.pol.electorates - 1);
     this.bump();
   }
 
@@ -219,7 +219,7 @@ export class Game {
     if (s.pol) {
       this.panel = "politics";
       this.polTab = "campaign";
-      this.toast(`${party.leader}, the campaign starts now: ${d.pol.campaignWeeks} weeks to win ${s.pol.electorates[s.pol.seat].name}, and the city.`, "tip");
+      this.toast(`${party.leader}, the campaign starts now: ${d.pol.campaignWeeks} weeks to win ${s.pol.electorates[s.pol.seat].name}, and the city's ${s.pol.electorates.length} seats.`, "tip");
       this.refreshOverlay();
     } else this.toast("You've been hired to plan it all. Zone some homes: tap Zone and drag over the fields.", "tip");
     this.bump();
@@ -294,6 +294,8 @@ export class Game {
       if (s.pol?.campaign) {
         this.panel = "politics";
         this.polTab = "campaign";
+        // The seats may have been redrawn for it.
+        if (s.pol.redraw) this.selElectorate = -1;
         this.toast(`The campaign is on: ${s.pol.settings.campaignWeeks} weeks to election day.`, "tip");
         this.refreshOverlay();
       }

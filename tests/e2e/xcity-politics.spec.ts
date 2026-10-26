@@ -39,7 +39,7 @@ test("XCity politics: set up a world and a party, campaign for ten weeks, electi
 
   // A new world: politics, then the world, then the party.
   await page.getByTestId("xc-new").click();
-  await page.getByTestId("xc-electorates-4").click();
+  await page.getByTestId("xc-seats-fewer").click();
   await shot(page, "3politics", project);
   await page.getByTestId("xc-next").click();
   await page.getByTestId("xc-city-name").fill("Parkton");
@@ -47,6 +47,7 @@ test("XCity politics: set up a world and a party, campaign for ten weeks, electi
   await page.getByTestId("xc-preset-1").click();
   await page.getByTestId("xc-party-name").fill("Parkton First");
   await page.getByTestId("xc-leader").fill("Jo Mayor");
+  await page.getByTestId("xc-stand-country").click();
   await shot(page, "4party", project);
   await page.getByTestId("xc-begin").click();
 

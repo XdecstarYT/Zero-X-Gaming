@@ -5,7 +5,7 @@ import { clamp, pointInPoly, rng, type Pts } from "./geom";
 import { inWater } from "./roads";
 import { advance, farmHectares, hooks, places } from "./sim";
 import { news, rand, type State } from "./state";
-import type { Axis, Bill, BillKind, ElectionResult, Electorate, GroupId, Party, Pol, PolSettings, Position, PromiseKind, PromiseRec, Role } from "./poltypes";
+import type { Axis, Bill, BillKind, ElectionResult, Electorate, GroupId, Party, Pol, PolSettings, Position, PromiseKind, PromiseRec, Role, SeatPref, SeatSize } from "./poltypes";
 
 /**
  * XCity's politics. The city is split into electorates; parties stand candidates in each, and
@@ -62,10 +62,13 @@ export const PARTY_PRESETS: (PartyDraft & { national: number; blurb: string })[]
 ];
 
 const SURNAMES = ["Hale", "Okafor", "Strand", "Brennan", "Doyle", "Nguyen", "Patel", "Kowalski", "Murphy", "Santos", "Lindqvist", "Ahmed", "Fischer", "Rossi", "Tanaka", "O'Neill", "Moreau", "Haddad", "Kaur", "Walsh", "Novak", "Silva", "Byrne", "Mensah"];
-export const ELECTORATE_NAMES = ["Millbrook", "Riverside", "Valley", "Ridgeway", "Orchard Vale", "Eastbrook", "Westbrook", "Kingsford", "Hillcrest", "Southgate", "Northfield"];
+export const ELECTORATE_NAMES = [
+  "Millbrook", "Riverside", "Valley", "Ridgeway", "Orchard Vale", "Eastbrook", "Westbrook", "Kingsford", "Hillcrest", "Southgate", "Northfield", "Ashworth",
+  "Bellmont", "Clearwater", "Fernhill", "Greystone", "Harbourne", "Larkspur", "Marlow", "Oakhurst", "Pinecrest", "Redfern Park", "Stonebridge", "Thornbury",
+];
 
 export function defaultPolSettings(): PolSettings {
-  return { system: "preferential", termYears: 3, campaignWeeks: 10, electorates: 6, aiParties: 3, federalSeats: 101, difficulty: "normal" };
+  return { system: "preferential", termYears: 3, campaignWeeks: 10, seats: "normal", aiParties: 3, federalSeats: 101, difficulty: "normal" };
 }
 
 /* ------------------------------------------------------------------ promises and bills */
@@ -152,57 +155,267 @@ function clipHalf(poly: Pts, ax: number, az: number, b: number): Pts {
   return out;
 }
 
-/** Split the map into n electorates: one round the town, the rest in a ring (Voronoi cells). */
-export function makeElectorates(s: State, n: number, parties: number): Electorate[] {
-  const Rn = rng(s.seed * 13 + n);
-  const seeds: { x: number; z: number }[] = [{ x: 0, z: 200 }];
-  const ring = n - 1;
-  const off = Rn() * 6.28;
-  for (let i = 0; i < ring; i++) {
-    const a = off + (i / ring) * Math.PI * 2;
-    const r = 850 + Rn() * 350;
-    seeds.push({ x: clamp(Math.cos(a) * r, -1350, 1350), z: clamp(200 + Math.sin(a) * r, -1350, 1350) });
-  }
-  const H = MAP_HALF;
-  return seeds.map((p, i) => {
-    let poly: Pts = [-H, -H, H, -H, H, H, -H, H];
-    seeds.forEach((q, j) => {
-      if (j === i) return;
-      const ax = q.x - p.x;
-      const az = q.z - p.z;
-      const mx = (p.x + q.x) / 2;
-      const mz = (p.z + q.z) / 2;
-      poly = clipHalf(poly, ax, az, ax * mx + az * mz);
-    });
-    return {
-      id: i,
-      name: ELECTORATE_NAMES[i % ELECTORATE_NAMES.length],
-      x: p.x,
-      z: p.z,
-      poly,
-      holder: -1,
-      mp: "",
-      candidates: Array.from({ length: parties }, () => ""),
-      support: Array.from({ length: parties }, () => 1 / parties),
-      effort: Array.from({ length: parties }, () => 0),
-      groups: emptyGroups(1 / 7),
-      voters: 0,
-      last: null,
-    };
-  });
+/** Where the voters are: every finished home, and the people on the farmland beyond the town. */
+export function voterPoints(s: State) {
+  const pts: { x: number; z: number; w: number }[] = [];
+  const occ = s.stats.homes ? s.households / s.stats.homes : 1;
+  for (const b of s.buildings) if (b?.done && b.homes) pts.push({ x: b.x, z: b.z, w: b.homes * occ * 1.7 });
+  const ds = s.districts.filter(Boolean);
+  for (let x = -1550; x < 1600; x += 100)
+    for (let z = -1550; z < 1600; z += 100)
+      for (let i = ds.length - 1; i >= 0; i--) {
+        const d = ds[i]!;
+        if (!pointInPoly(x, z, d.poly)) continue;
+        if (d.use === "farms") pts.push({ x, z, w: 0.6 });
+        break;
+      }
+  return pts;
 }
 
-export function electorateAt(p: Pol, x: number, z: number) {
+const SEAT_SHIFT: Record<SeatSize, number> = { fewer: -1, normal: 0, more: 2 };
+
+/** How many seats the Electoral Commission gives a city this size: a village gets 4, a big city up to 16. */
+export function seatsFor(s: State, size: SeatSize = "normal") {
+  const people = Math.max(1, s.stats.pop);
+  return clamp(Math.round(3 + 2.2 * Math.log2(Math.max(1, people / 500))) + SEAT_SHIFT[size], 3, 16);
+}
+
+const nearest = (cs: { x: number; z: number }[], x: number, z: number) => {
   let best = 0;
   let bd = Infinity;
-  for (const e of p.electorates) {
-    const d = (e.x - x) ** 2 + (e.z - z) ** 2;
+  for (let j = 0; j < cs.length; j++) {
+    const d = (cs[j].x - x) ** 2 + (cs[j].z - z) ** 2;
     if (d < bd) {
       bd = d;
-      best = e.id;
+      best = j;
     }
   }
   return best;
+};
+
+/** Which of these regions (they tile the map) a point is in. */
+function regionAt(rs: { x: number; z: number; poly: Pts }[], x: number, z: number) {
+  for (let j = 0; j < rs.length; j++) if (pointInPoly(x, z, rs[j].poly)) return j;
+  return nearest(rs, x, z);
+}
+
+type Seat = { x: number; z: number; poly: Pts };
+
+/**
+ * Draw k seats round the voters by recursive bisection: cut the voters across their longest spread
+ * (tilted a little, by the map's seed) at the point that leaves each side its share of the seats,
+ * and carry on in each half. Every seat ends up with about as many voters, so the town's seats are
+ * small and the farm seats big, and every boundary is a straight cut. The seat round the town
+ * centre comes first.
+ */
+export function drawSeats(s: State, k: number): Seat[] {
+  const pts = voterPoints(s);
+  const Rn = rng(s.seed * 31 + k * 7 + 1);
+  const H = MAP_HALF;
+  const out: { poly: Pts; pts: typeof pts }[] = [];
+  const split = (poly: Pts, ps: typeof pts, n: number) => {
+    if (n <= 1 || ps.length < 2) {
+      out.push({ poly, pts: ps });
+      // Not enough voters to go round: share what's left of the region in strips.
+      for (let i = 1; i < n; i++) out.push({ poly: [], pts: [] });
+      return;
+    }
+    const W = ps.reduce((a, q) => a + q.w, 0);
+    let mx = 0;
+    let mz = 0;
+    for (const q of ps) {
+      mx += q.x * q.w;
+      mz += q.z * q.w;
+    }
+    mx /= W;
+    mz /= W;
+    let xx = 0;
+    let zz = 0;
+    let xz = 0;
+    for (const q of ps) {
+      xx += q.w * (q.x - mx) ** 2;
+      zz += q.w * (q.z - mz) ** 2;
+      xz += q.w * (q.x - mx) * (q.z - mz);
+    }
+    const a = 0.5 * Math.atan2(2 * xz, xx - zz) + (Rn() - 0.5) * 0.5;
+    const ux = Math.cos(a);
+    const uz = Math.sin(a);
+    const n1 = Math.floor(n / 2);
+    const goal = (W * n1) / n;
+    const order = ps.map((q) => ({ q, t: q.x * ux + q.z * uz })).sort((p1, p2) => p1.t - p2.t);
+    let acc = 0;
+    let cut = order[0].t;
+    for (let i = 0; i < order.length - 1; i++) {
+      acc += order[i].q.w;
+      if (acc >= goal) {
+        cut = (order[i].t + order[i + 1].t) / 2;
+        break;
+      }
+    }
+    const lo = order.filter((o) => o.t < cut).map((o) => o.q);
+    const hi = order.filter((o) => o.t >= cut).map((o) => o.q);
+    split(clipHalf(poly, ux, uz, cut), lo, n1);
+    split(clipHalf(poly, -ux, -uz, -cut), hi, n - n1);
+  };
+  if (pts.length >= k) split([-H, -H, H, -H, H, H, -H, H], pts, k);
+  if (out.length !== k || out.some((r) => r.poly.length < 6)) {
+    // Too few people to go on: a seat round the town and the rest in a ring (plain cells).
+    const cs = [{ x: 0, z: 200 }];
+    for (let i = 1; i < k; i++) {
+      const ang = (i / (k - 1)) * Math.PI * 2;
+      cs.push({ x: Math.cos(ang) * 900, z: 200 + Math.sin(ang) * 900 });
+    }
+    return cs.map((c, i) => ({ ...c, poly: cell(cs, i) }));
+  }
+  const seats: Seat[] = out.map((r) => {
+    const W = r.pts.reduce((a, q) => a + q.w, 0);
+    if (W > 0) return { x: r.pts.reduce((a, q) => a + q.x * q.w, 0) / W, z: r.pts.reduce((a, q) => a + q.z * q.w, 0) / W, poly: r.poly };
+    let x = 0;
+    let z = 0;
+    for (let i = 0; i < r.poly.length; i += 2) {
+      x += r.poly[i];
+      z += r.poly[i + 1];
+    }
+    return { x: x / (r.poly.length / 2), z: z / (r.poly.length / 2), poly: r.poly };
+  });
+  const town = regionAt(seats, 0, 200);
+  const order = seats.map((_, i) => i).sort((a, b) => {
+    if (a === town) return -1;
+    if (b === town) return 1;
+    return Math.atan2(seats[a].z - 200, seats[a].x) - Math.atan2(seats[b].z - 200, seats[b].x);
+  });
+  return order.map((i) => seats[i]);
+}
+
+/** The plain nearest-seed cell of seed i (for a map with too few people to divide by them). */
+function cell(cs: { x: number; z: number }[], i: number): Pts {
+  const H = MAP_HALF;
+  let poly: Pts = [-H, -H, H, -H, H, H, -H, H];
+  const p = cs[i];
+  cs.forEach((q, j) => {
+    if (j === i) return;
+    const ax = q.x - p.x;
+    const az = q.z - p.z;
+    poly = clipHalf(poly, ax, az, (q.x * q.x + q.z * q.z - p.x * p.x - p.z * p.z) / 2);
+  });
+  return poly;
+}
+
+function blankElectorate(id: number, c: Seat, parties: number, name: string): Electorate {
+  return {
+    id,
+    name,
+    x: c.x,
+    z: c.z,
+    poly: c.poly,
+    holder: -1,
+    mp: "",
+    candidates: Array.from({ length: parties }, () => ""),
+    support: Array.from({ length: parties }, () => 1 / parties),
+    effort: Array.from({ length: parties }, () => 0),
+    groups: emptyGroups(1 / 7),
+    voters: 0,
+    last: null,
+  };
+}
+
+/** The first map: as many seats as the city has people for, named in turn. */
+export function makeElectorates(s: State, n: number, parties: number): Electorate[] {
+  const cs = drawSeats(s, n);
+  return cs.map((c, i) => blankElectorate(i, c, parties, ELECTORATE_NAMES[i % ELECTORATE_NAMES.length]));
+}
+
+export function electorateAt(p: Pol, x: number, z: number) {
+  return p.electorates[regionAt(p.electorates, x, z)]?.id ?? 0;
+}
+
+/** Does the map need redrawing: a different number of seats due, or seats more than a quarter off the average? */
+export function redrawDue(s: State, p: Pol) {
+  demographics(s, p);
+  if (seatsFor(s, p.settings.seats) !== p.electorates.length) return true;
+  const avg = p.electorates.reduce((a, e) => a + e.voters, 0) / p.electorates.length;
+  return p.electorates.some((e) => Math.abs(e.voters - avg) > avg * 0.25);
+}
+
+/**
+ * The Electoral Commission redraws the map for the coming election. Each new seat is notionally
+ * held by whoever held the old seat most of its voters come from, keeps that seat's name and
+ * member if it's the old seat's main successor, and takes over its campaign; your own seat moves
+ * with you. Returns false if no redraw was due (or forced).
+ */
+export function redistribute(s: State, p: Pol, force = false): boolean {
+  if (!force && !redrawDue(s, p)) return false;
+  const P = p.parties.length;
+  const old = p.electorates;
+  const k = seatsFor(s, p.settings.seats);
+  const cs = drawSeats(s, k);
+  // Who goes where: voters from old seat o into new seat n.
+  const flow = cs.map(() => old.map(() => 0));
+  for (const q of voterPoints(s)) flow[regionAt(cs, q.x, q.z)][regionAt(old, q.x, q.z)] += q.w;
+  // Each old seat's main successor.
+  const heir = old.map((_, o) => {
+    let best = -1;
+    let bv = 0;
+    flow.forEach((row, n) => {
+      if (row[o] > bv) {
+        bv = row[o];
+        best = n;
+      }
+    });
+    return best;
+  });
+  const used = new Set<string>();
+  const fresh: string[] = [];
+  const next: Electorate[] = cs.map((c, n) => {
+    const row = flow[n];
+    const from = row.indexOf(Math.max(...row));
+    const src = old[from];
+    const successor = heir[from] === n;
+    let nm = successor ? src.name : "";
+    if (!nm || used.has(nm)) {
+      nm = ELECTORATE_NAMES.find((x) => !used.has(x) && !old.some((e) => e.name === x)) ?? ELECTORATE_NAMES.find((x) => !used.has(x)) ?? `Seat ${n + 1}`;
+      fresh.push(nm);
+    }
+    used.add(nm);
+    const e = blankElectorate(n, c, P, nm);
+    const sum = row.reduce((a, b) => a + b, 0) || 1;
+    e.holder = src.holder;
+    e.effort = e.effort.map((_, i) => row.reduce((a, v, o) => a + v * (old[o].effort[i] ?? 0), 0) / sum);
+    e.candidates = p.parties.map((_, i) => (successor ? src.candidates[i] : "") || name(s));
+    e.mp = successor ? src.mp : e.candidates[e.holder] ?? "";
+    if (successor) e.last = src.last;
+    return e;
+  });
+  const seat = heir[p.seat] >= 0 ? heir[p.seat] : regionAt(cs, old[p.seat].x, old[p.seat].z);
+  // Your candidacy moves with you (and the seat's old candidate for your party stands elsewhere).
+  for (const e of next) if (e.candidates[p.player] === playerParty(p).leader && e.id !== seat) e.candidates[p.player] = name(s);
+  next[seat].candidates[p.player] = playerParty(p).leader;
+  if (next[seat].holder === p.player) next[seat].mp = playerParty(p).leader;
+  for (const r of p.promises) if (r.electorate >= 0) r.electorate = heir[r.electorate] >= 0 ? heir[r.electorate] : 0;
+  p.redraw = { month: s.month, from: old.length, to: next.length, fresh };
+  p.redraws = (p.redraws ?? 1) + 1;
+  p.electorates = next;
+  p.seat = seat;
+  demographics(s, p);
+  poll(s, p);
+  const more = next.length - old.length;
+  news(
+    s,
+    more
+      ? `The Electoral Commission has redrawn the map for the election: ${next.length} seats, ${more > 0 ? "up" : "down"} from ${old.length}${fresh.length ? ` (new: ${fresh.join(", ")})` : ""}.`
+      : `The Electoral Commission has redrawn the boundaries so every seat has about as many voters.`,
+    "tip",
+  );
+  return true;
+}
+
+/** The seat that fits where you'd like to stand. */
+function seatFor(p: Pol, pref: SeatPref) {
+  const es = p.electorates;
+  if (pref === "town" || es.length < 2) return 0;
+  if (pref === "country") return es.reduce((a, e) => (e.groups.farmers > es[a].groups.farmers ? e.id : a), 1);
+  const sub = (e: Electorate) => e.groups.owners + e.groups.families - e.groups.farmers;
+  return es.slice(1).reduce((a, e) => (sub(e) > sub(es[a]) ? e.id : a), 1);
 }
 
 /** Who lives in each electorate, from the buildings there and the farmland round it. */
@@ -320,11 +533,40 @@ function record(s: State, p: Pol) {
 
 /* ------------------------------------------------------------------ a new political world */
 
-export function newPolitics(s: State, settings: PolSettings, mine: PartyDraft, seat = 0, basedOn = -1): Pol {
-  // Your rivals: the other presets (never the one you started your party from, nor a lookalike).
-  const ai = PARTY_PRESETS.filter((x, i) => i !== basedOn && x.name !== mine.name && x.short !== mine.short.toUpperCase() && x.color.toLowerCase() !== mine.color.toLowerCase())
-    .sort((a, b) => b.national - a.national)
-    .slice(0, clamp(settings.aiParties, 1, 5));
+/** The city's voters by group (share of all), before there are any parties. */
+function localGroups(s: State, k: number) {
+  const tmp = { electorates: makeElectorates(s, k, 1) } as Pol;
+  demographics(s, tmp);
+  const out = emptyGroups(0);
+  let total = 0;
+  for (const e of tmp.electorates) {
+    total += e.voters;
+    for (const g of GROUP_ORDER) out[g] += e.groups[g] * e.voters;
+  }
+  for (const g of GROUP_ORDER) out[g] /= Math.max(1, total);
+  return out;
+}
+
+export function newPolitics(s: State, settings: PolSettings, mine: PartyDraft, seat: number | SeatPref = "town", basedOn = -1): Pol {
+  // Your rivals: the other presets (never the one you started your party from, nor a lookalike),
+  // the big national parties and whoever speaks for the people here (a farm town gets its
+  // country party, a renters' city its tenants' party).
+  const field = PARTY_PRESETS.filter((x, i) => i !== basedOn && x.name !== mine.name && x.short !== mine.short.toUpperCase() && x.color.toLowerCase() !== mine.color.toLowerCase());
+  const here = localGroups(s, seatsFor(s, settings.seats));
+  const appeal = field.map(() => 0);
+  for (const g of GROUP_ORDER) {
+    let best = 0;
+    field.forEach((x, i) => {
+      if (distance(g, x.pos) < distance(g, field[best].pos)) best = i;
+    });
+    appeal[best] += here[g];
+  }
+  const ai = field
+    .map((x, i) => ({ x, rank: x.national + appeal[i] }))
+    .sort((a, b) => b.rank - a.rank)
+    .slice(0, clamp(settings.aiParties, 1, 5))
+    .map((r) => r.x)
+    .sort((a, b) => b.national - a.national);
   const parties: Party[] = [{ ...mine, pos: { ...mine.pos }, id: 0, ai: false, national: 0.06 }, ...ai.map((x, i) => ({ name: x.name, short: x.short, color: x.color, icon: x.icon, leader: x.leader, pos: { ...x.pos }, id: i + 1, ai: true, national: x.national }))];
   const P = parties.length;
   const diff = settings.difficulty;
@@ -332,8 +574,8 @@ export function newPolitics(s: State, settings: PolSettings, mine: PartyDraft, s
     settings: { ...settings },
     parties,
     player: 0,
-    seat: clamp(seat, 0, settings.electorates - 1),
-    electorates: makeElectorates(s, settings.electorates, P),
+    seat: 0,
+    electorates: makeElectorates(s, seatsFor(s, settings.seats), P),
     role: "candidate",
     government: 1,
     campaign: true,
@@ -354,8 +596,12 @@ export function newPolitics(s: State, settings: PolSettings, mine: PartyDraft, s
     night: null,
     log: [],
     debate: null,
+    redraws: 1,
+    redraw: null,
     nextId: 1,
   };
+  demographics(s, p);
+  p.seat = typeof seat === "number" ? clamp(seat, 0, p.electorates.length - 1) : seatFor(p, seat);
   for (const e of p.electorates) {
     e.candidates = parties.map((party, i) => (i === p.player && e.id === p.seat ? party.leader : name(s)));
   }
@@ -377,7 +623,8 @@ export function newPolitics(s: State, settings: PolSettings, mine: PartyDraft, s
   // The seats as they stand: won by the AI parties at the last election, before you came along.
   const without = { ...p, player: -1 } as Pol;
   for (const e of p.electorates) {
-    const sc = scores(s, without, e);
+    // Each seat swung its own way last time.
+    const sc = scores(s, without, e, 0.12);
     sc[0] = -Infinity;
     const w = sc.indexOf(Math.max(...sc));
     e.holder = w;
@@ -796,6 +1043,9 @@ export function monthPol(s: State) {
   poll(s, p);
   if (!p.campaign) record(s, p);
   if (!p.campaign && s.month >= p.campaignFrom) {
+    // The map is redrawn for the election if the city has outgrown it.
+    p.redraw = null;
+    redistribute(s, p);
     p.campaign = true;
     p.week = 0;
     p.ap = p.apMax;
@@ -875,7 +1125,7 @@ export function election(s: State): ElectionResult {
     e.holder = winner;
     e.mp = e.candidates[winner];
     e.last = { votes, winner, margin };
-    rows.push({ electorate: e.id, votes, winner, margin, was });
+    rows.push({ electorate: e.id, name: e.name, votes, winner, margin, was });
   }
   const seats = Array.from({ length: P }, (_, i) => p.electorates.filter((e) => e.holder === i).length);
   const top = Math.max(...seats);

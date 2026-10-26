@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import * as pol from "./politics";
 import { advance, load, save } from "./sim";
-import { newWorld } from "./showcase";
+import { newWorld, showcaseCity } from "./showcase";
+import { pointInPoly } from "./geom";
 import type { WorldSettings } from "./poltypes";
 
 const WS: WorldSettings = { name: "Testville", seed: 5, start: "village", pace: "normal", money: "normal", politics: true };
@@ -16,7 +17,8 @@ function world(settings = {}) {
 describe("a new political world", () => {
   it("splits the map into electorates held by the AI parties, ten weeks out", () => {
     const { s, p } = world();
-    expect(p.electorates.length).toBe(6);
+    expect(p.electorates.length).toBe(pol.seatsFor(s));
+    expect(p.electorates.length).toBeGreaterThanOrEqual(3);
     expect(p.electorates.every((e) => e.poly.length >= 6 && e.voters > 0)).toBe(true);
     // Every point of the map is in exactly the nearest electorate.
     expect(pol.electorateAt(p, 0, 200)).toBe(0);
@@ -29,6 +31,86 @@ describe("a new political world", () => {
     const share = pol.cityShare(p);
     expect(share.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 5);
     expect(p.federal.seats.reduce((a, b) => a + b, 0)).toBe(101);
+  });
+});
+
+describe("electorates drawn from the city", () => {
+  it("gets more seats as the city grows", () => {
+    const s = newWorld(WS);
+    const village = pol.seatsFor(s);
+    expect(village).toBeGreaterThanOrEqual(3);
+    expect(village).toBeLessThanOrEqual(5);
+    const pop = s.stats.pop;
+    s.stats.pop = pop * 4;
+    expect(pol.seatsFor(s)).toBeGreaterThan(village);
+    s.stats.pop = pop * 40;
+    expect(pol.seatsFor(s)).toBe(16);
+    s.stats.pop = pop;
+    expect(pol.seatsFor(s, "more")).toBeGreaterThan(pol.seatsFor(s, "fewer"));
+  });
+
+  it("tiles the map with seats of about as many voters each, small in town and big in the country", async () => {
+    const s = await showcaseCity(async () => {}, 6);
+    const k = pol.seatsFor(s);
+    const seats = pol.drawSeats(s, k);
+    expect(seats.length).toBe(k);
+    // Every point on the map is in exactly one seat.
+    for (let x = -1500; x <= 1500; x += 150)
+      for (let z = -1500; z <= 1500; z += 150) expect(seats.filter((e) => pointInPoly(x + 0.37, z + 0.61, e.poly)).length).toBe(1);
+    const load = seats.map(() => 0);
+    for (const q of pol.voterPoints(s)) load[seats.findIndex((e) => pointInPoly(q.x, q.z, e.poly))] += q.w;
+    const avg = load.reduce((a, b) => a + b, 0) / k;
+    for (const v of load) expect(Math.abs(v - avg) / avg).toBeLessThan(0.2);
+    // The seat round the town is first, and smaller than the biggest country seat.
+    expect(pointInPoly(0, 200, seats[0].poly)).toBe(true);
+    const area = (poly: number[]) => {
+      let a = 0;
+      for (let i = 0; i < poly.length; i += 2) a += poly[i] * poly[(i + 3) % poly.length] - poly[(i + 2) % poly.length] * poly[i + 1];
+      return Math.abs(a / 2);
+    };
+    expect(area(seats[0].poly)).toBeLessThan(Math.max(...seats.map((e) => area(e.poly))));
+  });
+
+  it("is left alone while the city stays the same, and redrawn for the election once it grows", async () => {
+    const { s, p } = world();
+    expect(pol.redistribute(s, p)).toBe(false);
+    pol.promise(s, "park", 0);
+    const before = p.electorates.length;
+    const names = p.electorates.map((e) => e.name);
+    // The city grows (a grown city under the same politics), and the next campaign comes round.
+    const g = await showcaseCity(async () => {}, 6);
+    g.pol = p;
+    p.campaign = false;
+    p.role = "opposition";
+    p.campaignFrom = g.month;
+    pol.monthPol(g);
+    expect(p.campaign).toBe(true);
+    expect(p.electorates.length).toBe(pol.seatsFor(g));
+    expect(p.electorates.length).toBeGreaterThan(before);
+    expect(p.redraw).toMatchObject({ from: before, to: p.electorates.length });
+    expect(p.redraws).toBe(2);
+    // Names stay where seats carry on, new seats get new names, and none repeat.
+    expect(new Set(p.electorates.map((e) => e.name)).size).toBe(p.electorates.length);
+    expect(p.electorates.some((e) => names.includes(e.name))).toBe(true);
+    expect(p.redraw!.fresh.length).toBeGreaterThan(0);
+    // Every seat is held notionally, and you stand in exactly one.
+    expect(p.electorates.every((e) => e.holder >= 0 && e.holder < p.parties.length && e.candidates.every(Boolean))).toBe(true);
+    expect(p.electorates.filter((e) => e.candidates[p.player] === p.parties[p.player].leader).length).toBe(1);
+    expect(p.electorates[p.seat].candidates[p.player]).toBe(p.parties[p.player].leader);
+    expect(p.promises[0].electorate).toBeLessThan(p.electorates.length);
+    expect(pol.electorateAt(p, 0, 200)).toBe(0);
+    // And the election is fought on the new map.
+    for (let w = 0; w < 10 && !p.night; w++) pol.endWeek(g);
+    expect(p.night!.rows.length).toBe(p.electorates.length);
+  });
+
+  it("puts you in the seat that fits where you want to stand", () => {
+    const s = newWorld({ ...WS, start: "town" });
+    const country = pol.newPolitics(s, pol.defaultPolSettings(), mine, "country");
+    const farmers = country.electorates[country.seat].groups.farmers;
+    expect(Math.max(...country.electorates.map((e) => e.groups.farmers))).toBe(farmers);
+    const town = pol.newPolitics(s, pol.defaultPolSettings(), mine, "town");
+    expect(town.seat).toBe(0);
   });
 });
 
@@ -53,8 +135,8 @@ describe("the campaign", () => {
     }
     expect(result).not.toBeNull();
     expect(p.night).toBe(result);
-    expect(result!.rows.length).toBe(6);
-    expect(result!.seats.reduce((a, b) => a + b, 0)).toBe(6);
+    expect(result!.rows.length).toBe(p.electorates.length);
+    expect(result!.seats.reduce((a, b) => a + b, 0)).toBe(p.electorates.length);
     expect(p.endorse.renters).toBe(0);
     expect(p.campaign).toBe(false);
     expect(["govern", "opposition", "out"]).toContain(p.role);
@@ -135,6 +217,6 @@ describe("promises", () => {
     // Saved and loaded, the politics carry on.
     const back = load(save(s))!;
     expect(back.pol!.results.length).toBe(1);
-    expect(back.pol!.electorates.length).toBe(6);
+    expect(back.pol!.electorates.length).toBe(p.electorates.length);
   });
 });

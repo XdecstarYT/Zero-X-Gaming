@@ -105,7 +105,7 @@ export class Overlay {
   /** The electorates, each tinted by who's ahead there (or null to hide them). */
   electorates(p: Pol | null, selected: number) {
     const lead = (e: Pol["electorates"][number]) => e.support.indexOf(Math.max(...e.support));
-    const key = p ? `${selected}|${p.electorates.map((e) => `${e.holder}${lead(e)}`).join(",")}|${p.night ? 1 : 0}` : "";
+    const key = p ? `${p.redraws ?? 1}|${selected}|${p.electorates.map((e) => `${e.holder}${lead(e)}`).join(",")}|${p.night ? 1 : 0}` : "";
     if (key === this.elecKey) return;
     this.elecKey = key;
     this.clear(this.elecG);

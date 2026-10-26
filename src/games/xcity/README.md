@@ -77,12 +77,23 @@ from day one). You lead a party and win the right to plan:
 
 - **Setup**: the title screen has Continue, New world, the change log and settings (graphics,
   autosave, delete the save). Then politics settings (first past the post or preferential voting,
-  2–4 year terms, 6, 10 or 14 campaign weeks, 4, 6 or 8 electorates, 2–5 rival parties, 51, 101 or 151 federal seats,
+  2–4 year terms, 6, 10 or 14 campaign weeks, fewer or more seats, 2–5 rival parties, 51, 101 or 151 federal seats,
   difficulty), world settings (name, seed, a village or a town, pace, money) and your party: start
   from one of six presets or from scratch, and pick the name, short name, leader, colour, icon,
-  where it stands on housing, transport, tax and the environment, and the electorate you stand in.
-- **Electorates** are Voronoi cells over the map (the town in the first), each with its share of
-  seven voter groups (renters, owners, families, the young, retirees, business, farmers) worked out
+  where it stands on housing, transport, tax and the environment, and whether you stand in the
+  town centre, the suburbs or the country (the seats themselves are drawn with the world).
+- **Electorates** are drawn by the Electoral Commission from where people live (`drawSeats`): the
+  voters (every finished home, and the people on the farmland) are cut in two across their longest
+  spread at the point that leaves each side its share of the seats, and again in each half, so
+  every seat has about as many voters, the town's seats are small and the farm seats big, and the
+  first is the one round the town centre. The number of seats grows with the population
+  (`seatsFor`: about 4 for a village, up to 16), and before each campaign the map is redrawn
+  (`redistribute`) if more or fewer seats are due or a seat is more than a quarter off the average.
+  A redrawn seat is held notionally by the party that held most of its voters, keeps the old seat's
+  name, member and campaign if it's that seat's main successor, and your candidacy and local
+  promises move with you. Rival parties are the big national ones plus whoever speaks for the
+  groups living here (a farm town gets its country party). Each electorate has its share of seven
+  voter groups (renters, owners, families, the young, retirees, business, farmers) worked out
   from what's built there. A party's support in one comes from how close it stands to each group,
   goodwill from promises, debates and protests, endorsements, campaign effort, incumbency, how the
   city government is doing and your trust, through a softmax.
