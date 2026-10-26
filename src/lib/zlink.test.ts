@@ -14,7 +14,8 @@ describe("ZLink+", () => {
     expect(slugs).toContain("wareforge");
     expect(slugs).toContain("heatwave");
     expect(slugs).toContain("sovereign");
-    expect(slugs.filter((s) => !["ubusiness", "linkwave", "zenith", "zero-city", "yourgov", "wareforge", "heatwave", "sovereign"].includes(s)).length).toBe(5);
+    expect(slugs).toContain("xcity");
+    expect(slugs.filter((s) => !["ubusiness", "linkwave", "zenith", "zero-city", "yourgov", "wareforge", "heatwave", "sovereign", "xcity"].includes(s)).length).toBe(5);
     expect(inZlink(ZLINK_EXCLUDED)).toBe(false);
     expect(inZlink("neon-siege")).toBe(false);
     expect(inZlink("trenches")).toBe(false);

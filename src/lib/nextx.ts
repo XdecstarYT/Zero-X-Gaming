@@ -2,7 +2,7 @@
  * NextX: Zero X's next-generation game production label. Its own app (/nextx) shows the titles
  * made to the NextX standard: photoreal 3D worlds, deep simulations, phone-first interfaces.
  */
-export const NEXTX_SLUGS = ["sovereign", "heatwave", "wareforge", "yourgov", "zero-city"] as const;
+export const NEXTX_SLUGS = ["xcity", "sovereign", "heatwave", "wareforge", "yourgov", "zero-city"] as const;
 export type NextXSlug = (typeof NEXTX_SLUGS)[number];
 
 export const isNextX = (slug: string) => (NEXTX_SLUGS as readonly string[]).includes(slug);
@@ -25,6 +25,23 @@ export interface NextXTitle {
 }
 
 export const NEXTX_TITLES: NextXTitle[] = [
+  {
+    slug: "xcity",
+    pitch: "A city builder that takes zoning seriously: grow a farming village into a metropolis, street by street and storey by storey.",
+    accent: "#34c77b",
+    accent2: "#5fb7ff",
+    stats: [
+      { v: "6", k: "Height bands" },
+      { v: "4", k: "Street patterns" },
+      { v: "6", k: "Building styles" },
+    ],
+    features: [
+      "Zone by use and height, with real rules: parking minimums, affordable homes, corner shops",
+      "Lay out neighbourhoods as a grid, curves, cul-de-sacs or superblocks",
+      "Developers build what pays and pitch you bigger plans: approve, deny or change the terms",
+      "Design your own buildings, and cater to cars, bikes or trams",
+    ],
+  },
   {
     slug: "sovereign",
     pitch: "Lead any nation on Earth in real time: build it, rule it, make friends and enemies, and fight for the map.",
@@ -133,6 +150,7 @@ export const NEXTX_ENGINE = [
   { title: "Adaptive quality", from: "Both", body: "High detail on desktops, a lighter path on phones, chosen for you." },
   { title: "Phone-first layout", from: "All three", body: "Dock, sheets and tab bars that fit a thumb, upright or sideways." },
   { title: "Open-world streaming", from: "Heatwave", body: "A whole island city streamed in round you as you drive: traffic, people, police and the sea, with a skyline to the horizon." },
+  { title: "Planner's city", from: "XCity", body: "Districts, lots and street patterns laid on a road graph; every building drawn from its plan with the facade shader, built a chunk at a time, with cranes on the sites and traffic, bikes and trams in the streets." },
   { title: "World relief", from: "Sovereign", body: "The whole Earth raised from real elevation and lit by the sun, nations laid over it, a sea that catches the light and clouds that cast shadows; the camera tilts to the horizon as you zoom in." },
   { title: "Logistics simulation", from: "WareForge", body: "Forklifts that find their own way round your racks, trucks that back onto the doors, machines that wear and break." },
 ];

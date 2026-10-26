@@ -19,6 +19,10 @@ import { canRelief } from "@/games/sovereign/relief";
 import { MapView } from "@/games/sovereign/render";
 import { advance as advanceWorld, startGame as startWorld } from "@/games/sovereign/sim";
 import { loadWorld } from "@/games/sovereign/world";
+import * as THREE from "three";
+import { View as XCityView } from "@/games/xcity/render/view";
+import { showcaseCity } from "@/games/xcity/showcase";
+import { advance as advanceCity } from "@/games/xcity/sim";
 import { country } from "@/games/yourgov/sim";
 import { demoCity } from "@/games/zero-city/demo";
 import { WorldViews } from "@/games/zero-city/game";
@@ -26,7 +30,7 @@ import { CameraRig } from "@/games/zero-city/render/camera";
 import { Engine } from "@/games/zero-city/render/engine";
 import { defaultSettings } from "@/games/zero-city/settings";
 
-export type BackdropKind = "country" | "city" | "warehouse" | "port" | "world";
+export type BackdropKind = "country" | "city" | "warehouse" | "port" | "world" | "xcity";
 export type Quality = "high" | "low";
 
 export interface Backdrop {
@@ -293,10 +297,61 @@ function worldBackdrop(host: HTMLElement, quality: Quality, still: boolean): Bac
   };
 }
 
+/** XCity: a grown city by the river, the camera circling slowly over it while it builds. */
+function xcityBackdrop(host: HTMLElement, quality: Quality, still: boolean): Backdrop {
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none";
+  canvas.setAttribute("aria-hidden", "true");
+  host.appendChild(canvas);
+  let raf = 0;
+  let gone = false;
+  let stop = () => {};
+  const build = async () => {
+    const s = await showcaseCity(() => new Promise((r) => setTimeout(r, 0)));
+    if (gone) return;
+    const view = new XCityView(canvas, quality === "low" ? "low" : "medium");
+    stop = () => view.dispose();
+    view.rig.jump({ target: new THREE.Vector3(120, 0, 120), dist: 780, yaw: 0.7, pitch: 0.62 });
+    view.buildAll(s);
+    await new Promise<void>((done) => {
+      let last = performance.now();
+      let first = true;
+      const loop = () => {
+        raf = requestAnimationFrame(loop);
+        if (document.hidden) return;
+        const now = performance.now();
+        const dt = Math.min(0.1, (now - last) / 1000);
+        last = now;
+        if (!still) {
+          view.rig.goal.yaw += dt * 0.035;
+          advanceCity(s, dt / 20);
+        }
+        view.frame(s, dt, now);
+        if (first) {
+          first = false;
+          done();
+        }
+      };
+      raf = requestAnimationFrame(loop);
+    });
+  };
+  const ready = build();
+  return {
+    ready,
+    dispose() {
+      gone = true;
+      cancelAnimationFrame(raf);
+      stop();
+      canvas.remove();
+    },
+  };
+}
+
 /** Mount a backdrop in `host` (which should be positioned). Throws if WebGL isn't available. */
 export function mountBackdrop(kind: BackdropKind, host: HTMLElement, quality: Quality = pickQuality(), still = false): Backdrop {
   if (kind === "port") return portBackdrop(host, quality, still);
   if (kind === "world") return worldBackdrop(host, quality, still);
+  if (kind === "xcity") return xcityBackdrop(host, quality, still);
   if (kind === "warehouse") return warehouseBackdrop(host, quality, still);
   return kind === "country" ? countryBackdrop(host, quality, still) : cityBackdrop(host, quality, still);
 }
