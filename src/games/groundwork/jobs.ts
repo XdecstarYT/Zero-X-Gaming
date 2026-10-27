@@ -228,7 +228,7 @@ function roofCover(s: State, r: { x0: number; z0: number; x1: number; z1: number
     for (let z = r.z0 + 0.25; z < r.z1; z += 0.5) {
       n++;
       const col = near(s, { x0: x - 0.01, x1: x + 0.01, z0: z - 0.01, z1: z + 0.01, y0: above, y1: 20 });
-      if (col.some((p) => (p.k === "tile" || p.k === "sheet" || p.k === "ridge" || (p.k === "slab" && box(p).y0 > above)) && box(p).y1 > above)) hit++;
+      if (col.some((p) => (p.k === "tile" || p.k === "sheet" || p.k === "ridge" || p.k === "membrane" || (p.k === "slab" && box(p).y0 > above)) && box(p).y1 > above)) hit++;
     }
   return n ? hit / n : 0;
 }
@@ -272,7 +272,80 @@ function needCheck(s: State, ps: Piece[], n: Need): Check {
       const h = Math.max(0, ...ps.map((p) => box(p).y1));
       return { label: `${n.h} m high`, ok: h >= n.h, detail: `${h.toFixed(2)} m` };
     }
+    case "paved": {
+      const a = pavedArea(ps);
+      return { label: `${n.area} m² paved`, ok: a >= n.area - 0.05, detail: `${a.toFixed(1)} m² laid` };
+    }
+    case "fence": {
+      const l = fenceLength(ps);
+      return { label: `${n.len} m of fence`, ok: l >= n.len - 0.1, detail: `${l.toFixed(1)} m built` };
+    }
+    case "deck": {
+      const a = deckArea(ps);
+      return { label: `A deck of ${n.area} m²`, ok: a >= n.area - 0.05, detail: `${a.toFixed(1)} m² boarded` };
+    }
   }
+}
+
+const area = (p: Piece) => {
+  const [L, , D] = p.s ?? KINDS[p.k].size;
+  return L * D;
+};
+const pavedArea = (ps: Piece[]) => ps.filter((p) => p.k === "paver").reduce((a, p) => a + area(p), 0);
+const deckArea = (ps: Piece[]) => ps.filter((p) => p.k === "board").reduce((a, p) => a + area(p), 0);
+const fenceLength = (ps: Piece[]) => ps.filter((p) => p.k === "paling").length * 0.16;
+
+/** What a building in a zone amounts to: for valuing it. */
+export interface Assessment {
+  /** A house: walls all round, roofed, with a door and some windows. */
+  finished: boolean;
+  /** Floor area under the roof, in m² (each storey counted). */
+  floor: number;
+  storeys: number;
+  roofed: number;
+  windows: number;
+  doors: number;
+  garage: boolean;
+  /** Workmanship, 0..1: footings and bond. */
+  quality: number;
+  paved: number;
+  fence: number;
+  deck: number;
+  solar: number;
+  gutters: boolean;
+  pieces: number;
+}
+
+/** Measure what's been built in a zone, the way a valuer would. */
+export function assess(s: State, zone: [number, number, number, number]): Assessment {
+  const j = { zone } as Job;
+  const ps = zonePieces(s, j);
+  const e = enclosure(s, ps);
+  const walls = e && e.solid >= 0.85 && e.w >= 2.4 && e.d >= 2.4 ? e : null;
+  const roofed = walls ? roofCover(s, walls, walls.top - 0.3) : 0;
+  const windows = ps.filter((p) => p.k === "window").length;
+  const doors = ps.filter((p) => p.k === "door").length;
+  const garage = ps.some((p) => p.k === "door" && (p.s ?? KINDS.door.size)[0] > 2);
+  const storeys = walls ? Math.max(1, Math.floor((walls.h + 0.3) / 2.6)) : 0;
+  const floor = walls ? (walls.w - 0.2) * (walls.d - 0.2) * storeys : 0;
+  const quality = ps.some((p) => KINDS[p.k].family === "masonry") ? (footingShare(s, ps) + bondShare(s, ps)) / 2 : 0.6;
+  const finished = !!walls && walls.h >= 2.3 && roofed >= 0.85 && doors >= 1 && windows >= 1;
+  return {
+    finished,
+    floor,
+    storeys,
+    roofed,
+    windows,
+    doors,
+    garage,
+    quality,
+    paved: pavedArea(ps),
+    fence: fenceLength(ps),
+    deck: deckArea(ps),
+    solar: ps.filter((p) => p.k === "solar").length,
+    gutters: ps.some((p) => p.k === "gutter"),
+    pieces: ps.length,
+  };
 }
 
 function slabBounds(ps: Piece[]) {

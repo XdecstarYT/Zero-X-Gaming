@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COURSE, JOBS, JOINT } from "./data";
-import { bondShare, footingShare, inspect } from "./jobs";
+import { assess, bondShare, footingShare, inspect } from "./jobs";
 import * as m from "./model";
 import { showcaseHouse } from "./showcase";
 
@@ -175,5 +175,103 @@ describe("the site", () => {
     expect(s.money).toBeGreaterThanOrEqual(0);
     expect(s.money).toBeLessThan(2);
     expect(s.minutes).toBeGreaterThan(10);
+  });
+});
+
+describe("2.0: paving, fences, roofs, finishes and copies", () => {
+  it("paves a rectangle in every pattern, edge to edge, with nothing overlapping", () => {
+    for (const pat of ["stretcher", "basket", "stack", "herring"] as const) {
+      const s = site();
+      const r = m.commit(s, m.paveRect({ x: 0, z: 0 }, { x: 2, z: 1.5 }, 0, pat, 0));
+      expect(r.skipped).toBe(0);
+      const area = s.pieces.reduce((a, p) => a + m.dims(p)[0] * m.dims(p)[2], 0);
+      expect(area).toBeCloseTo(3, 6);
+      expect(overlaps(s)).toBe(0);
+      // Mostly whole pavers, a few cut halves at the edges.
+      const halves = s.pieces.filter((p) => p.s).length;
+      expect(halves).toBeLessThan(s.pieces.length * 0.25);
+    }
+    // Herringbone turns every other paver.
+    const s = site();
+    m.commit(s, m.paveRect({ x: 0, z: 0 }, { x: 2, z: 2 }, 0, "herring", 0));
+    const whole = s.pieces.filter((p) => !p.s);
+    expect(whole.filter((p) => p.r === 1).length / whole.length).toBeGreaterThan(0.4);
+  });
+
+  it("builds a paling fence on posts, and the inspector measures it", () => {
+    const s = site();
+    const r = m.commit(s, m.fenceRun({ x: -5, z: 2 }, { x: 5, z: 2 }, 1.8, 0));
+    expect(r.skipped).toBe(0);
+    expect(s.pieces.filter((p) => p.k === "post").length).toBe(6);
+    expect(s.pieces.filter((p) => p.k === "rail").length).toBe(10);
+    expect(s.pieces.filter((p) => p.k === "paling").length).toBeGreaterThan(60);
+    const a = assess(s, [-6, 0, 6, 4]);
+    expect(a.fence).toBeGreaterThan(9.8);
+  });
+
+  it("puts a flat roof with gutters and solar panels on a garage, and the valuer counts it", () => {
+    const s = site();
+    const a = { x: -2, z: -3 };
+    const b = { x: 2, z: 3 };
+    m.commit(s, m.slabRect({ x: a.x - 0.225, z: a.z - 0.225 }, { x: b.x + 0.225, z: b.z + 0.225 }));
+    const y0 = 0.15 + JOINT;
+    m.commit(s, [{ k: "door", x: 0, y: y0, z: a.z + 0.05625, r: 0, v: 0, s: [2.465, 2.09, 0.1025] }]);
+    m.commit(s, m.wallRect(s, a, b, y0, { kind: "brick", bond: "stretcher", courses: 34, v: 0, lintels: true }));
+    const top = y0 + 34 * COURSE - JOINT;
+    const roof = m.roofGen(s, a, b, top, { style: "flat", pitch: 0, cover: "tile", v: 0, gutters: true, solar: 4 });
+    const r = m.commit(s, roof, true);
+    expect(r.skipped).toBe(0);
+    expect(s.pieces.filter((p) => p.k === "membrane").length).toBeGreaterThan(3);
+    expect(s.pieces.filter((p) => p.k === "solar").length).toBe(4);
+    expect(s.pieces.filter((p) => p.k === "downpipe").length).toBe(2);
+    const v = assess(s, [-3, -4, 3, 4]);
+    expect(v.roofed).toBeGreaterThan(0.9);
+    expect(v.garage).toBe(true);
+    expect(v.solar).toBe(4);
+    expect(v.gutters).toBe(true);
+    // A gable with gutters gets a gutter on each eave and a downpipe at each end of them.
+    const g = m.roofGen(s, a, b, top, { style: "gable", pitch: 30, cover: "tile", v: 0, gutters: true, solar: 6 });
+    expect(g.filter((p) => p.k === "gutter").length).toBe(2);
+    expect(g.filter((p) => p.k === "downpipe").length).toBe(4);
+    expect(g.filter((p) => p.k === "solar").length).toBeGreaterThan(0);
+  });
+
+  it("repaints pieces as one undo step, and charges for the paint", () => {
+    const s = m.newSite("contract", null, 1000);
+    m.commit(s, m.wallRun(s, { x: 0, z: 0 }, { x: 2, z: 0 }, 0, { kind: "brick", bond: "stretcher", courses: 3, v: 0 }));
+    const before = s.money;
+    const ids = s.pieces.map((p) => p.id);
+    expect(m.repaint(s, ids, 7)).toBe(ids.length);
+    expect(s.pieces.every((p) => p.v === 7)).toBe(true);
+    expect(s.money).toBeLessThan(before);
+    m.undo(s);
+    expect(s.pieces.every((p) => p.v === 0)).toBe(true);
+    expect(s.money).toBeCloseTo(before, 6);
+    m.redo(s);
+    expect(s.pieces.every((p) => p.v === 7)).toBe(true);
+  });
+
+  it("copies a wall somewhere else, turned a quarter, and a crew works faster", () => {
+    const s = site();
+    m.commit(s, m.wallRun(s, { x: 0, z: 0 }, { x: 2, z: 0 }, 0, { kind: "brick", bond: "stretcher", courses: 4, v: 2 }), true);
+    const n = s.pieces.length;
+    const copy = m.copySpecs(s.pieces, 0, 0, 3, 1, 1, 0);
+    expect(m.commit(s, copy, true).added.length).toBe(n);
+    const moved = s.pieces.slice(n);
+    expect(moved.every((p) => p.v === 2)).toBe(true);
+    // Turned: the copy runs along z.
+    const xs = moved.map((p) => p.x);
+    const zs = moved.map((p) => p.z);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeGreaterThan(Math.max(...xs) - Math.min(...xs));
+    expect(overlaps(s)).toBe(0);
+
+    const slow = site();
+    const fast = { ...site(), speed: 3 };
+    const wall = (t: m.State) => m.commit(t, m.wallRun(t, { x: 0, z: 0 }, { x: 4, z: 0 }, 0, { kind: "brick", bond: "stretcher", courses: 10, v: 0 }));
+    wall(slow);
+    wall(fast);
+    expect(fast.minutes).toBeCloseTo(slow.minutes / 3, 6);
+    m.knockOff(slow);
+    expect(slow.minutes % 540).toBe(0);
   });
 });

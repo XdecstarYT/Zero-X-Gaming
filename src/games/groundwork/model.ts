@@ -1,4 +1,4 @@
-import { BONDS, COURSE, GRID, HALF, JOINT, KINDS, SITE, type Bond, type Kind, type RoofCover, type RoofStyle } from "./data";
+import { BONDS, COURSE, DAY_MINUTES, GRID, HALF, JOINT, KINDS, SITE, type Bond, type Kind, type PavePattern, type RoofCover, type RoofStyle } from "./data";
 
 /**
  * Groundwork's construction model. A site is a list of pieces, each a real-size box (bricks,
@@ -39,7 +39,10 @@ export interface Box {
   z1: number;
 }
 
-export type Mode = "free" | "career";
+/** Free build pays for nothing; a career job, a contract and your own property are paid for. */
+export type Mode = "free" | "career" | "contract" | "property";
+
+export const paid = (s: Pick<State, "mode">) => s.mode !== "free";
 
 export interface State {
   v: 1;
@@ -55,6 +58,8 @@ export interface State {
   stats: { laid: number; removed: number; fell: number };
   rev: number;
   seed: number;
+  /** How many times faster than one builder the work goes (a crew on a company site). */
+  speed?: number;
 }
 
 /** What placing came to: what went in, and why the rest didn't. */
@@ -264,9 +269,11 @@ export function check(s: State, p: Piece): string | null {
   if (b.x0 < -SITE || b.x1 > SITE || b.z0 < -SITE || b.z1 > SITE) return "That's off the site";
   if (b.y0 < -EPS) return "Below the ground";
   if (b.y1 > 14) return "Too high to build without a crane";
-  if (KINDS[p.k].family !== "roof") {
+  // Roof parts lap each other, and fittings (gutters, downpipes, panels) clip onto what's there.
+  const loose = (k: Kind) => KINDS[k].family === "roof" || KINDS[k].family === "fitting";
+  if (!loose(p.k)) {
     for (const q of near(s, b)) {
-      if (q.id === p.id || KINDS[q.k].family === "roof") continue;
+      if (q.id === p.id || loose(q.k)) continue;
       if (intersects(b, box(q))) return "Something's in the way";
     }
   }
@@ -281,6 +288,8 @@ interface Action {
   money: number;
   spent: number;
   minutes: number;
+  /** Pieces refinished: their ids and finishes before and after. */
+  changed?: { id: number; from: number; to: number }[];
 }
 
 const history = new WeakMap<State, { undo: Action[]; redo: Action[] }>();
@@ -316,6 +325,10 @@ export function undo(s: State) {
   if (!a) return false;
   rawRemove(s, new Set(a.added.map((p) => p.id)));
   for (const p of a.removed) rawAdd(s, p);
+  for (const c of a.changed ?? []) {
+    const p = byId(s, c.id);
+    if (p) p.v = c.from;
+  }
   s.money -= a.money;
   s.spent -= a.spent;
   s.minutes -= a.minutes;
@@ -330,6 +343,10 @@ export function redo(s: State) {
   if (!a) return false;
   rawRemove(s, new Set(a.removed.map((p) => p.id)));
   for (const p of a.added) rawAdd(s, p);
+  for (const c of a.changed ?? []) {
+    const p = byId(s, c.id);
+    if (p) p.v = c.to;
+  }
   s.money += a.money;
   s.spent += a.spent;
   s.minutes += a.minutes;
@@ -370,7 +387,7 @@ export function commit(s: State, specs: Spec[], group = false): Result {
       continue;
     }
     const c = costOf(p);
-    if (s.mode === "career" && s.money + money < c) {
+    if (paid(s) && s.money + money < c) {
       skipped++;
       why = "Out of money";
       break;
@@ -378,9 +395,9 @@ export function commit(s: State, specs: Spec[], group = false): Result {
     s.nextId++;
     rawAdd(s, p);
     added.push(p);
-    money -= s.mode === "career" ? c : 0;
+    money -= paid(s) ? c : 0;
     spent += c;
-    minutes += minutesOf(p);
+    minutes += minutesOf(p) / (s.speed ?? 1);
   }
   if (added.length) {
     s.money += money;
@@ -419,7 +436,7 @@ export function remove(s: State, ids: number[]): { removed: Piece[]; fell: numbe
     frontier = rawRemove(s, next);
     gone = gone.concat(frontier);
   }
-  const refund = s.mode === "career" ? gone.slice(0, direct).reduce((a, p) => a + costOf(p) * 0.5, 0) : 0;
+  const refund = paid(s) ? gone.slice(0, direct).reduce((a, p) => a + costOf(p) * 0.5, 0) : 0;
   s.money += refund;
   s.stats.removed += direct;
   s.stats.fell += gone.length - direct;
@@ -816,6 +833,10 @@ export interface RoofOpts {
   v: number;
   /** Fill the gables (or the high side of a skillion) with brickwork to the roof line. */
   gables?: boolean;
+  /** Gutters along the eaves, with a downpipe at each end. */
+  gutters?: boolean;
+  /** Solar panels on the sunny slope (as many as fit, up to this many). */
+  solar?: number;
 }
 
 /**
@@ -829,6 +850,7 @@ export function roofGen(s: State, a: { x: number; z: number }, b: { x: number; z
   const x1 = snapG(Math.max(a.x, b.x));
   const z1 = snapG(Math.max(a.z, b.z));
   const ridgeX = x1 - x0 >= z1 - z0;
+  if (o.style === "flat") return flatRoof(x0, z0, x1, z1, yTop, ridgeX, o);
   // The roof's own frame: u along the ridge, w across it (w = 0 at the middle).
   const A = ridgeX ? x1 - x0 : z1 - z0;
   const S = ridgeX ? z1 - z0 : x1 - x0;
@@ -912,7 +934,73 @@ export function roofGen(s: State, a: { x: number; z: number }, b: { x: number; z
       out.push({ k: o.cover === "tile" ? "ridge" : "fascia", ...world(u, 0, yR), r: along, v: o.cover === "tile" ? tv : 0, ...(o.cover === "tile" ? { s: [A2 / n - 0.005, 0.13, 0.3] as [number, number, number] } : { s: [A2 / n, 0.04, 0.3] as [number, number, number] }) });
     }
   }
+  const gv = Math.min(o.v, KINDS.gutter.variants.length - 1);
+  if (o.gutters) {
+    for (const sd of sides) {
+      const e = slopePt(sd, A / 2, 0, -0.02);
+      const gw = gable ? sd * (S / 2 + ov + 0.022 + 0.06) : S / 2 + ov + 0.022 + 0.06;
+      out.push({ k: "gutter", ...world(A / 2, gw, e.y - 0.05), r: along, v: gv, s: [A + 2 * og, 0.1, 0.12] });
+      const pw = gable ? sd * (S / 2 + 0.06) : S / 2 + 0.06;
+      for (const u of [0.2, A - 0.2]) out.push({ k: "downpipe", ...world(u, pw, 0), r: along, v: gv, s: [0.09, Math.max(0.5, e.y - 0.05), 0.09] });
+    }
+  }
+  if (o.solar) {
+    // Portrait panels in up to two rows, clear of the eave and the ridge (landscape on a short slope).
+    const sd = 1;
+    const q0 = ov / cp + 0.35;
+    const portrait = Ls - q0 - 0.35 >= 1.74;
+    const [pw, pl] = portrait ? [1.13, 1.72] : [1.72, 1.13];
+    const cols = Math.max(0, Math.floor((A - 0.6) / (pw + 0.02)));
+    const rows = Math.max(0, Math.min(2, Math.floor((Ls - q0 - 0.35) / (pl + 0.02))));
+    let n = 0;
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols && n < o.solar; c++, n++) {
+        const u = A / 2 + (c - (cols - 1) / 2) * (pw + 0.02);
+        out.push({ k: "solar", ...slopePt(sd, u, q0 + pl / 2 + r * (pl + 0.02), rafterH + battenH + 0.06), r: yaw(sd), p: P, v: 0, s: [pw, 0.035, pl] });
+      }
+  }
   if (o.gables !== false) out.push(...gableInfill(s, x0, z0, x1, z1, yTop, ridgeX, gable, tp, plateH));
+  return out;
+}
+
+/** A flat roof: joists across the short span, a membrane over the deck, a deep fascia all round. */
+function flatRoof(x0: number, z0: number, x1: number, z1: number, yTop: number, ridgeX: boolean, o: RoofOpts): Spec[] {
+  const A = ridgeX ? x1 - x0 : z1 - z0;
+  const S = ridgeX ? z1 - z0 : x1 - x0;
+  const u0 = ridgeX ? x0 : z0;
+  const wc = ridgeX ? (z0 + z1) / 2 : (x0 + x1) / 2;
+  const ov = 0.3;
+  const world = (u: number, w: number, y: number) => (ridgeX ? { x: u0 + u, y, z: wc + w } : { x: wc + w, y, z: u0 + u });
+  const along = ridgeX ? 0 : 1;
+  const across = ridgeX ? 1 : 0;
+  const out: Spec[] = [];
+  const n = Math.max(1, Math.round((A - 0.045) / 0.45));
+  for (let i = 0; i <= n; i++) out.push({ k: "joist", ...world(0.0225 + ((A - 0.045) * i) / n, 0, yTop), r: across, v: 0, s: [S + 2 * ov, 0.19, 0.045] });
+  const yM = yTop + 0.19;
+  const strips = Math.ceil((A + 2 * ov) / 1.2);
+  const sw = (A + 2 * ov) / strips;
+  const mv = Math.min(o.v, KINDS.membrane.variants.length - 1);
+  for (let i = 0; i < strips; i++) out.push({ k: "membrane", ...world(-ov + sw * (i + 0.5), 0, yM), r: across, v: mv, s: [S + 2 * ov, 0.012, sw] });
+  for (const sd of [1, -1]) {
+    out.push({ k: "fascia", ...world(A / 2, sd * (S / 2 + ov + 0.011), yTop - 0.04), r: along, v: 3, s: [A + 2 * ov + 0.044, 0.25, 0.022] });
+    out.push({ k: "fascia", ...world(sd > 0 ? A + ov + 0.011 : -ov - 0.011, 0, yTop - 0.04), r: across, v: 3, s: [S + 2 * ov, 0.25, 0.022] });
+  }
+  if (o.gutters) {
+    const gv = Math.min(o.v, KINDS.gutter.variants.length - 1);
+    out.push({ k: "gutter", ...world(A / 2, S / 2 + ov + 0.022 + 0.06, yTop + 0.06), r: along, v: gv, s: [A + 2 * ov, 0.1, 0.12] });
+    for (const u of [0.2, A - 0.2]) out.push({ k: "downpipe", ...world(u, S / 2 + 0.06, 0), r: along, v: gv, s: [0.09, yTop + 0.06, 0.09] });
+  }
+  if (o.solar) {
+    const cols = Math.max(0, Math.floor((A - 0.4) / 1.15));
+    const rows = Math.max(0, Math.floor((S - 0.4) / 2.0));
+    let k = 0;
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols && k < o.solar; c++, k++) {
+        const u = A / 2 + (c - (cols - 1) / 2) * 1.15;
+        const w = (r - (rows - 1) / 2) * 2.0;
+        out.push({ k: "solar", ...world(u, w, yM + 0.15), r: along, p: 0.17, v: 0, s: [1.13, 0.035, 1.72] });
+      }
+  }
   return out;
 }
 
@@ -989,6 +1077,135 @@ function gableInfill(s: State, x0: number, z0: number, x1: number, z1: number, y
     }
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ finishing, paving, fencing, copying */
+
+/**
+ * Refinish pieces (paint a door, re-colour a run of pavers, stain a fence): a coat costs a tenth
+ * of what the pieces did, and a few minutes each. One undo step.
+ */
+export function repaint(s: State, ids: number[], v: number): number {
+  const changed: { id: number; from: number; to: number }[] = [];
+  let cost = 0;
+  let minutes = 0;
+  for (const id of ids) {
+    const p = byId(s, id);
+    if (!p || p.v === v || v >= KINDS[p.k].variants.length) continue;
+    const c = costOf(p) * 0.1 + 0.2;
+    if (paid(s) && s.money - cost < c) break;
+    changed.push({ id, from: p.v, to: v });
+    p.v = v;
+    cost += c;
+    minutes += Math.min(6, minutesOf(p) * 0.2 + 0.3) / (s.speed ?? 1);
+  }
+  if (!changed.length) return 0;
+  const money = paid(s) ? -cost : 0;
+  s.money += money;
+  s.spent += cost;
+  s.minutes += minutes;
+  record(s, { added: [], removed: [], money, spent: cost, minutes, changed });
+  s.rev++;
+  return changed.length;
+}
+
+/** Down tools for the day: the clock goes on to tomorrow morning (and the mortar sets overnight). */
+export function knockOff(s: State) {
+  const next = Math.floor(s.minutes / DAY_MINUTES + 1) * DAY_MINUTES;
+  s.minutes = next;
+  s.rev++;
+}
+
+/**
+ * Pavers over a rectangle (on the ground or a slab), in a pattern, worked out on a 100 mm grid:
+ * whole pavers where the pattern puts them, and cut halves wherever the edge leaves a gap.
+ */
+export function paveRect(a: { x: number; z: number }, b: { x: number; z: number }, y: number, pattern: PavePattern, v: number): Spec[] {
+  const u = 0.1;
+  const x0 = Math.round(Math.min(a.x, b.x) / u) * u;
+  const z0 = Math.round(Math.min(a.z, b.z) / u) * u;
+  const W = Math.max(2, Math.min(140, Math.round((Math.max(a.x, b.x) - x0) / u)));
+  const D = Math.max(2, Math.min(140, Math.round((Math.max(a.z, b.z) - z0) / u)));
+  const used = new Uint8Array(W * D);
+  const out: Spec[] = [];
+  const free = (i: number, j: number) => i >= 0 && j >= 0 && i < W && j < D && !used[j * W + i];
+  /** A whole paver with its corner cell at (i, j), along x (h) or along z. */
+  const put = (i: number, j: number, h: boolean) => {
+    const cells: [number, number][] = h ? [[i, j], [i + 1, j]] : [[i, j], [i, j + 1]];
+    if (!cells.every(([ci, cj]) => free(ci, cj))) return;
+    for (const [ci, cj] of cells) used[cj * W + ci] = 1;
+    out.push({ k: "paver", x: x0 + (h ? i + 1 : i + 0.5) * u, y, z: z0 + (h ? j + 0.5 : j + 1) * u, r: h ? 0 : 1, v });
+  };
+  if (pattern === "herring") {
+    // A staircase of a paver along x, then one along z, repeated every four rows.
+    for (let i = -D - 4; i < W + 4; i++)
+      for (let m = -Math.ceil((W + D) / 4) - 2; m <= Math.ceil((W + D) / 4) + 2; m++) {
+        put(i, i + 4 * m, true);
+        put(i, i + 1 + 4 * m, false);
+      }
+  } else if (pattern === "basket") {
+    for (let j = 0; j < D; j += 2)
+      for (let i = 0; i < W; i += 2) {
+        const h = ((i + j) / 2) % 2 === 0;
+        if (h) {
+          put(i, j, true);
+          put(i, j + 1, true);
+        } else {
+          put(i, j, false);
+          put(i + 1, j, false);
+        }
+      }
+  } else {
+    for (let j = 0; j < D; j++) for (let i = pattern === "stretcher" && j % 2 ? 1 : 0; i < W; i += 2) put(i, j, true);
+  }
+  // Cut halves to fill the edges.
+  for (let j = 0; j < D; j++)
+    for (let i = 0; i < W; i++)
+      if (free(i, j)) {
+        used[j * W + i] = 1;
+        out.push({ k: "paver", x: x0 + (i + 0.5) * u, y, z: z0 + (j + 0.5) * u, r: 0, v, s: [0.1, 0.05, 0.1] });
+      }
+  return out;
+}
+
+/** A paling fence from a to b: posts at most 2.4 m apart, two rails between them, palings along the rails. */
+export function fenceRun(a: { x: number; z: number }, b: { x: number; z: number }, height: number, v: number): Spec[] {
+  const axis: Axis = Math.abs(b.x - a.x) >= Math.abs(b.z - a.z) ? "x" : "z";
+  const lo = snapG(Math.min(axis === "x" ? a.x : a.z, axis === "x" ? b.x : b.z));
+  const hi = snapG(Math.max(axis === "x" ? a.x : a.z, axis === "x" ? b.x : b.z));
+  const L = Math.max(0.6, hi - lo);
+  const c = snapCentre(axis === "x" ? a.z : a.x, 0.09);
+  const at = (along: number, cross: number) => (axis === "x" ? { x: along, z: cross } : { x: cross, z: along });
+  const r = axis === "x" ? 0 : 1;
+  const out: Spec[] = [];
+  const bays = Math.max(1, Math.ceil((L - 0.09) / 2.4));
+  const bay = (L - 0.09) / bays;
+  for (let i = 0; i <= bays; i++) out.push({ k: "post", ...at(lo + 0.045 + i * bay, c), y: 0, r, v: Math.min(v, 3), s: [0.09, height + 0.1, 0.09] });
+  const railC = c + 0.045 + 0.019;
+  for (let i = 0; i < bays; i++)
+    for (const yy of [0.3, height - 0.35]) out.push({ k: "rail", ...at(lo + 0.045 + (i + 0.5) * bay, railC), y: yy, r, v, s: [bay - 0.09, 0.075, 0.038] });
+  const palC = railC + 0.019 + 0.008;
+  const n = Math.floor(L / 0.16);
+  const start = lo + (L - n * 0.16) / 2 + 0.08;
+  for (let i = 0; i < n; i++) out.push({ k: "paling", ...at(start + i * 0.16, palC), y: 0.05, r, v, s: [0.15, height - 0.05, 0.016] });
+  return out;
+}
+
+/**
+ * Copies of pieces moved by (dx, dy, dz) and turned a number of quarter turns about (cx, cz):
+ * a wall run, a whole roof, a window and its lintel, laid again somewhere else.
+ */
+export function copySpecs(src: Piece[], dx: number, dy: number, dz: number, turns: number, cx: number, cz: number): Spec[] {
+  const t = ((turns % 4) + 4) % 4;
+  return src.map((p) => {
+    let ox = p.x - cx;
+    let oz = p.z - cz;
+    for (let k = 0; k < t; k++) [ox, oz] = [oz, -ox];
+    const sp: Spec = { k: p.k, x: cx + ox + dx, y: p.y + dy, z: cz + oz + dz, r: (p.r + t) % 4, v: p.v };
+    if (p.s) sp.s = [...p.s];
+    if (p.p) sp.p = p.p;
+    return sp;
+  });
 }
 
 /* ------------------------------------------------------------------ openings */

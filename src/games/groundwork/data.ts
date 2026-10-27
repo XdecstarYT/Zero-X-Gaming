@@ -20,7 +20,7 @@ export const SITE = 15;
 /** Brick to brick at the end of a working day (7 till 4, nine hours). */
 export const DAY_MINUTES = 540;
 
-export type Family = "masonry" | "concrete" | "timber" | "steel" | "opening" | "roof";
+export type Family = "masonry" | "concrete" | "timber" | "steel" | "opening" | "roof" | "paving" | "fence" | "fitting";
 
 export type Kind =
   | "brick"
@@ -47,7 +47,15 @@ export type Kind =
   | "tile"
   | "ridge"
   | "fascia"
-  | "sheet";
+  | "sheet"
+  | "paver"
+  | "paling"
+  | "rail"
+  | "gutter"
+  | "downpipe"
+  | "solar"
+  | "stair"
+  | "membrane";
 
 export interface Variant {
   name: string;
@@ -165,6 +173,33 @@ const STEEL: Variant[] = [
   { name: "Black", color: "#2b2d30" },
 ];
 
+const PAVERS: Variant[] = [
+  { name: "Red clay", color: "#8f4430" },
+  { name: "Brindle", color: "#6e4a3a" },
+  { name: "Charcoal", color: "#4a4b4e" },
+  { name: "Sandstone", color: "#c6aa7c" },
+  { name: "Terracotta", color: "#b0603d" },
+];
+
+const FENCING: Variant[] = [
+  { name: "Treated pine", color: "#b9a172" },
+  { name: "Stained brown", color: "#6b4a33" },
+  { name: "Painted white", color: "#ece9e2" },
+  { name: "Charcoal", color: "#3a3c3f" },
+];
+
+const GUTTERS: Variant[] = [
+  { name: "White", color: "#ecebe6" },
+  { name: "Charcoal", color: "#3b3e42" },
+  { name: "Galvanised", color: "#a9adb0" },
+  { name: "Heritage green", color: "#3f5a46" },
+];
+
+const MEMBRANES: Variant[] = [
+  { name: "Charcoal", color: "#3c3d40" },
+  { name: "Pale grey", color: "#a7a8a6" },
+];
+
 export const KINDS: Record<Kind, KindInfo> = {
   brick: { name: "Brick", family: "masonry", icon: "🧱", size: [0.215, 0.065, 0.1025], mortar: true, ground: true, bears: true, support: "bed", cost: 1.05, minutes: 1.1, variants: BRICKS, blurb: "215 × 102.5 × 65 mm, laid in a 10 mm mortar joint.", tray: true },
   bat: { name: "Half bat", family: "masonry", icon: "◧", size: [0.1025, 0.065, 0.1025], mortar: true, ground: true, bears: true, support: "bed", cost: 0.7, minutes: 0.9, variants: BRICKS, blurb: "Half a brick, to finish a course and keep the bond.", tray: true },
@@ -230,9 +265,36 @@ export const KINDS: Record<Kind, KindInfo> = {
   ridge: { name: "Ridge tile", family: "roof", icon: "⌃", size: [0.45, 0.13, 0.3], bears: false, support: "none", cost: 9, minutes: 2, variants: TILES, blurb: "A ridge tile, bedded along the top.", tray: false },
   fascia: { name: "Fascia", family: "roof", icon: "▔", size: [3, 0.19, 0.022], bears: false, support: "none", cost: 8, per: "m", minutes: 3, variants: TIMBER, blurb: "The board along the eaves and up the gables.", tray: false },
   sheet: { name: "Roof sheet", family: "roof", icon: "≋", size: [0.76, 0.02, 3], bears: false, support: "none", cost: 28, per: "m", minutes: 6, variants: SHEETS, blurb: "A corrugated steel sheet.", tray: false },
+  paver: { name: "Clay paver", family: "paving", icon: "▦", size: [0.2, 0.05, 0.1], ground: true, bears: true, support: "bed", cost: 0.9, minutes: 0.3, variants: PAVERS, blurb: "200 × 100 × 50 mm, laid on sand for a path, a patio or a drive.", tray: true },
+  paling: { name: "Fence paling", family: "fence", icon: "┇", size: [0.15, 1.8, 0.016], bears: false, support: "none", cost: 4.5, minutes: 2.5, variants: FENCING, blurb: "150 × 16 mm palings, nailed to the rails.", tray: false },
+  rail: { name: "Fence rail", family: "fence", icon: "═", size: [2.4, 0.075, 0.038], bears: false, support: "none", cost: 4, per: "m", minutes: 3, variants: FENCING, stretch: "L", blurb: "75 × 38 rails, post to post.", tray: false },
+  gutter: { name: "Gutter", family: "fitting", icon: "◡", size: [3, 0.1, 0.12], bears: false, support: "none", cost: 22, per: "m", minutes: 6, variants: GUTTERS, stretch: "L", blurb: "A quad gutter along the eaves.", tray: false },
+  downpipe: { name: "Downpipe", family: "fitting", icon: "│", size: [0.09, 2.4, 0.09], bears: false, support: "none", cost: 18, per: "m", minutes: 5, variants: GUTTERS, stretch: "H", blurb: "A 90 mm downpipe from the gutter to the ground.", tray: false },
+  solar: { name: "Solar panel", family: "fitting", icon: "▤", size: [1.72, 0.035, 1.13], bears: false, support: "none", cost: 340, minutes: 40, variants: [{ name: "Black", color: "#1d2433" }, { name: "Silver frame", color: "#3a4560" }], blurb: "A 400 W panel on rails over the roof.", tray: false },
+  stair: {
+    name: "Stair",
+    family: "timber",
+    icon: "🪜",
+    size: [3.5, 2.7, 0.9],
+    ground: true,
+    bears: true,
+    support: "bed",
+    cost: 420,
+    per: "m",
+    minutes: 120,
+    variants: [{ name: "Pine", color: "#d2ad78" }, { name: "Hardwood", color: "#8a5a3a" }, { name: "Painted white", color: "#ece9e2" }],
+    sizes: [
+      { name: "Three steps", s: [0.75, 0.54, 0.9] },
+      { name: "To a deck", s: [1.5, 1.08, 0.9] },
+      { name: "A storey", s: [3.5, 2.7, 0.9] },
+    ],
+    blurb: "A timber flight: 180 mm risers, 250 mm goings.",
+    tray: true,
+  },
+  membrane: { name: "Roof membrane", family: "roof", icon: "▬", size: [1, 0.012, 1], bears: false, support: "none", cost: 48, per: "m2", minutes: 12, variants: MEMBRANES, stretch: "LD", blurb: "A torched-on membrane over a flat roof's deck.", tray: false },
 };
 
-export const KIND_ORDER: Kind[] = ["brick", "bat", "block", "stone", "glassblock", "footing", "slab", "lintel", "window", "door", "plate", "stud", "joist", "board", "post", "steel"];
+export const KIND_ORDER: Kind[] = ["brick", "bat", "block", "stone", "glassblock", "paver", "footing", "slab", "lintel", "window", "door", "stair", "plate", "stud", "joist", "board", "post", "steel"];
 
 /** What a wall of each material lays to finish a course. */
 export const HALF: Partial<Record<Kind, Kind>> = { brick: "bat", block: "halfblock", stone: "halfstone", glassblock: "glassblock" };
@@ -246,7 +308,17 @@ export const BONDS: Record<Bond, { name: string; blurb: string; thick: 1 | 2 }> 
   stack: { name: "Stack", blurb: "Every joint in line. Decorative only: it has no strength of its own.", thick: 1 },
 };
 
-export type RoofStyle = "gable" | "skillion";
+export type RoofStyle = "gable" | "skillion" | "flat";
+
+/** How pavers are laid. */
+export type PavePattern = "stretcher" | "basket" | "stack" | "herring";
+
+export const PATTERNS: Record<PavePattern, { name: string; blurb: string }> = {
+  stretcher: { name: "Stretcher", blurb: "Rows offset half a paver, like a wall laid flat." },
+  basket: { name: "Basketweave", blurb: "Pairs side by side, each square turned to its neighbour." },
+  herring: { name: "Herringbone", blurb: "Each paver at right angles to the next, stepping across: the strongest for a drive." },
+  stack: { name: "Stack", blurb: "Every joint in line, a clean grid." },
+};
 export type RoofCover = "tile" | "sheet";
 
 /* ------------------------------------------------------------------ jobs */
@@ -259,7 +331,10 @@ export type Need =
   | { k: "roof"; cover: number }
   | { k: "count"; of: Kind | Family; n: number; label: string }
   | { k: "slab"; area: number }
-  | { k: "height"; h: number };
+  | { k: "height"; h: number }
+  | { k: "paved"; area: number }
+  | { k: "fence"; len: number }
+  | { k: "deck"; area: number };
 
 export interface Job {
   id: string;
