@@ -1,9 +1,9 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { treeGeometry, treeMaterial } from "@/games/xcity/render/kit";
 import { SITE } from "../data";
 import { box as pieceBox, type State } from "../model";
 import { groundMaterial, localMaterial, type Mats } from "./materials";
+import { makeTree, windTime, type TreeKind } from "./trees";
 
 /**
  * Everything round the build: the lawn (worn to soil wherever you build), the street with its
@@ -471,27 +471,23 @@ export function buildSite(M: Mats, quality: "low" | "medium" | "high"): SiteView
   group.add(neighbour(M, -12, STREET_Z + 21, 12, 9, Math.PI / 2, true));
   group.add(neighbour(M, 8, STREET_Z + 21, 10, 8, Math.PI / 2, false));
   // Trees: in the back corners, next door, and along the nature strip.
-  const tm = treeMaterial;
-  const trees: [number, number, number, "round" | "tall" | "pine"][] = [
-    [-12.5, -12.5, 2.1, "round"],
-    [12.8, -11.8, 1.8, "round"],
-    [-12.8, 6, 1.4, "pine"],
-    [-30, -10, 2.4, "round"],
-    [31, -8, 2.2, "round"],
-    [-8, SITE + 3.2, 1.3, "tall"],
-    [4, SITE + 3.2, 1.35, "tall"],
-    [16, SITE + 3.2, 1.3, "tall"],
-    [-20, SITE + 3.2, 1.3, "tall"],
-    [-26, 14, 1.9, "pine"],
-    [27, 13, 2.0, "round"],
+  const trees: [number, number, number, TreeKind][] = [
+    [-12.5, -12.5, 1.05, "oak"],
+    [12.8, -11.8, 0.95, "gum"],
+    [-12.8, 6, 0.85, "pine"],
+    [-30, -10, 1.2, "oak"],
+    [31, -8, 1.1, "gum"],
+    [-8, SITE + 3.2, 0.7, "gum"],
+    [4, SITE + 3.2, 0.72, "oak"],
+    [16, SITE + 3.2, 0.7, "gum"],
+    [-20, SITE + 3.2, 0.7, "oak"],
+    [-26, 14, 0.95, "pine"],
+    [27, 13, 1.0, "oak"],
   ];
   for (const [x, z, k, kind] of trees) {
-    const t = new THREE.Mesh(treeGeometry(kind), tm);
+    const t = makeTree(kind, k, quality);
     t.position.set(x, 0, z);
-    t.scale.setScalar(k);
     t.rotation.y = x * 0.7;
-    t.castShadow = true;
-    t.receiveShadow = true;
     group.add(t);
   }
   // The site gear, by the driveway.
@@ -553,6 +549,7 @@ export function buildSite(M: Mats, quality: "low" | "medium" | "high"): SiteView
       grass?.update(s);
     },
     frame(t) {
+      windTime(t);
       grass?.frame(t);
     },
   };

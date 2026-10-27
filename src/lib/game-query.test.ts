@@ -28,7 +28,7 @@ describe("queryGames", () => {
   });
 
   it("sorts newest first", () => {
-    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("xcity");
+    expect(slugs(queryGames(GAMES, { sort: "new" }))[0]).toBe("groundwork");
   });
 
   it("sorts by rating", () => {

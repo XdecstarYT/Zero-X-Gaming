@@ -29,14 +29,23 @@ function rounded(L: number, H: number, D: number, r: number) {
 
 /** Merge parts that each carry a material index into one geometry with groups. */
 function grouped(parts: { g: THREE.BufferGeometry; m: number }[]) {
-  const geos = parts.map((p) => {
-    const g = p.g.index ? p.g.toNonIndexed() : p.g;
-    g.clearGroups();
-    g.addGroup(0, g.getAttribute("position").count, p.m);
-    if (!g.getAttribute("uv")) g.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute("position").count * 2), 2));
-    return g;
-  });
-  return mergeGeometries(geos, true)!;
+  // One group per material (merging numbers groups by position, so set each one's material after).
+  const ms = [...new Set(parts.map((p) => p.m))].sort((a, b) => a - b);
+  const buckets = ms.map((m) =>
+    mergeGeometries(
+      parts
+        .filter((p) => p.m === m)
+        .map((p) => {
+          const g = p.g.index ? p.g.toNonIndexed() : p.g;
+          g.clearGroups();
+          if (!g.getAttribute("uv")) g.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute("position").count * 2), 2));
+          return g;
+        }),
+    )!,
+  );
+  const out = mergeGeometries(buckets, true)!;
+  out.groups.forEach((gr, i) => (gr.materialIndex = ms[i]));
+  return out;
 }
 
 const box = (w: number, h: number, d: number, x: number, y: number, z: number) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
@@ -61,10 +70,12 @@ function tileGeometry(L: number, H: number, D: number) {
     s.lineTo(x, Math.max(0, y - H));
   }
   s.closePath();
-  const g = new THREE.ExtrudeGeometry(s, { depth: D, bevelEnabled: false, steps: 1 });
-  g.translate(0, 0, -D / 2);
-  g.computeVertexNormals();
-  return g;
+  const pan = new THREE.ExtrudeGeometry(s, { depth: D, bevelEnabled: false, steps: 1 });
+  pan.translate(0, 0, -D / 2);
+  pan.computeVertexNormals();
+  // A thickened nose at each end: the one down the slope shows as each course's edge (the other is under the next course).
+  const nose = (z: number) => new THREE.BoxGeometry(L * 0.98, H * 1.9, 0.028).translate(0, H * 0.55, z).toNonIndexed();
+  return mergeGeometries([pan, nose(D / 2 - 0.014), nose(-D / 2 + 0.014)])!;
 }
 
 /** Corrugated sheet: a unit square, its ribs running along z (down the slope). */

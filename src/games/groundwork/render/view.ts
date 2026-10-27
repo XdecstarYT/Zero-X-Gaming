@@ -183,8 +183,8 @@ class Pieces {
     const c = cure(s, p);
     const h = hash(p.id + 3);
     // Wet mortar is dark and grey; it dries out pale.
-    const v = 0.55 + c * 0.32 + (h - 0.5) * 0.05;
-    return tmpC.setRGB(v * 1.0, v * 0.98, v * 0.94);
+    const v = 0.24 + c * 0.2 + (h - 0.5) * 0.04;
+    return tmpC.setRGB(v * 1.0, v * 0.97, v * 0.9);
   }
 
   /** Mortar going off (only the wet joints change). */

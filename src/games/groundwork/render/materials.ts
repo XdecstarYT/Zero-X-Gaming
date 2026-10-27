@@ -45,8 +45,8 @@ const FRAG_ROUGH = /* glsl */ `float roughnessFactor = roughness;
 const FRAG_NORMAL = /* glsl */ `#ifdef USE_NORMALMAP_TANGENTSPACE
   vec3 mapN = texture2D(normalMap, gUV).xyz * 2.0 - 1.0;
   mapN.xy *= normalScale;
-  mat3 tbn = getTangentFrame(-vViewPosition, normal, gUV);
-  normal = normalize(tbn * mapN);
+  mat3 gwTbn = getTangentFrame(-vViewPosition, normal, gUV);
+  normal = normalize(gwTbn * mapN);
 #endif`;
 
 export interface LocalOpts {
@@ -128,8 +128,8 @@ export function groundMaterial(pbr: PBR, scale: number, opts: { color?: string; 
           vec3 mapN = texture2D(normalMap, gUV).xyz * 2.0 - 1.0;
           ${w ? "mapN = mix(mapN, texture2D(tWornN, vGP.xz / uWornScale).xyz * 2.0 - 1.0, wear);" : ""}
           mapN.xy *= normalScale;
-          mat3 tbn = getTangentFrame(-vViewPosition, normal, gUV);
-          normal = normalize(tbn * mapN);
+          mat3 gwTbn = getTangentFrame(-vViewPosition, normal, gUV);
+          normal = normalize(gwTbn * mapN);
         #endif`,
       );
   };
@@ -150,10 +150,10 @@ function build() {
     pbr: { brick, mortar, concrete, timber, tile, metal, grass: grassPBR(), soil: soilPBR(), gravel: gravelPBR(), asphalt: asphaltPBR(), brickwork: brickworkPBR(["#9a4b37", "#8a4635", "#a35a3f", "#7f4232"]), brickworkCream: brickworkPBR(["#c9a571", "#b8935e", "#d2b07c"]) },
     brick: localMaterial(brick, { scale: 0.55, normalScale: 1.1, env: 0.6 }),
     mortar: localMaterial(mortar, { scale: 0.28, normalScale: 0.8, env: 0.5 }),
-    concrete: localMaterial(concrete, { scale: 1.3, normalScale: 0.9, env: 0.6 }),
-    concreteFixed: localMaterial(concrete, { scale: 1.0, normalScale: 0.8, env: 0.6, fixed: true, color: "#d8d5cc" }),
+    concrete: localMaterial(concrete, { scale: 1.3, normalScale: 0.9, env: 0.35, color: "#f4efe6" }),
+    concreteFixed: localMaterial(concrete, { scale: 1.0, normalScale: 0.8, env: 0.35, fixed: true, color: "#cfc9bd" }),
     timber: localMaterial(timber, { scale: 1.1, normalScale: 0.8, env: 0.5 }),
-    painted: localMaterial(timber, { scale: 1.6, normalScale: 0.3, roughness: 0.55, env: 0.8 }),
+    painted: localMaterial(null, { scale: 1, roughness: 0.42, env: 0.9 }),
     tile: localMaterial(tile, { scale: 0.45, normalScale: 0.8, env: 0.8 }),
     metal: localMaterial(metal, { scale: 1.2, normalScale: 0.6, metalness: 0.85, roughness: 0.9, env: 1.2 }),
     steel: localMaterial(metal, { scale: 1.2, normalScale: 0.5, metalness: 0.35, roughness: 1.4, env: 0.8 }),
@@ -161,7 +161,7 @@ function build() {
     frameWhite: localMaterial(null, { scale: 1, roughness: 0.45, env: 1, fixed: true, color: "#efeee9" }),
     handle: localMaterial(null, { scale: 1, roughness: 0.25, metalness: 1, env: 1.4, fixed: true, color: "#c8a560" }),
     rubber: localMaterial(null, { scale: 1, roughness: 0.8, fixed: true, color: "#1c1d1f" }),
-    glass: localMaterial(null, { scale: 1, roughness: 0.02, metalness: 0, env: 2.2, fixed: true, color: "#8ea6ae" }, true),
+    glass: localMaterial(null, { scale: 1, roughness: 0.03, metalness: 0.1, env: 2.6, fixed: true, color: "#5f7880" }, true),
     glassBlock: localMaterial(null, { scale: 1, roughness: 0.15, env: 1.6 }, true),
   };
 }
@@ -174,7 +174,7 @@ export function materials(): Mats {
     cache = build();
     for (const m of [cache.glass]) {
       m.transparent = true;
-      m.opacity = 0.3;
+      m.opacity = 0.5;
       m.depthWrite = false;
     }
     cache.glassBlock.transparent = true;

@@ -26,6 +26,7 @@ export const GAME_LOADERS: Record<string, () => Promise<{ default: GameFactory }
   heatwave: () => import("./heatwave/index"),
   sovereign: () => import("./sovereign/index"),
   xcity: () => import("./xcity/index"),
+  groundwork: () => import("./groundwork/index"),
 };
 
 export function hasGame(slug: string) {

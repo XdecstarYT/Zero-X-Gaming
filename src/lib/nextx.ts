@@ -2,7 +2,7 @@
  * NextX: Zero X's next-generation game production label. Its own app (/nextx) shows the titles
  * made to the NextX standard: photoreal 3D worlds, deep simulations, phone-first interfaces.
  */
-export const NEXTX_SLUGS = ["xcity", "sovereign", "heatwave", "wareforge", "yourgov", "zero-city"] as const;
+export const NEXTX_SLUGS = ["groundwork", "xcity", "sovereign", "heatwave", "wareforge", "yourgov", "zero-city"] as const;
 export type NextXSlug = (typeof NEXTX_SLUGS)[number];
 
 export const isNextX = (slug: string) => (NEXTX_SLUGS as readonly string[]).includes(slug);
@@ -25,6 +25,23 @@ export interface NextXTitle {
 }
 
 export const NEXTX_TITLES: NextXTitle[] = [
+  {
+    slug: "groundwork",
+    pitch: "A photoreal construction game: build anything from scratch, brick by brick, from the footings to the last ridge tile.",
+    accent: "#ff8a1f",
+    accent2: "#9a4b37",
+    stats: [
+      { v: "25", k: "Building parts" },
+      { v: "4", k: "Brick bonds" },
+      { v: "6", k: "Career jobs" },
+    ],
+    features: [
+      "Real 215 mm bricks in 10 mm mortar joints, laid one at a time or a bonded wall at once",
+      "Footings, slabs, timber frames, joists, steel, doors and windows sized to the brickwork",
+      "Roofs framed rafter by rafter and hung tile by tile; knock out a brick and what it held falls",
+      "A career from a garden wall to a two-storey house, judged by an inspector",
+    ],
+  },
   {
     slug: "xcity",
     pitch: "A city builder that takes zoning seriously: grow a farming village into a metropolis, street by street and storey by storey.",
@@ -151,6 +168,7 @@ export const NEXTX_ENGINE = [
   { title: "Phone-first layout", from: "All three", body: "Dock, sheets and tab bars that fit a thumb, upright or sideways." },
   { title: "Open-world streaming", from: "Heatwave", body: "A whole island city streamed in round you as you drive: traffic, people, police and the sea, with a skyline to the horizon." },
   { title: "Planner's city", from: "XCity", body: "Districts, lots and street patterns laid on a road graph; every building drawn from its plan with the facade shader, built a chunk at a time, with cranes on the sites and traffic, bikes and trams in the streets." },
+  { title: "Piece by piece", from: "Groundwork", body: "Every brick, tile, stud and board its own instance with its texture laid on in real metres, mortar beds that dry as the day goes on, and grass that sways and clears where you build." },
   { title: "World relief", from: "Sovereign", body: "The whole Earth raised from real elevation and lit by the sun, nations laid over it, a sea that catches the light and clouds that cast shadows; the camera tilts to the horizon as you zoom in." },
   { title: "Logistics simulation", from: "WareForge", body: "Forklifts that find their own way round your racks, trucks that back onto the doors, machines that wear and break." },
 ];
