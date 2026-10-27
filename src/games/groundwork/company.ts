@@ -462,9 +462,10 @@ const PLOTS = [
   { w: 20, d: 14, land: 900, name: "a large corner block" },
 ];
 
-export function makeListing(co: Company): Listing {
-  const s = pick(co, SUBURBS);
-  const p = pick(co, PLOTS);
+/** A block for sale (a starter is a compact one in the cheapest suburb). */
+export function makeListing(co: Company, starter = false): Listing {
+  const s = starter ? SUBURBS[0] : pick(co, SUBURBS);
+  const p = starter ? PLOTS[0] : pick(co, PLOTS);
   return { id: co.nextId++, suburb: s.id, w: p.w, d: p.d, land: p.land, price: round(p.land * LAND_RATE * s.factor * co.market * between(co, 0.9, 1.1), 500), expires: co.day + 14 + Math.floor(rand(co) * 14) };
 }
 
@@ -669,6 +670,8 @@ export function refill(co: Company) {
   while (co.board.length < 6) co.board.push(makeContract(co));
   co.listings = co.listings.filter((l) => l.expires > co.day);
   while (co.listings.length < 4) co.listings.push(makeListing(co));
+  // There's always a starter block a new firm could stretch to.
+  if (!co.listings.some((l) => l.land === PLOTS[0].land && suburb(l.suburb).factor < 0.8)) co.listings[co.listings.length - 1] = makeListing(co, true);
   if (co.day % 7 === 0 || co.hires.length < 3) {
     co.hires = [];
     while (co.hires.length < 3) co.hires.push(makeWorker(co));

@@ -12,6 +12,13 @@ describe("the company", () => {
     expect(c.board.length).toBe(6);
     expect(c.listings.length).toBe(4);
     expect(c.hires.length).toBe(3);
+    // A starter block a new firm can buy with a loan, whatever the luck of the draw.
+    for (let seed = 1; seed < 60; seed++) {
+      const n = co.newCompany("S", seed);
+      expect(Math.min(...n.listings.map((l) => l.price + co.duty(l.price)))).toBeLessThanOrEqual(n.cash + co.loanLimit(n));
+    }
+    const cheapest = Math.min(...c.listings.map((l) => l.price + co.duty(l.price)));
+    expect(cheapest).toBeLessThanOrEqual(c.cash + co.loanLimit(c));
     // A new firm is only asked to tender for small jobs.
     expect(c.board.every((x) => x.rep <= c.rep + 8)).toBe(true);
     // And it saves and loads.

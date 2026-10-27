@@ -193,5 +193,6 @@ export const css = `
 .gw-logline.bad{border-left-color:var(--bad)}
 .gw-logline.money{border-left-color:var(--gold)}
 .gw-logline.tip{border-left-color:var(--orange)}
+@media (pointer: coarse){.gw-desk-h{padding-left:60px}}
 @container gw (max-width: 520px){.gw-ledger b{font-size:15px}.gw-office{padding-left:6px;padding-right:6px}}
 `;
