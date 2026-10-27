@@ -196,10 +196,11 @@ export class Game {
     this.last = now;
     const v = this.view;
     if (!v || !this.s || document.hidden) return;
-    // Behind the office the site's only scenery: draw it a few times a second.
-    if (this.screen === "hq" && now - this.lastDraw < 250) return;
+    // Behind the office the site is a still picture under frosted glass: redraw it once a second,
+    // so the glass isn't re-blurred every frame.
+    if (this.screen === "hq" && now - this.lastDraw < 1000) return;
     this.lastDraw = now;
-    if (this.screen !== "play") v.rig.goal.yaw += dt * 0.05;
+    if (this.screen === "title") v.rig.goal.yaw += dt * 0.05;
     else this.activeMs += dt * 1000;
     v.frame(this.s, dt, now);
     if (this.loading < 1 && v.ready) {

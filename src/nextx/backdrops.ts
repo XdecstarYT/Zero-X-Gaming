@@ -362,7 +362,8 @@ function groundworkBackdrop(host: HTMLElement, quality: Quality, still: boolean)
     await new Promise((r) => setTimeout(r, 0));
     if (gone) return;
     const s = showcaseHouse();
-    const view = new GroundworkView(canvas, quality === "low" ? "low" : "medium");
+    // Scenery only: phones get the light renderer (no grass, plain resolution).
+    const view = new GroundworkView(canvas, quality === "high" ? "medium" : "low");
     stop = () => view.dispose();
     view.rig.jump({ target: new THREE.Vector3(0, 1.6, 0), dist: 19, yaw: 0.65, pitch: 0.26 });
     await new Promise<void>((done) => {
@@ -370,8 +371,9 @@ function groundworkBackdrop(host: HTMLElement, quality: Quality, still: boolean)
       let first = true;
       const loop = () => {
         raf = requestAnimationFrame(loop);
-        if (document.hidden) return;
         const now = performance.now();
+        // A slow orbit doesn't need more than about 20 frames a second.
+        if (document.hidden || (!first && now - last < 50)) return;
         const dt = Math.min(0.1, (now - last) / 1000);
         last = now;
         if (!still) view.rig.goal.yaw += dt * 0.04;
