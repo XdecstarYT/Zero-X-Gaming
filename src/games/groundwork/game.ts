@@ -96,6 +96,10 @@ export class Game {
   private previewAt = 0;
   private lastTap = 0;
   activeMs = 0;
+  private finalSent = false;
+  /** Pieces laid and jobs handed over this session: a final score goes in once there's real work to show. */
+  private sessionLaid = 0;
+  private handed = false;
 
   constructor(private report_: { progress(n: number): void; final(n: number): void }) {
     this.quality = this.prefs.quality ?? pickQuality();
@@ -268,8 +272,15 @@ export class Game {
     this.view?.setJob(null);
     this.s = showcaseHouse();
     this.view?.rig.fly({ target: new THREE.Vector3(0, 1.6, 0), dist: 19, yaw: 0.65, pitch: 0.28 });
-    this.report_.final(this.score);
+    this.submitFinal();
     this.bump();
+  }
+
+  /** Post the final score, once a session, when there's something to show for it. */
+  submitFinal() {
+    if (this.finalSent || (this.sessionLaid < 250 && !this.handed)) return;
+    this.finalSent = true;
+    this.report_.final(this.score);
   }
 
   get score() {
@@ -360,6 +371,11 @@ export class Game {
   setFrameH(h: number) {
     this.frameH = h;
     this.refreshPending();
+    this.bump();
+  }
+
+  setDemolishGroup(b: boolean) {
+    this.demolishGroup = b;
     this.bump();
   }
 
@@ -547,6 +563,7 @@ export class Game {
     if (!r.added.length && r.why === "Something's in the way" && KINDS[this.kind].family === "opening") r = m.cutOpening(s, c);
     if (r.added.length) {
       this.prefs.laid += r.added.length;
+      this.sessionLaid += r.added.length;
       this.after();
     } else this.toast(r.why ?? "It won't go there", "bad");
   }
@@ -563,6 +580,7 @@ export class Game {
     this.view?.marks.setAnchor(null);
     if (r.added.length) {
       this.prefs.laid += r.added.length;
+      this.sessionLaid += r.added.length;
       const q = this.quote(r.added);
       this.toast(`Laid ${this.describe(r.added)}: ${money(q.cost)}, ${Math.round(q.mins / 60)} hours' work.${r.skipped ? ` ${r.skipped} couldn't go in (${r.why}).` : ""}`, r.skipped ? "tip" : "good");
       this.after();
@@ -636,6 +654,8 @@ export class Game {
     }
     this.toast(`${r.job.client} paid ${money(r.pay)}. ${"★".repeat(Math.floor(r.stars))}${r.stars % 1 ? "½" : ""}`, "good");
     this.report_.progress(this.score);
+    this.handed = true;
+    this.submitFinal();
     this.report = null;
     this.screen = "title";
     this.panel = "jobs";
@@ -779,6 +799,7 @@ export class Game {
 
   dispose() {
     this.persist();
+    this.submitFinal();
     this.detach();
   }
 }

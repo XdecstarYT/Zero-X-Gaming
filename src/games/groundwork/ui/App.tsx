@@ -270,7 +270,7 @@ function hint(game: Game): { text: React.ReactNode; bad?: boolean } {
       if (game.hoverWhy) return { text: game.hoverWhy, bad: true };
       if (game.hoverCut) return { text: `The brickwork there will be cut out for the ${KINDS[game.kind].name.toLowerCase()}.` };
       const k = KINDS[game.kind];
-      return { text: k.mortar ? <>Tap to lay a <b>{k.name.toLowerCase()}</b> in mortar: it beds onto whatever's under it and snaps to the joint. ↻ turns it.</> : <>Tap to lay a <b>{k.name.toLowerCase()}</b>. ↻ turns it.</> };
+      return { text: k.mortar ? <>Tap to lay a <b>{k.name.toLowerCase()}</b> in mortar: it beds onto whatever’s under it and snaps to the joint. ↻ turns it.</> : <>Tap to lay a <b>{k.name.toLowerCase()}</b>. ↻ turns it.</> };
     }
     case "wall":
       return { text: a ? "Now tap where the wall ends (a corner, if it's a rectangle)." : "Tap where the wall starts: on the ground, a footing, a slab or the top of a wall." };
@@ -388,10 +388,10 @@ function Options({ game }: { game: Game }) {
       )}
       {t === "demolish" && (
         <div className="gw-row">
-          <button type="button" className={`gw-chip${!game.demolishGroup ? " on" : ""}`} onClick={() => ((game.demolishGroup = false), game.bump())}>
+          <button type="button" className={`gw-chip${!game.demolishGroup ? " on" : ""}`} onClick={() => game.setDemolishGroup(false)}>
             One piece
           </button>
-          <button type="button" className={`gw-chip${game.demolishGroup ? " on" : ""}`} onClick={() => ((game.demolishGroup = true), game.bump())} data-testid="gw-demolish-group">
+          <button type="button" className={`gw-chip${game.demolishGroup ? " on" : ""}`} onClick={() => game.setDemolishGroup(true)} data-testid="gw-demolish-group">
             The whole run
           </button>
         </div>
@@ -423,7 +423,7 @@ function Confirm({ game }: { game: Game }) {
       <div className="gw-hint">
         About {hours < 1 ? `${Math.max(1, Math.round(q.mins))} minutes'` : hours < 9 ? `${hours.toFixed(1)} hours'` : `${(hours / 9).toFixed(1)} days'`} work.{" "}
         {game.tool === "wall" && `${BONDS[game.wall.bond].name} bond, ${game.wall.courses} courses.`}
-        {short && <span className="bad"> You've only {money(s.money)}: what you can afford goes in, the rest doesn't.</span>}
+        {short && <span className="bad"> You’ve only {money(s.money)}: what you can afford goes in, the rest doesn’t.</span>}
       </div>
       <div className="gw-actions">
         <button type="button" className="gw-btn" onClick={() => game.cancel()} data-testid="gw-cancel">
@@ -544,7 +544,7 @@ function ReportPanel({ game }: { game: Game }) {
           </div>
         </div>
       ) : (
-        <div className="gw-note no">The inspector won't sign it off yet. What's still missing is below.</div>
+        <div className="gw-note no">The inspector won’t sign it off yet. What’s still missing is below.</div>
       )}
       <div className="gw-tiles">
         <div className="gw-tile">
@@ -668,7 +668,7 @@ function Tally({ game }: { game: Game }) {
         </div>
         <div className="gw-tile">
           <b className="num">{dayOf(s.minutes)}</b>
-          <small>days' work</small>
+          <small>days’ work</small>
         </div>
       </div>
       {rows.length > 0 && (

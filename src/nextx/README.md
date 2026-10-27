@@ -19,7 +19,8 @@ game starts where the last one finished. The NextX app (`/nextx`,
   hour; `mountBackdrop("warehouse", host)` is WareForge's yard at work (trucks backing onto the doors,
   forklifts on the aisles); `mountBackdrop("world", host)` is Sovereign's living world in 3D relief,
   its nations playing on as the camera drifts east; `mountBackdrop("xcity", host)` is a grown XCity
-  by the river, the camera circling while it builds. Quality is picked for the device; a still camera for people who prefer
+  by the river, the camera circling while it builds; `mountBackdrop("groundwork", host)` is
+  Groundwork's show home on its plot, the camera walking slowly round it. Quality is picked for the device; a still camera for people who prefer
   less motion.
 - **The look** (`look.ts`): one light for every title. `makeSky()` is a sky dome with a sun disc,
   a halo, drifting clouds and stars at night; `skyFor(sunHeight)` gives the sky's colours and the
@@ -47,3 +48,8 @@ game starts where the last one finished. The NextX app (`/nextx`,
   junctions, markings, zebras, bike lanes, tram tracks and bridges; buildings in chunks that merge
   their walls into one facade mesh and rebuild only when they change; instanced trees, traffic and
   trams; a ground painted from the districts. Built for XCity.
+- **Piece by piece** (`games/groundwork/render/`): thousands of bricks, tiles and timbers drawn as
+  instances, each material's textures laid on in the piece's own metres by a shader patch (so grain
+  runs along every board and no two bricks match), mortar beds whose colour dries as the day goes
+  on, windows and doors built to each size, leaf-card trees lit as soft crowns, and instanced grass
+  that sways and clears under whatever is built. Built for Groundwork.

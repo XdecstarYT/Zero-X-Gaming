@@ -983,10 +983,39 @@ See `src/games/heatwave/README.md`.
 
 ### NextX titles play in the NextX app
 
-XCity, Sovereign, Heatwave, WareForge, YourGov and Zero City are ZLink+ games that run inside the NextX app at `/nextx/play/<slug>`
+Groundwork, XCity, Sovereign, Heatwave, WareForge, YourGov and Zero City are ZLink+ games that run inside the NextX app at `/nextx/play/<slug>`
 (`src/components/nextx/NextXPlayer.tsx`). `next.config.ts` redirects their `/games/<slug>` pages there
 (keeping the query string), and `gameHref()` in `src/lib/nextx.ts` points every link at the right place.
 The ZLink+ page has a NextX section and marks NextX titles.
+
+### Groundwork (ZLink+ exclusive, NextX)
+
+A photoreal construction game where you build anything from scratch, brick by brick
+(`src/games/groundwork/`; `20261129100000_groundwork.sql`), the seventh NextX title:
+- **Pieces at their real size** (`data.ts`): 215 × 102.5 × 65 mm bricks in 10 mm joints, half bats
+  and queen closers, concrete blocks, ashlar stone, glass blocks, strip footings, slabs, lintels,
+  timber plates, studs, joists, floorboards, posts, steel beams, windows and doors sized to the
+  brickwork, and roof parts (rafters, battens, tiles, ridge tiles, fascias, corrugated sheet). Each
+  has finishes, a cost and the labour it takes; the clock runs a nine-hour working day.
+- **The model** (`model.ts`): pieces snap to a quarter-brick grid and bed onto whatever is under
+  them. Everything must be held up (a brick needs a third of its bed on something that bears, a
+  lintel or joist both ends); knock something out and what it carried falls. The wall tool lays a
+  run or four walls course by course in stretcher, English, Flemish or stack bond with bonded
+  corners, cuts round doors and windows and puts lintels over them; footings, slabs, stud frames,
+  floors and gable or skillion roofs (tile by tile) are generated the same way. Undo, redo and a
+  compact save.
+- **Career** (`jobs.ts`): six jobs from a garden wall to a two-storey house, each with a client, a
+  brief, a budget and a deadline. The inspector measures what you built in the pegged-out zone
+  against the brief, checks the footings under the brickwork and the bond (no straight joints),
+  and rates it in stars for the brief, the budget and the time.
+
+The 3D site (`render/`) draws every piece as an instance with its textures laid on in real metres
+(brick, mortar that dries from dark to pale as it goes off, concrete, timber grain, clay tiles,
+metal), windows and doors built frame, sash and panel to each size, swaying grass that clears where
+you work, leafy trees, a suburban street with neighbours, and a cement mixer, pallets, a skip and a
+ute on site, under the NextX sky with soft shadows and ambient occlusion. The score is a thousand
+per star on jobs plus one per piece laid (members only). The NextX app's backdrop for it is the
+show home on its plot. See `src/games/groundwork/README.md`.
 
 ### XCity (ZLink+ exclusive, NextX)
 
