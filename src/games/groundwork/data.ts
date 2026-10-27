@@ -460,6 +460,21 @@ export const JOBS: Job[] = [
 
 export const CHANGELOG: { version: string; date: string; title: string; items: string[] }[] = [
   {
+    version: "2.0",
+    date: "December 2026",
+    title: "Property & Contracts",
+    items: [
+      "Your company: start a building firm with $80,000, a ute and a mixer, and run it from the office: cash, reputation, a calendar, a crew and a bank.",
+      "Contracts: clients across six suburbs post jobs from garden walls, patios and fences to sheds, decks, carports, garages, granny flats and houses. Price each against your estimate and tender against rival builders; the cheapest credible bid wins, and a good name lets you charge more.",
+      "Won contracts pay a 10% deposit, the balance at handover less damages for every day late and a 5% retention held for four weeks, with a bonus for top work. Finish well and bigger jobs come your way; walk off one and word gets round.",
+      "Real estate: buy a block of land in Ironbark Flats, Saltmarsh, Wattle Grove, Kestrel Park, Bellevue Rise or Harbour Heights (4% stamp duty), build on it, and sell it at auction or rent it out for weekly income. A valuer prices what you actually built: floor area, storeys, windows, workmanship, a garage, solar, decks, paving, fences and gutters. The market moves week by week.",
+      "Crew: hire labourers, bricklayers, carpenters and a site foreman to get through the work faster, and pay their wages for every working day. The bank lends against your property and your name.",
+      "New pieces: clay pavers, paling fences, timber stairs, roof membranes, gutters, downpipes and solar panels.",
+      "New tools: Pave (herringbone, basketweave, stretcher and stack, with cut pavers at the edges), Fence (posts, rails and palings), Paint (refinish any piece or its whole run), Match (pick up a piece's material, finish and size) and Copy (pick up a whole wall, roof or fence and lay it again, turned if you like).",
+      "Roofs: flat roofs with a membrane and a deep fascia, gutters and downpipes on any roof, and solar panels on the sunny slope. Knock off for the day to let the mortar go off overnight.",
+    ],
+  },
+  {
     version: "1.0",
     date: "October 2026",
     title: "Groundwork opens",

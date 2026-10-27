@@ -400,3 +400,30 @@ export function brickworkPBR(colors: string[], N = 512): PBR {
   g.putImageData(img, 0, 0);
   return { map: texture(c, true), normal: normals(h, N, 2), rough: roughness(N, () => 0.9) };
 }
+
+/** A solar panel's face: 6 × 10 cells with silver busbars, pale so the panel's own colour tints it. */
+export function solarTexture(N = 512) {
+  const { c, g } = canvas(N);
+  g.fillStyle = "#f2f4f8";
+  g.fillRect(0, 0, N, N);
+  const cols = 6;
+  const rows = 10;
+  const cw = N / cols;
+  const ch = N / rows;
+  for (let i = 0; i < cols; i++)
+    for (let j = 0; j < rows; j++) {
+      const x = i * cw + 2;
+      const y = j * ch + 2;
+      const grd = g.createLinearGradient(x, y, x + cw, y + ch);
+      grd.addColorStop(0, "#c7cfdc");
+      grd.addColorStop(1, "#b3bdcc");
+      g.fillStyle = grd;
+      g.fillRect(x, y, cw - 4, ch - 4);
+      // Busbars and fingers.
+      g.fillStyle = "rgba(255,255,255,.75)";
+      for (const f of [0.33, 0.66]) g.fillRect(x + (cw - 4) * f - 1, y, 2, ch - 4);
+      g.fillStyle = "rgba(255,255,255,.18)";
+      for (let k = 1; k < 8; k++) g.fillRect(x, y + ((ch - 4) * k) / 8, cw - 4, 1);
+    }
+  return texture(c, true);
+}

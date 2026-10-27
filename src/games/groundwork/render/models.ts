@@ -221,6 +221,68 @@ function doorGeometry(L: number, H: number, D: number) {
   return grouped(parts);
 }
 
+/** A quad gutter's open profile, unit size, run along x. */
+function gutterGeometry() {
+  const s = new THREE.Shape();
+  const t = 0.1;
+  // In (z, y): the back against the fascia at z = -0.5, the bead at the front.
+  s.moveTo(-0.5, 1);
+  s.lineTo(-0.5, 0);
+  s.lineTo(0.42, 0);
+  s.quadraticCurveTo(0.5, 0.02, 0.5, 0.25);
+  s.lineTo(0.5, 1);
+  s.lineTo(0.5 - t, 1);
+  s.lineTo(0.5 - t, 0.25);
+  s.quadraticCurveTo(0.5 - t, t + 0.02, 0.38, t);
+  s.lineTo(-0.5 + t, t);
+  s.lineTo(-0.5 + t, 1);
+  s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false, curveSegments: 6 });
+  g.translate(0, 0, -0.5);
+  g.rotateY(Math.PI / 2);
+  return g;
+}
+
+/** A timber stair flight, rising along +x: two stringers, treads and risers. */
+function stairGeometry(L: number, H: number, D: number) {
+  const n = Math.max(2, Math.round(H / 0.18));
+  const rise = H / n;
+  const going = L / n;
+  const parts: THREE.BufferGeometry[] = [];
+  const w = D - 0.08;
+  for (let i = 0; i < n; i++) {
+    parts.push(box(going + 0.025, 0.032, w, -L / 2 + going * (i + 0.5) + 0.0125, rise * (i + 1) - 0.016, 0));
+    parts.push(box(0.018, rise - 0.032, w, -L / 2 + going * i + 0.009, rise * i + (rise - 0.032) / 2, 0));
+  }
+  const len = Math.hypot(L, H);
+  const ang = Math.atan2(H, L);
+  for (const sz of [-1, 1]) {
+    const st = new THREE.BoxGeometry(len, 0.24, 0.035);
+    st.rotateZ(ang);
+    st.translate(0, H / 2 - 0.06, sz * (D / 2 - 0.0175));
+    parts.push(st);
+  }
+  const g = mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)))!;
+  // Keep the stringers' feet out of the ground.
+  const pos = g.getAttribute("position");
+  for (let i = 0; i < pos.count; i++) pos.setY(i, Math.min(H, Math.max(0, pos.getY(i))));
+  g.computeVertexNormals();
+  return g;
+}
+
+/** A solar panel: an aluminium frame round the glass. Materials: 0 frame, 1 cells. */
+function solarGeometry(L: number, H: number, D: number) {
+  const f = 0.035;
+  return grouped([
+    { g: box(L, H, f, 0, H / 2, -D / 2 + f / 2), m: 0 },
+    { g: box(L, H, f, 0, H / 2, D / 2 - f / 2), m: 0 },
+    { g: box(f, H, D - 2 * f, -L / 2 + f / 2, H / 2, 0), m: 0 },
+    { g: box(f, H, D - 2 * f, L / 2 - f / 2, H / 2, 0), m: 0 },
+    { g: box(L - 2 * f, 0.006, D - 2 * f, 0, H - 0.008, 0), m: 1 },
+    { g: box(L - 2 * f, 0.01, D - 2 * f, 0, H * 0.4, 0), m: 0 },
+  ]);
+}
+
 const models = new Map<string, Model>();
 
 export function sizeKey(k: Kind, s: [number, number, number]) {
@@ -230,7 +292,7 @@ export function sizeKey(k: Kind, s: [number, number, number]) {
 /** Is this kind modelled at each piece's size, or a unit shape stretched to it? */
 export function isScaled(k: Kind) {
   const I = KINDS[k];
-  return !(I.family === "masonry" || k === "window" || k === "door" || k === "tile");
+  return !(I.family === "masonry" || I.family === "paving" || k === "window" || k === "door" || k === "tile" || k === "solar" || k === "stair");
 }
 
 /** The model for a kind (at a size, for those built to size). */
@@ -277,11 +339,35 @@ export function modelFor(M: Mats, k: Kind, s: [number, number, number]): Model {
     case "fascia":
       m = { geo: unitBox(), mat: M.painted, scaled };
       break;
+    case "paver":
+      // A hair under its size, so the sand joints show between them.
+      m = { geo: rounded(L - 0.004, H, D - 0.004, 0.006), mat: M.paver, scaled };
+      break;
+    case "gutter":
+      m = { geo: gutterGeometry(), mat: M.painted, scaled };
+      break;
+    case "downpipe":
+      m = { geo: new THREE.CylinderGeometry(0.5, 0.5, 1, 14).translate(0, 0.5, 0), mat: M.painted, scaled };
+      break;
+    case "solar":
+      m = { geo: solarGeometry(L, H, D), mat: [M.alu, M.solar], scaled };
+      break;
+    case "stair":
+      m = { geo: stairGeometry(L, H, D), mat: M.timber, scaled };
+      break;
+    case "membrane":
+      m = { geo: unitBox(), mat: M.membrane, scaled };
+      break;
     case "window":
       m = { geo: windowGeometry(L, H, D), mat: [M.frame, M.glass, M.concreteFixed], scaled };
       break;
     case "door":
       m = { geo: doorGeometry(L, H, D), mat: [M.painted, M.frameWhite, M.glass, M.handle, M.concreteFixed], scaled };
+      break;
+    case "paling":
+    case "stud":
+    case "post":
+      m = { geo: unitBox(), mat: M.timberUp, scaled };
       break;
     default:
       m = { geo: unitBox(), mat: M.timber, scaled };

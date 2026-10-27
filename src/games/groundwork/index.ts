@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { ScoreEmitter } from "../engine/emitter";
 import type { GameFactory, GameInitOptions, GameModule, ScoreListener } from "../types";
 import { GAME_SLUG } from "./data";
+import * as model from "./model";
 import { Game } from "./game";
 import { showcaseHouse } from "./showcase";
 import { App } from "./ui/App";
@@ -38,8 +39,9 @@ class Groundwork implements GameModule {
     this.root.render(createElement(App, { game: this.game }));
     if (new URLSearchParams(window.location.search).has("gw")) {
       // Test hooks: the controller, and a way to put the show home up on the plot.
-      const w = window as unknown as { __gw?: Game; __gwHouse?: (stage?: number) => void };
+      const w = window as unknown as { __gw?: Game; __gwHouse?: (stage?: number) => void; __gwModel?: typeof model };
       w.__gw = this.game;
+      w.__gwModel = model;
       const game = this.game;
       w.__gwHouse = (stage = 1) => {
         if (!game.s) return;

@@ -1009,12 +1009,26 @@ A photoreal construction game where you build anything from scratch, brick by br
   against the brief, checks the footings under the brickwork and the bond (no straight joints),
   and rates it in stars for the brief, the budget and the time.
 
+- **Your company** (`company.ts`, 2.0): cash, reputation, a calendar, a crew and a bank. A contracts
+  board of generated jobs (walls, planters, patios, fences, sheds, decks, carports, garages, granny
+  flats, bungalows, two-storey houses) across six suburbs, each priced by your estimator and won by
+  tendering under rival builders' bids and inside the client's budget (reputation lets you charge
+  more). A won contract pays a deposit, then the balance at handover less damages for late days and
+  a retention released after four weeks. Real estate: buy land (with stamp duty), build on it, then
+  sell at auction or rent it out; a valuer (`assess` in `jobs.ts`) prices what's there from floor
+  area, storeys, windows, workmanship and extras, and the market drifts week by week. Crew speed the
+  site's labour (`State.speed`) for daily wages; the bank lends against property.
+- **2.0 pieces and tools**: clay pavers (`paveRect`: herringbone, basketweave, stretcher, stack,
+  with cut halves at the edges), paling fences (`fenceRun`), stairs, flat roofs with a membrane,
+  gutters and downpipes, solar panels, `repaint` (one undo step), the eyedropper, `copySpecs` (lay
+  a whole run again, turned) and `knockOff` (on to tomorrow).
+
 The 3D site (`render/`) draws every piece as an instance with its textures laid on in real metres
 (brick, mortar that dries from dark to pale as it goes off, concrete, timber grain, clay tiles,
 metal), windows and doors built frame, sash and panel to each size, swaying grass that clears where
 you work, leafy trees, a suburban street with neighbours, and a cement mixer, pallets, a skip and a
 ute on site, under the NextX sky with soft shadows and ambient occlusion. The score is a thousand
-per star on jobs plus one per piece laid (members only). The NextX app's backdrop for it is the
+per star on jobs plus one per piece laid, plus your company's growth in worth ÷ 100 (members only). The NextX app's backdrop for it is the
 show home on its plot. See `src/games/groundwork/README.md`.
 
 ### XCity (ZLink+ exclusive, NextX)

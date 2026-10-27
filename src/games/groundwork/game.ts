@@ -1,6 +1,7 @@
 import * as THREE from "three";
-import { BONDS, GAME_SLUG, JOBS, KINDS, PREFS_KEY, SAVE_KEY, type Bond, type Job, type Kind, type RoofCover, type RoofStyle } from "./data";
-import { inspect, jobById, progress, type Check, type Report } from "./jobs";
+import * as co from "./company";
+import { BONDS, GAME_SLUG, JOBS, KINDS, PREFS_KEY, SAVE_KEY, type Bond, type Job, type Kind, type PavePattern, type RoofCover, type RoofStyle } from "./data";
+import { assess, inspect, jobById, progress, type Check, type Report } from "./jobs";
 import * as m from "./model";
 import { pickQuality, View, type Quality } from "./render/view";
 import { showcaseHouse } from "./showcase";
@@ -12,11 +13,18 @@ import { showcaseHouse } from "./showcase";
  * career's jobs and the inspector, autosave and the score.
  */
 
-export type Screen = "title" | "play";
-export type Tool = "look" | "lay" | "wall" | "footing" | "slab" | "frame" | "floor" | "roof" | "demolish" | "measure";
-export type Panel = null | "job" | "report" | "jobs" | "help" | "changelog" | "settings" | "piece" | "tally";
+export type Screen = "title" | "play" | "hq";
+export type Tool = "look" | "lay" | "wall" | "footing" | "slab" | "frame" | "floor" | "roof" | "pave" | "fence" | "paint" | "match" | "copy" | "demolish" | "measure";
+export type Panel = null | "job" | "report" | "jobs" | "help" | "changelog" | "settings" | "piece" | "tally" | "property";
+export type HqTab = "overview" | "contracts" | "property" | "crew" | "bank";
 
-export const TWO_POINT: Tool[] = ["wall", "footing", "slab", "frame", "floor", "roof", "measure"];
+/** Which company site you're on: a contract, or your own block. */
+export type Ctx = { kind: "contract"; id: number } | { kind: "property"; id: number } | null;
+
+export const CO_KEY = `${SAVE_KEY}-co`;
+export const siteKey = (c: NonNullable<Ctx>) => `${SAVE_KEY}-${c.kind === "contract" ? "c" : "p"}${c.id}`;
+
+export const TWO_POINT: Tool[] = ["wall", "footing", "slab", "frame", "floor", "roof", "pave", "fence", "measure"];
 
 export interface Toast {
   id: number;
@@ -43,6 +51,14 @@ const WALL_KINDS: Kind[] = ["brick", "block", "stone", "glassblock"];
 export const fmt = (n: number) => (Math.abs(n) >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : Math.abs(n) >= 1e4 ? `${Math.round(n / 1e3)}k` : Math.round(n).toLocaleString());
 export const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
 
+function readKey(k: string) {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+
 function readPrefs(): Prefs {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as Partial<Prefs>;
@@ -66,7 +82,21 @@ export class Game {
   wall = { kind: "brick" as Kind, bond: "stretcher" as Bond, courses: 12, rect: false };
   footRect = false;
   frameH = 2.4;
-  roof = { style: "gable" as RoofStyle, pitch: 30, cover: "tile" as RoofCover, v: 0, gables: true };
+  roof = { style: "gable" as RoofStyle, pitch: 30, cover: "tile" as RoofCover, v: 0, gables: true, gutters: true, solar: 0 };
+  pave = { pattern: "herring" as PavePattern };
+  fenceH = 1.8;
+  /** The piece picked to repaint, and whether its whole run goes with it. */
+  paintTarget: m.Piece | null = null;
+  paintGroup = true;
+  /** What's been picked up to copy, and how far it's turned. */
+  clip: m.Piece[] | null = null;
+  copyTurns = 0;
+  /** The company, the site you're on for it, and the office's open tab. */
+  co: co.Company | null = co.loadCompany(readKey(CO_KEY));
+  ctx: Ctx = null;
+  hqTab: HqTab = "overview";
+  /** The day count on this site already paid for in wages. */
+  private siteDay = 1;
   demolishGroup = false;
   anchor: { x: number; y: number; z: number } | null = null;
   pending: Pending | null = null;
@@ -85,6 +115,7 @@ export class Game {
   private canvas: HTMLCanvasElement | null = null;
   private raf = 0;
   private last = 0;
+  private lastDraw = 0;
   private toastId = 1;
   private saveAt = 0;
   private dirty = false;
@@ -165,7 +196,10 @@ export class Game {
     this.last = now;
     const v = this.view;
     if (!v || !this.s || document.hidden) return;
-    if (this.screen === "title") v.rig.goal.yaw += dt * 0.05;
+    // Behind the office the site's only scenery: draw it a few times a second.
+    if (this.screen === "hq" && now - this.lastDraw < 250) return;
+    this.lastDraw = now;
+    if (this.screen !== "play") v.rig.goal.yaw += dt * 0.05;
     else this.activeMs += dt * 1000;
     v.frame(this.s, dt, now);
     if (this.loading < 1 && v.ready) {
@@ -198,18 +232,57 @@ export class Game {
   }
 
   get job(): Job | null {
+    if (this.ctx?.kind === "contract") {
+      const a = this.active;
+      return a ? co.contractJob(a) : null;
+    }
     return this.s?.mode === "career" ? jobById(this.s.job) : null;
   }
 
-  private start(s: m.State) {
+  /** The contract you're on, if it's a contract. */
+  get active(): co.Active | null {
+    const c = this.ctx;
+    return c?.kind === "contract" ? (this.co?.active.find((a) => a.id === c.id) ?? null) : null;
+  }
+
+  /** Your block of land, if you're on it. */
+  get property(): co.Property | null {
+    const c = this.ctx;
+    return c?.kind === "property" ? (this.co?.props.find((p) => p.id === c.id) ?? null) : null;
+  }
+
+  /** What's pegged out: a job's zone or your block. */
+  get zoned() {
+    const p = this.property;
+    if (p) return { zone: co.zoneOf(p) };
+    return this.job;
+  }
+
+  /** Your block's value as it stands. */
+  get liveValuation() {
+    const p = this.property;
+    if (!p || !this.co || !this.s) return null;
+    const probe = { ...p, a: assess(this.s, co.zoneOf(p)), spent: this.s.spent };
+    return { a: probe.a, v: co.valuation(this.co, probe) };
+  }
+
+  private start(s: m.State, ctx: Ctx = null) {
+    this.ctx = ctx;
+    if (ctx && this.co) {
+      s.money = this.co.cash;
+      s.speed = co.crewSpeed(this.co);
+      this.siteDay = m.dayOf(s.minutes);
+    }
     this.s = s;
     this.screen = "play";
-    this.panel = s.mode === "career" ? "job" : null;
+    this.panel = s.mode === "career" || ctx?.kind === "contract" ? "job" : ctx?.kind === "property" ? "property" : null;
     this.tool = "lay";
     this.anchor = null;
     this.pending = null;
     this.report = null;
-    this.view?.setJob(this.job);
+    this.view?.setJob(this.zoned);
+    this.paintTarget = null;
+    this.clip = null;
     this.view?.rig.fly({ target: new THREE.Vector3(0, 0.6, 2), dist: 17, yaw: 0.55, pitch: 0.55 });
     this.loading = this.view?.ready ? 1 : 0;
     this.bump();
@@ -261,6 +334,7 @@ export class Game {
   }
 
   quit() {
+    if (this.ctx) return this.toOffice();
     this.persist();
     this.screen = "title";
     this.panel = null;
@@ -285,17 +359,19 @@ export class Game {
 
   get score() {
     const stars = Object.values(this.prefs.stars).reduce((a, b) => a + b, 0);
-    return Math.min(2_000_000, Math.round(stars * 1000 + this.prefs.laid));
+    const business = this.co ? Math.max(0, co.worth(this.co) - co.START_CASH) / 100 : 0;
+    return Math.min(2_000_000, Math.round(stars * 1000 + this.prefs.laid + business));
   }
 
   persist() {
     const s = this.s;
-    if (!s || this.screen !== "play") return;
     try {
-      localStorage.setItem(s.mode === "free" ? SAVE_KEY : `${SAVE_KEY}-job`, m.save(s));
+      if (this.co) localStorage.setItem(CO_KEY, JSON.stringify(this.co));
+      if (!s || this.screen !== "play") return;
+      localStorage.setItem(this.ctx ? siteKey(this.ctx) : s.mode === "free" ? SAVE_KEY : `${SAVE_KEY}-job`, m.save(s));
       localStorage.setItem(PREFS_KEY, JSON.stringify(this.prefs));
     } catch {
-      // Storage full or blocked: carry on.
+      this.toast("Couldn't save: storage is full. Sell a property or finish a contract to free some up.", "bad");
     }
   }
 
@@ -320,6 +396,7 @@ export class Game {
     this.view?.marks.setAnchor(null);
     this.view?.marks.setTape(null, null);
     if (t === "wall" && !WALL_KINDS.includes(this.wall.kind)) this.wall.kind = "brick";
+    if (t !== "paint") this.paintTarget = null;
     this.bump();
   }
 
@@ -352,8 +429,130 @@ export class Game {
   }
 
   rotate() {
+    if (this.tool === "copy" && this.clip) {
+      this.copyTurns = (this.copyTurns + 1) % 4;
+      if (this.pending && this.lastHit) {
+        const specs = this.pasteAt(this.lastHit);
+        this.pending = { ...this.pending, specs, label: this.describe(specs) };
+        this.view?.ghost.show(specs, true);
+      }
+      this.bump();
+      return;
+    }
     this.r = (this.r + 1) % 4;
     this.bump();
+  }
+
+  private lastHit: m.Hit | null = null;
+
+  /** Where the picked-up pieces would go for a tap: their corner on the spot, turned as asked, bedded on what's there. */
+  private pasteAt(hit: m.Hit): m.Spec[] {
+    const s = this.s!;
+    const src = this.clip!;
+    let x0 = Infinity;
+    let z0 = Infinity;
+    let x1 = -Infinity;
+    let z1 = -Infinity;
+    let y0 = Infinity;
+    for (const p of src) {
+      const b = m.box(p);
+      x0 = Math.min(x0, b.x0);
+      z0 = Math.min(z0, b.z0);
+      x1 = Math.max(x1, b.x1);
+      z1 = Math.max(z1, b.z1);
+      y0 = Math.min(y0, p.y);
+    }
+    const cx = (x0 + x1) / 2;
+    const cz = (z0 + z1) / 2;
+    const turned = m.copySpecs(src, 0, 0, 0, this.copyTurns, cx, cz);
+    let tx0 = Infinity;
+    let tz0 = Infinity;
+    for (const p of turned) {
+      const b = m.box({ ...p, id: -1, t: 0 });
+      tx0 = Math.min(tx0, b.x0);
+      tz0 = Math.min(tz0, b.z0);
+    }
+    const mortar = src.some((p) => KINDS[p.k].mortar);
+    const base = m.baseAt(s, hit, mortar);
+    const dx = m.snapG(hit.x) - tx0;
+    const dz = m.snapG(hit.z) - tz0;
+    return turned.map((p) => ({ ...p, x: p.x + dx, y: p.y + (base - y0), z: p.z + dz }));
+  }
+
+  /** Pick up a piece's kind, finish and size (the eyedropper). */
+  private matchPiece(p: m.Piece) {
+    const I = KINDS[p.k];
+    const sizes = I.sizes;
+    if (sizes && p.s) {
+      const i = sizes.findIndex((z) => z.s.every((v, k) => Math.abs(v - p.s![k]) < 1e-4));
+      if (i >= 0) this.sizeIx[p.k] = i;
+    }
+    this.variant[p.k] = p.v;
+    if (I.family === "roof" || I.family === "fitting") {
+      if (p.k === "tile" || p.k === "ridge") this.roof = { ...this.roof, cover: "tile", v: p.v };
+      if (p.k === "sheet") this.roof = { ...this.roof, cover: "sheet", v: p.v };
+      if (p.k === "membrane") this.roof = { ...this.roof, style: "flat", v: p.v };
+      this.setTool("roof");
+    } else if (I.family === "fence") {
+      this.variant.paling = p.v;
+      this.setTool("fence");
+    } else if (I.tray) {
+      this.r = p.r;
+      this.setKind(p.k);
+      if (WALL_KINDS.includes(p.k)) this.wall.kind = p.k;
+    } else if (p.k === "closer" || p.k === "halfblock" || p.k === "halfstone") {
+      const whole: Kind = p.k === "closer" ? "brick" : p.k === "halfblock" ? "block" : "stone";
+      this.variant[whole] = p.v;
+      this.setKind(whole);
+    } else {
+      this.toast(`${I.name}s come with their tool.`, "tip");
+      return;
+    }
+    this.toast(`Matched: ${I.variants[p.v]?.name ?? ""} ${I.name.toLowerCase()}.`, "good");
+  }
+
+  /** Repaint the picked piece (and its run) in a finish. */
+  paintWith(v: number) {
+    const s = this.s;
+    const p = this.paintTarget;
+    if (!s || !p) return;
+    const ids = this.paintGroup && p.g ? s.pieces.filter((q) => q.g === p.g && q.k === p.k).map((q) => q.id) : [p.id];
+    const n = m.repaint(s, ids, v);
+    if (n) {
+      this.toast(`Refinished ${n} ${KINDS[p.k].name.toLowerCase()}${n === 1 ? "" : "s"} in ${KINDS[p.k].variants[v].name.toLowerCase()}.`, "good");
+      this.after();
+    } else this.toast(m.paid(s) && s.money < 1 ? "Out of money for paint" : "It's already that finish.", "tip");
+  }
+
+  setPaintGroup(b: boolean) {
+    this.paintGroup = b;
+    this.bump();
+  }
+
+  dropClip() {
+    this.clip = null;
+    this.copyTurns = 0;
+    this.cancel();
+  }
+
+  setPave(p: PavePattern) {
+    this.pave = { pattern: p };
+    this.refreshPending();
+    this.bump();
+  }
+
+  setFenceH(h: number) {
+    this.fenceH = h;
+    this.refreshPending();
+    this.bump();
+  }
+
+  /** Down tools till tomorrow. */
+  knockOff() {
+    if (!this.s) return;
+    m.knockOff(this.s);
+    this.toast(`Knocked off. Day ${m.dayOf(this.s.minutes)}: the mortar's gone off overnight.`, "tip");
+    this.after();
   }
 
   setWall(p: Partial<Game["wall"]>) {
@@ -406,6 +605,10 @@ export class Game {
         return m.floorRect(a, b, a.y, this.variantOf("board"));
       case "roof":
         return m.roofGen(s, a, b, a.y, { ...this.roof });
+      case "pave":
+        return m.paveRect(a, b, a.y, this.pave.pattern, this.variantOf("paver"));
+      case "fence":
+        return m.fenceRun(a, b, this.fenceH, this.variantOf("paling"));
       default:
         return [];
     }
@@ -471,14 +674,21 @@ export class Game {
       v.ghost.show([c], !why);
       return;
     }
-    if (this.tool === "demolish" || this.tool === "look") {
+    if (this.tool === "copy" && this.clip) {
+      const hit = v.pick(s, nx, ny);
+      if (!hit) return v.ghost.hide();
+      const specs = this.pasteAt(hit);
+      v.ghost.show(specs, true);
+      return;
+    }
+    if (this.tool === "demolish" || this.tool === "look" || this.tool === "paint" || this.tool === "match" || this.tool === "copy") {
       const hit = v.pick(s, nx, ny);
       const p = hit && hit.id >= 0 ? m.byId(s, hit.id) : null;
-      v.ghost.outline(this.tool === "demolish" ? p : null);
+      v.ghost.outline(this.tool === "look" ? null : p);
       return;
     }
     if (TWO_POINT.includes(this.tool) && this.anchor) {
-      const pt = v.pickPlane(nx, ny, this.tool === "footing" ? 0 : this.anchor.y);
+      const pt = v.pickPlane(nx, ny, this.tool === "footing" || this.tool === "fence" ? 0 : this.anchor.y);
       if (!pt) return;
       if (this.tool === "measure") {
         v.marks.setTape(new THREE.Vector3(this.anchor.x, this.anchor.y + 0.02, this.anchor.z), new THREE.Vector3(pt.x, this.anchor.y + 0.02, pt.z));
@@ -514,6 +724,37 @@ export class Game {
       }
       case "lay":
         return this.layAt(hit);
+      case "paint": {
+        this.paintTarget = hit.id >= 0 ? m.byId(s, hit.id) : null;
+        if (this.paintTarget && KINDS[this.paintTarget.k].variants.length < 2) {
+          this.toast(`${KINDS[this.paintTarget.k].name}s only come in one finish.`, "tip");
+          this.paintTarget = null;
+        }
+        this.bump();
+        return;
+      }
+      case "match": {
+        const p = hit.id >= 0 ? m.byId(s, hit.id) : null;
+        if (p) this.matchPiece(p);
+        return;
+      }
+      case "copy": {
+        if (!this.clip) {
+          const p = hit.id >= 0 ? m.byId(s, hit.id) : null;
+          if (!p) return;
+          this.clip = p.g ? s.pieces.filter((q) => q.g === p.g) : [p];
+          this.copyTurns = 0;
+          this.toast(`Picked up ${this.describe(this.clip)}. Tap where the copy goes; ↻ turns it.`, "tip");
+          this.bump();
+          return;
+        }
+        const specs = this.pasteAt(hit);
+        this.lastHit = hit;
+        this.pending = { label: this.describe(specs), specs, group: true };
+        v.ghost.show(specs, true);
+        this.bump();
+        return;
+      }
       case "demolish": {
         const p = hit.id >= 0 ? m.byId(s, hit.id) : null;
         if (!p) return;
@@ -528,13 +769,13 @@ export class Game {
         if (!TWO_POINT.includes(this.tool)) return;
         if (!this.anchor) {
           const mortar = this.tool === "wall";
-          const y = this.tool === "footing" ? 0 : this.tool === "roof" ? (hit.id >= 0 ? m.box(m.byId(s, hit.id)!).y1 : 0) : m.baseAt(s, hit, mortar);
+          const y = this.tool === "footing" || this.tool === "fence" ? 0 : this.tool === "roof" ? (hit.id >= 0 ? m.box(m.byId(s, hit.id)!).y1 : 0) : m.baseAt(s, hit, mortar);
           this.anchor = { x: hit.x, y, z: hit.z };
           v.marks.setAnchor(this.anchor);
           this.bump();
           return;
         }
-        const pt = v.pickPlane(nx, ny, this.tool === "footing" ? 0 : this.anchor.y) ?? { x: hit.x, y: hit.y, z: hit.z };
+        const pt = v.pickPlane(nx, ny, this.tool === "footing" || this.tool === "fence" ? 0 : this.anchor.y) ?? { x: hit.x, y: hit.y, z: hit.z };
         if (this.tool === "measure") {
           const d = Math.hypot(pt.x - this.anchor.x, pt.z - this.anchor.z);
           const dy = Math.abs((hit.y ?? 0) - this.anchor.y);
@@ -548,7 +789,7 @@ export class Game {
         const specs = this.run(pt);
         this.lastEnd = pt;
         if (!specs.length) return;
-        this.pending = { label: this.describe(specs), specs, group: this.tool === "roof" || this.tool === "wall" };
+        this.pending = { label: this.describe(specs), specs, group: this.tool === "roof" || this.tool === "wall" || this.tool === "pave" || this.tool === "fence" };
         v.ghost.show(specs, true);
         this.bump();
       }
@@ -618,9 +859,24 @@ export class Game {
   }
 
   private after() {
+    this.syncCompany();
     this.dirty = true;
     this.report_.progress(this.score);
     this.bump();
+  }
+
+  /** On a company site the site's cash is the company's: pay the crew for every new day worked. */
+  private syncCompany() {
+    const s = this.s;
+    const c = this.co;
+    if (!s || !c || !this.ctx) return;
+    c.cash = s.money;
+    const d = m.dayOf(s.minutes);
+    if (d > this.siteDay) {
+      co.advance(c, d - this.siteDay, true);
+      this.siteDay = d;
+    }
+    s.money = c.cash;
   }
 
   /* -------------------------------------------------------------- the job */
@@ -643,6 +899,22 @@ export class Game {
   handOver() {
     const r = this.report;
     if (!r || !r.passed) return;
+    if (this.ctx?.kind === "contract" && this.co) {
+      const c = this.ctx;
+      this.syncCompany();
+      const st = co.settle(this.co, c.id, r);
+      if (!st) return;
+      this.handed = true;
+      this.removeKey(siteKey(c));
+      this.toast(`${r.job.client} paid ${money(st.paid)}. ${"★".repeat(Math.floor(r.stars))}${r.stars % 1 ? "½" : ""} Reputation ${st.rep >= 0 ? "+" : ""}${st.rep}.`, "good");
+      this.report = null;
+      // Off the site first, so nothing saves it back.
+      this.screen = "hq";
+      this.ctx = null;
+      this.goOffice("contracts");
+      this.submitFinal();
+      return;
+    }
     const best = this.prefs.stars[r.job.id] ?? 0;
     if (r.stars > best) this.prefs.stars[r.job.id] = r.stars;
     this.prefs.earned += r.pay;
@@ -690,6 +962,152 @@ export class Game {
     if (!s.pieces.length) return v.rig.fly({ target: new THREE.Vector3(0, 0.5, 0), dist: 14 });
     const size = Math.max(x1 - x0, z1 - z0, top);
     v.rig.fly({ target: new THREE.Vector3((x0 + x1) / 2, top * 0.4, (z0 + z1) / 2), dist: Math.max(4, size * 1.6) });
+  }
+
+  /* -------------------------------------------------------------- the company */
+
+  private removeKey(k: string) {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      // Fine.
+    }
+  }
+
+  /** Open the office (starting the company if there isn't one: see `foundCompany`). */
+  goOffice(tab: HqTab = this.hqTab) {
+    this.persist();
+    this.screen = "hq";
+    this.hqTab = tab;
+    this.panel = null;
+    this.pending = null;
+    this.anchor = null;
+    this.ctx = null;
+    this.view?.ghost.hide();
+    this.view?.marks.setAnchor(null);
+    this.view?.setJob(null);
+    this.s = showcaseHouse();
+    this.view?.rig.fly({ target: new THREE.Vector3(0, 1.6, 0), dist: 21, yaw: 2.4, pitch: 0.3 });
+    if (this.co) co.refill(this.co);
+    this.persist();
+    this.bump();
+  }
+
+  foundCompany(name: string) {
+    this.co = co.newCompany(name);
+    this.toast(`${this.co.name} is open for business. Tender for a job, or buy a block and build.`, "good");
+    this.persist();
+    this.bump();
+  }
+
+  setHqTab(t: HqTab) {
+    this.hqTab = t;
+    this.bump();
+  }
+
+  /** Back from a site to the office: settle up and record what's on your block. */
+  toOffice() {
+    const s = this.s;
+    const p = this.property;
+    this.syncCompany();
+    if (s && p) co.survey(p, assess(s, co.zoneOf(p)), s.spent);
+    this.persist();
+    this.goOffice(p ? "property" : this.ctx?.kind === "contract" ? "contracts" : this.hqTab);
+  }
+
+  /** Go to a contract's site or your block. */
+  visit(ctx: NonNullable<Ctx>) {
+    const c = this.co;
+    if (!c) return;
+    const raw = readKey(siteKey(ctx));
+    const saved = raw ? m.load(raw) : null;
+    const s = saved ?? m.newSite(ctx.kind === "contract" ? "contract" : "property", null, c.cash);
+    s.mode = ctx.kind === "contract" ? "contract" : "property";
+    this.start(s, ctx);
+    const what = ctx.kind === "contract" ? this.active?.c.title : this.property ? `your block in ${co.suburb(this.property.suburb).name}` : "";
+    if (!saved) this.toast(`On site: ${what?.toLowerCase()}. The pink string line marks the ${ctx.kind === "contract" ? "job" : "block"}.`, "tip");
+    this.dirty = true;
+  }
+
+  /** Office actions, each saved straight away. */
+  private act<T>(f: (c: co.Company) => T): T | undefined {
+    const c = this.co;
+    if (!c) return undefined;
+    const r = f(c);
+    this.persist();
+    this.report_.progress(this.score);
+    this.bump();
+    return r;
+  }
+
+  tender(id: number, price: number) {
+    const r = this.act((c) => co.tender(c, id, price));
+    if (r) this.toast(r.won ? `You won it at ${money(price)}. Rivals bid ${r.rivals.map(money).join(", ")}.` : `Lost: ${r.why}.`, r.won ? "good" : "bad");
+    return r;
+  }
+
+  abandonContract(id: number) {
+    this.act((c) => co.abandon(c, id));
+    this.removeKey(siteKey({ kind: "contract", id }));
+  }
+
+  buyLand(id: number) {
+    const r = this.act((c) => co.buy(c, id));
+    if (typeof r === "string") this.toast(r, "bad");
+    else if (r) this.toast(`Bought. ${co.money(r.paid)} with the stamp duty.`, "good");
+  }
+
+  sellProperty(id: number) {
+    const r = this.act((c) => co.sell(c, id));
+    if (r) {
+      this.removeKey(siteKey({ kind: "property", id }));
+      this.toast(`Sold at auction for ${money(r.hammer)}: ${r.profit >= 0 ? "a profit" : "a loss"} of ${money(Math.abs(r.profit))}.`, r.profit >= 0 ? "good" : "bad");
+    }
+  }
+
+  rentProperty(id: number) {
+    this.act((c) => co.rentOut(c, id));
+  }
+
+  endLease(id: number) {
+    this.act((c) => co.endLease(c, id));
+  }
+
+  hireWorker(id: number) {
+    this.act((c) => co.hire(c, id));
+  }
+
+  fireWorker(id: number) {
+    this.act((c) => co.fire(c, id));
+  }
+
+  borrow(n: number) {
+    this.act((c) => co.borrow(c, n));
+  }
+
+  repay(n: number) {
+    this.act((c) => co.repay(c, n));
+  }
+
+  /** Let a week go by at the office (no site work, no wages). */
+  skipWeek() {
+    this.act((c) => co.advance(c, 7, false));
+    this.toast("A week goes by.", "tip");
+  }
+
+  /** Close the company down for good, and its sites with it. */
+  windUp() {
+    const c = this.co;
+    if (!c) return;
+    for (const a of c.active) this.removeKey(siteKey({ kind: "contract", id: a.id }));
+    for (const p of c.props) this.removeKey(siteKey({ kind: "property", id: p.id }));
+    this.removeKey(CO_KEY);
+    this.co = null;
+    this.bump();
+  }
+
+  renameCompany(name: string) {
+    this.act((c) => (c.name = name.trim() || c.name));
   }
 
   /* -------------------------------------------------------------- input */

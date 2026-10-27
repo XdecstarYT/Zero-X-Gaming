@@ -27,19 +27,19 @@ export interface NextXTitle {
 export const NEXTX_TITLES: NextXTitle[] = [
   {
     slug: "groundwork",
-    pitch: "A photoreal construction game: build anything from scratch, brick by brick, from the footings to the last ridge tile.",
+    pitch: "A photoreal construction game and a building company: lay every brick yourself, win contracts, and build houses to sell or rent.",
     accent: "#ff8a1f",
     accent2: "#9a4b37",
     stats: [
-      { v: "25", k: "Building parts" },
-      { v: "4", k: "Brick bonds" },
-      { v: "6", k: "Career jobs" },
+      { v: "33", k: "Building parts" },
+      { v: "11", k: "Kinds of contract" },
+      { v: "6", k: "Suburbs" },
     ],
     features: [
       "Real 215 mm bricks in 10 mm mortar joints, laid one at a time or a bonded wall at once",
-      "Footings, slabs, timber frames, joists, steel, doors and windows sized to the brickwork",
-      "Roofs framed rafter by rafter and hung tile by tile; knock out a brick and what it held falls",
-      "A career from a garden wall to a two-storey house, judged by an inspector",
+      "Footings, frames, floors, stairs, steel, doors, windows, pavers, fences, gutters and solar",
+      "Your company: tender for contracts, hire a crew, borrow from the bank",
+      "Real estate: buy land, build, then sell at auction or rent it out",
     ],
   },
   {

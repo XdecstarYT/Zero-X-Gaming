@@ -3,10 +3,12 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { PoweredBy } from "@/nextx/PoweredBy";
 import { GlassDefs, canRefract, trackSheen } from "@/nextx/glass";
-import { BONDS, CHANGELOG, JOBS, KIND_ORDER, KINDS, type Bond, type Kind } from "../data";
+import { money as cash, suburb, zoneOf } from "../company";
+import { BONDS, CHANGELOG, JOBS, KIND_ORDER, KINDS, PATTERNS, type Bond, type Kind, type PavePattern } from "../data";
 import { fmt, money, TWO_POINT, type Game, type Panel, type Tool } from "../game";
 import { clockOf, costOf, cure, dayOf, dims, minutesOf } from "../model";
 import type { Quality } from "../render/view";
+import { Office } from "./hq";
 
 const noSubscribe = () => () => {};
 
@@ -23,6 +25,11 @@ const TOOLS: { id: Tool; icon: string; label: string }[] = [
   { id: "frame", icon: "🪵", label: "Frame" },
   { id: "floor", icon: "▤", label: "Floor" },
   { id: "roof", icon: "🏠", label: "Roof" },
+  { id: "pave", icon: "▦", label: "Pave" },
+  { id: "fence", icon: "┇", label: "Fence" },
+  { id: "paint", icon: "🖌️", label: "Paint" },
+  { id: "match", icon: "💧", label: "Match" },
+  { id: "copy", icon: "⧉", label: "Copy" },
   { id: "demolish", icon: "🔨", label: "Knock out" },
   { id: "measure", icon: "📏", label: "Measure" },
 ];
@@ -47,6 +54,7 @@ export function App({ game }: { game: Game }) {
       <GlassDefs prefix="gw" />
       <canvas ref={canvas} className="gw-canvas" aria-label="The building site. Drag to turn, pinch or scroll to zoom, two fingers or right-drag to move." tabIndex={0} data-testid="gw-canvas" />
       {game.screen === "title" && <Title game={game} />}
+      {game.screen === "hq" && <Office game={game} />}
       {game.screen === "play" && game.s && (
         <>
           <TopBar game={game} />
@@ -97,7 +105,10 @@ function Title({ game }: { game: Game }) {
           <button className={`gw-btn wide${game.hasSave ? "" : " white"}`} type="button" onClick={() => game.freeBuild(true)} data-testid="gw-free">
             🧱 Free build: an empty plot
           </button>
-          <button className="gw-btn orange wide" type="button" onClick={() => game.openPanel("jobs")} data-testid="gw-career">
+          <button className="gw-btn orange wide" type="button" onClick={() => game.goOffice()} data-testid="gw-company">
+            🏢 {game.co ? game.co.name : "Your company"} <span className="dim">· contracts & property</span>
+          </button>
+          <button className="gw-btn wide" type="button" onClick={() => game.openPanel("jobs")} data-testid="gw-career">
             🦺 Career {total > 0 && <span className="num">· {stars(Math.min(5, total / JOBS.length))}</span>}
           </button>
           <div className="gw-actions">
@@ -124,22 +135,24 @@ function Title({ game }: { game: Game }) {
 function TopBar({ game }: { game: Game }) {
   const s = game.s!;
   const job = game.job;
+  const prop = game.property;
   const days = dayOf(s.minutes);
   const late = job && days > job.days;
   return (
     <div className="gw-top">
       <div className="gw-bar gw-glass">
-        <button className="gw-btn icon" type="button" onClick={() => game.quit()} aria-label="Back to the menu" data-testid="gw-quit">
+        <button className="gw-btn icon" type="button" onClick={() => game.quit()} aria-label={game.ctx ? "Back to the office" : "Back to the menu"} data-testid="gw-quit">
           ‹
         </button>
-        <button className="gw-site" type="button" onClick={() => game.openPanel(job ? "job" : "tally")} data-testid="gw-site">
-          <b>{job ? `${job.icon} ${job.title}` : "Free build"}</b>
-          <small>{job ? job.client : "Your own plot, 30 × 30 m"}</small>
+        <button className="gw-site" type="button" onClick={() => game.openPanel(prop ? "property" : job ? "job" : "tally")} data-testid="gw-site">
+          <b>{prop ? `🏡 Your block` : job ? `${job.icon} ${job.title}` : "Free build"}</b>
+          <small>{prop ? `${suburb(prop.suburb).name}, ${prop.w} × ${prop.d} m to build on` : job ? job.client : "Your own plot, 30 × 30 m"}</small>
         </button>
       </div>
       <div className="gw-bar gw-glass gw-stats">
-        {job ? <Stat label="Cash" value={money(s.money)} cls={s.money < job.budget * 0.15 ? "bad" : ""} id="money" /> : <Stat label="Spent" value={money(s.spent)} id="spent" />}
+        {job || prop ? <Stat label="Cash" value={money(s.money)} cls={s.money < 0 || (job && s.money < job.budget * 0.15) ? "bad" : ""} id="money" /> : <Stat label="Spent" value={money(s.spent)} id="spent" />}
         {job && <Stat label="Budget" value={money(job.budget)} cls={s.spent > job.budget ? "bad" : "dim"} id="budget" />}
+        {prop && <Stat label="Value" value={money(game.liveValuation?.v.total ?? 0)} cls="good" id="value" />}
         <Stat label={job ? `Day of ${job.days}` : "Day"} value={`${days} · ${clockOf(s.minutes)}`} cls={late ? "bad" : ""} id="day" />
         <Stat label="Pieces" value={fmt(s.pieces.length)} id="pieces" />
       </div>
@@ -206,6 +219,12 @@ function Dock({ game }: { game: Game }) {
           {t.label}
         </button>
       ))}
+      {game.property && (
+        <button type="button" className={`gw-tool${game.panel === "property" ? " on" : ""}`} onClick={() => game.openPanel("property")} data-testid="gw-tool-property">
+          <span aria-hidden>🏷️</span>
+          Value
+        </button>
+      )}
       {game.job && (
         <button type="button" className={`gw-tool${game.panel === "job" ? " on" : ""}`} onClick={() => game.openPanel("job")} data-testid="gw-tool-job">
           <span aria-hidden>📋</span>
@@ -288,6 +307,16 @@ function hint(game: Game): { text: React.ReactNode; bad?: boolean } {
       return { text: "Tap a piece to knock it out. Anything that was resting on it comes down too.", bad: false };
     case "measure":
       return { text: a ? "Tap the other end." : "Tap where to measure from." };
+    case "pave":
+      return { text: a ? "Tap the opposite corner." : "Tap one corner of the paving: on the ground or a slab." };
+    case "fence":
+      return { text: a ? "Tap where the fence ends." : "Tap where the fence starts: posts go in every 2.4 m at most." };
+    case "paint":
+      return { text: game.paintTarget ? <>Pick a finish for the <b>{KINDS[game.paintTarget.k].name.toLowerCase()}</b>{game.paintGroup && game.paintTarget.g ? " and the rest of its run" : ""}.</> : "Tap something to refinish it: paint a door, stain a fence, change a run of bricks." };
+    case "match":
+      return { text: "Tap any piece to pick up its material, finish and size." };
+    case "copy":
+      return { text: game.clip ? `Tap where the copy goes (its corner lands where you tap). ↻ turns it.` : "Tap a piece to pick it up with the rest of its run (a whole wall, a roof, a fence)." };
   }
 }
 
@@ -374,17 +403,74 @@ function Options({ game }: { game: Game }) {
             <button type="button" className={`gw-chip${game.roof.cover === "sheet" ? " on" : ""}`} onClick={() => game.setRoof({ cover: "sheet", v: 0 })} data-testid="gw-roof-sheet">
               Sheet steel
             </button>
+            <button type="button" className={`gw-chip${game.roof.style === "flat" ? " on" : ""}`} onClick={() => game.setRoof({ style: "flat", v: 0 })} data-testid="gw-roof-flat">
+              ▭ Flat
+            </button>
             <button type="button" className={`gw-chip${game.roof.gables ? " on" : ""}`} onClick={() => game.setRoof({ gables: !game.roof.gables })} aria-pressed={game.roof.gables}>
               Brick gables
             </button>
+            <button type="button" className={`gw-chip${game.roof.gutters ? " on" : ""}`} onClick={() => game.setRoof({ gutters: !game.roof.gutters })} aria-pressed={game.roof.gutters} data-testid="gw-roof-gutters">
+              Gutters
+            </button>
           </div>
           <div className="gw-row">
-            {KINDS[game.roof.cover].variants.map((v, i) => (
+            {KINDS[game.roof.style === "flat" ? "membrane" : game.roof.cover].variants.map((v, i) => (
               <button key={v.name} type="button" className={`gw-sw${game.roof.v === i ? " on" : ""}`} style={{ background: v.color }} onClick={() => game.setRoof({ v: i })} aria-label={v.name} title={v.name} />
             ))}
-            <Step label="Pitch" value={`${game.roof.pitch}°`} dec={() => game.setRoof({ pitch: Math.max(game.roof.style === "skillion" ? 5 : 15, game.roof.pitch - 5) })} inc={() => game.setRoof({ pitch: Math.min(50, game.roof.pitch + 5) })} id="pitch" />
+            {game.roof.style !== "flat" && <Step label="Pitch" value={`${game.roof.pitch}°`} dec={() => game.setRoof({ pitch: Math.max(game.roof.style === "skillion" ? 5 : 15, game.roof.pitch - 5) })} inc={() => game.setRoof({ pitch: Math.min(50, game.roof.pitch + 5) })} id="pitch" />}
+          </div>
+          <Step label="Solar" value={game.roof.solar ? `${game.roof.solar} panels` : "None"} dec={() => game.setRoof({ solar: Math.max(0, game.roof.solar - 2) })} inc={() => game.setRoof({ solar: Math.min(16, game.roof.solar + 2) })} id="solar" />
+        </>
+      )}
+      {t === "pave" && (
+        <>
+          <Swatches game={game} k="paver" />
+          <div className="gw-scroll" role="radiogroup" aria-label="Pattern">
+            {(Object.keys(PATTERNS) as PavePattern[]).map((p) => (
+              <button key={p} type="button" className={`gw-chip${game.pave.pattern === p ? " on" : ""}`} onClick={() => game.setPave(p)} title={PATTERNS[p].blurb} role="radio" aria-checked={game.pave.pattern === p} data-testid={`gw-pattern-${p}`}>
+                {PATTERNS[p].name}
+              </button>
+            ))}
           </div>
         </>
+      )}
+      {t === "fence" && (
+        <>
+          <Swatches game={game} k="paling" />
+          <Step label="Height" value={`${game.fenceH.toFixed(1)} m`} dec={() => game.setFenceH(Math.max(0.9, +(game.fenceH - 0.3).toFixed(1)))} inc={() => game.setFenceH(Math.min(2.4, +(game.fenceH + 0.3).toFixed(1)))} id="fenceh" />
+        </>
+      )}
+      {t === "paint" && game.paintTarget && (
+        <>
+          <div className="gw-row" role="radiogroup" aria-label="Finish">
+            {KINDS[game.paintTarget.k].variants.map((v, i) => (
+              <button key={v.name} type="button" className={`gw-sw${game.paintTarget!.v === i ? " on" : ""}`} style={{ background: v.color }} onClick={() => game.paintWith(i)} aria-label={v.name} title={v.name} data-testid={`gw-paint-${i}`} />
+            ))}
+          </div>
+          {game.paintTarget.g && (
+            <div className="gw-row">
+              <button type="button" className={`gw-chip${!game.paintGroup ? " on" : ""}`} onClick={() => game.setPaintGroup(false)}>
+                Just this one
+              </button>
+              <button type="button" className={`gw-chip${game.paintGroup ? " on" : ""}`} onClick={() => game.setPaintGroup(true)} data-testid="gw-paint-run">
+                The whole run
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      {t === "copy" && game.clip && (
+        <div className="gw-row">
+          <span className="gw-hint">
+            Holding <b>{game.describe(game.clip)}</b>
+          </span>
+          <button type="button" className="gw-btn small" onClick={() => game.rotate()} style={{ marginLeft: "auto" }} data-testid="gw-copy-turn">
+            ↻ Turn
+          </button>
+          <button type="button" className="gw-btn small" onClick={() => game.dropClip()} data-testid="gw-copy-drop">
+            Put down
+          </button>
+        </div>
       )}
       {t === "demolish" && (
         <div className="gw-row">
@@ -469,6 +555,7 @@ function Panels({ game }: { game: Game }) {
   if (p === "settings") return <Settings game={game} />;
   if (p === "piece") return <PiecePanel game={game} />;
   if (p === "tally") return <Tally game={game} />;
+  if (p === "property") return <PropertyPanel game={game} />;
   return null;
 }
 
@@ -520,11 +607,28 @@ function JobPanel({ game }: { game: Game }) {
           <small>the fee</small>
         </div>
       </div>
+      {game.active && (
+        <div className="gw-kv num" data-testid="gw-terms">
+          <span>Contract price</span>
+          <span>{money(game.active.price)}</span>
+          <span>Deposit received</span>
+          <span>{money(game.active.deposit)}</span>
+          <span>Late, per day</span>
+          <span className="bad">{money(game.active.c.ld)}</span>
+          <span>Retention (4 weeks)</span>
+          <span>{money(Math.round(game.active.price * 0.05))}</span>
+        </div>
+      )}
       <Checks game={game} />
       <div className="gw-note">Build inside the pink string line. The inspector checks the brief, then the workmanship: walls on footings, perpends staggered (no straight joints).</div>
-      <button type="button" className="gw-btn orange wide" onClick={() => game.callInspector()} data-testid="gw-inspect">
-        🦺 Call the inspector
-      </button>
+      <div className="gw-actions">
+        <button type="button" className="gw-btn grow" onClick={() => game.knockOff()}>
+          🌙 Knock off
+        </button>
+        <button type="button" className="gw-btn orange grow" onClick={() => game.callInspector()} data-testid="gw-inspect">
+          🦺 Call the inspector
+        </button>
+      </div>
     </Sheet>
   );
 }
@@ -683,6 +787,9 @@ function Tally({ game }: { game: Game }) {
           ))}
         </div>
       )}
+      <button type="button" className="gw-btn wide" onClick={() => game.knockOff()} data-testid="gw-knockoff">
+        🌙 Knock off for the day
+      </button>
       {s.mode === "free" && (
         <div className="gw-actions">
           <button type="button" className="gw-btn grow" onClick={() => game.showHome()} data-testid="gw-showhome">
@@ -697,6 +804,64 @@ function Tally({ game }: { game: Game }) {
   );
 }
 
+function PropertyPanel({ game }: { game: Game }) {
+  const p = game.property;
+  const lv = game.liveValuation;
+  if (!p || !lv) return null;
+  const { a, v } = lv;
+  const [x0, z0, x1, z1] = zoneOf(p);
+  return (
+    <Sheet game={game} icon="🏷️" title="Your block" sub={`${suburb(p.suburb).name} · ${p.land} m² · bought for ${cash(p.paid)}`} id="property">
+      <div className="gw-tiles">
+        <div className="gw-tile">
+          <b className="num good" data-testid="gw-valuation">{cash(v.total)}</b>
+          <small>value today</small>
+        </div>
+        <div className="gw-tile">
+          <b className="num">{cash(v.land)}</b>
+          <small>the land</small>
+        </div>
+        <div className="gw-tile">
+          <b className="num">{cash(v.building)}</b>
+          <small>what&apos;s on it</small>
+        </div>
+      </div>
+      <div className={`gw-note${a.finished ? " yes" : ""}`}>
+        {a.finished
+          ? `A finished house: ${Math.round(a.floor)} m² over ${a.storeys} storey${a.storeys > 1 ? "s" : ""}, ${a.windows} windows, ${a.doors} door${a.doors > 1 ? "s" : ""}. It would let for about ${cash(v.rent)} a week.`
+          : "Not a house yet. Buyers want walls all round at least 2.3 m high, a roof over them, a door and a window. Until then it's worth the land and some of what's gone into it."}
+      </div>
+      <div className="gw-kv num">
+        <span>Workmanship</span>
+        <span>{Math.round(a.quality * 100)}%</span>
+        <span>Paving</span>
+        <span>{a.paved.toFixed(1)} m²</span>
+        <span>Fencing</span>
+        <span>{a.fence.toFixed(1)} m</span>
+        <span>Decking</span>
+        <span>{a.deck.toFixed(1)} m²</span>
+        <span>Solar panels</span>
+        <span>{a.solar}</span>
+        <span>Gutters</span>
+        <span>{a.gutters ? "Yes" : "No"}</span>
+        <span>Building area</span>
+        <span>
+          {(x1 - x0).toFixed(0)} × {(z1 - z0).toFixed(0)} m
+        </span>
+      </div>
+      <div className="gw-note">Sell it or rent it out from the office. Extras add value: a garage, solar, a deck, paving, fencing and gutters.</div>
+      <div className="gw-actions">
+        <button type="button" className="gw-btn grow" onClick={() => game.knockOff()}>
+          🌙 Knock off
+        </button>
+        <button type="button" className="gw-btn orange grow" onClick={() => game.toOffice()} data-testid="gw-to-office">
+          🏢 Back to the office
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
 function Help({ game }: { game: Game }) {
   return (
     <Sheet game={game} icon="📘" title="How to build" sub="From the ground up" id="help">
@@ -707,6 +872,14 @@ function Help({ game }: { game: Game }) {
       <div className="gw-sec">
         <h5>Everything must be held up</h5>
         <p>A brick needs at least a third of its bed on something solid; a lintel or a joist needs both ends on something. Take something out and what it carried falls.</p>
+      </div>
+      <div className="gw-sec">
+        <h5>Finishing off</h5>
+        <p>Pave paths and patios in herringbone, basketweave, stretcher or stack; run a paling fence; Paint refinishes anything (a door, a fence, a run of bricks); Match picks up a piece&apos;s material and finish; Copy picks up a whole wall, roof or fence and lays it again elsewhere, turned if you like.</p>
+      </div>
+      <div className="gw-sec">
+        <h5>Your company</h5>
+        <p>Tender for contracts against rival builders: price too high and you lose it, too low and you lose money. Buy land, build on it, then sell or rent it out. Hire a crew to get through the work faster, and borrow against your property.</p>
       </div>
       <div className="gw-sec">
         <h5>Moving round</h5>

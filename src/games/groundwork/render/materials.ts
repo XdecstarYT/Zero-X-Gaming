@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { asphaltPBR, brickPBR, brickworkPBR, concretePBR, grassPBR, gravelPBR, metalPBR, mortarPBR, soilPBR, tilePBR, timberPBR, type PBR } from "./textures";
+import { asphaltPBR, brickPBR, brickworkPBR, concretePBR, grassPBR, gravelPBR, metalPBR, mortarPBR, soilPBR, solarTexture, tilePBR, timberPBR, type PBR } from "./textures";
 
 /**
  * Groundwork's materials. Every texture is laid on in the piece's own space, in metres (a box's
@@ -60,6 +60,8 @@ export interface LocalOpts {
   fixed?: boolean;
   side?: THREE.Side;
   extra?: (sh: { fragmentShader: string }) => void;
+  /** Names the shader variant `extra` makes (for the program cache). */
+  id?: string;
 }
 
 /** A standard material with its textures in local metres (see above). */
@@ -85,7 +87,7 @@ export function localMaterial(pbr: PBR | null, o: LocalOpts, physical = false) {
     if (o.fixed) sh.fragmentShader = sh.fragmentShader.replace("#include <color_fragment>", "");
     o.extra?.(sh);
   };
-  m.customProgramCacheKey = () => `gw-${scale}-${o.fixed ? 1 : 0}-${pbr ? 1 : 0}-${physical ? 1 : 0}-${o.extra ? 1 : 0}`;
+  m.customProgramCacheKey = () => `gw-${scale}-${o.fixed ? 1 : 0}-${pbr ? 1 : 0}-${physical ? 1 : 0}-${o.extra ? (o.id ?? 1) : 0}`;
   return m;
 }
 
@@ -153,6 +155,8 @@ function build() {
     concrete: localMaterial(concrete, { scale: 1.3, normalScale: 0.9, env: 0.35, color: "#f4efe6" }),
     concreteFixed: localMaterial(concrete, { scale: 1.0, normalScale: 0.8, env: 0.35, fixed: true, color: "#cfc9bd" }),
     timber: localMaterial(timber, { scale: 1.1, normalScale: 0.8, env: 0.5 }),
+    /** Timber standing up (palings, studs, posts): the grain runs up it. */
+    timberUp: localMaterial(timber, { scale: 1.1, normalScale: 0.8, env: 0.5, id: "up", extra: (sh) => (sh.fragmentShader = sh.fragmentShader.replace("vec2 uv = (n.x > n.y && n.x > n.z) ? vGP.zy : ((n.y > n.z) ? vGP.xz : vGP.xy);", "vec2 uv = (n.x > n.y && n.x > n.z) ? vGP.yz : ((n.y > n.z) ? vGP.xz : vGP.yx);")) }),
     painted: localMaterial(null, { scale: 1, roughness: 0.42, env: 0.9 }),
     tile: localMaterial(tile, { scale: 0.45, normalScale: 0.8, env: 0.8 }),
     metal: localMaterial(metal, { scale: 1.2, normalScale: 0.6, metalness: 0.85, roughness: 0.9, env: 1.2 }),
@@ -163,6 +167,10 @@ function build() {
     rubber: localMaterial(null, { scale: 1, roughness: 0.8, fixed: true, color: "#1c1d1f" }),
     glass: localMaterial(null, { scale: 1, roughness: 0.03, metalness: 0.1, env: 2.6, fixed: true, color: "#5f7880" }, true),
     glassBlock: localMaterial(null, { scale: 1, roughness: 0.15, env: 1.6 }, true),
+    paver: localMaterial(brick, { scale: 0.35, normalScale: 1.2, env: 0.5 }),
+    membrane: localMaterial(concrete, { scale: 0.6, normalScale: 0.6, roughness: 1, env: 0.4 }),
+    alu: localMaterial(null, { scale: 1, roughness: 0.35, metalness: 0.85, env: 1.3, fixed: true, color: "#b9bdc3" }),
+    solar: new THREE.MeshStandardMaterial({ map: solarTexture(), roughness: 0.12, metalness: 0.35, envMapIntensity: 1.6 }),
   };
 }
 

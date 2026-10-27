@@ -11,11 +11,11 @@ import type { Assessment, Report } from "./jobs";
  * from what you actually built on it, and the market moves week by week.
  */
 
-export const START_CASH = 60_000;
+export const START_CASH = 80_000;
 /** Land, per square metre, in an average suburb at par. */
-export const LAND_RATE = 380;
+export const LAND_RATE = 300;
 /** A finished house, per square metre of floor, in an average suburb. */
-export const BUILD_RATE = 2100;
+export const BUILD_RATE = 1600;
 /** What a day of one builder's labour is worth when pricing a job. */
 export const LABOUR_RATE = 65 * 9;
 export const MAX_ACTIVE = 3;

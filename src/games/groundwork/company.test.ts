@@ -68,7 +68,7 @@ describe("the company", () => {
     expect(p.a?.finished).toBe(true);
     expect(p.status).toBe("vacant");
     const v = co.valuation(c, p);
-    expect(v.building).toBeGreaterThan(80_000);
+    expect(v.building).toBeGreaterThan(50_000);
     expect(v.rent).toBeGreaterThan(100);
     expect(co.rentOut(c, p.id)).toBe(true);
     const cash = c.cash;

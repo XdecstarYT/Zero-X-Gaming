@@ -6,7 +6,10 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { GRADE, makeSky, SkyEnvironment, skyFor, type SkyMesh } from "@/nextx/look";
 import { Rig } from "@/nextx/rig";
-import { JOINT, KINDS, SITE, type Job } from "../data";
+import { JOINT, KINDS, SITE } from "../data";
+
+/** Anything pegged out: a job, a contract, a block of land. */
+export type Zoned = { zone: [number, number, number, number] };
 import { box, cure, dims, near, type Hit, type Piece, type Spec, type State } from "../model";
 import { materials, type Mats } from "./materials";
 import { isScaled, modelFor, mortarGeometry, type Model } from "./models";
@@ -107,7 +110,7 @@ class Pieces {
     tmpC.set(base);
     const h = hash(p.id);
     // Every brick (and tile, and board) a little different.
-    const spread = I.family === "masonry" ? 0.2 : I.family === "roof" ? 0.14 : I.family === "timber" ? 0.12 : 0.05;
+    const spread = I.family === "masonry" || I.family === "paving" ? 0.2 : I.family === "roof" ? 0.14 : I.family === "timber" || I.family === "fence" ? 0.12 : 0.05;
     const k = 1 + (h - 0.5) * spread;
     const warm = (hash(p.id + 7) - 0.5) * spread * 0.4;
     return tmpC.setRGB(tmpC.r * k * (1 + warm), tmpC.g * k, tmpC.b * k * (1 - warm));
@@ -298,7 +301,7 @@ class Marks {
     this.anchor.visible = false;
     this.group.add(this.tape, this.anchor);
   }
-  setZone(j: Job | null) {
+  setZone(j: Zoned | null) {
     this.zone.clear();
     if (!j) return;
     const [x0, z0, x1, z1] = j.zone;
@@ -439,7 +442,7 @@ export class View {
     return this.h;
   }
 
-  setJob(j: Job | null) {
+  setJob(j: Zoned | null) {
     this.marks.setZone(j);
   }
 
