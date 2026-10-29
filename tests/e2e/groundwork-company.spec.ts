@@ -11,7 +11,8 @@ async function tap(page: Page, fx: number, fy: number) {
 }
 
 test("Groundwork company: win a tender, work the site, buy land and build on it, hire a crew", async ({ page }, info) => {
-  test.setTimeout(480_000);
+  // Software-rendered phones are slow: give them room.
+  test.setTimeout(info.project.name === "mobile" ? 840_000 : 480_000);
   const mobile = info.project.name === "mobile";
   const errors: string[] = [];
   page.on("console", (m) => {
