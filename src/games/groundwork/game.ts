@@ -4,6 +4,7 @@ import { BONDS, GAME_SLUG, JOBS, KINDS, PREFS_KEY, SAVE_KEY, type Bond, type Job
 import { assess, inspect, jobById, progress, type Check, type Report } from "./jobs";
 import * as m from "./model";
 import { pickQuality, View, type Quality } from "./render/view";
+import * as plans from "./plans";
 import { showcaseHouse } from "./showcase";
 
 /**
@@ -14,7 +15,7 @@ import { showcaseHouse } from "./showcase";
  */
 
 export type Screen = "title" | "play" | "hq";
-export type Tool = "look" | "lay" | "wall" | "footing" | "slab" | "frame" | "floor" | "roof" | "pave" | "fence" | "paint" | "match" | "copy" | "demolish" | "measure";
+export type Tool = "look" | "plan" | "lay" | "wall" | "footing" | "slab" | "frame" | "floor" | "roof" | "pave" | "fence" | "paint" | "match" | "copy" | "demolish" | "measure";
 export type Panel = null | "job" | "report" | "jobs" | "help" | "changelog" | "settings" | "piece" | "tally" | "property";
 export type HqTab = "overview" | "contracts" | "property" | "crew" | "bank";
 
@@ -91,6 +92,15 @@ export class Game {
   /** What's been picked up to copy, and how far it's turned. */
   clip: m.Piece[] | null = null;
   copyTurns = 0;
+  /** Plans: the one picked, where it's pegged out (waiting for a yes), what it'll take, and one going up stage by stage. */
+  planId: plans.PlanId = "bungalow";
+  planSize: Partial<Record<plans.PlanId, { w: number; d: number }>> = {};
+  planLook = { front: 0, brick: 0, roof: 0, solar: false };
+  draft: plans.Placed | null = null;
+  draftWhy: string | null = null;
+  quoteOf: { cost: number; days: number; pieces: number } | null = null;
+  building: { p: plans.Placed; stages: plans.Stage[]; next: number } | null = null;
+  private quoteTimer = 0;
   /** The company, the site you're on for it, and the office's open tab. */
   co: co.Company | null = co.loadCompany(readKey(CO_KEY));
   ctx: Ctx = null;
@@ -277,10 +287,13 @@ export class Game {
     this.s = s;
     this.screen = "play";
     this.panel = s.mode === "career" || ctx?.kind === "contract" ? "job" : ctx?.kind === "property" ? "property" : null;
-    this.tool = "lay";
+    // A fresh site starts with the plans open: the easy way in.
+    this.tool = s.pieces.length ? "lay" : "plan";
     this.anchor = null;
     this.pending = null;
     this.report = null;
+    this.draft = null;
+    this.building = null;
     this.view?.setJob(this.zoned);
     this.paintTarget = null;
     this.clip = null;
@@ -398,6 +411,10 @@ export class Game {
     this.view?.marks.setTape(null, null);
     if (t === "wall" && !WALL_KINDS.includes(this.wall.kind)) this.wall.kind = "brick";
     if (t !== "paint") this.paintTarget = null;
+    if (t !== "plan") {
+      this.draft = null;
+      this.building = null;
+    }
     this.bump();
   }
 
@@ -430,6 +447,7 @@ export class Game {
   }
 
   rotate() {
+    if (this.tool === "plan") return this.setPlan({ front: (this.planLook.front + 1) % 4 });
     if (this.tool === "copy" && this.clip) {
       this.copyTurns = (this.copyTurns + 1) % 4;
       if (this.pending && this.lastHit) {
@@ -548,6 +566,140 @@ export class Game {
     this.bump();
   }
 
+  /* -------------------------------------------------------------- plans */
+
+  planDims(id: plans.PlanId = this.planId) {
+    const info = plans.planInfo(id);
+    return this.planSize[id] ?? { w: info.w[2], d: info.d[2] };
+  }
+
+  pickPlan(id: plans.PlanId) {
+    this.planId = id;
+    if (this.draft) this.updateDraft({ id, ...this.planDims(id) });
+    this.bump();
+  }
+
+  /** Change the picked plan's size or look (and the pegged-out one with it). */
+  setPlan(p: Partial<{ w: number; d: number; front: number; brick: number; roof: number; solar: boolean }>) {
+    const info = plans.planInfo(this.planId);
+    const dims = this.planDims();
+    const w = Math.max(info.w[0], Math.min(info.w[1], p.w ?? dims.w));
+    const d = Math.max(info.d[0], Math.min(info.d[1], p.d ?? dims.d));
+    this.planSize[this.planId] = { w, d };
+    this.planLook = { front: p.front ?? this.planLook.front, brick: p.brick ?? this.planLook.brick, roof: p.roof ?? this.planLook.roof, solar: p.solar ?? this.planLook.solar };
+    if (this.draft) this.updateDraft({ w, d, ...this.planLook });
+    this.bump();
+  }
+
+  /** Peg the picked plan out where you tapped. */
+  placePlan(x: number, z: number) {
+    this.updateDraft({ ...plans.placeNew(this.planId, x, z), ...this.planDims(), ...this.planLook, cx: x, cz: z });
+  }
+
+  private updateDraft(p: Partial<plans.Placed>) {
+    const s = this.s;
+    if (!s) return;
+    const d = { ...(this.draft ?? plans.placeNew(this.planId, 0, 0)), ...p } as plans.Placed;
+    this.draft = d;
+    this.draftWhy = plans.siteCheck(s, d);
+    const z = this.zoned;
+    if (!this.draftWhy && z) {
+      const r = plans.rectOf(d);
+      const [x0, z0, x1, z1] = z.zone;
+      if (r.x0 < x0 - 0.3 || r.x1 > x1 + 0.3 || r.z0 < z0 - 0.3 || r.z1 > z1 + 0.3) this.draftWhy = "Outside the pegs: it won't count for the job";
+    }
+    this.view?.ghost.show(plans.footprint(d), !this.draftWhy || this.draftWhy.startsWith("Outside"));
+    // What it'll take, worked out a moment later (it builds the whole thing on a copy).
+    this.quoteOf = null;
+    clearTimeout(this.quoteTimer);
+    this.quoteTimer = window.setTimeout(() => {
+      if (this.draft !== d || !this.s) return;
+      const e = plans.estimate(this.s, d);
+      this.quoteOf = { cost: e.cost, days: e.minutes / 540, pieces: e.pieces };
+      this.bump();
+    }, 250);
+    this.bump();
+  }
+
+  /** Start building the pegged-out plan: stage by stage, or all of it now. */
+  startPlan(all: boolean) {
+    const d = this.draft;
+    if (!d || (this.draftWhy && !this.draftWhy.startsWith("Outside"))) return;
+    this.building = { p: d, stages: plans.stages(d), next: 0 };
+    this.draft = null;
+    this.view?.ghost.hide();
+    const r = plans.rectOf(d);
+    this.view?.rig.fly({ target: new THREE.Vector3((r.x0 + r.x1) / 2, 1, (r.z0 + r.z1) / 2), dist: Math.max(10, Math.max(r.W, r.D) * 2) });
+    if (all) this.buildRest();
+    else this.showNextStage();
+    this.bump();
+  }
+
+  private showNextStage() {
+    const b = this.building;
+    const s = this.s;
+    if (!b || !s) return;
+    const st = b.stages[b.next];
+    if (st) this.view?.ghost.show(st.make(s), true);
+    else this.view?.ghost.hide();
+  }
+
+  /** Build the next stage of the plan. */
+  buildStage() {
+    const b = this.building;
+    const s = this.s;
+    if (!b || !s) return false;
+    const st = b.stages[b.next];
+    if (!st) return false;
+    const r = m.commit(s, st.make(s), true);
+    b.next++;
+    if (r.added.length) {
+      this.prefs.laid += r.added.length;
+      this.sessionLaid += r.added.length;
+    }
+    if (r.why === "Out of money") {
+      this.toast(`${st.name}: ran out of money after ${r.added.length.toLocaleString()} pieces.`, "bad");
+      b.next--;
+      this.after();
+      return false;
+    }
+    if (b.next >= b.stages.length) {
+      this.toast(`${plans.planInfo(b.p.id).name} finished: ${s.pieces.length.toLocaleString()} pieces on site.`, "good");
+      this.building = null;
+      this.view?.ghost.hide();
+    } else this.showNextStage();
+    this.after();
+    return true;
+  }
+
+  /** Build every stage that's left. */
+  buildRest() {
+    let guard = 0;
+    while (this.building && guard++ < 20) if (!this.buildStage()) break;
+  }
+
+  stopPlan() {
+    this.building = null;
+    this.draft = null;
+    this.view?.ghost.hide();
+    this.bump();
+  }
+
+  /** A plan sized to the job's brief, pegged out in its zone, ready to build. */
+  buildToBrief() {
+    const j = this.job;
+    if (!j) return;
+    const p = plans.planForBrief(j.needs, j.zone);
+    if (!p) return this.toast("No ready plan for this one: build it by hand.", "tip");
+    this.setTool("plan");
+    this.planId = p.id;
+    this.planSize[p.id] = { w: p.w, d: p.d };
+    this.panel = null;
+    this.updateDraft(p);
+    this.view?.rig.fly({ target: new THREE.Vector3(p.cx, 1, p.cz), dist: 16 });
+    this.toast(`A ${plans.planInfo(p.id).name.toLowerCase()} drawn up to the brief. Check the cost, then build it.`, "tip");
+  }
+
   /** Down tools till tomorrow. */
   knockOff() {
     if (!this.s) return;
@@ -656,8 +808,16 @@ export class Game {
     if (!v || !s || this.screen !== "play" || this.pending) return;
     this.hoverWhy = null;
     this.hoverCut = false;
+    if (this.tool === "plan") return;
     if (this.tool === "lay") {
       const hit = v.pick(s, nx, ny);
+      const into = hit && KINDS[this.kind].family === "opening" ? m.openingAt(s, hit, this.kind, this.sizeOf(this.kind), this.variantOf(this.kind)) : null;
+      if (into) {
+        this.hoverWhy = null;
+        this.hoverCut = true;
+        v.ghost.show([into], true);
+        return;
+      }
       const c = hit ? m.candidate(s, this.kind, hit, this.r, this.variantOf(this.kind), this.sizeOf(this.kind)) : null;
       if (!c) {
         v.ghost.hide();
@@ -725,6 +885,11 @@ export class Game {
       }
       case "lay":
         return this.layAt(hit);
+      case "plan": {
+        if (this.building) return;
+        this.placePlan(hit.x, hit.z);
+        return;
+      }
       case "paint": {
         this.paintTarget = hit.id >= 0 ? m.byId(s, hit.id) : null;
         if (this.paintTarget && KINDS[this.paintTarget.k].variants.length < 2) {
@@ -768,6 +933,17 @@ export class Game {
       }
       default: {
         if (!TWO_POINT.includes(this.tool)) return;
+        // Roof: tap a building and the roof fits its walls.
+        if (this.tool === "roof" && !this.anchor && hit.id >= 0) {
+          const bl = m.buildingAt(s, hit.id);
+          if (bl) {
+            const specs = m.roofGen(s, { x: bl.x0, z: bl.z0 }, { x: bl.x1, z: bl.z1 }, bl.top, { ...this.roof });
+            this.pending = { label: this.describe(specs), specs, group: true };
+            v.ghost.show(specs, true);
+            this.bump();
+            return;
+          }
+        }
         if (!this.anchor) {
           const mortar = this.tool === "wall";
           const y = this.tool === "footing" || this.tool === "fence" ? 0 : this.tool === "roof" ? (hit.id >= 0 ? m.box(m.byId(s, hit.id)!).y1 : 0) : m.baseAt(s, hit, mortar);
@@ -799,6 +975,17 @@ export class Game {
 
   private layAt(hit: m.Hit) {
     const s = this.s!;
+    // A window or door tapped onto a wall goes into it.
+    const into = KINDS[this.kind].family === "opening" ? m.openingAt(s, hit, this.kind, this.sizeOf(this.kind), this.variantOf(this.kind)) : null;
+    if (into) {
+      const r = m.cutOpening(s, into);
+      if (r.added.length) {
+        this.prefs.laid += r.added.length;
+        this.sessionLaid += r.added.length;
+        this.after();
+        return;
+      }
+    }
     const c = m.candidate(s, this.kind, hit, this.r, this.variantOf(this.kind), this.sizeOf(this.kind));
     if (!c) return;
     let r = m.commit(s, [c]);
@@ -833,6 +1020,10 @@ export class Game {
   cancel() {
     this.pending = null;
     this.anchor = null;
+    if (this.draft) {
+      this.draft = null;
+      this.view?.ghost.hide();
+    }
     this.measure = null;
     this.view?.ghost.hide();
     this.view?.marks.setAnchor(null);
@@ -1192,8 +1383,10 @@ export class Game {
       return;
     }
     if ((e.ctrlKey || e.metaKey) && k === "y") return this.redo();
-    if (k === "escape") return this.pending || this.anchor ? this.cancel() : this.openPanel(null);
+    if (k === "escape") return this.pending || this.anchor || this.draft ? this.cancel() : this.openPanel(null);
     if (k === "enter" && this.pending) return this.confirm();
+    if (k === "enter" && this.draft) return this.startPlan(false);
+    if (k === "enter" && this.building) return void this.buildStage();
     if (k === "r") return this.rotate();
     if (!v) return;
     if (k === "q") v.rig.rotate(-40, 0);

@@ -195,4 +195,21 @@ export const css = `
 .gw-logline.tip{border-left-color:var(--orange)}
 @media (pointer: coarse){.gw-desk-h{padding-left:60px}}
 @container gw (max-width: 520px){.gw-ledger b{font-size:15px}.gw-office{padding-left:6px;padding-right:6px}}
+
+/* plans */
+.gw-plans{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.gw-plans::-webkit-scrollbar{display:none}
+.gw-plan{flex:none;display:flex;flex-direction:column;align-items:center;gap:2px;width:72px;padding:6px 2px;border-radius:12px;background:rgba(255,255,255,.06);border:1.5px solid transparent!important;font-size:10.5px;font-weight:650;color:var(--ink2);line-height:1.1;text-align:center}
+.gw-plan span{font-size:20px;line-height:1}
+.gw-plan.on{border-color:#f6f5f2!important;color:var(--ink);background:rgba(255,255,255,.12)}
+.gw-sizes{display:flex;gap:4px 14px;flex-wrap:wrap}
+.gw-sizes .gw-step b{min-width:58px}
+.gw-sizes .gw-step button{width:28px;height:28px;font-size:16px}
+.gw-sw.small{width:24px;height:24px}
+.gw-sw.roof{border-radius:6px}
+.gw-stages{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;max-height:170px;overflow-y:auto}
+.gw-stages li{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink3);padding:3px 6px;border-radius:8px}
+.gw-stages li span{width:20px;text-align:center}
+.gw-stages li.done{color:var(--good)}
+.gw-stages li.on{color:var(--ink);background:rgba(255,138,31,.16);font-weight:650}
 `;

@@ -9,6 +9,7 @@ import { fmt, money, TWO_POINT, type Game, type Panel, type Tool } from "../game
 import { clockOf, costOf, cure, dayOf, dims, minutesOf } from "../model";
 import type { Quality } from "../render/view";
 import { Office } from "./hq";
+import { PlanPicker, PlanSheet } from "./plans";
 
 const noSubscribe = () => () => {};
 
@@ -18,6 +19,7 @@ export function useGame(game: Game) {
 
 const TOOLS: { id: Tool; icon: string; label: string }[] = [
   { id: "look", icon: "👆", label: "Look" },
+  { id: "plan", icon: "📐", label: "Plans" },
   { id: "lay", icon: "🧱", label: "Lay" },
   { id: "wall", icon: "🏗️", label: "Wall" },
   { id: "footing", icon: "⛏️", label: "Footing" },
@@ -65,7 +67,7 @@ export function App({ game }: { game: Game }) {
             </div>
           )}
           <Side game={game} />
-          {game.pending ? <Confirm game={game} /> : !game.panel && <Options game={game} />}
+          {game.pending ? <Confirm game={game} /> : game.tool === "plan" && (game.draft || game.building) ? <PlanSheet game={game} /> : !game.panel && <Options game={game} />}
           {game.panel && <Panels game={game} />}
           <Dock game={game} />
         </>
@@ -285,6 +287,8 @@ function hint(game: Game): { text: React.ReactNode; bad?: boolean } {
   switch (t) {
     case "look":
       return { text: "Tap a piece to see what it is. Double-tap to look closer. Drag to walk round the site." };
+    case "plan":
+      return { text: <><b>Tap the ground where it goes</b>: you&apos;ll see the cost before anything&apos;s built.</> };
     case "lay": {
       if (game.hoverWhy) return { text: game.hoverWhy, bad: true };
       if (game.hoverCut) return { text: `The brickwork there will be cut out for the ${KINDS[game.kind].name.toLowerCase()}.` };
@@ -302,7 +306,7 @@ function hint(game: Game): { text: React.ReactNode; bad?: boolean } {
     case "floor":
       return { text: a ? "Tap the opposite corner: joists span the short way, boards go across them." : "Tap one corner of the floor, at the top of the walls." };
     case "roof":
-      return { text: a ? "Tap the opposite corner of the walls." : "Tap the top of one corner of the walls: the roof sits on a timber plate along the top." };
+      return { text: a ? "Tap the opposite corner of the walls." : <>Tap <b>any wall</b> of a building and the roof is fitted to it.</> };
     case "demolish":
       return { text: "Tap a piece to knock it out. Anything that was resting on it comes down too.", bad: false };
     case "measure":
@@ -326,6 +330,7 @@ function Options({ game }: { game: Game }) {
   const tray = KIND_ORDER.filter((k) => KINDS[k].tray);
   return (
     <div className="gw-opts gw-glass" data-testid="gw-opts">
+      {t === "plan" && <PlanPicker game={game} />}
       {t === "lay" && (
         <>
           <div className="gw-scroll" role="toolbar" aria-label="Materials">
@@ -621,6 +626,9 @@ function JobPanel({ game }: { game: Game }) {
       )}
       <Checks game={game} />
       <div className="gw-note">Build inside the pink string line. The inspector checks the brief, then the workmanship: walls on footings, perpends staggered (no straight joints).</div>
+      <button type="button" className="gw-btn white wide" onClick={() => game.buildToBrief()} data-testid="gw-brief-plan">
+        📐 Build to the brief
+      </button>
       <div className="gw-actions">
         <button type="button" className="gw-btn grow" onClick={() => game.knockOff()}>
           🌙 Knock off
@@ -849,6 +857,9 @@ function PropertyPanel({ game }: { game: Game }) {
           {(x1 - x0).toFixed(0)} × {(z1 - z0).toFixed(0)} m
         </span>
       </div>
+      <button type="button" className="gw-btn white wide" onClick={() => game.setTool("plan")} data-testid="gw-prop-plan">
+        📐 Build from a plan
+      </button>
       <div className="gw-note">Sell it or rent it out from the office. Extras add value: a garage, solar, a deck, paving, fencing and gutters.</div>
       <div className="gw-actions">
         <button type="button" className="gw-btn grow" onClick={() => game.knockOff()}>
@@ -866,7 +877,15 @@ function Help({ game }: { game: Game }) {
   return (
     <Sheet game={game} icon="📘" title="How to build" sub="From the ground up" id="help">
       <div className="gw-sec">
-        <h5>Order of work</h5>
+        <h5>The quick way: plans</h5>
+        <p>Pick 📐 Plans, choose a house, garage, shed, deck, patio or fence, size it and tap where it goes. It&apos;s built for real, brick by brick, a stage at a time or all at once. On a job, “Build to the brief” draws up a plan that passes the inspector.</p>
+      </div>
+      <div className="gw-sec">
+        <h5>Quick taps</h5>
+        <p>Roof: tap any wall and the roof fits the building. Window or door: tap a wall and it&apos;s set into it, with the bricks cut out and a lintel over it.</p>
+      </div>
+      <div className="gw-sec">
+        <h5>Order of work, by hand</h5>
         <p>1. Pour strip footings (or a slab) where the walls go. 2. Lay the walls on them, course by course, with a bonded corner. 3. Set doors and windows in as you go: lay one into a wall and the bricks are cut out for it, and a lintel goes over. 4. Frame and roof it.</p>
       </div>
       <div className="gw-sec">

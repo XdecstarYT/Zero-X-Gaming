@@ -1231,6 +1231,82 @@ export function copySpecs(src: Piece[], dx: number, dy: number, dz: number, turn
   });
 }
 
+/* ------------------------------------------------------------------ helpers for a tap */
+
+const upright = (p: Piece) => {
+  const f = KINDS[p.k].family;
+  return f === "masonry" || f === "opening" || p.k === "lintel" || p.k === "stud" || p.k === "plate" || p.k === "post";
+};
+
+const touching = (a: Box, b: Box, e: number) => a.x0 < b.x1 + e && a.x1 > b.x0 - e && a.y0 < b.y1 + e && a.y1 > b.y0 - e && a.z0 < b.z1 + e && a.z1 > b.z0 - e;
+
+/**
+ * The building a piece is part of: the walls (or frame, or posts) standing connected to it, as its
+ * outside corners and the height of its walls, for putting a roof on with one tap.
+ */
+export function buildingAt(s: State, id: number): { x0: number; z0: number; x1: number; z1: number; top: number } | null {
+  const start = byId(s, id);
+  if (!start) return null;
+  const walk = (through: (p: Piece) => boolean) => {
+    const seen = new Set<number>([start.id]);
+    const queue = [start];
+    const found: Piece[] = [];
+    while (queue.length && seen.size < 40000) {
+      const p = queue.pop()!;
+      if (upright(p)) found.push(p);
+      const b = box(p);
+      for (const q of near(s, b, 0.03)) {
+        if (seen.has(q.id) || !through(q) || !touching(b, box(q), 0.025)) continue;
+        seen.add(q.id);
+        queue.push(q);
+      }
+    }
+    return found;
+  };
+  if (KINDS[start.k].family === "roof") return null;
+  let parts = walk(upright);
+  // Posts and frames stand apart: join them up through the slab they stand on.
+  if (parts.length < 6) parts = walk((q) => upright(q) || q.k === "slab" || q.k === "footing");
+  if (parts.length < 2) return null;
+  let x0 = Infinity;
+  let z0 = Infinity;
+  let x1 = -Infinity;
+  let z1 = -Infinity;
+  let top = 0;
+  for (const p of parts) {
+    const b = box(p);
+    x0 = Math.min(x0, b.x0);
+    z0 = Math.min(z0, b.z0);
+    x1 = Math.max(x1, b.x1);
+    z1 = Math.max(z1, b.z1);
+    top = Math.max(top, b.y1);
+  }
+  if (x1 - x0 < 0.9 || z1 - z0 < 0.9) return null;
+  return { x0, z0, x1, z1, top };
+}
+
+/**
+ * A window or door set into the wall you tapped: centred on the tap, facing out of the face you
+ * tapped, a window's sill on the course you tapped and a door down at the foot of the wall.
+ */
+export function openingAt(s: State, hit: Hit, k: Kind, size: [number, number, number] | undefined, v: number): Spec | null {
+  const hp = hit.id >= 0 ? byId(s, hit.id) : null;
+  if (!hp || KINDS[hp.k].family !== "masonry" || Math.abs(hit.ny) > 0.4) return null;
+  const sz = size ?? KINDS[k].size;
+  const hb = box(hp);
+  const facesX = Math.abs(hit.nx) >= Math.abs(hit.nz);
+  const r = facesX ? (hit.nx < 0 ? 1 : 3) : hit.nz < 0 ? 0 : 2;
+  const along = snapCentre(facesX ? hit.z : hit.x, sz[0] + JOINT);
+  // The leaf on the face you tapped: half a brick in from it.
+  const cross = facesX ? (hit.nx < 0 ? hb.x0 + 0.05125 : hb.x1 - 0.05125) : hit.nz < 0 ? hb.z0 + 0.05125 : hb.z1 - 0.05125;
+  let y = hp.y;
+  if (k === "door") {
+    const col: Box = facesX ? { x0: cross - 0.04, x1: cross + 0.04, z0: along - 0.3, z1: along + 0.3, y0: 0, y1: hp.y + 0.01 } : { x0: along - 0.3, x1: along + 0.3, z0: cross - 0.04, z1: cross + 0.04, y0: 0, y1: hp.y + 0.01 };
+    for (const q of near(s, col)) if (KINDS[q.k].family === "masonry" && intersects(col, box(q), 0.001)) y = Math.min(y, q.y);
+  }
+  return facesX ? { k, x: cross, y, z: along, r, v, s: [...sz] } : { k, x: along, y, z: cross, r, v, s: [...sz] };
+}
+
 /* ------------------------------------------------------------------ openings */
 
 /**

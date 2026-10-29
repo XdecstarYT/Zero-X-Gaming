@@ -460,6 +460,18 @@ export const JOBS: Job[] = [
 
 export const CHANGELOG: { version: string; date: string; title: string; items: string[] }[] = [
   {
+    version: "2.1",
+    date: "December 2026",
+    title: "Easy building",
+    items: [
+      "Plans: pick a bungalow, a two-storey house, a cottage, a garage, a shed, a carport, a deck, a patio, a planter, a garden wall or a fence, size it, pick the brick and the roof, and tap where it goes. You see what it'll cost and how long it'll take before a brick is laid, then build it a stage at a time (slab, door frames, walls to the sills, windows, walls to the roof, the roof, the path) or all at once. It's still built brick by brick, for real.",
+      "Build to the brief: every job and contract has a button that draws up a plan sized to the brief, pegged out in the job's zone, that passes the inspector.",
+      "One-tap roofs: with the Roof tool, tap any wall and the roof is fitted to the building.",
+      "Windows and doors go straight into a wall: tap the wall where you want one and the bricks are cut out round it, with a lintel over the top.",
+      "A fresh site opens on the plans. Fixed: walls over a door or window no longer try to lay bricks where the lintel is, a first floor runs right to the far wall, and a gable's top course is laid once.",
+    ],
+  },
+  {
     version: "2.0",
     date: "December 2026",
     title: "Property & Contracts",

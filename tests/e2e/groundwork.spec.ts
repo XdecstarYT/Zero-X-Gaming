@@ -62,6 +62,9 @@ test("Groundwork: lay a brick, run a wall, undo it, and take on a job", async ({
   await page.waitForTimeout(1500);
 
   // Lay one brick where we tap.
+  // A fresh plot opens on the plans; lay by hand first.
+  await expect(page.getByTestId("gw-tool-plan")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("gw-tool-lay").click();
   await expect(page.getByTestId("gw-kind-brick")).toHaveAttribute("aria-pressed", "true");
   await tap(page, 0.5, 0.4);
   await expect(page.getByTestId("gw-pieces")).toHaveText("1");
@@ -108,6 +111,19 @@ test("Groundwork: lay a brick, run a wall, undo it, and take on a job", async ({
   expect(await gw(page, (g) => g.s!.mode)).toBe("career");
   await page.getByTestId("gw-inspect").click();
   await expect(page.getByTestId("gw-panel-report")).toContainText("Not passed yet");
+  await page.getByTestId("gw-close").click();
+
+  // The easy way: build to the brief from a plan, and pass.
+  await page.getByTestId("gw-tool-job").click();
+  await page.getByTestId("gw-brief-plan").click();
+  await expect(page.getByTestId("gw-plan-sheet")).toBeVisible();
+  await expect(page.getByTestId("gw-plan-cost")).toContainText("$", { timeout: 60_000 });
+  await page.getByTestId("gw-plan-all").click();
+  await expect.poll(() => gw(page, (g) => g.s!.pieces.length), { timeout: 60_000 }).toBeGreaterThan(60);
+  await page.getByTestId("gw-tool-job").click();
+  await page.getByTestId("gw-inspect").click();
+  await expect(page.getByTestId("gw-panel-report")).toContainText("Passed inspection");
+  await expect(page.getByTestId("gw-stars")).toBeVisible();
 
   expect(errors).toEqual([]);
 });

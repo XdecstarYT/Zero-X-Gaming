@@ -275,3 +275,34 @@ describe("2.0: paving, fences, roofs, finishes and copies", () => {
     expect(slow.minutes % 540).toBe(0);
   });
 });
+
+describe("one-tap helpers", () => {
+  it("finds the building a wall belongs to, and roofs it", () => {
+    const s = site();
+    const a = { x: -2, z: -1.5 };
+    const b = { x: 2, z: 1.5 };
+    m.commit(s, m.wallRect(s, a, b, 0, { kind: "brick", bond: "stretcher", courses: 30, v: 0 }));
+    const wall = s.pieces[Math.floor(s.pieces.length / 2)];
+    const bl = m.buildingAt(s, wall.id)!;
+    expect(Math.abs(bl.x1 - bl.x0 - 4.04)).toBeLessThan(0.05);
+    expect(Math.abs(bl.z1 - bl.z0 - 3.03)).toBeLessThan(0.05);
+    expect(bl.top).toBeCloseTo(30 * COURSE - JOINT, 3);
+    const r = m.commit(s, m.roofGen(s, { x: bl.x0, z: bl.z0 }, { x: bl.x1, z: bl.z1 }, bl.top, { style: "gable", pitch: 30, cover: "tile", v: 0 }), true);
+    expect(r.skipped).toBe(0);
+  });
+
+  it("sets a window and a door into the wall you tap", () => {
+    const s = site();
+    m.commit(s, m.wallRun(s, { x: -3, z: 0 }, { x: 3, z: 0 }, 0, { kind: "brick", bond: "stretcher", courses: 34, v: 0 }));
+    const brick = s.pieces.find((p) => p.k === "brick" && Math.abs(p.y - 12 * COURSE) < 0.001 && Math.abs(p.x) < 0.3)!;
+    const face = (p: m.Piece, y: number): m.Hit => ({ x: p.x, y, z: m.box(p).z0, nx: 0, ny: 0, nz: -1, id: p.id });
+    const win = m.openingAt(s, face(brick, brick.y + 0.03), "window", [1.115, 1.19, 0.1025], 0)!;
+    expect(win.y).toBeCloseTo(brick.y, 6);
+    expect(win.r).toBe(0);
+    expect(m.cutOpening(s, win).added.some((p) => p.k === "window")).toBe(true);
+    const low = s.pieces.find((p) => p.k === "brick" && Math.abs(p.y - 20 * COURSE) < 0.001 && p.x > 1.6 && p.x < 2.2)!;
+    const door = m.openingAt(s, face(low, low.y + 0.03), "door", undefined, 0)!;
+    expect(door.y).toBeCloseTo(0, 6);
+    expect(m.cutOpening(s, door).added.some((p) => p.k === "door")).toBe(true);
+  });
+});

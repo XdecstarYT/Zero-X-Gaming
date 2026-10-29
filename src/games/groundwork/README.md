@@ -66,6 +66,22 @@ the doors and windows in, frame it and roof it, tile by tile, and get it past th
   company in `zx-groundwork-save-co`): the site's cash is the company's, and every new working day
   on site pays the crew. `ui/hq.tsx` is the office (overview, contracts, property, crew, bank).
 
+## 2.1: Easy building
+
+- `plans.ts`: eleven ready plans (bungalow, two-storey house, cottage, garage, shed, carport, deck,
+  patio, planter, garden wall, fence), each a `Placed` (size, centre, which way it faces, brick and
+  roof finish, solar) turned into `stages`: functions of the site as it stands, so the walls cut
+  round the windows already in and the roof sits on the walls that are there. `footprint` is the
+  ghost, `siteCheck` refuses ground that's built on or off the site, `estimate` builds the whole
+  plan on a copy of the site to price it, and `planForBrief` sizes a plan to a job's needs and
+  centres it in the zone. The tests build every plan facing every way at its smallest and largest
+  with nothing refused, and build to every career job and contract brief and pass the inspector.
+- `model.ts` adds `buildingAt` (the walls, frame or posts connected to a piece, for a one-tap roof)
+  and `openingAt` (a window or door set into the wall face you tapped). Wall runs now treat the
+  lintels they put in lower down as obstacles in the courses above; floors finish with a ripped
+  board at the far edge; the gable apex lays once. The inspector looks past a floor band of up to
+  300 mm when measuring wall height.
+
 ## The renderer (`render/`)
 
 - `textures.ts`: canvas-painted PBR sets (colour, normal, roughness) for brick, mortar, concrete,
