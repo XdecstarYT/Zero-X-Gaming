@@ -658,14 +658,20 @@ function lintelsAt(s: State, axis: Axis, start: number, len: number, cross: numb
  * Lay a wall line course by course: the bond's pattern from the line's start, cut round any
  * openings (with bats and closers at the jambs) and with lintels over them when asked.
  */
-function layLine(s: State, axis: Axis, start: number, len: number, cross: number, y: number, c: number, o: WallOpts, offset = true): Spec[] {
+function layLine(s: State, axis: Axis, start: number, len: number, cross: number, y: number, c: number, o: WallOpts, offset = true, earlier: Spec[] = []): Spec[] {
   const thick = o.kind === "brick" ? BONDS[o.bond].thick : 1;
   const H = KINDS[o.kind].size[1] + JOINT;
   const out: Spec[] = [];
   if (o.lintels !== false) out.push(...lintelsAt(s, axis, start, len, cross, thick, y));
   const half = thick === 2 ? GRID * 2 : GRID;
   const obs = obstacles(s, axis, start, len, cross - half, cross + half, y, y + H - JOINT);
-  // Lintels going in this course are obstacles too.
+  // Lintels going in this course are obstacles too, and so are the ones this wall put in lower down
+  // that are deeper than a course.
+  const line: Box = axis === "x" ? { x0: start, x1: start + len, z0: cross - half, z1: cross + half, y0: y, y1: y + H - JOINT } : { z0: start, z1: start + len, x0: cross - half, x1: cross + half, y0: y, y1: y + H - JOINT };
+  for (const l of earlier) {
+    const lb = box({ ...l, id: -1, t: 0 });
+    if (intersects(line, lb, 0.004)) obs.push({ a0: (axis === "x" ? lb.x0 : lb.z0) - JOINT / 2 - start, a1: (axis === "x" ? lb.x1 : lb.z1) + JOINT / 2 - start, p: { ...l, id: -1, t: 0 } });
+  }
   for (const l of out) {
     const lb = box({ ...l, id: -1, t: 0 });
     obs.push({ a0: (axis === "x" ? lb.x0 : lb.z0) - JOINT / 2 - start, a1: (axis === "x" ? lb.x1 : lb.z1) + JOINT / 2 - start, p: { ...l, id: -1, t: 0 } });
@@ -711,7 +717,12 @@ export function wallRun(s: State, a: { x: number; z: number }, b: { x: number; z
   const cross = snapCentre(axis === "x" ? a.z : a.x, thick === 2 ? GRID * 4 : leaf);
   const H = KINDS[o.kind].size[1] + JOINT;
   const out: Spec[] = [];
-  for (let c = o.from ?? 0; c < o.courses; c++) out.push(...layLine(s, axis, start, len, cross, y0 + c * H, c, o));
+  const lintels: Spec[] = [];
+  for (let c = o.from ?? 0; c < o.courses; c++) {
+    const line = layLine(s, axis, start, len, cross, y0 + c * H, c, o, true, lintels);
+    lintels.push(...line.filter((p) => p.k === "lintel"));
+    out.push(...line);
+  }
   return out;
 }
 
@@ -729,6 +740,7 @@ export function wallRect(s: State, a: { x: number; z: number }, b: { x: number; 
   const D = Math.max(half * 4, Math.round((Math.max(a.z, b.z) - z0) / half) * half);
   const H = KINDS[o.kind].size[1] + JOINT;
   const out: Spec[] = [];
+  const lintels: Spec[] = [];
   for (let c = o.from ?? 0; c < o.courses; c++) {
     const y = y0 + c * H;
     const xThrough = c % 2 === 0;
@@ -737,8 +749,9 @@ export function wallRect(s: State, a: { x: number; z: number }, b: { x: number; 
     const xl = xThrough ? W : W - 2 * t;
     const zs = xThrough ? z0 + t : z0;
     const zl = xThrough ? D - 2 * t : D;
-    for (const cz of [z0 + t / 2, z0 + D - t / 2]) out.push(...layLine(s, "x", xs, xl, cz, y, c, o, false));
-    for (const cx of [x0 + t / 2, x0 + W - t / 2]) out.push(...layLine(s, "z", zs, zl, cx, y, c, o, false));
+    for (const cz of [z0 + t / 2, z0 + D - t / 2]) out.push(...layLine(s, "x", xs, xl, cz, y, c, o, false, lintels));
+    for (const cx of [x0 + t / 2, x0 + W - t / 2]) out.push(...layLine(s, "z", zs, zl, cx, y, c, o, false, lintels));
+    lintels.splice(0, lintels.length, ...out.filter((p) => p.k === "lintel"));
   }
   return out;
 }
@@ -819,6 +832,13 @@ export function floorRect(a: { x: number; z: number }, b: { x: number; z: number
   for (let i = 0; i < boards; i++) {
     const o = 0.071 + i * 0.142;
     out.push(joistsAlongZ ? { k: "board", x: x0 + W / 2, y: by, z: z0 + o, r: 0, v, s: [W, 0.022, 0.14] } : { k: "board", x: x0 + o, y: by, z: z0 + D / 2, r: 1, v, s: [D, 0.022, 0.14] });
+  }
+  // A board ripped down to finish against the far edge.
+  const rest = span - boards * 0.142;
+  if (rest > 0.02) {
+    const o = boards * 0.142 + rest / 2;
+    const w = rest - 0.002;
+    out.push(joistsAlongZ ? { k: "board", x: x0 + W / 2, y: by, z: z0 + o, r: 0, v, s: [W, 0.022, w] } : { k: "board", x: x0 + o, y: by, z: z0 + D / 2, r: 1, v, s: [D, 0.022, w] });
   }
   return out;
 }
@@ -1067,7 +1087,10 @@ function gableInfill(s: State, x0: number, z0: number, x1: number, z1: number, y
       const used = units.map((u) => [u.a0, u.a1]);
       const first = used.length ? Math.min(...used.map((x) => x[0])) : hi + S / 2;
       const last = used.length ? Math.max(...used.map((x) => x[1])) : lo + S / 2;
-      const extra = [...fill(k, Math.ceil((lo + S / 2) / GRID - 1e-6) * GRID, first, 0, 1), ...fill(k, last, Math.floor((hi + S / 2) / GRID + 1e-6) * GRID, 0, 1)];
+      const from = Math.ceil((lo + S / 2) / GRID - 1e-6) * GRID;
+      const to = Math.floor((hi + S / 2) / GRID + 1e-6) * GRID;
+      // Cut pieces either side of the whole ones (or, near the apex, all the way across once).
+      const extra = used.length ? [...fill(k, from, first, 0, 1), ...fill(k, last, to, 0, 1)] : fill(k, from, to, 0, 1);
       for (const u of [...units, ...extra]) {
         const mid = lineStart + (u.a0 + u.a1) / 2;
         const w = mid - wc;

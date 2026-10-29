@@ -208,9 +208,15 @@ function enclosure(s: State, ps: Piece[]) {
   let h = 0;
   let solidSum = 0;
   let n = 0;
+  // A floor band (joists showing between storeys) is a short gap the walls carry on above.
+  let gap = 0;
   for (let y = base + 0.2; y < top; y += 0.075) {
     const f = Math.min(...lines.map((l) => side(l, y)));
-    if (f < 0.8) break;
+    if (f < 0.8) {
+      if (++gap * 0.075 > 0.3) break;
+      continue;
+    }
+    gap = 0;
     h = y - base + 0.075;
     solidSum += f;
     n++;
